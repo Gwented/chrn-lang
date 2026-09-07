@@ -60,17 +60,16 @@ for Structure {
     cases = ["UpperSnakeCase", "camelCase"]
     field1 {
         // Assuming `self` is going to exist
-        // NOTE: Namespaces don't recommend the symbols they contain, they should!
         //
-        // Why is override over-reaching?
-        override JAVA=>types{change i32 = java::int}
-        // Issues with `=>` usage here. It isn't correctly adjusting for the fact that since `=>` was used,
-        // it should skip looking for a closing Ccurly.
-        //
+        // Too terminal, should try to look for '{' and '}' maybe
+        override JAVA=>types {change i32 = java::char}
         // So, override cfg just isn't closing.
-        override RUST=>types{}
         // This should probably emit an error. Probably.
-        // override RUST=>types=>rust {}
+        override RUST{types {change x = rust::i32}}
+        // Says is a variable and not a type, but should point to the source where it saw the
+        // variable over type. Also should this be public facing where it says it works off preference
+        // not separation?
+        // override RUST=>types {change x = rust::char}
         //
         // You can also assign non-built-ins which probably shouldn't be allowed. Probably.
         // override RUST=>types {change varthing1 = rust::char}

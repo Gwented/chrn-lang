@@ -48,7 +48,13 @@ pub fn parse(
 ) -> (AstInfo, SourceDiagnosticSummary) {
     cfg.perf_tracker_mut().start();
 
-    let speculated_items = tokens.len() / 10;
+    // Not sure about this metric because 12 tokens, in relation to a complex section especially, is
+    // possibly not even covering a config member. But to get more details, we'd need to carry known
+    // sections crossed, which would probably not be worth over-complicating the API for.
+    //
+    // Assumes 12 toks == at least 1 item
+    let speculated_items = tokens.len() / 12;
+
     // Output it's own summary? Does AstInfo hold a summary?
     let mut ast_info = AstInfo::with_capacity(speculated_items);
 
@@ -829,30 +835,15 @@ fn parse_cfg_expr(
     // only care about the arrow here
     let used_arrow = ctx.advance_tok() == Token::NotSlimArrow;
 
-    // Needs to not be root for this to work because if we have a root like "Point=>x{}" if
-    // there is "Other {}" after it, it'll see that as a config member, and not a different
-    // config, because the loop is only checking if the next is an identifier.
-    if used_arrow && is_root {
-        ctx.report_verbose(
-            "Config roots must use `{` syntax",
-            InitialEvidence::new(
-                //TODO: FIXME
-                SemanticEnv::SectComplex,
-                SemanticSituation::MissingStartDelimiter,
-                SectionBranch::Complex.into(),
-            ),
-            interner,
-        );
-        return Err(Token::Poison);
-    }
-
     let mut stmts: Vec<AstStmt> = Vec::new();
     let mut cfg_members: Vec<AbstractConfig> = Vec::new();
 
     //WARN: This is getting suspicious..
     // Looking really bad..
     loop {
-        if ctx.peek_tok() == Token::Keyword(Keyword::Change) {
+        // !used_arrow is here to disallow:
+        // for Thing=>change x = y=>change y = x=>member {}
+        if ctx.peek_tok() == Token::Keyword(Keyword::Change) && !used_arrow {
             ctx.advance_tok();
             let multi_assign = parse_change(ctx, budget, interner)?;
             stmts.push(AstStmt::MultiAssignType(multi_assign));
@@ -877,6 +868,13 @@ fn parse_cfg_expr(
                 Ok(abs_cfg) => cfg_members.push(abs_cfg),
                 Err(_) => break,
             };
+
+            // If an arrow was used, we have to terminate upon the first config member.
+            // In "Thing=>member{}" if we expect > 1 cfg member, it'll leak `Thing`'s propagation to
+            // later config roots and members, which leads to unstable behavior.
+            if used_arrow {
+                break;
+            }
         } else {
             // If no consumable token for this branch is seen
             //

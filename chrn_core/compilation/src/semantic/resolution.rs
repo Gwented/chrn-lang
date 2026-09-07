@@ -89,21 +89,10 @@ pub fn resolve_type_expr(
 
                             TypeExprResult::Type(type_id)
                         }
-                        SymbolKind::Namespace => {
-                            return TypeExprResult::NotAType {
-                                found_sym_id,
-                                sp_name_id,
-                                scope_found_in: associated_scope,
-                            };
-                        }
-                        SymbolKind::Variable(_) => {
-                            return TypeExprResult::NotAType {
-                                found_sym_id,
-                                sp_name_id,
-                                scope_found_in: associated_scope,
-                            };
-                        }
-                        SymbolKind::Directive(_) => {
+                        SymbolKind::Namespace
+                        | SymbolKind::Variable(_)
+                        | SymbolKind::Directive(_) => {
+                            //TODO: Declaration span for this?
                             return TypeExprResult::NotAType {
                                 found_sym_id,
                                 sp_name_id,

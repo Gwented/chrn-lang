@@ -291,7 +291,10 @@ impl ScriptCompiler {
         }
     }
 
-    pub(super) fn get_struct(&self, sym_id: SymbolId) -> &StructDef {
+    /// Extracts the struct represented by `sym_id`.
+    ///
+    /// Panics when the symbol is not a struct type.
+    pub fn get_struct(&self, sym_id: SymbolId) -> &StructDef {
         match &self.syms[sym_id] {
             sym_info => match &sym_info.kind {
                 SymbolKind::Type(type_id) => match &self.types[*type_id].ty {
@@ -339,7 +342,10 @@ impl ScriptCompiler {
         }
     }
 
-    pub(super) fn get_enum(&self, sym_id: SymbolId) -> &EnumDef {
+    /// Extracts the enum represented by `sym_id`.
+    ///
+    /// Panics when the symbol is not an enum type.
+    pub fn get_enum(&self, sym_id: SymbolId) -> &EnumDef {
         match &self.syms[sym_id] {
             sym_info => match &sym_info.kind {
                 SymbolKind::Type(type_id) => match &self.types[*type_id].ty {
@@ -407,7 +413,8 @@ impl ScriptCompiler {
         }
     }
 
-    pub(super) fn get_cfg_root(&self, impl_id: ImplId) -> &ConfigRoot {
+    /// Extracts the config root represented by `impl_id`.
+    pub fn get_cfg_root(&self, impl_id: ImplId) -> &ConfigRoot {
         match &self.impls[impl_id].kind {
             ImplHirKind::Config(cfg_id) => &self.cfgs[*cfg_id],
         }
@@ -431,7 +438,7 @@ impl ScriptCompiler {
     }
 
     /// Assumes the member symbol given is a field
-    pub(super) fn get_field(&self, member_id: MemberId) -> &FieldRepre {
+    pub fn get_field(&self, member_id: MemberId) -> &FieldRepre {
         match &self.sym_members[member_id] {
             MemberSymbolKind::Field(field_repre) => field_repre,
             MemberSymbolKind::Variant(_) => unreachable!(),
@@ -447,7 +454,7 @@ impl ScriptCompiler {
     }
 
     /// Assumes the member symbol given is a variant
-    pub(super) fn get_variant(&self, member_id: MemberId) -> &VariantRepre {
+    pub fn get_variant(&self, member_id: MemberId) -> &VariantRepre {
         match &self.sym_members[member_id] {
             MemberSymbolKind::Variant(variant_repre) => variant_repre,
             _ => unreachable!(),
@@ -560,10 +567,10 @@ impl ScriptCompiler {
         }
     }
 
-    // Maybe return option?
-    /// Assumes the symbol given has a `TypeId` attached. Will return a `TypeId` of `Unknown` if
-    /// the `SymbolKind` is unknown.
-    pub(super) fn extract_type_id(&self, sym_id: SymbolId) -> TypeId {
+    /// Extracts the type attached to a type or variable symbol.
+    ///
+    /// Panics when the symbol kind cannot carry a type.
+    pub fn extract_type_id(&self, sym_id: SymbolId) -> TypeId {
         match &self.syms[sym_id] {
             sym => match &sym.kind {
                 SymbolKind::Type(type_id) => *type_id,
@@ -580,7 +587,7 @@ impl ScriptCompiler {
 
     // Maybe return option?
     /// Attempts to get a `TypeId` out of the given symbol if possible
-    pub(super) fn get_type_id_from_sym_id(&self, sym_id: SymbolId) -> Option<TypeId> {
+    pub fn get_type_id_from_sym_id(&self, sym_id: SymbolId) -> Option<TypeId> {
         match &self.syms[sym_id] {
             sym_info => match &sym_info.kind {
                 SymbolKind::Type(type_id) => Some(*type_id),
@@ -612,7 +619,7 @@ impl ScriptCompiler {
     }
 
     /// Attempts to get a `TypeId` out of the given `MemberId` if possible
-    pub(super) fn get_type_id_from_memb_id(&self, member_id: MemberId) -> Option<TypeId> {
+    pub fn get_type_id_from_memb_id(&self, member_id: MemberId) -> Option<TypeId> {
         match &self.sym_members[member_id] {
             MemberSymbolKind::Field(field_repre) => Some(field_repre.type_id),
             MemberSymbolKind::Variant(variant_repre) => variant_repre.type_id,

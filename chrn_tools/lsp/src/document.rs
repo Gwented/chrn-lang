@@ -44,7 +44,9 @@ pub struct Document {
     pub key: &'static str,
     /// A brief description of the construct
     pub description: &'static str,
-    /// An optional code example shown in hover popups
+    /// Optional supporting Markdown shown in hover popups. A bare fenced code
+    /// block is rendered under an `Example` heading; richer entries may supply
+    /// prose and multiple labeled examples directly.
     pub example: Option<&'static str>,
 }
 
@@ -53,10 +55,13 @@ impl Document {
     pub fn compose(&self) -> String {
         let header = format!("**{}** — {}", self.key, self.description);
         match self.example {
-            Some(example) => format!(
+            Some(example) if example.trim_start().starts_with("```") => format!(
                 "{}\n\n{}\n\n**Example:**\n{}",
                 header, HOVER_DASHES, example
             ),
+            Some(supporting_markdown) => {
+                format!("{}\n\n{}\n\n{}", header, HOVER_DASHES, supporting_markdown)
+            }
             None => header,
         }
     }
@@ -113,98 +118,108 @@ impl Document {
 pub static KEYWORD_DOCS: [Document; 15] = [
     Document {
         key: "struct",
-        description: "Defines a data structure",
-        example: Some("```chrn\nnest->\n\tstruct Person {\n\t\tname: str\n\t\tage: u8\n\t}\n```"),
+        description: "Defines a struct in the `nest->` section",
+        example: Some(
+            "Fields have a name and type. Commas between fields are optional.\n\n**Example:**\n```chrn\nnest->\nstruct Person {\n    name: str\n    age: u8\n}\n```",
+        ),
     },
     Document {
         key: "enum",
-        description: "Defines an enum type",
+        description: "Defines an enum in the `nest->` section",
         example: Some(
-            "```chrn\nnest->\n\tenum Status {\n\t\tPending\n\t\tActive: Tuple<i32>\n\t\tCompleted\n\t}\n```",
+            "Variants may be untyped or carry a type. Commas between variants are optional.\n\n**Example:**\n```chrn\nnest->\nenum Status {\n    Pending\n    Active: Tuple<i32>\n    Completed\n}\n```",
         ),
     },
     Document {
         key: "import",
-        description: "Imports other .chrn files",
-        example: Some("```chrn\nimport \"definitions.chrn\"\nimport \"utils.chrn\" as u\n```"),
+        description: "Loads another `.chrn` module so its exported symbols can be used",
+        example: Some(
+            "Use `as` to choose the local module name and `::` to access an export.\n\n**Direct import:**\n```chrn\nimport \"definitions.chrn\"\nvar->\n    item: definitions::Item\n```\n\n**Aliased import:**\n```chrn\nimport \"definitions.chrn\" as defs\nvar->\n    item: defs::Item\n```",
+        ),
     },
     Document {
         key: "export",
-        description: "Exports types for cross-module use",
+        description: "Lets imported modules use a definition",
         example: Some(
-            "```chrn\nexport let CONST = 42\n\nexport struct Thing {\n\tthings: List<Thing>\n}\n\nexport enum State {\n\tReady\n}\n```",
+            "Use `export` on a `let`, `alias`, `struct`, or `enum`. Structs and enums still belong in `nest->`.\n\n**Values and aliases:**\n```chrn\nexport let LIMIT = 42\nexport alias NonEmpty() = [!IsEmpty]\n```\n\n**Structs and enums:**\n```chrn\nnest->\nexport struct Thing { value: i32 }\nexport enum State { Ready Pending }\n```",
         ),
     },
     Document {
         key: "bind",
-        description: "Binds to external serialized file",
-        example: Some("```chrn\nbind \"data.chrn\"\n```"),
+        description: "Links this config to an external data file",
+        example: Some(
+            "Use `bind` in a standalone config. You do not need it when the config is inside the data file between `@def` and `@end`.\n\n**Standalone config:**\n```chrn\nbind \"data.json\"\n```",
+        ),
     },
     Document {
         key: "alias",
-        description: "Stores predicates and directives in a single reusable call. Parameters require a type Boundary or concrete type",
+        description: "Declares a reusable group of predicates and directives",
         example: Some(
-            "```chrn\nalias ShortDefault() = [IsWhitespace]\nalias LongDefault(x: UnsignedInteger, y: UnsignedInteger) = [!IsEmpty, Range(x, y), StartsW(\"ch\") EndsW(\"ern\") Contains(\"chrn\")] #warn\n```",
+            "Give each parameter a type or a boundary such as `UnsignedInteger`. Use the alias in a condition block.\n\n**Reusable conditions:**\n```chrn\nalias NonBlank() = [!IsEmpty, !IsWhitespace]\nvar->\n    name: str [NonBlank()]\n```\n\n**Alias with a directive:**\n```chrn\nalias WarnIfEmpty() = [IsEmpty] #warn\nvar->\n    tag: str [WarnIfEmpty()]\n```",
         ),
     },
     Document {
         key: "let",
         description: "Declares a reusable value; the type is inferred by default",
         example: Some(
-            "```chrn\n@def\n\tlet count = 10\n\tlet name = \"chrning\"\n\tlet result = VALUE * 2\n// Can be used as values within type Boundaries or conditions\nvar->\n\tx: i32 [Equals(result)]\n@end\n```",
+            "Declare a top-level value in the neutral section, or use `let … in …` to bind a value inside an expression.\n\n**Reusable declarations:**\n```chrn\nlet base = 10\nlet doubled = base * 2\n```\n\n**Scoped expression:**\n```chrn\nlet doubled = let value = 10 in value * 2\n```",
         ),
     },
     Document {
         key: "change",
-        description: "Unimplemented",
-        example: Some("```chrn\n// Not yet implemented\n```"),
+        description: "Maps one or more chrn types to a language-specific type inside an override",
+        example: Some(
+            "Put `change` inside a built-in override group such as `types`. List the chrn types on the left and the language type to use on the right.\n\n**One chrn type:**\n```chrn\noverride JAVA=>types {\n    change bool = java::boolean\n}\n```\n\n**Several chrn types:**\n```chrn\noverride JAVA=>types {\n    change i8, i16 = java::int\n}\n```",
+        ),
     },
     Document {
         key: "as",
-        description: "Allows for aliasing imports",
+        description: "Assigns a local module name to an import",
         example: Some(
-            "```chrn\n@def\n\timport \"module.chrn\" as mod\n\t\tlet x = mod.MAGIC_NUM - 2\nvar->\n\tfield: mod.EXTERN_TYPE\n@end\n```",
+            "```chrn\nimport \"module.chrn\" as mod\nlet x = mod::MAGIC_NUM - 2\nvar->\n    field: mod::EXTERN_TYPE\n```",
         ),
     },
     Document {
         key: "var->",
-        description: "Front-facing section that defines the data to be serialized or deserialized; fields may use type boundaries and directives",
+        description: "Starts the section describing top-level serialized data",
         example: Some(
-            "```chrn\nvar->\n\tname: str\n\tage: u8 #warn\n\tscore: f64 [Range(0.0, 100.0)]\n```",
+            "Each entry has a name and type. Conditions check incoming data. Directives change how errors or output are handled. Names in `var->` can refer to definitions in `nest->` and the neutral section.\n\n**Fields, a condition, and a directive:**\n```chrn\nvar->\n    name: str [!IsEmpty]\n    separator: str [IsWhitespace] #warn\n```",
         ),
     },
     Document {
         key: "nest->",
-        description: "Defines structs and enums; types here may use type boundaries and directives",
+        description: "Starts the section where structs and enums are defined",
         example: Some(
-            "```chrn\nnest->\n\tstruct Address {\n\t\tcity: str\n\t\tzip: u32\n\t}\n\tenum Color {Red Blue Green}\n```",
+            "Types declared here can be referenced from `var->` and other nested types. `nest->` can search `var->`, itself, and the neutral section.\n\n**Nested types used by top-level data:**\n```chrn\nvar->\n    address: Address\nnest->\n    struct Address { city: str zip: u32 }\n    enum Color { Red Green Blue }\n```",
         ),
     },
     Document {
         key: "complex->",
-        description: "Defines serialization properties for declared types; config roots use `for`, and language-specific overrides use `override`",
+        description: "Starts the section for type settings and language overrides",
         example: Some(
-            "```chrn\nnest->\n\tstruct Person {\n\t\tname: str\n\t\tage: u8\n\t}\ncomplex->\n\tfor Person {\n\t\tcases = [\"snake_case\", \"UpperCamelCase\"]\n\t}\n```",
+            "Use `for` to change the settings for a type. Use `override` to change built-in defaults for a language. Normal config blocks can nest two levels deep. Built-in override paths can go deeper.\n\n**Type settings:**\n```chrn\nnest->\nstruct Person { name: str age: u8 }\ncomplex->\nfor Person {\n    cases = [\"snake_case\", \"UpperSnakeCase\"]\n    age { default_val = 0 }\n}\n```\n\n**Language override:**\n```chrn\ncomplex->\noverride JAVA=>types {\n    change i8, i16 = java::int\n}\n```",
         ),
     },
     Document {
         key: "override",
-        description: "Overrides language-specific serialization defaults within a `complex->` configuration",
+        description: "Changes language defaults for everything or for one `for` block",
         example: Some(
-            "```chrn\ncomplex->\n\toverride JAVA {\n\t\ttypes {\n\t\t\ti8, i16 = java::int\n\t\t}\n\t}\n```",
+            "At the root of `complex->`, `override LANGUAGE` changes the defaults everywhere that language is used. Inside a `for` block, it changes only that type or member. The inside override has priority over the root override.\n\n**Root override:**\n```chrn\ncomplex->\noverride JAVA {\n    types {\n        change i8, i16 = java::int\n    }\n}\n```\n\n**Override inside `for`:**\n```chrn\ncomplex->\nfor Person {\n    age {\n        override RUST=>types {\n            change u8 = rust::u32\n        }\n    }\n}\n```",
         ),
     },
     Document {
         key: "in",
-        description: "Binds a value to a name within a scoped expression (let ... in)",
+        description: "Separates a scoped `let` value from the expression that uses it",
         example: Some(
             "```chrn\n@def\n\tlet result = let x = 10 in x * 2\n\t// result = 20\n@end\n```",
         ),
     },
     Document {
         key: "for",
-        description: "Selects a type as a config root within a `complex->` section",
-        example: Some("```chrn\ncomplex->\n\tfor Person {\n\t\tidents = \"Human\"\n\t}\n```"),
+        description: "Chooses the type to configure in `complex->`",
+        example: Some(
+            "Add `var` or `nest` before the type name when both sections contain that name. Put a member's settings inside a block named after the member.\n\n**Type and member settings:**\n```chrn\ncomplex->\nfor Person {\n    idents = \"Human\"\n    age { default_val = 0 }\n}\n```\n\n**Choose the `nest->` type:**\n```chrn\ncomplex->\nfor nest Person { idents = \"Human\" }\n```",
+        ),
     },
 ];
 
@@ -328,28 +343,30 @@ pub static BUILTIN_TYPE_DOCS: [Document; 27] = [
     },
     Document {
         key: "List",
-        description: "Generic list type",
-        example: None,
+        description: "Ordered collection with one element type",
+        example: Some("```chrn\nvar->\n    names: List<str>\n```"),
     },
     Document {
         key: "Set",
-        description: "Generic set type",
-        example: None,
+        description: "Collection of unique values with one element type",
+        example: Some("```chrn\nvar->\n    tags: Set<str>\n```"),
     },
     Document {
         key: "Map",
-        description: "Generic map type",
-        example: None,
+        description: "Key-value collection with key and value types",
+        example: Some("```chrn\nvar->\n    scores: Map<str, i32>\n```"),
     },
     Document {
         key: "Tuple",
-        description: "Generic tuple type",
-        example: None,
+        description: "Fixed-position collection with any number of element types",
+        example: Some("```chrn\nvar->\n    coordinate: Tuple<f64, f64>\n```"),
     },
     Document {
         key: "Runtime",
-        description: "Runtime detected type",
-        example: None,
+        description: "Leaves the value's type to be found at runtime",
+        example: Some(
+            "Use `Runtime` when the data may hold different types and the config cannot name one type ahead of time.\n\n**Example:**\n```chrn\nvar->\n    payload: Runtime\n```",
+        ),
     },
 ];
 
@@ -363,38 +380,50 @@ pub static BUILTIN_TYPE_DOCS: [Document; 27] = [
 pub static FUNC_DOCS: [Document; 7] = [
     Document {
         key: "IsEmpty",
-        description: "Checks if the given array or string has a length of 0",
-        example: None,
+        description: "Checks whether a string or collection has length zero",
+        example: Some(
+            "Negate the predicate when the value must contain something.\n\n**Example:**\n```chrn\nvar->\n    items: List<str> [!IsEmpty]\n```",
+        ),
     },
     Document {
         key: "IsWhitespace",
-        description: "Checks if a string is only white-space within UTF-8 standards",
-        example: None,
+        description: "Checks whether a string contains only Unicode whitespace",
+        example: Some("```chrn\nvar->\n    separator: str [IsWhitespace]\n```"),
     },
     Document {
         key: "Contains",
-        description: "Checks if a value contains a given literal or numeric",
-        example: None,
+        description: "Planned predicate for checking whether a value contains an argument; not implemented",
+        example: Some(
+            "This is planned syntax and does not work yet.\n\n**Planned syntax:**\n```chrn\nvar->\n    project: str [Contains(\"chrn\")]\n```",
+        ),
     },
     Document {
         key: "Range",
-        description: "Checks if a value falls within a given range. For arrays and strings, checks the length; for numbers, checks the numeric value",
-        example: None,
+        description: "Planned predicate for checking a value or length against a range; not implemented",
+        example: Some(
+            "This is planned syntax and does not work yet. The first number will be included and the second will not. Numbers will use their value; strings and collections will use their length.\n\n**Planned number check:**\n```chrn\nvar->\n    percentage: f64 [Range(0.0, 100.0)]\n```\n\n**Planned string length check:**\n```chrn\nvar->\n    username: str [Range(1, 25)]\n```",
+        ),
     },
     Document {
         key: "StartsW",
-        description: "Checks if a value starts with a given literal or numeric",
-        example: None,
+        description: "Planned predicate for checking a value's prefix; not implemented",
+        example: Some(
+            "This is planned syntax and does not work yet.\n\n**Planned syntax:**\n```chrn\nvar->\n    resource: str [StartsW(\"chrn:\")]\n```",
+        ),
     },
     Document {
         key: "EndsW",
-        description: "Checks if a value ends with a given literal or numeric",
-        example: None,
+        description: "Planned predicate for checking a value's suffix; not implemented",
+        example: Some(
+            "This is planned syntax and does not work yet.\n\n**Planned syntax:**\n```chrn\nvar->\n    config_file: str [EndsW(\".chrn\")]\n```",
+        ),
     },
     Document {
         key: "Equals",
-        description: "Checks serialized value for equality against given argument",
-        example: None,
+        description: "Planned predicate for equality with an argument; not implemented",
+        example: Some(
+            "This is planned syntax and does not work yet.\n\n**Planned syntax:**\n```chrn\nlet required_version = 2\nvar->\n    version: u32 [Equals(required_version)]\n```",
+        ),
     },
 ];
 
@@ -407,13 +436,15 @@ pub static FUNC_DOCS: [Document; 7] = [
 pub static DIRECTIVE_DOCS: [Document; 6] = [
     Document {
         key: "warn",
-        description: "Warns instead of terminating upon seeing a wrongful constraint of any kind",
-        example: Some("```chrn\nvar->\n\tscore: f64 [Range(0.0, 100.0)] #warn\n```"),
+        description: "Reports a failed serialized-data constraint as a warning instead of an error",
+        example: Some(
+            "Add it to the field whose failed condition should produce a warning.\n\n**Example:**\n```chrn\nvar->\n    separator: str [IsWhitespace] #warn\n```",
+        ),
     },
     Document {
         key: "ignore",
-        description: "Ignores all errors for what this is applied to regarding serialized data",
-        example: Some("```chrn\nvar->\n\tptr: Runtime #ignore\n\tlen: Runtime #ignore\n```"),
+        description: "Ignores data errors for the field it is added to",
+        example: Some("```chrn\nvar->\n    payload: Runtime #ignore\n```"),
     },
     Document {
         key: "scient",
@@ -423,9 +454,7 @@ pub static DIRECTIVE_DOCS: [Document; 6] = [
     Document {
         key: "hex",
         description: "Outputs numeric values in hexadecimal notation",
-        example: Some(
-            "```chrn\nnest->\n\tenum Color { Red: Tuple<u8> Green: Tuple<u8> Blue: Tuple<u8> } #hex\n```",
-        ),
+        example: Some("```chrn\nvar->\n    color: u32 #hex\n```"),
     },
     Document {
         key: "bin",
@@ -447,20 +476,24 @@ pub static DIRECTIVE_DOCS: [Document; 6] = [
 pub static CONFIG_OPTION_DOCS: [Document; 3] = [
     Document {
         key: "cases",
-        description: "Case conventions accepted when matching serialized names",
+        description: "Lets serialized names use more than one letter case style",
         example: Some(
-            "```chrn\ncomplex->\n\tfor Person {\n\t\tcases = [\"snake_case\", \"UpperSnakeCase\"]\n\t}\n```",
+            "Assign one convention directly or a list of conventions. The option applies to the configured type or member.\n\n**Several accepted conventions:**\n```chrn\ncomplex->\nfor Person {\n    cases = [\"snake_case\", \"UpperSnakeCase\"]\n}\n```",
         ),
     },
     Document {
         key: "idents",
-        description: "Alternate identifiers the serialized value may be matched to",
-        example: Some("```chrn\ncomplex->\n\tfor Person {\n\t\tidents = [\"Human\"]\n\t}\n```"),
+        description: "Adds other names that can match the serialized value",
+        example: Some(
+            "Use it on a root to rename the type during matching, or in a member block to rename that member. A single string does not require brackets.\n\n**Type identifier:**\n```chrn\ncomplex->\nfor Person { idents = \"Human\" }\n```\n\n**Member identifier:**\n```chrn\ncomplex->\nfor Person {\n    name { idents = [\"display_name\", \"full_name\"] }\n}\n```",
+        ),
     },
     Document {
         key: "default_val",
-        description: "Default value used when data is absent",
-        example: Some("```chrn\ncomplex->\n\tfor Person {\n\t\tage { default_val = 0 }\n\t}\n```"),
+        description: "Supplies a member value when serialized data is absent",
+        example: Some(
+            "Set it in the member's config block. The value must match the member's type.\n\n**Example:**\n```chrn\ncomplex->\nfor Person {\n    age { default_val = 0 }\n}\n```",
+        ),
     },
 ];
 
@@ -539,5 +572,82 @@ mod tests {
 
         assert!(Document::config_option_docs(InternedId::new(INTERNED_WARN)).is_none());
         assert!(Document::config_option_docs(InternedId::new(u32::MAX)).is_none());
+    }
+
+    #[test]
+    fn compose_labels_a_single_fenced_example() {
+        let document = Document {
+            key: "sample",
+            description: "Demonstrates the compact documentation form",
+            example: Some("```chrn\nlet answer = 42\n```"),
+        };
+
+        assert_eq!(
+            document.compose(),
+            format!(
+                "**sample** — Demonstrates the compact documentation form\n\n{HOVER_DASHES}\n\n**Example:**\n```chrn\nlet answer = 42\n```"
+            )
+        );
+    }
+
+    #[test]
+    fn compose_preserves_rich_markdown_without_an_extra_example_label() {
+        let rich_markdown = "Use the first form at a config root.\n\n**Root form:**\n```chrn\noverride JAVA {}\n```\n\nUse the second form inside a type config.\n\n**Embedded form:**\n```chrn\nfor Person { override RUST {} }\n```";
+        let document = Document {
+            key: "sample",
+            description: "Demonstrates multiple forms",
+            example: Some(rich_markdown),
+        };
+
+        assert_eq!(
+            document.compose(),
+            format!(
+                "**sample** — Demonstrates multiple forms\n\n{HOVER_DASHES}\n\n{rich_markdown}"
+            )
+        );
+        assert!(!document.compose().contains("**Example:**"));
+    }
+
+    #[test]
+    fn override_docs_explain_global_and_embedded_forms() {
+        let markdown = Document::keyword_docs(Keyword::Override).compose();
+
+        let root_heading = markdown
+            .find("Root override")
+            .expect("override documentation should identify the root form");
+        let inside_for_heading = markdown
+            .find("Override inside `for`")
+            .expect("override documentation should identify the form inside `for`");
+
+        assert!(
+            root_heading < inside_for_heading,
+            "the root form should be introduced before the form inside `for`"
+        );
+        assert!(
+            markdown[root_heading..inside_for_heading].contains("override JAVA"),
+            "the root section should show an override config root"
+        );
+        assert!(
+            markdown[inside_for_heading..].contains("for Person"),
+            "the inside section should show the surrounding type config"
+        );
+        assert!(
+            markdown[inside_for_heading..].contains("override RUST"),
+            "the inside section should show a local language override"
+        );
+        assert!(
+            markdown.contains("priority"),
+            "the documentation should explain embedded precedence over a global override"
+        );
+        assert_eq!(
+            markdown.matches("```chrn").count(),
+            2,
+            "each override form should have its own chrn example"
+        );
+        assert_eq!(
+            markdown.matches("```").count(),
+            4,
+            "both override examples should have closed Markdown fences"
+        );
     }
 }

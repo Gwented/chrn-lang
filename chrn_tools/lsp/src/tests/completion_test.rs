@@ -145,6 +145,48 @@ async fn current_module_completion_keeps_local_types_and_hides_injected_core_typ
     );
 }
 
+/// An import alias is the module binding visible in the importing document.
+/// General completion must use that binding, including its module classification,
+/// rather than advertising the dependency's file-derived module name.
+#[tokio::test(start_paused = true)]
+async fn general_completion_exposes_only_the_import_alias_as_a_module() {
+    use tower_lsp::lsp_types::CompletionItemKind;
+
+    let workspace = TempWorkspace::new("aliased_import_general_completion");
+    let dependency_uri = workspace.write("dependency.chrn", "export let ITEM = 1\n");
+    let dependency_path = dependency_uri
+        .to_file_path()
+        .expect("the workspace URI is a file path");
+    let text = format!(
+        "import \"{}\" as public_api\nlet value = \n",
+        dependency_path.display()
+    );
+    let uri = workspace.write("main.chrn", &text);
+
+    let mut session = Session::new().await;
+    session.open(&uri, &text).await;
+
+    let mut position = position_of(&text, "let value = ", 0);
+    position.character += "let value = ".len() as u32;
+    let response = session
+        .completion(&uri, position, None)
+        .await
+        .expect("general completion returns candidates");
+    let CompletionResponse::Array(items) = response else {
+        panic!("completion must return an item array");
+    };
+
+    let alias = items
+        .iter()
+        .find(|item| item.label == "public_api")
+        .unwrap_or_else(|| panic!("the visible import alias is completed, got {items:?}"));
+    assert_eq!(alias.kind, Some(CompletionItemKind::MODULE));
+    assert!(
+        items.iter().all(|item| item.label != "dependency"),
+        "an aliased import must not expose its original module name, got {items:?}"
+    );
+}
+
 /// Override paths use compiler-provided namespace scopes rather than module
 /// exports. Completing a partially typed `java::int` must still expose the
 /// terminal extern type.
@@ -285,6 +327,78 @@ async fn embedded_override_arrow_completes_the_intrinsic_namespace() {
             "the duplicate-span lookup selects the intrinsic namespace symbol"
         );
     }
+}
+
+/// Every shorthand arrow follows the namespace selected by the full preceding
+/// override path. The second transition must resolve the repeated `types` name
+/// under its platform root, not globally or through ordinary config completion.
+#[tokio::test(start_paused = true)]
+async fn chained_override_arrow_completes_the_next_namespace_segment() {
+    use tower_lsp::lsp_types::CompletionItemKind;
+
+    let workspace = TempWorkspace::new("chained_override_arrow_completion");
+    let mut session = Session::new().await;
+
+    for (root, prefix, expected) in [("JAVA", "j", "java"), ("RUST", "r", "rust")] {
+        let target = format!("{root}=>types=>{prefix}");
+        let text = format!(
+            "nest->\nstruct Structure {{ field1: i32 }}\ncomplex->\nfor Structure {{\n    field1 {{\n        override {target}idents {{ change i32 = rust::char }}\n    }}\n}}\n"
+        );
+        let uri = workspace.write(&format!("{}.chrn", root.to_lowercase()), &text);
+        session.open(&uri, &text).await;
+
+        let mut position = position_of(&text, &target, 0);
+        position.character += target.len() as u32;
+        let response = session
+            .completion(&uri, position, None)
+            .await
+            .unwrap_or_else(|| panic!("the `{target}` override path completes"));
+        let CompletionResponse::Array(items) = response else {
+            panic!("completion must return an item array");
+        };
+        let actual: Vec<_> = items
+            .into_iter()
+            .map(|item| (item.label, item.kind))
+            .collect();
+        assert_eq!(
+            actual,
+            vec![(expected.into(), Some(CompletionItemKind::VARIABLE))],
+            "`{target}` completes only its platform's child namespace despite invalid remaining shorthand content"
+        );
+    }
+}
+
+/// A braced override is a namespace-backed config root. Prefix completion in
+/// its body must expose the same intrinsic child as `override JAVA=>`.
+#[tokio::test(start_paused = true)]
+async fn braced_override_body_completes_namespace_children() {
+    use tower_lsp::lsp_types::CompletionItemKind;
+
+    let workspace = TempWorkspace::new("braced_override_namespace_completion");
+    let text = "nest->\nstruct Structure { field1: i32 }\ncomplex->\nfor Structure {\n    field1 {\n        override JAVA {\n            t\n        }\n    }\n}\n";
+    let uri = workspace.write("main.chrn", text);
+
+    let mut session = Session::new().await;
+    session.open(&uri, text).await;
+
+    let mut position = position_of(text, "            t", 0);
+    position.character += "            t".len() as u32;
+    let response = session
+        .completion(&uri, position, None)
+        .await
+        .expect("the braced override body completes");
+    let CompletionResponse::Array(items) = response else {
+        panic!("completion must return an item array");
+    };
+    let actual: Vec<_> = items
+        .into_iter()
+        .map(|item| (item.label, item.kind))
+        .collect();
+    assert_eq!(
+        actual,
+        vec![("types".into(), Some(CompletionItemKind::VARIABLE))],
+        "the `t` prefix selects only JAVA's `types` namespace child"
+    );
 }
 
 /// `override` selects an intrinsic configuration root rather than an ordinary

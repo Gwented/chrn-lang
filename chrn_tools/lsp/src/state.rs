@@ -40,6 +40,7 @@ use compilation::lexer::Lexer;
 use compilation::lexer::token::SpannedToken;
 use compilation::lexer::token::Token as ScriptToken;
 use compilation::lexer::trivia::Trivia;
+use compilation::lookup::member_lookup::{self, MemberLookupPattern, MemberLookupResult};
 use compilation::lookup::scopes;
 use compilation::lookup::scopes::scopes_concepts::AssociatedScopeKind;
 use compilation::lookup::scopes::scopes_concepts::ScopeLookupPattern;
@@ -641,9 +642,7 @@ impl DocumentState {
                 CompilationUnit::Impl(impl_id) => impl_id,
                 _ => continue,
             };
-            let impl_hir = &compiler.impls[*impl_id];
-            let ImplHirKind::Config(cfg_root_id) = &impl_hir.kind;
-            let (cfg_common, root_stmts) = cfg_root_parts(&compiler.cfgs[*cfg_root_id]);
+            let (cfg_common, root_stmts) = cfg_root_parts(compiler.get_cfg_root(*impl_id));
 
             let mut queue: Vec<ImplMemberId> = Vec::new();
 
@@ -662,48 +661,41 @@ impl DocumentState {
 
             // Root members
             for &impl_memb_id in &cfg_common.cfg_membs {
-                if let ImplMemberKind::ConfigMember(mem) = &compiler.impl_membs[impl_memb_id] {
-                    map.push((
-                        mem.common.name_span,
-                        SemanticEntity::ConfigMember {
-                            cfg_root_impl_id: cfg_common.impl_id,
-                            member_id: impl_memb_id,
-                        },
-                    ));
-                    queue.push(impl_memb_id);
-                }
+                let member = compiler.get_cfg_member(impl_memb_id);
+                map.push((
+                    member.common.name_span,
+                    SemanticEntity::ConfigMember {
+                        cfg_root_impl_id: cfg_common.impl_id,
+                        member_id: impl_memb_id,
+                    },
+                ));
+                queue.push(impl_memb_id);
             }
 
             // Traverse nested members
             while let Some(current_member_id) = queue.pop() {
-                if let ImplMemberKind::ConfigMember(mem) = &compiler.impl_membs[current_member_id] {
-                    for &opt_id in &mem.ast_stmts {
-                        if let ImplMemberKind::OptAssignmentMember(opt) =
-                            &compiler.impl_membs[opt_id]
-                        {
-                            map.push((
-                                opt.name_span,
-                                SemanticEntity::ConfigOption {
-                                    cfg_root_impl_id: cfg_common.impl_id,
-                                    member_id: opt_id,
-                                },
-                            ));
-                        }
+                let member = compiler.get_cfg_member(current_member_id);
+                for &opt_id in &member.ast_stmts {
+                    if let ImplMemberKind::OptAssignmentMember(opt) = &compiler.impl_membs[opt_id] {
+                        map.push((
+                            opt.name_span,
+                            SemanticEntity::ConfigOption {
+                                cfg_root_impl_id: cfg_common.impl_id,
+                                member_id: opt_id,
+                            },
+                        ));
                     }
-                    for &child_member_id in &mem.cfg_members {
-                        if let ImplMemberKind::ConfigMember(child_mem) =
-                            &compiler.impl_membs[child_member_id]
-                        {
-                            map.push((
-                                child_mem.common.name_span,
-                                SemanticEntity::ConfigMember {
-                                    cfg_root_impl_id: cfg_common.impl_id,
-                                    member_id: child_member_id,
-                                },
-                            ));
-                            queue.push(child_member_id);
-                        }
-                    }
+                }
+                for &child_member_id in &member.cfg_members {
+                    let child = compiler.get_cfg_member(child_member_id);
+                    map.push((
+                        child.common.name_span,
+                        SemanticEntity::ConfigMember {
+                            cfg_root_impl_id: cfg_common.impl_id,
+                            member_id: child_member_id,
+                        },
+                    ));
+                    queue.push(child_member_id);
                 }
             }
         }
@@ -1791,15 +1783,13 @@ impl Default for DocumentCache {
 /// Returns whether a config implementation contains an override branch that
 /// the core constraint resolver cannot inspect yet.
 fn config_has_override(compiler: &ScriptCompiler, impl_id: ImplId) -> bool {
-    let ImplHirKind::Config(cfg_root_id) = compiler.impls[impl_id].kind;
-    if matches!(compiler.cfgs[cfg_root_id].kind, ConfigRootKind::Override) {
+    let cfg_root = compiler.get_cfg_root(impl_id);
+    if matches!(cfg_root.kind, ConfigRootKind::Override) {
         return true;
     }
 
     fn member_has_override(compiler: &ScriptCompiler, member_id: ImplMemberId) -> bool {
-        let ImplMemberKind::ConfigMember(member) = &compiler.impl_membs[member_id] else {
-            return false;
-        };
+        let member = compiler.get_cfg_member(member_id);
         matches!(&member.meta, ConfigMemberMetadataKind::Override(_))
             || member
                 .cfg_members
@@ -1808,7 +1798,7 @@ fn config_has_override(compiler: &ScriptCompiler, impl_id: ImplId) -> bool {
                 .any(|child_id| member_has_override(compiler, child_id))
     }
 
-    compiler.cfgs[cfg_root_id]
+    cfg_root
         .common
         .cfg_membs
         .iter()
@@ -2212,56 +2202,45 @@ impl RefCollector<'_> {
         type_id: TypeId,
     ) -> PathCursor {
         let compiler = self.compiler;
-        let ty_info = &compiler.types[type_id];
-
-        let (entity, member_type_id) = match &ty_info.ty {
-            Type::Struct(sdef) => {
-                let Some(field_idx) = sdef.fields.iter().position(|member_id| {
-                    matches!(
-                        &compiler.sym_members[*member_id],
-                        MemberSymbolKind::Field(f) if f.name_id == name_id
-                    )
-                }) else {
-                    return PathCursor::Opaque;
-                };
-                let member_type_id = match &compiler.sym_members[sdef.fields[field_idx]] {
-                    MemberSymbolKind::Field(f) => Some(f.type_id),
-                    MemberSymbolKind::Variant(_) => {
-                        unreachable!("struct field id must reference a field member")
+        let (entity, member_type_id) = match member_lookup::lookup_member(
+            compiler,
+            type_id,
+            name_id,
+            MemberLookupPattern::NoRestrictions,
+        ) {
+            MemberLookupResult::Found(member_id) => {
+                let entity = match &compiler.sym_members[member_id] {
+                    MemberSymbolKind::Field(field) => {
+                        let owner = compiler.get_struct(field.local_parent_sym_id);
+                        let field_idx = owner
+                            .fields
+                            .iter()
+                            .position(|candidate| *candidate == member_id)
+                            .expect("field must belong to its local parent struct");
+                        SemanticEntity::Field {
+                            owner_sym_id: field.local_parent_sym_id,
+                            field_idx,
+                        }
+                    }
+                    MemberSymbolKind::Variant(variant) => {
+                        let owner = compiler.get_enum(variant.local_parent_sym_id);
+                        let variant_idx = owner
+                            .variants
+                            .iter()
+                            .position(|candidate| *candidate == member_id)
+                            .expect("variant must belong to its local parent enum");
+                        SemanticEntity::Variant {
+                            owner_sym_id: variant.local_parent_sym_id,
+                            variant_idx,
+                        }
                     }
                 };
-                (
-                    SemanticEntity::Field {
-                        owner_sym_id: sdef.sym_id,
-                        field_idx,
-                    },
-                    member_type_id,
-                )
+                (entity, compiler.get_type_id_from_memb_id(member_id))
             }
-            Type::Enum(edef) => {
-                let Some(variant_idx) = edef.variants.iter().position(|member_id| {
-                    matches!(
-                        &compiler.sym_members[*member_id],
-                        MemberSymbolKind::Variant(v) if v.name_id == name_id
-                    )
-                }) else {
-                    return PathCursor::Opaque;
-                };
-                let member_type_id = match &compiler.sym_members[edef.variants[variant_idx]] {
-                    MemberSymbolKind::Variant(v) => v.type_id,
-                    MemberSymbolKind::Field(_) => {
-                        unreachable!("enum variant id must reference a variant member")
-                    }
-                };
-                (
-                    SemanticEntity::Variant {
-                        owner_sym_id: edef.sym_id,
-                        variant_idx,
-                    },
-                    member_type_id,
-                )
-            }
-            Type::BuiltinTypeInfo(builtin_info) => {
+            MemberLookupResult::ImpossibleTypeMemberAccess(resolved_type_id)
+                if let Type::BuiltinTypeInfo(builtin_info) =
+                    &compiler.types[resolved_type_id].ty =>
+            {
                 // Built-in namespace members such as `i32::MAX` live in the
                 // built-in type's associated namespace scope, not in member
                 // arenas like struct fields do.
@@ -2284,7 +2263,9 @@ impl RefCollector<'_> {
                 // Namespace members cannot own further path segments.
                 return PathCursor::Opaque;
             }
-            _ => return PathCursor::Opaque,
+            MemberLookupResult::ImpossibleTypeMemberAccess(_)
+            | MemberLookupResult::MemberNotFoundInType(_)
+            | MemberLookupResult::Unknown(_) => return PathCursor::Opaque,
         };
 
         self.map.push((span, entity));

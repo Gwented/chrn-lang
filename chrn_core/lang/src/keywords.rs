@@ -7,6 +7,7 @@ use crate::chrn_classifier::{self, ChrnClassifiable, ChrnClassifier};
 /// Size in bytes for `@def` and `@end`
 pub const REGION_CLAUSE_SIZE: usize = 4;
 
+// EMBEDDING_DEF_STR?
 pub const DEF_CLAUSE_STR: &str = "@def";
 pub const END_CLAUSE_STR: &str = "@end";
 

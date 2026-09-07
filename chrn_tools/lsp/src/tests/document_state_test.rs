@@ -306,39 +306,39 @@ async fn test_hover_resolves_intrinsic_namespaces_and_extern_type_metadata() {
     let cases = [
         (
             "int",
-            "extern type **int**\n\n**Representation:** 32-bit signed integer",
+            "extern type **int**\n\n**Platform:** java\n\n**Representation:** 32-bit signed integer",
         ),
         (
             "rust::u8",
-            "extern type **u8**\n\n**Representation:** 8-bit unsigned integer",
+            "extern type **u8**\n\n**Platform:** rust\n\n**Representation:** 8-bit unsigned integer",
         ),
         (
             "usize",
-            "extern type **usize**\n\n**Representation:** pointer-width unsigned integer",
+            "extern type **usize**\n\n**Platform:** rust\n\n**Representation:** pointer-width unsigned integer",
         ),
         (
             "double",
-            "extern type **double**\n\n**Representation:** 64-bit floating-point number",
+            "extern type **double**\n\n**Platform:** java\n\n**Representation:** 64-bit floating-point number",
         ),
         (
             "boolean",
-            "extern type **boolean**\n\n**Representation:** boolean",
+            "extern type **boolean**\n\n**Platform:** java\n\n**Representation:** boolean",
         ),
         (
             "java::char",
-            "extern type **char**\n\n**Representation:** 16-bit character (UTF-16)",
+            "extern type **char**\n\n**Platform:** java\n\n**Representation:** 16-bit character (UTF-16)",
         ),
         (
             "rust::char",
-            "extern type **char**\n\n**Representation:** 32-bit character (Unicode scalar value)",
+            "extern type **char**\n\n**Platform:** rust\n\n**Representation:** 32-bit character (Unicode scalar value)",
         ),
         (
             "str",
-            "extern type **str**\n\n**Representation:** string (UTF-8)",
+            "extern type **str**\n\n**Platform:** rust\n\n**Representation:** string (UTF-8)",
         ),
         (
             "String",
-            "extern type **String**\n\n**Representation:** string (UTF-16)",
+            "extern type **String**\n\n**Platform:** java\n\n**Representation:** string (UTF-16)",
         ),
     ];
     let compiler_symbol_footer = "\n\n------------------------------------------------------------\n\nprivate | **Scope:** compiler";
@@ -583,6 +583,71 @@ async fn test_aliased_import_does_not_expose_file_name_as_module() {
             expected
         );
     }
+}
+
+/// Core member lookup walks through a typedef before selecting the concrete
+/// struct field. The LSP's semantic identity for the same supported config path
+/// must do the same so definition, references, and rename agree with core.
+#[tokio::test(start_paused = true)]
+async fn test_config_member_semantics_follow_a_typedef() {
+    let workspace = TempWorkspace::new("typedef_config_member_semantics");
+    let text = "var->\nModel: Record\nnest->\nstruct Record { field: i32 }\ncomplex->\nfor Model { field {} }\n";
+    let uri = workspace.write("main.chrn", text);
+
+    let mut session = Session::new().await;
+    let diagnostics = session.open(&uri, text).await;
+    assert!(diagnostics.is_empty(), "{diagnostics:?}");
+
+    let declaration_start = position_of(text, "field", 0);
+    let declaration = Range::new(
+        declaration_start,
+        Position::new(
+            declaration_start.line,
+            declaration_start.character + "field".len() as u32,
+        ),
+    );
+    let use_site = position_of(text, "field", 1);
+    let use_range = Range::new(
+        use_site,
+        Position::new(use_site.line, use_site.character + "field".len() as u32),
+    );
+
+    let response = session
+        .definition(&uri, use_site)
+        .await
+        .expect("the typedef-backed config member has a definition");
+    let GotoDefinitionResponse::Link(links) = response else {
+        panic!("the server answers definition requests with location links");
+    };
+    assert_eq!(links.len(), 1, "one field declaration owns the member");
+    assert_eq!(links[0].target_uri, uri);
+    assert_eq!(links[0].target_selection_range, declaration);
+
+    let mut references = session
+        .references(&uri, use_site)
+        .await
+        .expect("the typedef-backed config member has references");
+    references.sort_by_key(|location| location.range.start);
+    assert_eq!(
+        references
+            .into_iter()
+            .map(|location| (location.uri, location.range))
+            .collect::<Vec<_>>(),
+        vec![(uri.clone(), declaration), (uri.clone(), use_range)]
+    );
+
+    let edit = session
+        .rename(&uri, use_site, "renamed_field")
+        .await
+        .expect("the typedef-backed config member is renameable");
+    let changes = edit.changes.expect("rename produces per-file text edits");
+    assert_eq!(
+        changes[&uri],
+        vec![
+            tower_lsp::lsp_types::TextEdit::new(declaration, "renamed_field".into()),
+            tower_lsp::lsp_types::TextEdit::new(use_range, "renamed_field".into()),
+        ]
+    );
 }
 
 #[tokio::test(start_paused = true)]

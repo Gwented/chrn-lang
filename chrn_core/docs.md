@@ -1,3 +1,4 @@
+Ok but what if we wrote a program in go that read for "```chrn" at start and end then put it into separate files to be doc tested? What if it was in go? What i
 // Since sections use `->` the idea of NOT tabbing on `->` but instead only tabbing on nests seems like a better formatting heuristic, readability-wise.
 Like for:
 ```chrn
@@ -19,9 +20,8 @@ First {
 
 // There's some level of oddity in what should be a type directive (As it's called internally) and what should be an "Option". Something like `#ignore` seems best as an actual directive, but `#unicode` sound like an option that should just expect to be applied to `char`, rather than an entire directive. We'll see.
 
-// Scripting language or config language? Schema language? It's not really a script it's more so a standard for depicting as many language concepts as possible, which produces a configuration, that dictates how serialized data is consumed.
 # Language intent
-- This is a configuration language that is meant to have a serialized data representation paired with it which allows for typing cross-language serialization configuration. This allows for the avoidance of any annotations or macros that would be required inline in a language, and most favorably allows for cross-language serial configuration. The config language can either use the keyword [`bind`](#keywords) to define where the serialized file is, or use `@def` and `@end` syntax inside the serialized data itself which allows for the same behavior.
+- This is a configuration/scripting language that is meant to have a serialized data representation paired with it which allows for typing cross-language serialization configuration. This allows for the avoidance of any annotations or macros that would be required inline in a language, and most favorably allows for cross-language serial configuration. The config language can either use the keyword [`bind`](#keywords) to define where the serialized file is, or use `@def` and `@end` syntax inside the serialized data itself which allows for the same behavior.
 
 - Features such as boundaries, directives, and anything that is beyond just setting serialized data details or serialized data specific settings are not intended to be heavily used.
 
@@ -43,12 +43,12 @@ fn main() {
     let cfg_path = "path/to/cfg/file"
     let user = User { id: 0, age: 0 }
 
-    chrn_json::serialize(script_path, user)
+    chrn_json::serialize(cfg_path, user)
 
     // or if serialized data is separate
 
     let serialized_data = "path/to/serialized/data"
-    chrn_json::serialize(script_path, serialized_data, user)
+    chrn_json::serialize(cfg_path, serialized_data, user)
 }
 ```
 
@@ -57,21 +57,22 @@ fn main() {
 ## BEHAVIOR
 - Ends program by default when type information is incorrect unless [`#warn`](#directives) or [`#ignore`](#directives) is used.
 
-- `@def` and `@end` syntax is intended to lock script behavior into one block so that the language constraints can be applied without needing a dedicated outer file that uses `bind`. Everything after `@end` will be considered the serialized file. If the space above the script is not needed, `@end` alone can be used to define a script block (This was unintended behavior but may stay).
+// Going with chrn embedding or config embedding, but since config is used elsewhere might just keep chrn
+- `@def` and `@end` syntax is intended to lock chrn behavior into one block so that the language constraints can be applied without needing a dedicated outer file that uses `bind`. Everything after `@end` will be considered the serialized file. If the space above the embedding is not needed, `@end` alone can be used to define a chrn embedding (This was unintended behavior but may stay).
 
 - It is not recommended to type above `@def` without comments due to the initial scan needed to make this work being sensitive to accidentally unclosed comments or quotes.
 
 - The module `core` is a required and implicitly loaded module which defines types, functions, etc. 
 Some of what's in `core` like functions and generics are strictly compiler level concepts with no external way of declaration.
 
-- A script region/file can AT MOST be 32KB in size.
+- A chrn region/file can AT MOST be 32KB in size.
 
 Singline comments = //
 Multi-line comments = /* */
 
 ## Keywords
 
-`bind`: Defines where a serialized file is located that should be checked, or deserialized. This is not needed if the script file is situated within the serialized data itself.
+`bind`: Defines where a serialized file is located that should be checked, or deserialized. This is not needed if the chrn file is situated within the serialized data itself.
 
 `let`: Allows the declaration of values under a re-usable variable if literals are inconvenient. The type is inferred by default.
 
@@ -119,7 +120,6 @@ var->
 
 
 ## Types
-// Would pointer and function types make sense?
 
 ### Basic types
 
@@ -205,6 +205,32 @@ An example of this would be if a parameter expects `Numeric`, it accepts any sig
 
 More often than not this will not actually matter for normal usage since the rules only get complicated when something like `alias` or conditions blocks "ident: type [] <- block" in general are used. Most consumption of this will be a directive sometimes pointing out it's boundaries. Please respect it's boundaries.
 
+// Does type ignore extern type so override can explain extern types or does extern type get explained twice?
+### Extern types
+
+Since chrn needs to map it's types to any supported language's type, there also needs to be an internal representation of said other platform's type.
+
+chrn has a default idea of mapping where a language like java would be mapped from chrn's `u32` to `int`, which most would agree upon is what is desired for most cases. But a decision like `i8` mapping to `int` is opinionated to where one may want to override the language defaults.
+
+External types cannot be extracted normally, and can only be accessed in the section `override` using type assignment with the keyword `change`.
+
+These external types are accessed through namespaces, which are conventionally the language name in caps, such as `PYTHON`, `C`, `RUST`, etsy.
+
+Inside of these namespaces there exists a conventional mapping of possible namespaces, with the only current one being `types`, which is the namespace where external types are handled.
+
+Inside `types` there is a lower-case version of the outer upper-case constant. So, `JAVA` has `java` and `RUST` has `rust`, where the access is like `java::String` and `rust::u8`. These namespaces include all chrn translatable types, which hopefully should include every type one would expect to have from the chosen language.
+
+```chrn
+complex->
+override JAVA {
+    types {
+        change i32 = java::int
+    }
+}
+```
+
+It is recommended that `=>` is used for `override NAME=>types {}` to avoid nesting overhead. `types` exists in the case of `override` being given more capabilities in the future.
+
 ## Operators
 
 ### Prefix/Unary Operations
@@ -237,6 +263,7 @@ More often than not this will not actually matter for normal usage since the rul
 
 `"."`: Member access operator for accessing fields
 
+// "Special" :skull:
 ### SPECIAL
 `=>`: Allows config declarations to do "first=>second=>third{}" instead of "first{second{third{}}}"
 to avoid nesting overhead if no properties wish to be set.
@@ -248,10 +275,9 @@ Syntax for accessing through a module symbol uses [`::`](#pathing) with "module:
 ### Innate module behavior
 Modules in their most basic form are an implicitly found graph with no need for anything but an import call. So, if A imports B, if B imports A, A technically knows C, and so on. This is how `chrn` is intended to be used.
 
-### Workspace :) (NON-EXISTENTENT)
+### Workspace :) (NON-EXISTENTENT) Maybe we shouldn't hallucinate this into reality. Maybe.
 N/A
 
-// Not a keyword, not an operator (maybe), not a function (!), not a predicate
 `e#`: Name bypass for treating a keyword as an identifier.
 
 Example:
@@ -259,7 +285,7 @@ Example:
 
 let e#export = 9
 var->
-    x: e#let
+    e#var: e#let
 nest->
     struct e#let {
         letness: u8
@@ -301,7 +327,7 @@ Contains("chrn") | Contains(1xF)
 
 ## Sections
 
-- Sections instruct how script code is interpreted, similar to how a statement would, but innately. They exist so that data is always defined in a readable, predictable manner.
+- Sections instruct how chrn is interpreted, similar to how a statement would, but innately. They exist so that data is always defined in a readable, predictable manner.
 
 - The `->` operator is used after section keywords to swap to the section. There cannot be more than one of each section.
 

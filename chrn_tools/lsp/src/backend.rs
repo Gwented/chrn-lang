@@ -46,7 +46,7 @@ use compilation::parser::ast::ast_concepts::AbstractConfigKind;
 use compilation::script_compiler::ScriptCompiler;
 use compilation::semantic::hir::hir_concepts::Type;
 use compilation::semantic::hir::hir_impls::{
-    ConfigMemberMetadataKind, ConfigRoot, ConfigRootMetadataKind, ImplHirKind, ImplMemberKind,
+    ConfigMemberMetadataKind, ConfigRoot, ConfigRootMetadataKind, ImplMemberKind,
 };
 use compilation::semantic::hir::hir_symbols::{Symbol, SymbolKind, VariableState};
 use parking_lot::RwLock;
@@ -494,31 +494,35 @@ impl Backend {
 /// Used by the completion handler to assign icons to items shown in the editor UI.
 fn symbol_completion_kind(compiler: &ScriptCompiler, sym: &Symbol) -> CompletionItemKind {
     match sym.kind {
-        SymbolKind::Type(type_id) => match &compiler.types[type_id].ty {
-            Type::Struct(_) | Type::Enum(_) | Type::TypeDef(_) | Type::BuiltinTypeInfo(_) => {
-                CompletionItemKind::STRUCT
+        SymbolKind::Type(mut type_id) => {
+            let checked = compilation::walk_type_id_deferred!(&compiler.types, type_id);
+            match &compiler.types[checked.inner].ty {
+                Type::Struct(_) | Type::Enum(_) | Type::TypeDef(_) | Type::BuiltinTypeInfo(_) => {
+                    CompletionItemKind::STRUCT
+                }
+                Type::Alias(_) => CompletionItemKind::FUNCTION,
+                Type::Func(func_def) if func_def.is_callable => CompletionItemKind::FUNCTION,
+                Type::Func(_) => CompletionItemKind::CONSTANT,
+                Type::Unknown | Type::Boundaries(_) => CompletionItemKind::VARIABLE,
+                Type::Deferred(_) => unreachable!(),
             }
-            Type::Alias(_) => CompletionItemKind::FUNCTION,
-            Type::Func(func_def) if func_def.is_callable => CompletionItemKind::FUNCTION,
-            Type::Func(_) => CompletionItemKind::CONSTANT,
-            Type::Unknown | Type::Boundaries(_) | Type::Deferred(_) => CompletionItemKind::VARIABLE,
-        },
+        }
         SymbolKind::Variable(var_id) => {
             let var = &compiler.variables[var_id];
             let VariableState::Known(val_id) = var.state else {
                 return CompletionItemKind::VARIABLE;
             };
-            let type_id = compiler.values[val_id].type_id;
-            match &compiler.types[type_id].ty {
+            let mut type_id = compiler.values[val_id].type_id;
+            let checked = compilation::walk_type_id_deferred!(&compiler.types, type_id);
+            match &compiler.types[checked.inner].ty {
                 Type::BuiltinTypeInfo(_) | Type::Struct(_) | Type::TypeDef(_) | Type::Enum(_) => {
                     CompletionItemKind::VARIABLE
                 }
                 Type::Alias(_) => CompletionItemKind::FUNCTION,
                 Type::Func(func_def) if func_def.is_callable => CompletionItemKind::FUNCTION,
                 Type::Func(_) => CompletionItemKind::CONSTANT,
-                Type::Unknown | Type::Boundaries(_) | Type::Deferred(_) => {
-                    CompletionItemKind::VARIABLE
-                }
+                Type::Unknown | Type::Boundaries(_) => CompletionItemKind::VARIABLE,
+                Type::Deferred(_) => unreachable!(),
             }
         }
         SymbolKind::Namespace => match sym.associated_scope.expect("Should have namespace") {
@@ -818,13 +822,11 @@ fn config_type_info(
                 let members = struct_def
                     .fields
                     .iter()
-                    .filter_map(|member_id| match &compiler.sym_members[*member_id] {
-                        compilation::semantic::hir::hir_symbols::MemberSymbolKind::Field(field) => {
-                            Some((field.name_id, CompletionItemKind::FIELD))
-                        }
-                        compilation::semantic::hir::hir_symbols::MemberSymbolKind::Variant(_) => {
-                            None
-                        }
+                    .map(|member_id| {
+                        (
+                            compiler.get_field(*member_id).name_id,
+                            CompletionItemKind::FIELD,
+                        )
                     })
                     .collect();
                 return Some((members, ConfigSchemaKind::Struct));
@@ -833,11 +835,11 @@ fn config_type_info(
                 let members = enum_def
                     .variants
                     .iter()
-                    .filter_map(|member_id| match &compiler.sym_members[*member_id] {
-                        compilation::semantic::hir::hir_symbols::MemberSymbolKind::Variant(
-                            variant,
-                        ) => Some((variant.name_id, CompletionItemKind::ENUM_MEMBER)),
-                        compilation::semantic::hir::hir_symbols::MemberSymbolKind::Field(_) => None,
+                    .map(|member_id| {
+                        (
+                            compiler.get_variant(*member_id).name_id,
+                            CompletionItemKind::ENUM_MEMBER,
+                        )
                     })
                     .collect();
                 return Some((members, ConfigSchemaKind::Enum));
@@ -883,11 +885,9 @@ fn config_member_type_id(
 }
 
 fn config_root_type_id(compiler: &ScriptCompiler, cfg_root: &ConfigRoot) -> Option<TypeId> {
-    let sym_id = cfg_root.linked_sym_id?;
-    match &compiler.syms[sym_id].kind {
-        SymbolKind::Type(type_id) => Some(*type_id),
-        _ => None,
-    }
+    cfg_root
+        .linked_sym_id
+        .map(|sym_id| compiler.extract_type_id(sym_id))
 }
 
 fn config_candidate_for_member(
@@ -897,21 +897,13 @@ fn config_candidate_for_member(
     pairs: &HashMap<u32, u32>,
     candidates: &mut Vec<ConfigCompletionCandidate>,
 ) {
-    let ImplMemberKind::ConfigMember(member) = &compiler.impl_membs[member_id] else {
-        return;
-    };
+    let member = compiler.get_cfg_member(member_id);
 
     if let Some((open, close)) = config_block_bounds(state, pairs, member.common.name_span.end) {
         let configured_members = member
             .cfg_members
             .iter()
-            .filter_map(|child_id| match &compiler.impl_membs[*child_id] {
-                ImplMemberKind::ConfigMember(child) => Some(child.common.name_id),
-                ImplMemberKind::OptAssignmentRoot(_)
-                | ImplMemberKind::OptAssignmentMember(_)
-                | ImplMemberKind::MultiTypeAssignment(_)
-                | ImplMemberKind::Unknown { .. } => None,
-            })
+            .map(|child_id| compiler.get_cfg_member(*child_id).common.name_id)
             .collect();
 
         candidates.push(ConfigCompletionCandidate {
@@ -1002,7 +994,6 @@ fn cursor_in_override_config(
         let compilation::semantic::compilation_unit::CompilationUnit::Impl(impl_id) = unit else {
             return false;
         };
-        let ImplHirKind::Config(_) = compiler.impls[*impl_id].kind;
         let Some(ast_id) = compiler.impls[*impl_id].ast_id else {
             return false;
         };
@@ -1030,8 +1021,7 @@ fn config_completion_candidate(
             continue;
         }
 
-        let ImplHirKind::Config(cfg_root_id) = &impl_hir.kind;
-        let cfg_root = &compiler.cfgs[*cfg_root_id];
+        let cfg_root = compiler.get_cfg_root(*impl_id);
         let Some(ast_id) = impl_hir.ast_id else {
             continue;
         };
@@ -1070,13 +1060,7 @@ fn config_completion_candidate(
                 .common
                 .cfg_membs
                 .iter()
-                .filter_map(|member_id| match &compiler.impl_membs[*member_id] {
-                    ImplMemberKind::ConfigMember(member) => Some(member.common.name_id),
-                    ImplMemberKind::OptAssignmentRoot(_)
-                    | ImplMemberKind::OptAssignmentMember(_)
-                    | ImplMemberKind::MultiTypeAssignment(_)
-                    | ImplMemberKind::Unknown { .. } => None,
-                })
+                .map(|member_id| compiler.get_cfg_member(*member_id).common.name_id)
                 .collect(),
         });
 
@@ -1108,39 +1092,90 @@ fn completion_follows_override(state: &DocumentState, prefix_start: usize) -> bo
     })
 }
 
-/// Resolve the namespace immediately preceding an override shorthand arrow.
+/// Extracts the active intrinsic namespace path at a config-member position.
 ///
-/// Use tokens instead of resolved config HIR because an invalid child after the
-/// cursor can prevent core from retaining that config member. The namespace
-/// transition at `override JAVA=>` is still unambiguous in the source.
-fn override_arrow_namespace_scope(
+/// Use tokens instead of resolved config HIR because an incomplete member at the
+/// cursor can prevent core from retaining the surrounding override config. Both
+/// braces and shorthand arrows establish config nesting, so this handles paths at
+/// any depth, such as `override JAVA { t` and `override JAVA=>types=>j`.
+fn override_config_namespace_path(
     state: &DocumentState,
-    compiler: &ScriptCompiler,
     prefix_start: usize,
-) -> Option<ScopeId> {
+) -> Option<Vec<InternedId>> {
     let relative_start = prefix_start.saturating_sub(state.script_start) as u32;
     let before_prefix = state
         .tokens
         .partition_point(|token| token.span.end <= relative_start);
-    let tokens = state
-        .tokens
-        .get(before_prefix.checked_sub(3)?..before_prefix)?;
+    let tokens = &state.tokens[..before_prefix];
+    let mut active_delimiters = Vec::new();
 
-    let [override_token, namespace_token, arrow_token] = tokens else {
-        return None;
-    };
-    if !matches!(
-        override_token.tok,
-        ScriptToken::Keyword(lang::keywords::Keyword::Override)
-    ) || !matches!(arrow_token.tok, ScriptToken::NotSlimArrow)
-    {
+    for (index, token) in tokens.iter().enumerate() {
+        match token.tok {
+            ScriptToken::OCurlyBracket | ScriptToken::NotSlimArrow => {
+                active_delimiters.push(index);
+            }
+            ScriptToken::CCurlyBracket => {
+                while let Some(open) = active_delimiters.pop() {
+                    if matches!(tokens[open].tok, ScriptToken::OCurlyBracket) {
+                        break;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let previous = tokens
+        .iter()
+        .rposition(|token| !matches!(token.tok, ScriptToken::EOF))?;
+    if active_delimiters.last().copied() != Some(previous) {
         return None;
     }
-    let ScriptToken::Id(namespace_name_id) = namespace_token.tok else {
-        return None;
-    };
 
-    namespace_scope_of_intrinsic_symbol(compiler, namespace_name_id)
+    let root = active_delimiters.iter().rposition(|&open| {
+        open >= 2
+            && matches!(tokens[open - 1].tok, ScriptToken::Id(_))
+            && matches!(
+                tokens[open - 2].tok,
+                ScriptToken::Keyword(lang::keywords::Keyword::Override)
+            )
+    })?;
+
+    active_delimiters[root..]
+        .iter()
+        .map(|&open| match tokens.get(open.checked_sub(1)?)?.tok {
+            ScriptToken::Id(name_id) => Some(name_id),
+            _ => None,
+        })
+        .collect()
+}
+
+fn resolve_intrinsic_config_namespace_path(
+    compiler: &ScriptCompiler,
+    path: &[InternedId],
+) -> Option<ScopeId> {
+    let (&root, tail) = path.split_first()?;
+    let mut scope_id = namespace_scope_of_intrinsic_symbol(compiler, root)?;
+
+    for &name_id in tail {
+        let sym_id = scopes::find_sym_id(
+            compiler,
+            scopes_concepts::AssociatedScopeKind::Scope(scope_id),
+            name_id,
+            scopes_concepts::ScopeType::Complex,
+            scopes_concepts::ScopeLookupPattern::NamespaceOnly,
+            scopes_concepts::ScopeLookupPreferenceFlags::none(),
+        )?
+        .found_sym_id;
+        let CompletionNamespace::Scope(next_scope_id) =
+            completion_namespace_for_symbol(&compiler.syms[sym_id])?
+        else {
+            return None;
+        };
+        scope_id = next_scope_id;
+    }
+
+    Some(scope_id)
 }
 
 fn override_root_completion_items(
@@ -2121,11 +2156,12 @@ impl LanguageServer for Backend {
             return Ok(Some(CompletionResponse::Array(items)));
         }
 
-        // `override JAVA=>` is a direct namespace transition. Resolve it from
-        // tokens so invalid text after the cursor cannot make completion fall
-        // back to the enclosing complex config member.
+        // Resolve the active override namespace from config delimiters. This is
+        // independent of retained config HIR, so partial members work after
+        // either braces or arbitrarily nested shorthand arrows.
         if let Some(compiler) = &state.compiler
-            && let Some(scope_id) = override_arrow_namespace_scope(state, compiler, start_b)
+            && let Some(path) = override_config_namespace_path(state, start_b)
+            && let Some(scope_id) = resolve_intrinsic_config_namespace_path(compiler, &path)
         {
             let items = compiler.scopes[scope_id]
                 .scope
@@ -2219,20 +2255,18 @@ impl LanguageServer for Backend {
                 }
             }
 
-            // The current module and everything it imports.
-            // Index the `Arena` with a typed `ModuleId` (the only impl the primary
-            // `Index` for `Arena` provides).
-            let current_module = &compiler.mods[ModuleId::new(0)];
-            for module in &compiler.mods.items {
-                let is_self = module.mod_id.id == 0;
-                let is_imported = current_module.imports.iter().any(|i| {
-                    i.name_id == module.name_id
-                        || i.sp_alias_id.as_ref().map(|sp| sp.inner) == Some(module.name_id)
-                });
-
-                if is_self || is_imported {
+            // Module symbols are the compiler's authoritative view of names visible
+            // from this module, including import aliases.
+            for sym_id in reachable_module_symbols(compiler, ModuleId::new(0)) {
+                let sym = &compiler.syms[sym_id];
+                if matches!(sym.kind, SymbolKind::Namespace)
+                    && matches!(
+                        sym.associated_scope,
+                        Some(scopes_concepts::AssociatedScopeKind::Module(_))
+                    )
+                {
                     push_item(
-                        state.interner.search(module.name_id).to_string(),
+                        state.interner.search(sym.name_id).to_string(),
                         CompletionItemKind::MODULE,
                     );
                 }

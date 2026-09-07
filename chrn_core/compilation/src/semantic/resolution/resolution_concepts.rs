@@ -20,7 +20,9 @@ pub enum TypeExprResult {
     // smybol
     /// Found a smybol but it wasn't a type
     NotAType {
+        /// `SymbolId` of `found_sym_id`
         found_sym_id: SymbolId,
+        /// Spanned identifier of symbol that is not a type
         sp_name_id: SpannedContainer<InternedId>,
         scope_found_in: AssociatedScopeKind,
     },

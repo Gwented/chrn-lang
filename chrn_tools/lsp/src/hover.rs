@@ -48,8 +48,7 @@ use compilation::semantic::hir::hir_symbols::{
 };
 use lang::types::builtins::{BuiltinType, BuiltinTypeKind};
 use lang::types::externs::{
-    CharacterEncoding, ExternPlatformType, ExternTypeRepresentation,
-    Signedness, TypeWidth,
+    CharacterEncoding, ExternPlatformType, ExternTypeRepresentation, Signedness, TypeWidth,
 };
 use lang::values::Value;
 use tower_lsp::lsp_types;
@@ -102,7 +101,7 @@ pub fn compute_hover(
     let (hover_text, hover_range): (String, Option<(usize, usize)>) = match tok {
         ScriptToken::Def => {
             let msg = format!(
-                "**@def** — Starts embedded script block\n\n{}\n\n**Example:**\n```chrn\n@def\n    let x = 1\n    var->\n        name: str\n@end\n```",
+                "**@def** — Starts a chrn config inside a data file\n\n{}\n\nThe config ends at `@end`. Everything after it is data. Use only comments above `@def`; other text can confuse the scan that finds the config block.\n\n**Example:**\n```chrn\n@def\nvar->\n    value: str [!IsEmpty]\n@end\n{{ \"value\": \"configured\" }}\n```",
                 document::HOVER_DASHES
             );
 
@@ -110,7 +109,7 @@ pub fn compute_hover(
         }
         ScriptToken::End => {
             let msg = format!(
-                "**@end** — Ends embedded script block\n\n{}\n\n**Example:**\n```chrn\n@end\n// Everything after this is serialized data\n```",
+                "**@end** — Ends a chrn config inside a data file\n\n{}\n\nEverything after `@end` is data. You may leave out `@def` when the config starts at the beginning of the file.\n\n**With `@def`:**\n```chrn\n@def\nvar->\n    value: i32\n@end\n{{ \"value\": 1 }}\n```\n\n**Config at the start of the file:**\n```chrn\nvar->\n    value: i32\n@end\n{{ \"value\": 1 }}\n```",
                 document::HOVER_DASHES
             );
 
@@ -167,7 +166,7 @@ pub fn compute_hover(
             Some((span_start, span_end)),
         ),
         ScriptToken::SlimArrow => (
-            "**->** — Section declaration operator".into(),
+            "**->** — Starts a `var`, `nest`, or `complex` section (for example, `nest->`)".into(),
             Some((span_start, span_end)),
         ),
         _ => (String::new(), Some((span_start, span_end))),
@@ -363,8 +362,9 @@ fn extern_type_hover(interner: &Intern, extern_ty: ExternPlatformType) -> String
     };
 
     format!(
-        "extern type **{}**\n\n**Representation:** {}",
+        "extern type **{}**\n\n**Platform:** {}\n\n**Representation:** {}",
         interner.search(metadata.name_id),
+        interner.search(extern_ty.platform_name()),
         representation
     )
 }
@@ -450,16 +450,8 @@ fn field_hover(
     let field = &ast.get_struct(ast_id).fields[field_idx];
     let field_name = state.interner.search(field.name_id);
 
-    let SymbolKind::Type(type_id) = sym.kind else {
-        unreachable!("field owner must be a type symbol")
-    };
-    let Type::Struct(struct_def) = &compiler.types[type_id].ty else {
-        unreachable!("field owner must reference a struct type")
-    };
-    let MemberSymbolKind::Field(field_repre) = &compiler.sym_members[struct_def.fields[field_idx]]
-    else {
-        unreachable!("struct field id must reference a field member")
-    };
+    let struct_def = compiler.get_struct(owner_sym_id);
+    let field_repre = compiler.get_field(struct_def.fields[field_idx]);
     let type_str = format_type(
         &compiler.types[field_repre.type_id].ty,
         compiler,
@@ -483,17 +475,8 @@ fn variant_hover(
     let variant = &ast.get_enum(ast_id).variants[variant_idx];
     let variant_name = state.interner.search(variant.name_id);
 
-    let SymbolKind::Type(type_id) = sym.kind else {
-        unreachable!("variant owner must be a type symbol")
-    };
-    let Type::Enum(enum_def) = &compiler.types[type_id].ty else {
-        unreachable!("variant owner must reference an enum type")
-    };
-    let MemberSymbolKind::Variant(variant_repre) =
-        &compiler.sym_members[enum_def.variants[variant_idx]]
-    else {
-        unreachable!("enum variant id must reference a variant member")
-    };
+    let enum_def = compiler.get_enum(owner_sym_id);
+    let variant_repre = compiler.get_variant(enum_def.variants[variant_idx]);
     if let Some(vty_id) = variant_repre.type_id {
         let type_str = format_type(
             &compiler.types[vty_id].ty,
@@ -684,17 +667,13 @@ fn format_type(
                 let fields: Vec<String> = struct_def
                     .fields
                     .iter()
-                    .map(|member_id| match &compiler.sym_members[*member_id] {
-                        MemberSymbolKind::Field(field) => {
-                            let field_name = interner.search(field.name_id);
-                            let field_ty = &compiler.types[field.type_id].ty;
-                            let field_ty_str =
-                                format_type(field_ty, compiler, interner, TypeDisplay::Reference);
-                            format!("\t{}: {}", field_name, field_ty_str)
-                        }
-                        MemberSymbolKind::Variant(_) => {
-                            unreachable!("struct field id must reference a field member")
-                        }
+                    .map(|member_id| {
+                        let field = compiler.get_field(*member_id);
+                        let field_name = interner.search(field.name_id);
+                        let field_ty = &compiler.types[field.type_id].ty;
+                        let field_ty_str =
+                            format_type(field_ty, compiler, interner, TypeDisplay::Reference);
+                        format!("\t{}: {}", field_name, field_ty_str)
                     })
                     .collect();
                 format!("struct {} {{\n{}\n}}", name, fields.join("\n"))
@@ -713,25 +692,17 @@ fn format_type(
                 let variants: Vec<String> = enum_def
                     .variants
                     .iter()
-                    .map(|member_id| match &compiler.sym_members[*member_id] {
-                        MemberSymbolKind::Variant(v) => {
-                            let variant_name = interner.search(v.name_id);
+                    .map(|member_id| {
+                        let variant = compiler.get_variant(*member_id);
+                        let variant_name = interner.search(variant.name_id);
 
-                            if let Some(type_id) = v.type_id {
-                                let variant_ty = &compiler.types[type_id].ty;
-                                let variant_ty_str = format_type(
-                                    variant_ty,
-                                    compiler,
-                                    interner,
-                                    TypeDisplay::Reference,
-                                );
-                                format!("\t{}: {}", variant_name, variant_ty_str)
-                            } else {
-                                format!("\t{}", variant_name)
-                            }
-                        }
-                        MemberSymbolKind::Field(_) => {
-                            unreachable!("enum variant id must reference a variant member")
+                        if let Some(type_id) = variant.type_id {
+                            let variant_ty = &compiler.types[type_id].ty;
+                            let variant_ty_str =
+                                format_type(variant_ty, compiler, interner, TypeDisplay::Reference);
+                            format!("\t{}: {}", variant_name, variant_ty_str)
+                        } else {
+                            format!("\t{}", variant_name)
                         }
                     })
                     .collect();
