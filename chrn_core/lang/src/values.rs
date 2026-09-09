@@ -4,7 +4,7 @@
 use chrn_utils::id_types::{InternedId, SymbolId};
 
 use crate::{
-    chrn_classifier::{ChrnClassifiable, ChrnClassifier},
+    chrn_classifier::{ChrnClassifiable, ChrnClassified},
     types::boundaries::TypeBoundaryFlags,
 };
 
@@ -88,17 +88,17 @@ impl ValueKind {
 }
 
 impl ChrnClassifiable for ValueKind {
-    fn to_classified(&self) -> ChrnClassifier {
+    fn to_classified(&self) -> ChrnClassified {
         match self {
-            ValueKind::I64 => ChrnClassifier::I64,
-            ValueKind::F64 => ChrnClassifier::F64,
-            ValueKind::Char => ChrnClassifier::Char,
-            ValueKind::Tuple => ChrnClassifier::Tuple,
-            ValueKind::Bool => ChrnClassifier::Bool,
-            ValueKind::InternedStr | ValueKind::RuntimeStr => ChrnClassifier::Str,
-            ValueKind::Unknown => ChrnClassifier::Unknown,
-            ValueKind::Array => ChrnClassifier::Array,
-            ValueKind::Func => ChrnClassifier::Func,
+            ValueKind::I64 => ChrnClassified::I64,
+            ValueKind::F64 => ChrnClassified::F64,
+            ValueKind::Char => ChrnClassified::Char,
+            ValueKind::Tuple => ChrnClassified::Tuple,
+            ValueKind::Bool => ChrnClassified::Bool,
+            ValueKind::InternedStr | ValueKind::RuntimeStr => ChrnClassified::Str,
+            ValueKind::Unknown => ChrnClassified::Unknown,
+            ValueKind::Array => ChrnClassified::Array,
+            ValueKind::Func => ChrnClassified::Func,
         }
     }
 }

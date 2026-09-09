@@ -40,7 +40,7 @@ for varthing1 {}
 
 // let abtest = 3
 // This is a bug, it can't resolve to core. Definitely other related namespace issues, sad face.
-let x = evil::core::i8
+let x = evil::core::Comparable
 
 var->
 varthing1: str
@@ -62,7 +62,8 @@ for Structure {
         // Assuming `self` is going to exist
         //
         // Too terminal, should try to look for '{' and '}' maybe
-        override JAVA=>types {change i32 = java::char}
+        // Need to expect built-in only
+        override JAVA=>types {change Structure = java::char}
         // So, override cfg just isn't closing.
         // This should probably emit an error. Probably.
         override RUST{types {change x = rust::i32}}

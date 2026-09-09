@@ -1,5 +1,5 @@
 use chrn_utils::id_types::{ModuleId, ScopeId, SymbolId};
-use lang::chrn_classifier::{ChrnClassifiable, ChrnClassifier};
+use lang::chrn_classifier::{ChrnClassifiable, ChrnClassified};
 
 use crate::semantic::hir::{hir_concepts::Table, hir_symbols::SymbolKindFlat};
 
@@ -273,10 +273,10 @@ impl AssociatedScopeKind {
 }
 
 impl ChrnClassifiable for AssociatedScopeKind {
-    fn to_classified(&self) -> lang::chrn_classifier::ChrnClassifier {
+    fn to_classified(&self) -> lang::chrn_classifier::ChrnClassified {
         match self {
-            AssociatedScopeKind::Module(_) => ChrnClassifier::Module,
-            AssociatedScopeKind::Scope(_) => ChrnClassifier::Namespace,
+            AssociatedScopeKind::Module(_) => ChrnClassified::Module,
+            AssociatedScopeKind::Scope(_) => ChrnClassified::Namespace,
         }
     }
 }

@@ -5,7 +5,7 @@ use chrn_utils::{
     utils::containers::SpannedContainer,
 };
 use lang::{
-    chrn_classifier::{ChrnClassifiable, ChrnClassifier},
+    chrn_classifier::{ChrnClassifiable, ChrnClassified},
     types::boundaries::TypeBoundaryFlags,
 };
 
@@ -240,12 +240,12 @@ impl SectionKind {
 }
 
 impl ChrnClassifiable for SectionKind {
-    fn to_classified(&self) -> ChrnClassifier {
+    fn to_classified(&self) -> ChrnClassified {
         match self {
-            SectionKind::Neutral => ChrnClassifier::SectNeutral,
-            SectionKind::Var => ChrnClassifier::SectVar,
-            SectionKind::Nest => ChrnClassifier::SectNest,
-            SectionKind::Complex => ChrnClassifier::SectComplex,
+            SectionKind::Neutral => ChrnClassified::SectNeutral,
+            SectionKind::Var => ChrnClassified::SectVar,
+            SectionKind::Nest => ChrnClassified::SectNest,
+            SectionKind::Complex => ChrnClassified::SectComplex,
         }
     }
 }
@@ -321,26 +321,26 @@ impl BinaryOp {
 }
 
 impl ChrnClassifiable for BinaryOp {
-    fn to_classified(&self) -> ChrnClassifier {
+    fn to_classified(&self) -> ChrnClassified {
         match self {
-            BinaryOp::Add => ChrnClassifier::OpAdd,
-            BinaryOp::Sub => ChrnClassifier::Hyphen,
-            BinaryOp::Mult => ChrnClassifier::OpMult,
-            BinaryOp::Div => ChrnClassifier::OpDivide,
-            BinaryOp::Greater => ChrnClassifier::OpGreater,
-            BinaryOp::Less => ChrnClassifier::OpLess,
-            BinaryOp::GreaterOrEq => ChrnClassifier::OpGreaterOrEq,
-            BinaryOp::LessOrEq => ChrnClassifier::OpLessOrEq,
-            BinaryOp::Mod => ChrnClassifier::OpMod,
-            BinaryOp::And => ChrnClassifier::OpAnd,
-            BinaryOp::Or => ChrnClassifier::OpOr,
-            BinaryOp::EqTo => ChrnClassifier::OpEqualTo,
-            BinaryOp::NotEq => ChrnClassifier::OpNotEq,
-            BinaryOp::BitOr => ChrnClassifier::OpBitOr,
-            BinaryOp::BitAnd => ChrnClassifier::OpBitAnd,
-            BinaryOp::BitRightShift => ChrnClassifier::OpBitRightShift,
-            BinaryOp::BitLeftShift => ChrnClassifier::OpBitLeftShift,
-            BinaryOp::BitXor => ChrnClassifier::OpBitXor,
+            BinaryOp::Add => ChrnClassified::OpAdd,
+            BinaryOp::Sub => ChrnClassified::Hyphen,
+            BinaryOp::Mult => ChrnClassified::OpMult,
+            BinaryOp::Div => ChrnClassified::OpDivide,
+            BinaryOp::Greater => ChrnClassified::OpGreater,
+            BinaryOp::Less => ChrnClassified::OpLess,
+            BinaryOp::GreaterOrEq => ChrnClassified::OpGreaterOrEq,
+            BinaryOp::LessOrEq => ChrnClassified::OpLessOrEq,
+            BinaryOp::Mod => ChrnClassified::OpMod,
+            BinaryOp::And => ChrnClassified::OpAnd,
+            BinaryOp::Or => ChrnClassified::OpOr,
+            BinaryOp::EqTo => ChrnClassified::OpEqualTo,
+            BinaryOp::NotEq => ChrnClassified::OpNotEq,
+            BinaryOp::BitOr => ChrnClassified::OpBitOr,
+            BinaryOp::BitAnd => ChrnClassified::OpBitAnd,
+            BinaryOp::BitRightShift => ChrnClassified::OpBitRightShift,
+            BinaryOp::BitLeftShift => ChrnClassified::OpBitLeftShift,
+            BinaryOp::BitXor => ChrnClassified::OpBitXor,
         }
     }
 }
@@ -765,11 +765,11 @@ impl UnaryOp {
 }
 
 impl ChrnClassifiable for UnaryOp {
-    fn to_classified(&self) -> ChrnClassifier {
+    fn to_classified(&self) -> ChrnClassified {
         match self {
-            UnaryOp::Not => ChrnClassifier::ExclamationPoint,
-            UnaryOp::Negate => ChrnClassifier::Hyphen,
-            UnaryOp::BitNot => ChrnClassifier::OpBitNot,
+            UnaryOp::Not => ChrnClassified::ExclamationPoint,
+            UnaryOp::Negate => ChrnClassified::Hyphen,
+            UnaryOp::BitNot => ChrnClassified::OpBitNot,
         }
     }
 }

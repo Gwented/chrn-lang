@@ -1,7 +1,7 @@
 use chrn_utils::{id_types::InternedId, intern};
 
 use crate::{
-    chrn_classifier::{ChrnClassifiable, ChrnClassifier},
+    chrn_classifier::{ChrnClassifiable, ChrnClassified},
     types::{boundaries::TypeBoundaryFlags, builtins::BuiltinType},
 };
 
@@ -57,10 +57,10 @@ impl Directive {
 }
 
 impl ChrnClassifiable for Directive {
-    fn to_classified(&self) -> crate::chrn_classifier::ChrnClassifier {
+    fn to_classified(&self) -> crate::chrn_classifier::ChrnClassified {
         match self {
-            Directive::Warn => ChrnClassifier::DirectiveWarn,
-            Directive::Ignore => ChrnClassifier::DirectiveIgnore,
+            Directive::Warn => ChrnClassified::DirectiveWarn,
+            Directive::Ignore => ChrnClassified::DirectiveIgnore,
             Directive::Type(type_directive) => type_directive.to_classified(),
         }
     }
@@ -164,13 +164,13 @@ impl TypeDirective {
 }
 
 impl ChrnClassifiable for TypeDirective {
-    fn to_classified(&self) -> ChrnClassifier {
+    fn to_classified(&self) -> ChrnClassified {
         match self {
-            TypeDirective::Scient => ChrnClassifier::DirectiveScient,
-            TypeDirective::Hex => ChrnClassifier::DirectiveHex,
-            TypeDirective::Bin => ChrnClassifier::DirectiveBin,
-            TypeDirective::Octal => ChrnClassifier::DirectiveOctal,
-            TypeDirective::Unicode => ChrnClassifier::DirectiveUnicode,
+            TypeDirective::Scient => ChrnClassified::DirectiveScient,
+            TypeDirective::Hex => ChrnClassified::DirectiveHex,
+            TypeDirective::Bin => ChrnClassified::DirectiveBin,
+            TypeDirective::Octal => ChrnClassified::DirectiveOctal,
+            TypeDirective::Unicode => ChrnClassified::DirectiveUnicode,
         }
     }
 }

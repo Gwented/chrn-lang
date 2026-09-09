@@ -7,7 +7,7 @@ use chrn_utils::{
     utils::containers::SpannedContainer,
 };
 use lang::{
-    chrn_classifier::{ChrnClassifiable, ChrnClassifier},
+    chrn_classifier::{ChrnClassifiable, ChrnClassified},
     types::{boundaries::TypeBoundaryFlags, externs::ExternPlatformType},
 };
 
@@ -90,17 +90,17 @@ pub enum SymbolKind {
 
 impl SymbolKind {
     // This is getting obscure now...
-    pub fn to_classified(compiler: &ScriptCompiler, sym_id: SymbolId) -> ChrnClassifier {
+    pub fn to_classified(compiler: &ScriptCompiler, sym_id: SymbolId) -> ChrnClassified {
         let sym = &compiler.syms[sym_id];
         match &sym.kind {
-            SymbolKind::Type(type_id) => Type::to_fmt(&compiler.types, *type_id),
-            SymbolKind::Variable(_) => ChrnClassifier::Variable,
+            SymbolKind::Type(type_id) => Type::to_classified(&compiler.types, *type_id),
+            SymbolKind::Variable(_) => ChrnClassified::Variable,
             SymbolKind::Namespace => match sym.associated_scope.expect("Is kind namespace") {
-                AssociatedScopeKind::Module(_) => ChrnClassifier::Module,
-                AssociatedScopeKind::Scope(_) => ChrnClassifier::Namespace,
+                AssociatedScopeKind::Module(_) => ChrnClassified::Module,
+                AssociatedScopeKind::Scope(_) => ChrnClassified::Namespace,
             },
-            SymbolKind::Directive(_) => ChrnClassifier::Directive,
-            SymbolKind::ExternType(_) => ChrnClassifier::ExternType,
+            SymbolKind::Directive(_) => ChrnClassified::Directive,
+            SymbolKind::ExternType(_) => ChrnClassified::ExternType,
         }
     }
     pub fn to_flat(&self) -> SymbolKindFlat {
@@ -144,13 +144,13 @@ impl SymbolKindFlat {
 }
 
 impl ChrnClassifiable for SymbolKindFlat {
-    fn to_classified(&self) -> ChrnClassifier {
+    fn to_classified(&self) -> ChrnClassified {
         match self {
-            SymbolKindFlat::Type => ChrnClassifier::Type,
-            SymbolKindFlat::Variable => ChrnClassifier::Variable,
-            SymbolKindFlat::Namespace => ChrnClassifier::Namespace,
-            SymbolKindFlat::Directive => ChrnClassifier::Directive,
-            SymbolKindFlat::ExternType => ChrnClassifier::ExternType,
+            SymbolKindFlat::Type => ChrnClassified::Type,
+            SymbolKindFlat::Variable => ChrnClassified::Variable,
+            SymbolKindFlat::Namespace => ChrnClassified::Namespace,
+            SymbolKindFlat::Directive => ChrnClassified::Directive,
+            SymbolKindFlat::ExternType => ChrnClassified::ExternType,
         }
     }
 }
@@ -303,8 +303,8 @@ impl StructDef {
 }
 
 impl ChrnClassifiable for StructDef {
-    fn to_classified(&self) -> ChrnClassifier {
-        ChrnClassifier::Struct
+    fn to_classified(&self) -> ChrnClassified {
+        ChrnClassified::Struct
     }
 }
 
@@ -340,8 +340,8 @@ impl EnumDef {
 }
 
 impl ChrnClassifiable for EnumDef {
-    fn to_classified(&self) -> ChrnClassifier {
-        ChrnClassifier::Enum
+    fn to_classified(&self) -> ChrnClassified {
+        ChrnClassified::Enum
     }
 }
 
@@ -433,8 +433,8 @@ impl TypeDef {
 }
 
 impl ChrnClassifiable for TypeDef {
-    fn to_classified(&self) -> ChrnClassifier {
-        ChrnClassifier::TypeDef
+    fn to_classified(&self) -> ChrnClassified {
+        ChrnClassified::TypeDef
     }
 }
 
@@ -484,8 +484,8 @@ impl FuncDef {
 }
 
 impl ChrnClassifiable for FuncDef {
-    fn to_classified(&self) -> ChrnClassifier {
-        ChrnClassifier::Func
+    fn to_classified(&self) -> ChrnClassified {
+        ChrnClassified::Func
     }
 }
 
@@ -563,8 +563,8 @@ impl AliasDef {
 }
 
 impl ChrnClassifiable for AliasDef {
-    fn to_classified(&self) -> ChrnClassifier {
-        ChrnClassifier::Alias
+    fn to_classified(&self) -> ChrnClassified {
+        ChrnClassified::Alias
     }
 }
 
@@ -580,15 +580,15 @@ pub enum FuncKind {
 }
 
 impl ChrnClassifiable for FuncKind {
-    fn to_classified(&self) -> ChrnClassifier {
+    fn to_classified(&self) -> ChrnClassified {
         match self {
-            FuncKind::Contains => ChrnClassifier::FuncContains,
-            FuncKind::IsWhitespace => ChrnClassifier::IsWhitespace,
-            FuncKind::Range => ChrnClassifier::FuncRange,
-            FuncKind::StartsW => ChrnClassifier::FuncStartsW,
-            FuncKind::EndsW => ChrnClassifier::FuncEndsW,
-            FuncKind::Equals => ChrnClassifier::FuncEquals,
-            FuncKind::IsEmpty => ChrnClassifier::IsEmpty,
+            FuncKind::Contains => ChrnClassified::FuncContains,
+            FuncKind::IsWhitespace => ChrnClassified::IsWhitespace,
+            FuncKind::Range => ChrnClassified::FuncRange,
+            FuncKind::StartsW => ChrnClassified::FuncStartsW,
+            FuncKind::EndsW => ChrnClassified::FuncEndsW,
+            FuncKind::Equals => ChrnClassified::FuncEquals,
+            FuncKind::IsEmpty => ChrnClassified::IsEmpty,
         }
     }
 }

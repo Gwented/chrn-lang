@@ -10,7 +10,7 @@ use chrn_utils::{
     loop_abort,
 };
 use lang::{
-    chrn_classifier::{ChrnClassifiable, ChrnClassifier},
+    chrn_classifier::{ChrnClassifiable, ChrnClassified},
     types::{
         boundaries::TypeBoundaryFlags,
         builtins::{BuiltinType, BuiltinTypeKind},
@@ -23,14 +23,7 @@ use crate::{
     walk_type_id_deferred,
 };
 
-// This is kind of just a "concept" though
-use chrn_utils::id_types::{AstId, ConfigRootId, DirectiveId, InternedId, SymbolId, VariableId};
-
-// #[derive(Debug)]
-// pub struct SectionInfo {
-//     pub sections: [Option<SectionHir>; 5],
-//     pub compilation_syms: SymbolId,
-// }
+use chrn_utils::id_types::{AstId, InternedId, SymbolId, VariableId};
 
 // Who is this?
 #[derive(Debug)]
@@ -92,19 +85,6 @@ pub enum Type {
     Unknown,
 }
 
-/// Required metadata for compiler built-in types
-#[derive(Debug)]
-pub struct BuiltinTypeInfo {
-    pub sym_id: SymbolId,
-    pub ty: BuiltinType,
-}
-
-impl BuiltinTypeInfo {
-    pub fn new(sym_id: SymbolId, ty: BuiltinType) -> BuiltinTypeInfo {
-        BuiltinTypeInfo { sym_id, ty }
-    }
-}
-
 impl Type {
     pub fn kind(compiler: &ScriptCompiler, mut type_id: TypeId) -> TypeKind {
         let checked = walk_type_id_deferred!(compiler.types, type_id);
@@ -118,7 +98,7 @@ impl Type {
             // This is the only issue since it's not a single Formatted.
             // The next obvious decision should be to do, "Formatted::NumericIntegerRanged", etc.,
             // where we have 4000 variants which
-            Type::Boundaries(_) => TypeKind::Boundaries,
+            Type::Boundaries(flags) => TypeKind::Boundaries(*flags),
             Type::Unknown => TypeKind::Unknown,
             Type::Deferred(_) => unreachable!(),
         }
@@ -150,7 +130,7 @@ impl Type {
     }
 
     /// The env can't be passed into to_fmt so
-    pub fn to_fmt(types: &Arena<TypeInfo, TypeId>, mut type_id: TypeId) -> ChrnClassifier {
+    pub fn to_classified(types: &Arena<TypeInfo, TypeId>, mut type_id: TypeId) -> ChrnClassified {
         let checked = walk_type_id_deferred!(&types, type_id);
         match &types[checked.inner].ty {
             Type::BuiltinTypeInfo(builtin_type) => builtin_type.ty.kind().to_classified(),
@@ -162,8 +142,8 @@ impl Type {
             // This is the only issue since it's not a single Formatted.
             // The next obvious decision should be to do, "Formatted::NumericIntegerRanged", etc.,
             // where we have 4000 variants which
-            Type::Boundaries(flags) => ChrnClassifier::Boundaries(*flags),
-            Type::Unknown => ChrnClassifier::Unknown,
+            Type::Boundaries(flags) => ChrnClassified::Boundaries(*flags),
+            Type::Unknown => ChrnClassified::Unknown,
             Type::Deferred(_) => unreachable!(),
         }
     }
@@ -171,14 +151,42 @@ impl Type {
 
 // WE LOST
 /// Flat variation of `Type`
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum TypeKind {
     BuiltinType(BuiltinTypeKind),
     Struct,
     TypeDef,
-    Boundaries,
+    Boundaries(TypeBoundaryFlags),
     Enum,
     Func,
     Alias,
     Unknown,
+}
+
+impl ChrnClassifiable for TypeKind {
+    fn to_classified(&self) -> ChrnClassified {
+        match self {
+            TypeKind::BuiltinType(kind) => kind.to_classified(),
+            TypeKind::Struct => ChrnClassified::Struct,
+            TypeKind::TypeDef => ChrnClassified::TypeDef,
+            TypeKind::Boundaries(flags) => ChrnClassified::Boundaries(*flags),
+            TypeKind::Enum => ChrnClassified::Enum,
+            TypeKind::Func => ChrnClassified::Func,
+            TypeKind::Alias => ChrnClassified::Alias,
+            TypeKind::Unknown => ChrnClassified::Unknown,
+        }
+    }
+}
+
+/// Required metadata for compiler built-in types
+#[derive(Debug)]
+pub struct BuiltinTypeInfo {
+    pub sym_id: SymbolId,
+    pub ty: BuiltinType,
+}
+
+impl BuiltinTypeInfo {
+    pub fn new(sym_id: SymbolId, ty: BuiltinType) -> BuiltinTypeInfo {
+        BuiltinTypeInfo { sym_id, ty }
+    }
 }

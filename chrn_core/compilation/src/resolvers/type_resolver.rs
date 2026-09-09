@@ -31,7 +31,7 @@ use chrn_utils::source_map::source_diagnostic::{
 };
 use chrn_utils::source_map::source_span::{self, SourceSpan};
 use chrn_utils::utils::containers::{SpannedContainer, SpannedContainerRef};
-use lang::chrn_classifier::ChrnClassifier;
+use lang::chrn_classifier::ChrnClassified;
 use lang::values::{self, Value};
 
 use crate::constraints::ArgConstraint;
@@ -53,6 +53,7 @@ use crate::resolvers::type_resolver::cfg_ctx::{
     ConfigRootComplexContext, ConfigRootContextKind, ConfigRootOverrideContext,
 };
 use crate::resolvers::typechecker;
+use crate::resolvers::typechecker::typechecker_concepts::{ExpectedKind, ExpectedKindType};
 use crate::script_compiler::{ScriptCompiler, compiler_constants};
 use crate::semantic::checker_helpers::{DuplicateIdentResult, DuplicateTracker};
 use crate::semantic::compilation_unit::CompilationUnit;
@@ -736,7 +737,7 @@ impl<'res> TypeResolver<'res> {
             let preset_err = PresetErr::DuplicateIdents {
                 sp_original: found.original,
                 sp_dup: found.dup,
-                classifier: ChrnClassifier::ConfigOption,
+                classifier: ChrnClassified::ConfigOption,
             };
 
             let builder = preset_reporter::create_diag_builder_preset(
@@ -888,7 +889,7 @@ impl<'res> TypeResolver<'res> {
                                     let preset_err =
                                         PresetErr::Lookup(LookupError::ImpossibleTypeMemberAccess(
                                             SpannedContainer::new(
-                                                Type::to_fmt(&self.compiler.types, type_id),
+                                                Type::to_classified(&self.compiler.types, type_id),
                                                 decl_span,
                                             ),
                                         ));
@@ -923,7 +924,8 @@ impl<'res> TypeResolver<'res> {
                                 .compiler
                                 .get_span_from_type_id(type_id)
                                 .expect("Should have a span since it has members and was searched");
-                                    let fmtted_ty = Type::to_fmt(&self.compiler.types, type_id);
+                                    let fmtted_ty =
+                                        Type::to_classified(&self.compiler.types, type_id);
 
                                     // let found_type = &self.compiler.types[type_id];
 
@@ -1441,6 +1443,33 @@ impl<'res> TypeResolver<'res> {
                                 continue;
                             }
                         };
+
+                        // May never accept more than built-in since that may be over-complicating
+                        // for little benefit.
+                        //
+                        // WARN: This removed the invalid built-in so later stages don't have to
+                        // worry about filtering wrong data. But not sure if that's best especially
+                        // in regards to the LSP.
+                        if !typechecker::is_expected_ty(
+                            self.compiler,
+                            ExpectedKindType::AnyBuiltin,
+                            type_id,
+                        ) {
+                            let preset_err = PresetErr::TypeMismatch {
+                                expected_kind: ExpectedKindType::AnyBuiltin,
+                                sp_found_type_id: SpannedContainer::new(type_id, sp_ty_expr.span),
+                            };
+                            preset_reporter::report_preset(
+                                self.compiler,
+                                &mut self.summary,
+                                preset_err,
+                                env.region,
+                                self.cfg,
+                                self.interner,
+                            );
+                            continue;
+                        }
+
                         to_assign.push(type_id);
                     }
 
@@ -1520,7 +1549,7 @@ impl<'res> TypeResolver<'res> {
                         };
                     // Probably should be a preset err version
                     if !typechecker::is_expected_sym(
-                        &self.compiler.syms,
+                        &self.compiler,
                         SymbolKindFlat::ExternType,
                         extern_type_sym_id,
                     ) {
@@ -1560,7 +1589,7 @@ impl<'res> TypeResolver<'res> {
             let preset_err = PresetErr::DuplicateIdents {
                 sp_original: found.original,
                 sp_dup: found.dup,
-                classifier: ChrnClassifier::ConfigOption,
+                classifier: ChrnClassified::ConfigOption,
             };
 
             let builder = preset_reporter::create_diag_builder_preset(
@@ -1687,8 +1716,10 @@ impl<'res> TypeResolver<'res> {
                                         // with the current config member.
                                         let mut should_break = false;
 
-                                        let parent_memb_fmtted_ty =
-                                            Type::to_fmt(&self.compiler.types, parent_type_id);
+                                        let parent_memb_fmtted_ty = Type::to_classified(
+                                            &self.compiler.types,
+                                            parent_type_id,
+                                        );
 
                                         //WARN: COMPLEX SPAN ROUTING FOR ALL OF THESE SO COULD NEED ALTERING
                                         let src_diag = match lookup_res {
@@ -1707,7 +1738,7 @@ impl<'res> TypeResolver<'res> {
                                                 let preset_err = PresetErr::Lookup(
                                                     LookupError::ImpossibleTypeMemberAccess(
                                                         SpannedContainer::new(
-                                                            Type::to_fmt(
+                                                            Type::to_classified(
                                                                 &self.compiler.types,
                                                                 type_id,
                                                             ),
@@ -2003,7 +2034,7 @@ impl<'res> TypeResolver<'res> {
             let preset_err = PresetErr::DuplicateIdents {
                 sp_original,
                 sp_dup,
-                classifier: ChrnClassifier::ConfigRoot,
+                classifier: ChrnClassified::ConfigRoot,
             };
 
             let builder = preset_reporter::create_diag_builder_preset(
@@ -3131,7 +3162,7 @@ impl<'res> TypeResolver<'res> {
             let preset_err = PresetErr::DuplicateIdents {
                 sp_original: found.original,
                 sp_dup: found.dup,
-                classifier: ChrnClassifier::Parameter,
+                classifier: ChrnClassified::Parameter,
             };
 
             let builder = preset_reporter::create_diag_builder_preset(
@@ -3363,7 +3394,8 @@ impl<'res> TypeResolver<'res> {
                                         Vec::new(),
                                     )
                                 }
-                                Type::BuiltinTypeInfo(_)
+                                Type::Boundaries(_)
+                                | Type::BuiltinTypeInfo(_)
                                 | Type::Struct(_)
                                 | Type::Enum(_)
                                 | Type::TypeDef(_)
@@ -3385,8 +3417,10 @@ impl<'res> TypeResolver<'res> {
 
                                     return Err(PresetErr::General(src_diag));
                                 }
-                                Type::Boundaries(ty_constraint) => todo!(),
-                                Type::Deferred(type_id) => todo!("Is this possible?"),
+                                // I think?
+                                Type::Deferred(_) => unreachable!(
+                                    "A deferred type is an internal concept. Not user selected."
+                                ),
                             }
                         }
                         SymbolKind::Variable(var_id) => {
@@ -3555,7 +3589,7 @@ impl<'res> TypeResolver<'res> {
                 } else {
                     Err(PresetErr::NumericOverflow {
                         sp_num: SpannedContainer::new(*name_id, spanned_expr.span),
-                        fmtted_ty: ChrnClassifier::Integer,
+                        fmtted_ty: ChrnClassified::Integer,
                     })
                 }
             }
@@ -3585,7 +3619,7 @@ impl<'res> TypeResolver<'res> {
                 } else {
                     Err(PresetErr::NumericOverflow {
                         sp_num: SpannedContainer::new(*name_id, spanned_expr.span),
-                        fmtted_ty: ChrnClassifier::Float,
+                        fmtted_ty: ChrnClassified::Float,
                     })
                 }
             }

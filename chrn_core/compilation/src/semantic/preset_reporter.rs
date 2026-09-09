@@ -8,6 +8,7 @@ use crate::lookup::scopes;
 use crate::lookup::scopes::scopes_concepts::AssociatedScopeKind;
 use crate::resolvers::resolver_env::ResolverEnv;
 use crate::script_compiler::ScriptCompiler;
+use crate::semantic::hir::hir_concepts::Type;
 use crate::semantic::hir::hir_symbols::{SymbolKind, SymbolOrigin};
 use crate::semantic::preset_reporter::engine_concepts::{
     AvailableKind, EngineOption, EngineOptionBase, ListAvailable,
@@ -477,11 +478,11 @@ pub(crate) fn create_diag_builder_preset(
                         .into(),
                 )
         }
+        //NOTE: Maybe collapse these 2
         PresetErr::SymbolMismatch {
             expected_kind,
             sp_found_sym_id,
         } => {
-            // let found_sym = &compiler.syms[found_sym_id];
             let core_msg = format!(
                 "Expected `{}`, found `{}`",
                 expected_kind.to_classified(),
@@ -489,6 +490,20 @@ pub(crate) fn create_diag_builder_preset(
             );
             SourceDiagnostic::builder(None, DiagnosticLevel::Error, core_msg, region.path_id)
                 .add_annotation(sp_found_sym_id.span, AnnotationKind::Primary, None)
+        }
+        PresetErr::TypeMismatch {
+            expected_kind,
+            sp_found_type_id,
+        } => {
+            // What if there was a formatter that understood that any builtin does not want
+            // back-quotes and. Maybe not.
+            let core_msg = format!(
+                "Expected `{}`, found `{}`",
+                expected_kind.to_string(),
+                Type::to_classified(&compiler.types, sp_found_type_id.inner)
+            );
+            SourceDiagnostic::builder(None, DiagnosticLevel::Error, core_msg, region.path_id)
+                .add_annotation(sp_found_type_id.span, AnnotationKind::Primary, None)
         }
         PresetErr::TypeBoundaryBoundConflict {
             inferred: current_inferred,

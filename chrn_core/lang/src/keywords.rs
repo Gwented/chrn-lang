@@ -2,7 +2,7 @@ use std::ops::RangeInclusive;
 
 use chrn_utils::{id_types::InternedId, intern};
 
-use crate::chrn_classifier::{self, ChrnClassifiable, ChrnClassifier};
+use crate::chrn_classifier::{self, ChrnClassifiable, ChrnClassified};
 
 /// Size in bytes for `@def` and `@end`
 pub const REGION_CLAUSE_SIZE: usize = 4;
@@ -40,23 +40,23 @@ pub enum Keyword {
 }
 
 impl ChrnClassifiable for Keyword {
-    fn to_classified(&self) -> chrn_classifier::ChrnClassifier {
+    fn to_classified(&self) -> chrn_classifier::ChrnClassified {
         match self {
-            Keyword::Struct => ChrnClassifier::Struct,
-            Keyword::Enum => ChrnClassifier::Enum,
-            Keyword::Import => ChrnClassifier::Import,
-            Keyword::Export => ChrnClassifier::Export,
-            Keyword::Bind => ChrnClassifier::Bind,
-            Keyword::Alias => ChrnClassifier::Alias,
-            Keyword::Let => ChrnClassifier::Let,
-            Keyword::Change => ChrnClassifier::Change,
-            Keyword::Var => ChrnClassifier::SectVar,
-            Keyword::Nest => ChrnClassifier::SectNest,
-            Keyword::Complex => ChrnClassifier::SectComplex,
-            Keyword::Override => ChrnClassifier::Override,
-            Keyword::As => ChrnClassifier::As,
-            Keyword::In => ChrnClassifier::In,
-            Keyword::For => ChrnClassifier::For,
+            Keyword::Struct => ChrnClassified::Struct,
+            Keyword::Enum => ChrnClassified::Enum,
+            Keyword::Import => ChrnClassified::Import,
+            Keyword::Export => ChrnClassified::Export,
+            Keyword::Bind => ChrnClassified::Bind,
+            Keyword::Alias => ChrnClassified::Alias,
+            Keyword::Let => ChrnClassified::Let,
+            Keyword::Change => ChrnClassified::Change,
+            Keyword::Var => ChrnClassified::SectVar,
+            Keyword::Nest => ChrnClassified::SectNest,
+            Keyword::Complex => ChrnClassified::SectComplex,
+            Keyword::Override => ChrnClassified::Override,
+            Keyword::As => ChrnClassified::As,
+            Keyword::In => ChrnClassified::In,
+            Keyword::For => ChrnClassified::For,
         }
     }
 }

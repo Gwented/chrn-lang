@@ -1,7 +1,7 @@
 use std::cmp;
 
 use crate::{
-    chrn_classifier::{ChrnClassifiable, ChrnClassifier},
+    chrn_classifier::{ChrnClassifiable, ChrnClassified},
     directives, keywords,
     types::builtins,
 };
@@ -17,13 +17,13 @@ pub enum FuzzyMatch {
 }
 
 impl ChrnClassifiable for FuzzyMatch {
-    fn to_classified(&self) -> crate::chrn_classifier::ChrnClassifier {
+    fn to_classified(&self) -> crate::chrn_classifier::ChrnClassified {
         match self {
-            FuzzyMatch::KW => ChrnClassifier::KW,
-            FuzzyMatch::Type => ChrnClassifier::Type,
-            FuzzyMatch::Sect => ChrnClassifier::AbstractSection,
-            FuzzyMatch::Stmt => ChrnClassifier::Stmt,
-            FuzzyMatch::Directive => ChrnClassifier::Directive,
+            FuzzyMatch::KW => ChrnClassified::KW,
+            FuzzyMatch::Type => ChrnClassified::Type,
+            FuzzyMatch::Sect => ChrnClassified::AbstractSection,
+            FuzzyMatch::Stmt => ChrnClassified::Stmt,
+            FuzzyMatch::Directive => ChrnClassified::Directive,
         }
     }
 }
@@ -36,7 +36,7 @@ impl ChrnClassifiable for FuzzyMatch {
 pub fn fuzzy_match_with_fmtted(
     given: &[u8],
     target: FuzzyMatch,
-) -> Option<(Vec<&str>, ChrnClassifier)> {
+) -> Option<(Vec<&str>, ChrnClassified)> {
     Some((fuzzy_match(given, target), target.to_classified()))
 }
 

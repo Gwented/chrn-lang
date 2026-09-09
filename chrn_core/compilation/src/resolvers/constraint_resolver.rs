@@ -16,7 +16,7 @@ use chrn_utils::{
     utils::containers::{SpannedContainer, SpannedContainerRef},
 };
 use lang::{
-    chrn_classifier::ChrnClassifier,
+    chrn_classifier::ChrnClassified,
     config_schemas::{self, ConfigSchema, ConfigSchemaKind},
     directives::Directive,
     types::{boundaries::TypeBoundaryFlags, builtins::BuiltinType},
@@ -1398,7 +1398,7 @@ impl<'a> ConstraintResolver<'a> {
                         if spanned_directive.inner.has_restrictions() {
                             return Err(Some(PresetErr::CircularDirective {
                                 sp_fmtted_parent: SpannedContainer::new(
-                                    ChrnClassifier::Struct,
+                                    ChrnClassified::Struct,
                                     struct_def.name_span,
                                 ),
                                 sp_directive: spanned_directive.into_owned(),
@@ -1440,7 +1440,7 @@ impl<'a> ConstraintResolver<'a> {
                             if spanned_directive.inner.has_restrictions() {
                                 return Err(Some(PresetErr::CircularDirective {
                                     sp_fmtted_parent: SpannedContainer::new(
-                                        ChrnClassifier::Enum,
+                                        ChrnClassified::Enum,
                                         enum_def.name_span,
                                     ),
                                     sp_directive: spanned_directive.into_owned(),
@@ -1505,7 +1505,7 @@ impl<'a> ConstraintResolver<'a> {
                                 if spanned_directive.inner.has_restrictions() {
                                     return Err(Some(PresetErr::CircularDirective {
                                         sp_fmtted_parent: SpannedContainer::new(
-                                            ChrnClassifier::Tuple,
+                                            ChrnClassified::Tuple,
                                             parent_span,
                                         ),
                                         sp_directive: spanned_directive.into_owned(),

@@ -3,31 +3,54 @@
 // failure preset error, which takes in a sort of candidate or encoded expected information so that
 // the dynamic help and notes can still be used with the engine and stoof.
 
+pub mod typechecker_concepts;
+
 use chrn_utils::{
     arena::Arena,
     id_types::{SymbolId, TypeId},
 };
 
 use crate::{
-    lookup::scopes::scopes_concepts::{AssociatedScopeKind, ScopeType},
+    lookup::scopes::scopes_concepts::AssociatedScopeKind,
+    resolvers::typechecker::typechecker_concepts::{ExpectedKind, ExpectedKindType},
     script_compiler::ScriptCompiler,
     semantic::hir::{
         hir_concepts::{Type, TypeInfo},
-        hir_symbols::{Symbol, SymbolKind, SymbolKindFlat},
+        hir_symbols::SymbolKind,
     },
     walk_type_id_deferred,
 };
 //TODO: Typechecker helpers?
 
-// TEST: Not done yet
-// Rename to lost and found?
-///
-pub fn is_expected_sym(
-    syms: &Arena<Symbol, SymbolId>,
-    expected: SymbolKindFlat,
-    sym_id: SymbolId,
-) -> bool {
-    syms[sym_id].kind.to_flat() == expected
+/// Returns `true` if the expected `ExpectedKind` aligns with the given `SymbolId`
+pub fn is_expected_sym<E>(compiler: &ScriptCompiler, expected: E, sym_id: SymbolId) -> bool
+where
+    E: Into<ExpectedKind>,
+{
+    match expected.into() {
+        ExpectedKind::Symbol(expected_sym) => {
+            let sym = &compiler.syms[sym_id];
+            sym.kind.to_flat() == expected_sym
+        }
+        ExpectedKind::Type(expected) => {
+            let Some(type_id) = compiler.get_type_id_from_sym_id(sym_id) else {
+                return false;
+            };
+            is_expected_ty(compiler, expected, type_id)
+        }
+    }
+}
+
+/// Returns `true` if the expected `ExpectedKindType` aligns with the given `TypeId`.
+/// Type version of `is_expected`
+pub fn is_expected_ty<E>(compiler: &ScriptCompiler, expected: E, type_id: TypeId) -> bool
+where
+    E: Into<ExpectedKindType>,
+{
+    match expected.into() {
+        ExpectedKindType::AnyBuiltin => compiler.check_builtin(type_id),
+        ExpectedKindType::Kind(expected_ty) => Type::kind(compiler, type_id) == expected_ty,
+    }
 }
 
 //What about just a general walk deferred function that prevents this same code from being written

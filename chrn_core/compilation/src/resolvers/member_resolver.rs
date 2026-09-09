@@ -12,12 +12,12 @@ use chrn_utils::{
     },
     utils::containers::SpannedContainer,
 };
-use lang::chrn_classifier::ChrnClassifier;
+use lang::chrn_classifier::ChrnClassified;
 
 use crate::{
     lookup::scopes::scopes_concepts::{AssociatedScopeKind, ScopeLookupPattern, ScopeType},
     resolvers::{resolver_env::ResolverEnv, resolver_state::ResolverState, typechecker},
-    script_compiler::{self, ScriptCompiler, compiler_constants},
+    script_compiler::{ScriptCompiler, compiler_constants},
     semantic::{
         checker_helpers::DuplicateTracker,
         compilation_unit::CompilationUnit,
@@ -141,7 +141,7 @@ impl MemberResolver<'_> {
             ) {
                 TypeExprResult::Type(type_id) => {
                     if !typechecker::check_field_or_variant(&self.compiler.types, type_id) {
-                        let fmtted_ty = Type::to_fmt(&self.compiler.types, type_id);
+                        let fmtted_ty = Type::to_classified(&self.compiler.types, type_id);
                         let core_msg = format!("Cannot use type `{fmtted_ty}` for a field");
 
                         let builder = SourceDiagnostic::builder(
@@ -226,7 +226,7 @@ impl MemberResolver<'_> {
             let preset_err = PresetErr::DuplicateIdents {
                 sp_original: found.original,
                 sp_dup: found.dup,
-                classifier: ChrnClassifier::Field,
+                classifier: ChrnClassified::Field,
             };
 
             let builder = preset_reporter::create_diag_builder_preset(
@@ -281,7 +281,7 @@ impl MemberResolver<'_> {
                 ) {
                     TypeExprResult::Type(type_id) => {
                         if !typechecker::check_field_or_variant(&self.compiler.types, type_id) {
-                            let fmtted_ty = Type::to_fmt(&self.compiler.types, type_id);
+                            let fmtted_ty = Type::to_classified(&self.compiler.types, type_id);
                             let core_msg = format!("Cannot use type `{fmtted_ty}` for a variant");
 
                             let builder = SourceDiagnostic::builder(
@@ -354,7 +354,7 @@ impl MemberResolver<'_> {
             let preset_err = PresetErr::DuplicateIdents {
                 sp_original: found.original,
                 sp_dup: found.dup,
-                classifier: ChrnClassifier::Variant,
+                classifier: ChrnClassified::Variant,
             };
 
             let builder = preset_reporter::create_diag_builder_preset(

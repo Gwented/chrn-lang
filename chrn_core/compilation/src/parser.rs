@@ -34,7 +34,7 @@ use chrn_utils::source_map::source_diagnostic::SourceDiagnosticSummary;
 use chrn_utils::source_map::source_region::SourceRegion;
 use chrn_utils::source_map::source_span::SourceSpan;
 use chrn_utils::utils::containers::SpannedContainer;
-use lang::chrn_classifier::{ChrnClassifiable, ChrnClassifier};
+use lang::chrn_classifier::{ChrnClassifiable, ChrnClassified};
 use lang::keywords::Keyword;
 
 // The CST.
@@ -87,7 +87,7 @@ pub fn parse(
                     if !is_priv {
                         report_export(
                             &mut ctx,
-                            ChrnClassifier::Bind,
+                            ChrnClassified::Bind,
                             Branch::Neutral(NeutralBranch::Searching),
                             interner,
                         );
@@ -139,7 +139,7 @@ pub fn parse(
                     if !is_priv {
                         report_export(
                             &mut ctx,
-                            ChrnClassifier::Import,
+                            ChrnClassified::Import,
                             Branch::Neutral(NeutralBranch::Searching),
                             interner,
                         );
@@ -153,7 +153,7 @@ pub fn parse(
                     if !is_priv {
                         report_export(
                             &mut ctx,
-                            ChrnClassifier::SectVar,
+                            ChrnClassified::SectVar,
                             Branch::Section(SectionBranch::Searching),
                             interner,
                         );
@@ -216,7 +216,7 @@ pub fn parse(
                     if !is_priv {
                         report_export(
                             &mut ctx,
-                            ChrnClassifier::SectNest,
+                            ChrnClassified::SectNest,
                             Branch::Section(SectionBranch::Searching),
                             interner,
                         );
@@ -273,7 +273,7 @@ pub fn parse(
                     if !is_priv {
                         report_export(
                             &mut ctx,
-                            ChrnClassifier::SectNest,
+                            ChrnClassified::SectNest,
                             Branch::Searching,
                             interner,
                         );
@@ -2308,7 +2308,7 @@ fn consume_trailing_comma(ctx: &mut ParserContext) {
 /// Helper for solely reporting export errors
 fn report_export(
     ctx: &mut ParserContext,
-    fmtted: ChrnClassifier,
+    fmtted: ChrnClassified,
     branch: Branch,
     interner: &Intern,
 ) {
