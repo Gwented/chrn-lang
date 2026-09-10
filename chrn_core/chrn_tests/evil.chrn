@@ -39,8 +39,11 @@ for varthing1 {}
 // -- SECTION BASED --
 
 // let abtest = 3
-// This is a bug, it can't resolve to core. Definitely other related namespace issues, sad face.
-let x = evil::core::Comparable
+
+// Says not found in module `evil` because the starting point is the actual module, not the namespace.
+// Makes it sound like it didn't search the namespace
+// let x = i32::e#3
+let x = i32::MAX
 
 var->
 varthing1: str
@@ -59,14 +62,14 @@ complex->
 for Structure {
     cases = ["UpperSnakeCase", "camelCase"]
     field1 {
+        opt = 3
         // Assuming `self` is going to exist
         //
         // Too terminal, should try to look for '{' and '}' maybe
-        // Need to expect built-in only
-        override JAVA=>types {change Structure = java::char}
+        override JAVA=>types {change u32 = java::char}
         // So, override cfg just isn't closing.
         // This should probably emit an error. Probably.
-        override RUST{types {change x = rust::i32}}
+        override RUST=>types {change i32 = rust::i32}
         // Says is a variable and not a type, but should point to the source where it saw the
         // variable over type. Also should this be public facing where it says it works off preference
         // not separation?

@@ -15,9 +15,10 @@ pub enum ExternPlatformType {
 impl ExternPlatformType {
     // Should we rely on "__java" or something special for this or no?
     // Who are you talking to
+    //💀
     /// Identifier of the platform of the current type.
     /// Returns in lower case, like "java", "rust", etsy.
-    pub fn platform_name(self) -> InternedId {
+    pub const fn platform_name(self) -> InternedId {
         let id = match self {
             ExternPlatformType::Java(_) => intern::INTERNED_JAVA_LOWER,
             ExternPlatformType::Rust(_) => intern::INTERNED_RUST_LOWER,

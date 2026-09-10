@@ -39,6 +39,7 @@
 
 use chrn_utils::source_map::source_span::SourceSpan;
 use compilation::config_loader::{ConfigLoader, ConfigLoaderOutput};
+use compilation::id_tag_decls::{ConfigMemberTag, ConfigRootTag};
 use compilation::lexer::token::Token as ScriptToken;
 use compilation::lookup::scopes::{self, scopes_concepts};
 use compilation::module::module_concepts::ModuleState;
@@ -61,7 +62,9 @@ use tower_lsp::lsp_types::{
 };
 use tower_lsp::{Client, LanguageServer, jsonrpc};
 
-use chrn_utils::id_types::{ImplMemberId, InternedId, ModuleId, ScopeId, SymbolId, TypeId};
+use chrn_utils::id_types::{
+    ImplMemberId, InternedId, ModuleId, ScopeId, SymbolId, TypeId, id_tags::TaggedId,
+};
 use lang::config_schemas::{ConfigSchemaKind, get_cfg_schema};
 
 use crate::analyser::analyze_and_publish_task;
@@ -892,7 +895,7 @@ fn config_root_type_id(compiler: &ScriptCompiler, cfg_root: &ConfigRoot) -> Opti
 
 fn config_candidate_for_member(
     compiler: &ScriptCompiler,
-    member_id: ImplMemberId,
+    member_id: TaggedId<ImplMemberId, ConfigMemberTag>,
     state: &DocumentState,
     pairs: &HashMap<u32, u32>,
     candidates: &mut Vec<ConfigCompletionCandidate>,
@@ -1021,7 +1024,7 @@ fn config_completion_candidate(
             continue;
         }
 
-        let cfg_root = compiler.get_cfg_root(*impl_id);
+        let cfg_root = compiler.get_cfg_root(impl_id.into_tagged::<ConfigRootTag>());
         let Some(ast_id) = impl_hir.ast_id else {
             continue;
         };

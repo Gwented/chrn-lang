@@ -42,7 +42,7 @@ impl TypeContext {
         }
     }
 }
-/// Struct to represent a symbol has users but isn't resolved yet. Mainly exists so that metadata
+/// Represents a symbol has users but isn't resolved yet. Mainly exists so that metadata
 /// can be associated with a `Symbol` without making every expr own it's own resolved state, which
 /// would just be noise and wasted byte padding outside of type resolution.
 #[derive(Debug)]
@@ -80,7 +80,7 @@ pub(super) enum PendingExprKind {
 
 /// Expr that is pending but has no parent ties to update.
 ///
-/// For example, something like [x,y,z] cannot have a cycle
+/// For example, something like an array with [x,y,z] cannot have a cycle
 /// because there is no parent.
 ///
 /// It's only responsibility is to wait for resolution and update accordingly.

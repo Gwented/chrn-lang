@@ -1,5 +1,5 @@
 use chrn_utils::{
-    id_types::{InternedId, MemberId, SymbolId, TypeId},
+    id_types::{InternedId, MemberId, SymbolId, TypeId, id_tags},
     loop_abort,
 };
 
@@ -39,8 +39,8 @@ pub enum MemberLookupResult {
 pub fn collect_members(compiler: &ScriptCompiler, mut current_type_id: TypeId) -> Vec<MemberId> {
     for _ in 0..chrn_utils::MAX_LOOPS {
         match &compiler.types[current_type_id].ty {
-            Type::Struct(struct_def) => return struct_def.fields.clone(),
-            Type::Enum(enum_def) => return enum_def.variants.clone(),
+            Type::Struct(struct_def) => return id_tags::clone_vec_untagged(&struct_def.fields),
+            Type::Enum(enum_def) => return id_tags::clone_vec_untagged(&enum_def.variants),
             // Count members as params or maybe attach a variant?
             // Should this?
             Type::TypeDef(type_def) => current_type_id = type_def.type_id,

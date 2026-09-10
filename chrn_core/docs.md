@@ -87,6 +87,8 @@ This can be applied to [`struct`](#structural-types), [`enum`](#structural-types
 
 `enum`: Declares [enumeration type](#structural-types).
 
+`change`: Allows for type assignment exprs which look like "change Type, Type, Type = Type"
+
 `var`, `nest`, `complex`, `override`: Section keywords (more later)
 
 // Maybe putting this first isn't the best idea..
@@ -690,6 +692,7 @@ nest->
 ## Conditions
 Conditions enforce that a type must adhere to it's conditions given or else the program will fail unless a directive is used to specifically change the default behavior behavior.
 
+// Not just x :(
 The general purpose of this functionality is to allow for enforcing safety at not just types, but also an input by input basis.
 
 Directives can even further enhance conditions where (NOT DONE YET BUT WOULD REFER TO #ignore_rm)
@@ -729,6 +732,7 @@ enum Color {Red: Tuple<u8> Blue: Tuple<u8> Green: Tuple<u8> } #hex
 
 complex->
 @end
+/*...data*/
 ```
 
 #### Simple example of language

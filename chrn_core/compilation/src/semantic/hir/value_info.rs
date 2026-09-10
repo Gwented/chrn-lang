@@ -1,7 +1,3 @@
-// TODO: Should probably be in compilation
-// Was about to say this again..
-// And again
-
 use chrn_utils::id_types::{ExprId, TypeId};
 use lang::values::Value;
 

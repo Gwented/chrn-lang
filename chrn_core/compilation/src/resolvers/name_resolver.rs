@@ -10,10 +10,7 @@ use chrn_utils::{
 };
 
 use crate::{
-    lookup::scopes::{
-        self,
-        scopes_concepts::{Scope, ScopeInfo, ScopeLookupPattern, ScopeType},
-    },
+    lookup::scopes::scopes_concepts::{Scope, ScopeInfo, ScopeLookupPattern, ScopeType},
     parser::ast::ast_concepts::{
         AbstractAlias, AbstractConfig, AbstractConfigKind, AbstractDecl, AbstractEnum,
         AbstractImpl, AbstractStruct, AbstractTypeDef, AbstractVar, AstConfigMemberMetadataKind,

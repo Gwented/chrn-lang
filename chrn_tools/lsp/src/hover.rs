@@ -38,6 +38,7 @@
 
 use chrn_utils::id_types::ModuleId;
 use chrn_utils::intern::Intern;
+use compilation::id_tag_decls::{ConfigMemberTag, EnumTag, StructTag};
 use compilation::lexer::token::Token as ScriptToken;
 use compilation::lookup::scopes::scopes_concepts::AssociatedScopeKind;
 use compilation::script_compiler::ScriptCompiler;
@@ -450,7 +451,7 @@ fn field_hover(
     let field = &ast.get_struct(ast_id).fields[field_idx];
     let field_name = state.interner.search(field.name_id);
 
-    let struct_def = compiler.get_struct(owner_sym_id);
+    let struct_def = compiler.get_struct(owner_sym_id.into_tagged::<StructTag>());
     let field_repre = compiler.get_field(struct_def.fields[field_idx]);
     let type_str = format_type(
         &compiler.types[field_repre.type_id].ty,
@@ -475,7 +476,7 @@ fn variant_hover(
     let variant = &ast.get_enum(ast_id).variants[variant_idx];
     let variant_name = state.interner.search(variant.name_id);
 
-    let enum_def = compiler.get_enum(owner_sym_id);
+    let enum_def = compiler.get_enum(owner_sym_id.into_tagged::<EnumTag>());
     let variant_repre = compiler.get_variant(enum_def.variants[variant_idx]);
     if let Some(vty_id) = variant_repre.type_id {
         let type_str = format_type(
@@ -551,7 +552,7 @@ fn config_member_hover(
     compiler: &ScriptCompiler,
     member_id: chrn_utils::id_types::ImplMemberId,
 ) -> String {
-    let cfg_member = compiler.get_cfg_member(member_id);
+    let cfg_member = compiler.get_cfg_member(member_id.into_tagged::<ConfigMemberTag>());
     let name = state.interner.search(cfg_member.common.name_id);
     let type_of = |type_id| {
         format_type(

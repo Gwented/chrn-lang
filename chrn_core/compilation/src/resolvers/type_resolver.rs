@@ -1,6 +1,3 @@
-// Please split this...
-// No
-// Artisinal hand-coded slop
 //! The reason there's so much code in this one file is because this resolution stage is supposed to
 //! handle all deep semantic properties that need tracking machinery, and certain other type
 //! resolution based parts.
@@ -14,12 +11,21 @@
 //! and contexts to account for that don't really NEED to exist.
 //!
 //! May change in the future but right now this seems reasonable enough, even with the 4K+ LOC
+//FIXME: Perf shows ~20mc on avg but jumps to ~120mc at times on same 6 expr file.
+// First thought: Probably tied to expr order where, if we have a, b, and c where resolution starts
+// at c, that means it has to resolve c, loop, resolve b, loop, resolve b.
+// But the odds of the spike are low, and it's doubtful that most of the times it just so happens
+// to resolve at a higher part of the tree. Need to at least make the perf check not based off of
+// lossy mean
+//
+// Artisinal hand-coded slop
 mod cfg_ctx;
 pub mod type_context;
 
 use chrn_utils::chrn_config::ChrnConfig;
 use chrn_utils::chrn_config::chrn_perf::ChrnPerfStage;
 use chrn_utils::err_codes::ErrorCode;
+use chrn_utils::id_types::id_tags::TaggedId;
 use chrn_utils::id_types::{
     AstId, DirectiveId, ExprId, ImplId, ImplMemberId, InternedId, MemberId, ModuleId, ScopeId,
     SymbolId, TypeId, ValueId, VariableId,
@@ -35,6 +41,10 @@ use lang::chrn_classifier::ChrnClassified;
 use lang::values::{self, Value};
 
 use crate::constraints::ArgConstraint;
+use crate::id_tag_decls::{
+    AliasTag, ConfigMemberTag, ConfigRootTag, EnumTag, ExternTypeTag, FieldTag,
+    OptionAssignmentMemberTag, StructTag, TypeDefTag, VarTag,
+};
 use crate::lookup::member_lookup::{self, MemberLookupPattern, MemberLookupResult};
 use crate::lookup::scopes::scopes_concepts::{
     AssociatedScopeKind, ScopeLookupPattern, ScopeLookupPreferenceFlags, ScopeType,
@@ -44,7 +54,7 @@ use crate::lookup::scopes::{self, scopes_helpers};
 use crate::parser::ast::ast_concepts::{
     AbstractConfig, AbstractConfigKind, AbstractDirective, AstConfigMemberMetadataKind,
 };
-use crate::parser::ast::ast_exprs::{AstExpr, PathSegment, SpannedExpr, TypeExpr};
+use crate::parser::ast::ast_exprs::{AstExpr, PathSegment, SpannedExpr};
 use crate::parser::ast::ast_stmts::AstStmt;
 use crate::resolvers::resolver_env::ResolverEnv;
 use crate::resolvers::resolver_state::ResolverState;
@@ -154,6 +164,7 @@ impl<'res> TypeResolver<'res> {
         for comp_unit in env.compilation_syms.iter().cloned() {
             match comp_unit {
                 CompilationUnit::Symbol(sym_id) => {
+                    //TODO: Maybe tag
                     match self.compiler.syms[sym_id].kind {
                         // This split is more so, users can define these set of symbols, and users cannot
                         // define the unreachables
@@ -175,7 +186,9 @@ impl<'res> TypeResolver<'res> {
                         },
                         // Still uses sym id since their actual ids make it a little more complicated to get
                         // to their ast id
-                        SymbolKind::Variable(_) => self.resolve_var(sym_id, env),
+                        SymbolKind::Variable(_) => {
+                            self.resolve_var(sym_id.into_tagged::<VarTag>(), env)
+                        }
                         // Users cannot define these but they exist internally.
                         SymbolKind::ExternType(_)
                         | SymbolKind::Namespace
@@ -799,7 +812,8 @@ impl<'res> TypeResolver<'res> {
         };
 
         // Expected to be `ConfigDefMember`
-        let mut cfg_members: Vec<ImplMemberId> = Vec::with_capacity(abs_cfg_root.cfg_members.len());
+        let mut cfg_members: Vec<TaggedId<ImplMemberId, ConfigMemberTag>> =
+            Vec::with_capacity(abs_cfg_root.cfg_members.len());
 
         // TEST: Tracks where this current config was positionally so that it can perform an O(1)
         // set_len call which will immediately ignore any other recursive call-site data
@@ -853,12 +867,11 @@ impl<'res> TypeResolver<'res> {
                     let memb_id = match member_lookup::lookup_member(
                         self.compiler,
                         parent_type_id,
-                        //TODO: CHANGE THIS
                         sp_memb_name_id.inner,
                         MemberLookupPattern::NoRestrictions,
                     ) {
                         // These are split so that the theoretical ok and err paths are able to reduce
-                        // boilerplate where needed
+                        // boiler-plate where needed
                         MemberLookupResult::Found(memb_id) => memb_id,
                         lookup_res => {
                             // In case the lookup error points to an issue with the actual symbol we found
@@ -900,30 +913,30 @@ impl<'res> TypeResolver<'res> {
                                         SourceSpan::new(env.region.region_id, start, end);
 
                                     preset_reporter::create_diag_builder_preset(
-                                &self.compiler,
-                                preset_err,
-                                env.region,
-                                self.cfg,
-                                self.interner,
-                            )
-                            .add_annotation(
-                                path_span,
-                                AnnotationKind::Secondary,
-                                format!("`{found_name}` used here").into(),
-                            )
-                            .add_annotation(
-                                sp_memb_name_id.span,
-                                AnnotationKind::Secondary,
-                                "member searched for".to_string().into(),
-                            )
-                            .add_help(format!("If this was meant to reference a `var` defined variable, prefix with \"var {found_name}\""))
-                            .build()
+                                        &self.compiler,
+                                        preset_err,
+                                        env.region,
+                                        self.cfg,
+                                        self.interner,
+                                    )
+                                        .add_annotation(
+                                            path_span,
+                                            AnnotationKind::Secondary,
+                                            format!("`{found_name}` used here").into(),
+                                        )
+                                        .add_annotation(
+                                            sp_memb_name_id.span,
+                                            AnnotationKind::Secondary,
+                                            "member searched for".to_string().into(),
+                                        )
+                                        .add_help(format!("If this was meant to reference a `var` defined variable, prefix with \"var {found_name}\""))
+                                        .build()
                                 }
                                 MemberLookupResult::MemberNotFoundInType(type_id) => {
                                     let decl_span = self
-                                .compiler
-                                .get_span_from_type_id(type_id)
-                                .expect("Should have a span since it has members and was searched");
+                                        .compiler
+                                        .get_span_from_type_id(type_id)
+                                        .expect("Should have a span since it has members and was searched");
                                     let fmtted_ty =
                                         Type::to_classified(&self.compiler.types, type_id);
 
@@ -1009,7 +1022,7 @@ impl<'res> TypeResolver<'res> {
                     //NOTE: This is more like a root context, and member context. Should we make
                     //this or is that over-complication?
                     let memb_ctx = ConfigMemberComplexContext::new(memb_id);
-                    self.resolve_cfg_member(
+                    let id = self.resolve_cfg_member(
                         parent_impl_id,
                         // The type expr is derivative of path segments which may or may not be a valid type
                         // expr hence this is using last segment
@@ -1025,7 +1038,8 @@ impl<'res> TypeResolver<'res> {
                         scope_type,
                         1,
                         env,
-                    )
+                    );
+                    id.into_tagged::<ConfigMemberTag>()
                 }
                 // The intent is to if `complex`, correctly route to the intrinsic scope, just as an
                 // override root would.
@@ -1097,7 +1111,7 @@ impl<'res> TypeResolver<'res> {
                     let linked = LinkedConfigOverrideMemberKind::Root(found_sym_id);
                     let memb_ctx = ConfigMemberOverrideContext::new(override_sym_id, linked);
 
-                    self.resolve_cfg_member(
+                    let id = self.resolve_cfg_member(
                         parent_impl_id,
                         // The type expr is derivative of path segments which may or may not be a valid type
                         // expr hence this is using last segment
@@ -1113,7 +1127,8 @@ impl<'res> TypeResolver<'res> {
                         scope_type,
                         1,
                         env,
-                    )
+                    );
+                    id.into_tagged::<ConfigMemberTag>()
                 }
             };
 
@@ -1171,7 +1186,9 @@ impl<'res> TypeResolver<'res> {
             }
         }
 
-        let cfg_root = self.compiler.get_cfg_root_mut(parent_impl_id);
+        let cfg_root = self
+            .compiler
+            .get_cfg_root_mut(parent_impl_id.into_tagged::<ConfigRootTag>());
 
         debug_assert!(matches!(cfg_root.linked_sym_id, None));
         debug_assert_eq!(cfg_root.stmts.len(), 0);
@@ -1300,13 +1317,13 @@ impl<'res> TypeResolver<'res> {
         root_span: SourceSpan,
         cfg_root_ctx: &ConfigRootContextKind,
         parent_cfg_memb_ctx: &ConfigMemberContextKind,
-        // For tracking invalid recursive usage
-        // Recursive errors no longer exist at the moment because override can only access known
+        // NOTE: Recursive errors no longer exist at the moment because override can only access known
         // configs like "types" inside of "RUST { types {} }".
         //
         // `complex` can only go two nesting levels so recursion isn't an issue there besides the
         // parent symbol which should be accounted for since it no longer innately is with this
         // being removed.
+        // For tracking invalid recursive usage
         // cfg_dfs: &mut Vec<(TypeId, SourceSpan)>,
         //TEST: For identifier tracking right now. Trying out something questionable.
         seen_cfg_idents: &mut Vec<SpannedContainer<InternedId>>,
@@ -1346,7 +1363,7 @@ impl<'res> TypeResolver<'res> {
 
         let mut impl_membs: Vec<ImplMemberId> = Vec::with_capacity(parent_abs_cfg.ast_stmts.len());
         // Expected to be `ConfigDefMember`
-        let mut cfg_members: Vec<ImplMemberId> =
+        let mut cfg_members: Vec<TaggedId<ImplMemberId, ConfigMemberTag>> =
             Vec::with_capacity(parent_abs_cfg.cfg_members.len());
 
         // Whether or not the parent config has a type doesn't matter for options since they only
@@ -1355,9 +1372,18 @@ impl<'res> TypeResolver<'res> {
         for ast_stmt in &parent_abs_cfg.ast_stmts {
             match ast_stmt {
                 AstStmt::OptAssignment(abs_opt) => {
+                    // This ONLY checks for if the member id exists so that if anything were added
+                    // in the future it would already encode a semantic like if a `MemberId` exists,
+                    // rather than just the context.
+                    // Currently `override` is the only wrong case so msg stays targeted.
                     let Some(parent_memb_id) = parent_cfg_memb_ctx.memb_id() else {
+                        debug_assert!(matches!(
+                            parent_cfg_memb_ctx,
+                            ConfigMemberContextKind::Override(_)
+                        ));
+
                         // May be more specific
-                        let core_msg = "Cannot declare options here";
+                        let core_msg = "Cannot declare options in `override` context";
                         let builder = SourceDiagnostic::builder(
                             ErrorCode::ConfigDeclErr.into(),
                             DiagnosticLevel::Error,
@@ -1382,6 +1408,7 @@ impl<'res> TypeResolver<'res> {
                         None,
                         associated_scope,
                         // This purposeful setting is done on purpose.
+                        // Ok this was funny
                         scope_type,
                         env,
                     ) {
@@ -1400,11 +1427,15 @@ impl<'res> TypeResolver<'res> {
                         }
                     };
 
+                    // Really seems like this should have a direct tie to the exact member of symbol
+                    // it's affecting.
                     let impl_memb_id = ImplMemberId::new(self.compiler.impl_membs.len() as u32);
-                    todo!("parent_memb_id needs to be an impl member id to it's parent");
+                    // todo!("parent_memb_id needs to be an impl member id to it's parent");
+                    //
+                    // Should this maybe not be it's own id member holder?
                     let opt = OptionAssignmentMember::new(
                         parent_memb_id,
-                        impl_memb_id,
+                        TaggedId::new(impl_memb_id),
                         abs_opt.name_id,
                         abs_opt.name_span,
                         expr_id,
@@ -1573,9 +1604,11 @@ impl<'res> TypeResolver<'res> {
                         );
                     };
 
+                    let tagged: TaggedId<SymbolId, ExternTypeTag> =
+                        TaggedId::new(extern_type_sym_id);
+
                     let impl_memb_id = ImplMemberId::new(self.compiler.impl_membs.len() as u32);
-                    let multi_assign =
-                        MultiTypeAssignment::new(impl_memb_id, to_assign, extern_type_sym_id);
+                    let multi_assign = MultiTypeAssignment::new(impl_memb_id, to_assign, tagged);
                     self.compiler
                         .impl_membs
                         .push(ImplMemberKind::MultiTypeAssignment(multi_assign));
@@ -1939,7 +1972,7 @@ impl<'res> TypeResolver<'res> {
                         env,
                     );
 
-                    cfg_members.push(cfg_memb_id);
+                    cfg_members.push(cfg_memb_id.into_tagged::<ConfigMemberTag>());
 
                     // If any cfg was added during the recursive descent, this truncates so that the vector
                     // can be re-used where it left off.
@@ -2010,7 +2043,7 @@ impl<'res> TypeResolver<'res> {
 
                     debug_assert!(
                         matches!(memb_ast_meta_kind, AstConfigMemberMetadataKind::Override(_)),
-                        "Override must set all future cfg membs to override"
+                        "Override should have set all future cfg membs to override in parser"
                     );
                 }
 
@@ -2115,6 +2148,12 @@ impl<'res> TypeResolver<'res> {
         current_cfg_memb_id
     }
 
+    /// Attempts to resolve any `PendingExpr` in the given `PendingSymbol` through a recursive
+    ///
+    /// resolved_sym_id: Symbol that wasn't able to be resolved, but now may have new information that can
+    /// be given to `pendind_sym`.
+    /// pending_sym: `PendingSymbol` metadata of `resolved_sym_id`
+    /// env: Current environment
     fn try_resolve_pending(
         &mut self,
         resolved_sym_id: SymbolId,
@@ -2128,9 +2167,10 @@ impl<'res> TypeResolver<'res> {
         // removed as a pending symbol
         let mut can_remove = false;
         // (Idx insinde `pending_sym`, Corresponding Expr)
-        let mut queue: Vec<(usize, ExprId)> = Vec::new();
+        let mut queue: Vec<(usize, ExprId)> =
+            Vec::with_capacity(pending_sym.pending_exprs.len() / 3);
 
-        //Suspicious
+        //
         for (i, pending_expr) in pending_sym.pending_exprs.iter().enumerate() {
             match &pending_expr.kind {
                 PendingExprKind::Parent(parent_base) => {
@@ -2414,14 +2454,15 @@ impl<'res> TypeResolver<'res> {
         Ok(can_remove)
     }
 
+    // A bit concerned that these are cloning themselves constantly to an extent
+    /// A version of `register_expr`
+    ///
     /// Returns an `Ok(true)` upon fully resolving a tree of expressions.
     /// Returns an `Ok(false)` if the resolution failed because a value was unknown.
-    /// Returns `Err` upon real user errors.
+    /// Returns `Err` upon user errors.
+    ///
     /// Method to recursively mutate tree of unresolved expression
     /// This works as root -> user -> user -> ... -> None
-    // This needs to go from x -> x + 2 -> y recursively however long needed
-
-    // A bit concerned that these are cloning themselves constantly to an extent
     fn traverse_expr(&mut self, current_expr_id: ExprId) -> Result<(bool, bool), PresetErr> {
         let expr = &self.compiler.exprs[current_expr_id];
         let val_info = &self.compiler.values[expr.val_id];
@@ -2690,19 +2731,19 @@ impl<'res> TypeResolver<'res> {
         Ok((has_resolved_ty, has_const_val))
     }
 
-    fn resolve_var(&mut self, parent_sym_id: SymbolId, env: &ResolverEnv) {
-        let ast_id = self.compiler.syms[parent_sym_id]
-            .ast_id
-            .expect("Should be user symbols only");
-        let abs_var = env.ast_info.get_var(ast_id);
-
+    fn resolve_var(&mut self, parent_sym_id: TaggedId<SymbolId, VarTag>, env: &ResolverEnv) {
+        // Maybe we should get ast id from the outside since this is a little awkward
+        let sym = &self.compiler.syms[parent_sym_id.inner];
+        let ast_id = sym.ast_id.expect("Should be user symbols only");
+        let scope_type = sym.scope_origin;
         let associated_scope = AssociatedScopeKind::Module(env.current_mod);
-        let scope_type = self.compiler.syms[parent_sym_id].scope_origin;
+
+        let abs_var = env.ast_info.get_var(ast_id);
 
         //NOTE: Pipeline where expressions are always returned, just that some may have
         //unresolved parts, which are put into the queue, not the variable itself.
         let expr_id = match self.register_expr(
-            parent_sym_id.into(),
+            parent_sym_id.inner.into(),
             &abs_var.spanned_expr,
             None,
             associated_scope,
@@ -2747,7 +2788,7 @@ impl<'res> TypeResolver<'res> {
 
         // If the symbol that was just examined is a pending symbol AND it was actually resolved,
         // then it'll be marked as resolved
-        if let Some(pending_sym) = self.ty_ctx.sym_queue.get_mut(&parent_sym_id) {
+        if let Some(pending_sym) = self.ty_ctx.sym_queue.get_mut(&parent_sym_id.inner) {
             // Three flags for resolver use
             pending_sym.has_resolved_ty = has_resolved_ty;
             pending_sym.has_const_val = has_const_val;
@@ -2824,7 +2865,9 @@ impl<'res> TypeResolver<'res> {
             self.interner,
         );
 
-        let type_def = self.compiler.get_typedef_mut(parent_sym_id);
+        let type_def = self
+            .compiler
+            .get_typedef_mut(parent_sym_id.into_tagged::<TypeDefTag>());
 
         debug_assert_eq!(type_def.conds.len(), 0);
         debug_assert_eq!(type_def.directives.len(), 0);
@@ -2854,7 +2897,11 @@ impl<'res> TypeResolver<'res> {
         let associated_scope = AssociatedScopeKind::Module(env.current_mod);
         let scope_type = self.compiler.syms[parent_sym_id].scope_origin;
 
-        let fields: Vec<MemberId> = self.compiler.get_struct(parent_sym_id).fields.clone();
+        let fields: Vec<TaggedId<MemberId, FieldTag>> = self
+            .compiler
+            .get_struct(parent_sym_id.into_tagged::<StructTag>())
+            .fields
+            .clone();
 
         for (i, current_member_id) in fields.iter().enumerate() {
             let abs_field = &abs_struct.fields[i];
@@ -2939,7 +2986,9 @@ impl<'res> TypeResolver<'res> {
             self.interner,
         );
 
-        let struct_def = self.compiler.get_struct_mut(parent_sym_id);
+        let struct_def = self
+            .compiler
+            .get_struct_mut(parent_sym_id.into_tagged::<StructTag>());
 
         debug_assert_eq!(struct_def.glob_conds.len(), 0);
         debug_assert_eq!(struct_def.glob_directives.len(), 0);
@@ -2957,7 +3006,11 @@ impl<'res> TypeResolver<'res> {
         let scope_type = self.compiler.syms[parent_sym_id].scope_origin;
 
         // Clone needed so iteration doesn't make the compiler borrow itself twice
-        let variants = self.compiler.get_enum(parent_sym_id).variants.clone();
+        let variants = self
+            .compiler
+            .get_enum(parent_sym_id.into_tagged::<EnumTag>())
+            .variants
+            .clone();
 
         for (i, current_member_id) in variants.iter().enumerate() {
             let abs_variant = &abs_enum.variants[i];
@@ -3049,7 +3102,9 @@ impl<'res> TypeResolver<'res> {
             self.interner,
         );
 
-        let enum_def = self.compiler.get_enum_mut(parent_sym_id);
+        let enum_def = self
+            .compiler
+            .get_enum_mut(parent_sym_id.into_tagged::<EnumTag>());
 
         debug_assert_eq!(enum_def.glob_conds.len(), 0);
         debug_assert_eq!(enum_def.glob_directives.len(), 0);
@@ -3068,7 +3123,10 @@ impl<'res> TypeResolver<'res> {
             .expect("Should be user symbols only");
         let abs_alias = env.ast_info.get_alias(ast_id);
         let associated_scope = AssociatedScopeKind::Module(env.current_mod);
-        let local_scope_id = self.compiler.get_alias(parent_sym_id).local_scope_id;
+        let local_scope_id = self
+            .compiler
+            .get_alias(parent_sym_id.into_tagged::<AliasTag>())
+            .local_scope_id;
         let scope_type = self.compiler.syms[parent_sym_id].scope_origin;
 
         let mut params: Vec<Param> = Vec::with_capacity(abs_alias.params.len());
@@ -3135,10 +3193,6 @@ impl<'res> TypeResolver<'res> {
                 ResolvedExprMetadata::User(abs_param.name_span),
                 Vec::new(),
             );
-
-            // Can this be possibly const evaluated if if possible if?
-            //
-            // Not sure about this
 
             let val_info = ValueInfo::new(type_id, expr_id, None);
 
@@ -3222,7 +3276,9 @@ impl<'res> TypeResolver<'res> {
 
         //TODO: Arg constraint and option tpe constraint.
         //Could technically happen in constraint resolver since it. Yes.
-        let alias_def = self.compiler.get_alias_mut(parent_sym_id);
+        let alias_def = self
+            .compiler
+            .get_alias_mut(parent_sym_id.into_tagged::<AliasTag>());
         let param_count = params.len() as u32;
 
         debug_assert_eq!(alias_def.conds.len(), 0);

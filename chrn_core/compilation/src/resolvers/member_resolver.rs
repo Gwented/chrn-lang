@@ -4,7 +4,7 @@
 
 use chrn_utils::{
     chrn_config::{ChrnConfig, chrn_perf::ChrnPerfStage},
-    id_types::{AstId, InternedId, MemberId, SymbolId, TypeId},
+    id_types::{AstId, InternedId, MemberId, SymbolId, TypeId, id_tags::TaggedId},
     intern::Intern,
     source_map::source_diagnostic::{
         DiagnosticLevel, SourceDiagnostic, SourceDiagnosticSink, SourceDiagnosticSummary,
@@ -15,6 +15,7 @@ use chrn_utils::{
 use lang::chrn_classifier::ChrnClassified;
 
 use crate::{
+    id_tag_decls::{EnumTag, FieldTag, StructTag, VariantTag},
     lookup::scopes::scopes_concepts::{AssociatedScopeKind, ScopeLookupPattern, ScopeType},
     resolvers::{resolver_env::ResolverEnv, resolver_state::ResolverState, typechecker},
     script_compiler::{ScriptCompiler, compiler_constants},
@@ -123,7 +124,8 @@ impl MemberResolver<'_> {
         let abs_struct = env.ast_info.get_struct(ast_id);
         let associated_scope = AssociatedScopeKind::Module(env.current_mod);
 
-        let mut fields: Vec<MemberId> = Vec::with_capacity(abs_struct.fields.len());
+        let mut fields: Vec<TaggedId<MemberId, FieldTag>> =
+            Vec::with_capacity(abs_struct.fields.len());
 
         //TODO: global condition and argument setting.
         //field arg and cond settings.
@@ -193,7 +195,7 @@ impl MemberResolver<'_> {
             let sp_name_id = SpannedContainer::new(field_typedef.name_id, field_typedef.name_span);
             ident_tracker.insert_or_store(sp_name_id);
 
-            let member_id = MemberId::new(self.compiler.sym_members.len() as u32);
+            let memb_id = MemberId::new(self.compiler.sym_members.len() as u32);
 
             // Attempts to get a more accurate parent symbol location, this is not semantically required
             // anywhere. The idea behind this is that say, we had:
@@ -210,7 +212,7 @@ impl MemberResolver<'_> {
             //but it probably still should hold it's local parent
             let field = FieldRepre::new(
                 parent_sym_id,
-                member_id,
+                memb_id,
                 field_typedef.name_id,
                 field_typedef.name_span,
                 type_id,
@@ -219,7 +221,7 @@ impl MemberResolver<'_> {
             self.compiler
                 .sym_members
                 .push(MemberSymbolKind::Field(field));
-            fields.push(member_id);
+            fields.push(memb_id.into_tagged::<FieldTag>());
         }
 
         for found in ident_tracker.found_dups.drain(..) {
@@ -244,7 +246,9 @@ impl MemberResolver<'_> {
             self.summary.push_diag(builder.build());
         }
 
-        let struct_def = self.compiler.get_struct_mut(parent_sym_id);
+        let struct_def = self
+            .compiler
+            .get_struct_mut(parent_sym_id.into_tagged::<StructTag>());
         debug_assert_eq!(struct_def.fields.len(), 0);
         struct_def.fields.append(&mut fields);
     }
@@ -260,7 +264,8 @@ impl MemberResolver<'_> {
             .expect("Should be user symbols only");
         let abs_enum = env.ast_info.get_enum(ast_id);
 
-        let mut variants: Vec<MemberId> = Vec::with_capacity(abs_enum.variants.len());
+        let mut variants: Vec<TaggedId<MemberId, VariantTag>> =
+            Vec::with_capacity(abs_enum.variants.len());
 
         let associated_scope = AssociatedScopeKind::Module(env.current_mod);
 
@@ -347,7 +352,7 @@ impl MemberResolver<'_> {
                 .sym_members
                 .push(MemberSymbolKind::Variant(variant_repre));
 
-            variants.push(member_id);
+            variants.push(member_id.into_tagged::<VariantTag>());
         }
 
         for found in ident_tracker.found_dups.drain(..) {
@@ -372,7 +377,9 @@ impl MemberResolver<'_> {
             self.summary.push_diag(builder.build());
         }
 
-        let enum_def = self.compiler.get_enum_mut(parent_sym_id);
+        let enum_def = self
+            .compiler
+            .get_enum_mut(parent_sym_id.into_tagged::<EnumTag>());
         debug_assert_eq!(enum_def.variants.len(), 0);
         enum_def.variants.append(&mut variants);
     }

@@ -1,5 +1,8 @@
 use std::{fmt::Debug, hash::Hash};
 
+use crate::id_types::id_tags::{ArenaIndexTag, TaggedId};
+pub mod id_tags;
+
 pub trait ArenaIndex: Copy {
     fn into_usize(self) -> usize;
     fn from_usize(val: usize) -> Self;
@@ -53,9 +56,12 @@ arena_idx_impl_u32!(
     ModuleId,
     ValueId,
     ImplId,
+    PathId,
     ImplMemberId,
     ExternTypeId,
 );
+
+// All id type instantiations of u16
 arena_idx_impl_u16!(ScopeId);
 
 macro_rules! id_type_impl_u32 {
@@ -70,6 +76,9 @@ macro_rules! id_type_impl_u32 {
         impl $ident {
             pub const fn new(id: u32) -> Self {
                 Self { id }
+            }
+            pub const fn into_tagged<T: ArenaIndexTag>(self) -> TaggedId<Self, T> {
+                TaggedId::new(self)
             }
         }
         )*
@@ -94,6 +103,7 @@ macro_rules! id_type_impl_u16 {
     }
 }
 
+// All id type instantiations of u32
 id_type_impl_u32!(
     InternedId,
     SourceRegionId,
@@ -112,4 +122,5 @@ id_type_impl_u32!(
     ImplId,
     ImplMemberId,
 );
+// All id type instantiations of u16
 id_type_impl_u16!(ScopeId);

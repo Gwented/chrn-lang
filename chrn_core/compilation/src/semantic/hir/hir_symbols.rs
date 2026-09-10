@@ -1,7 +1,7 @@
 use chrn_utils::{
     id_types::{
         AstId, DirectiveId, ExprId, InternedId, MemberId, ModuleId, ScopeId, SymbolId, TypeId,
-        ValueId, VariableId,
+        ValueId, VariableId, id_tags::TaggedId,
     },
     source_map::source_span::SourceSpan,
     utils::containers::SpannedContainer,
@@ -13,6 +13,7 @@ use lang::{
 
 use crate::{
     constraints::ArgConstraint,
+    id_tag_decls::{FieldTag, VariantTag},
     lookup::scopes::scopes_concepts::{AssociatedScopeKind, ScopeType},
     script_compiler::ScriptCompiler,
     semantic::hir::{hir_concepts::Type, hir_exprs::Param},
@@ -285,13 +286,17 @@ impl MemberSymbolKind {
 pub struct StructDef {
     pub sym_id: SymbolId,
     pub name_span: SourceSpan,
-    pub fields: Vec<MemberId>,
+    pub fields: Vec<TaggedId<MemberId, FieldTag>>,
     pub glob_conds: Vec<ExprId>,
     pub glob_directives: Vec<SpannedContainer<DirectiveId>>,
 }
 
 impl StructDef {
-    pub fn new(sym_id: SymbolId, name_span: SourceSpan, fields: Vec<MemberId>) -> StructDef {
+    pub fn new(
+        sym_id: SymbolId,
+        name_span: SourceSpan,
+        fields: Vec<TaggedId<MemberId, FieldTag>>,
+    ) -> StructDef {
         StructDef {
             sym_id,
             name_span,
@@ -316,7 +321,7 @@ pub struct EnumDef {
     // change to where it includes it anyways.
     // pub name_id: InternedId,
     pub name_span: SourceSpan,
-    pub variants: Vec<MemberId>,
+    pub variants: Vec<TaggedId<MemberId, VariantTag>>,
     pub glob_directives: Vec<SpannedContainer<DirectiveId>>,
     pub glob_conds: Vec<ExprId>,
 }
@@ -326,7 +331,7 @@ impl EnumDef {
         sym_id: SymbolId,
         // name_id: InternedId,
         name_span: SourceSpan,
-        variants: Vec<MemberId>,
+        variants: Vec<TaggedId<MemberId, VariantTag>>,
     ) -> EnumDef {
         EnumDef {
             sym_id,

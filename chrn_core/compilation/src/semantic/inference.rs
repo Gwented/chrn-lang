@@ -2,6 +2,7 @@ use chrn_utils::id_types::TypeId;
 use lang::values::Value;
 
 use crate::{
+    id_tag_decls::FuncTag,
     parser::ast::ast_concepts::BinaryOp,
     script_compiler::{ScriptCompiler, compiler_constants},
 };
@@ -13,7 +14,7 @@ pub(crate) fn infer_type_from_val(compiler: &ScriptCompiler, val: &Value) -> Opt
         Value::Bool(_) => Some(TypeId::new(compiler_constants::CORE_BOOL)),
         Value::Char(_) => Some(TypeId::new(compiler_constants::CORE_CHAR)),
         Value::Func(func_sym) => {
-            let func_def = compiler.get_func(*func_sym);
+            let func_def = compiler.get_func(func_sym.into_tagged::<FuncTag>());
             Some(func_def.ret_type)
         }
         Value::InternedStr(_) => Some(TypeId::new(compiler_constants::CORE_STR)),

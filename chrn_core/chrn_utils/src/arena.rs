@@ -125,9 +125,9 @@ impl<T, I: ArenaIndex> IndexMut<I> for Arena<T, I> {
 }
 
 impl<T, I: ArenaIndex> From<Vec<T>> for Arena<T, I> {
-    fn from(vec: Vec<T>) -> Self {
+    fn from(items: Vec<T>) -> Self {
         Arena {
-            items: vec,
+            items,
             _marker: PhantomData,
         }
     }

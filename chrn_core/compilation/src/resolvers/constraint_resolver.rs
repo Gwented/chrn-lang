@@ -25,6 +25,10 @@ use lang::{
 
 use crate::{
     constraints::ArgConstraint,
+    id_tag_decls::{
+        AliasTag, ConfigRootTag, EnumTag, OptionAssignmentMemberTag, OptionAssignmentRootTag,
+        StructTag, TypeDefTag,
+    },
     lookup::schema_lookup::{self, SchemaResult},
     resolvers::{resolver_env::ResolverEnv, resolver_state::ResolverState},
     script_compiler::ScriptCompiler,
@@ -145,7 +149,9 @@ impl<'a> ConstraintResolver<'a> {
         // let abs_cfg_root = env.ast_info.get_cfg_root(ast_id);
 
         // leconstraint_reot module = &self.compiler.mods[env.current_mod];
-        let cfg_root = self.compiler.get_cfg_root(parent_impl_id);
+        let cfg_root = self
+            .compiler
+            .get_cfg_root(parent_impl_id.into_tagged::<ConfigRootTag>());
 
         let Some(linked_sym_id) = cfg_root.linked_sym_id else {
             return;
@@ -158,7 +164,7 @@ impl<'a> ConstraintResolver<'a> {
                 }
 
                 for cfg_memb_id in cfg_root.common.cfg_membs.iter().copied() {
-                    if self.compiler.impl_membs[cfg_memb_id].is_unknown() {
+                    if self.compiler.impl_membs[cfg_memb_id.inner].is_unknown() {
                         continue;
                     }
 
@@ -188,7 +194,9 @@ impl<'a> ConstraintResolver<'a> {
                 // broken config being useful error message wise seems unlikely
 
                 for opt_root_id in cfg_root.stmts.iter().copied() {
-                    let opt_root = self.compiler.get_opt_assignment_root(opt_root_id);
+                    let opt_root = self.compiler.get_opt_assignment_root(
+                        opt_root_id.into_tagged::<OptionAssignmentRootTag>(),
+                    );
                     let schema = schema_lookup::get_schema_from_type_id(
                         &self.compiler.types,
                         linked_type_id,
@@ -225,7 +233,7 @@ impl<'a> ConstraintResolver<'a> {
 
                 for cfg_memb_id in cfg_root.common.cfg_membs.iter().copied() {
                     //WARN: Suspicious
-                    if self.compiler.impl_membs[cfg_memb_id].is_unknown() {
+                    if self.compiler.impl_membs[cfg_memb_id.inner].is_unknown() {
                         continue;
                     }
 
@@ -240,7 +248,9 @@ impl<'a> ConstraintResolver<'a> {
                             //Or, maybe `TypeResolver` can just do this? This actually isn't that hard to check.
                             for opt_memb_id in cfg_memb.ast_stmts.iter().copied() {
                                 // Variant and field specific schemas?
-                                let opt_memb = self.compiler.get_opt_assignment_member(opt_memb_id);
+                                let opt_memb = self.compiler.get_opt_assignment_member(
+                                    opt_memb_id.into_tagged::<OptionAssignmentMemberTag>(),
+                                );
                                 let schema =
                                     config_schemas::get_cfg_schema(ConfigSchemaKind::Member);
                                 // let schema = schema_lookup::get_schema_from_type_id(self.compiler, linked_type_id)
@@ -519,7 +529,9 @@ impl<'a> ConstraintResolver<'a> {
             .expect("Should be user symbols only");
         let abs_typedef = env.ast_info.get_typedef(ast_id);
 
-        let type_def = self.compiler.get_typedef(parent_sym_id);
+        let type_def = self
+            .compiler
+            .get_typedef(parent_sym_id.into_tagged::<TypeDefTag>());
         let ty_info = &self.compiler.types[type_def.type_id];
 
         // Checking if condition is valid for the given type
@@ -633,7 +645,9 @@ impl<'a> ConstraintResolver<'a> {
         //TODO: Need to typecheck based off of the conditional expressions found
 
         // let alias_type_id = self.compiler.get_type_id(sym_id);
-        let alias_def = self.compiler.get_alias(parent_sym_id);
+        let alias_def = self
+            .compiler
+            .get_alias(parent_sym_id.into_tagged::<AliasTag>());
         let alias_type_id = self.compiler.extract_type_id(parent_sym_id);
 
         // TODO: This should now just check instead of infer
@@ -725,13 +739,17 @@ impl<'a> ConstraintResolver<'a> {
         // constraints, otherwise, keep the same concrete type checks with builtins
 
         // Only the type of functions used matter if they depend on self.
-        let alias_def = self.compiler.get_alias_mut(parent_sym_id);
+        let alias_def = self
+            .compiler
+            .get_alias_mut(parent_sym_id.into_tagged::<AliasTag>());
         // alias_def.ty_constraints = found_constraints.iter().filter_map(|c| c.is_some());
 
         // Currently assuming that if we see none here it's fine since technically, you could
         // declare a parameter and have it just not be used and never face any type errors.
 
-        let alias_def = self.compiler.get_alias(parent_sym_id);
+        let alias_def = self
+            .compiler
+            .get_alias(parent_sym_id.into_tagged::<AliasTag>());
         // Need a system where it takes a local variable, looks through each expression, sees if
         // it's used, then if so attempts to assign the constraint to the used argument.
 
@@ -906,7 +924,9 @@ impl<'a> ConstraintResolver<'a> {
             .expect("Should be user symbols only");
         let abs_struct = env.ast_info.get_struct(ast_id);
 
-        let struct_def = self.compiler.get_struct(parent_sym_id);
+        let struct_def = self
+            .compiler
+            .get_struct(parent_sym_id.into_tagged::<StructTag>());
 
         // Glob conds
         for (i, member_id) in struct_def.fields.iter().enumerate() {
@@ -1012,7 +1032,9 @@ impl<'a> ConstraintResolver<'a> {
             .expect("Should be user symbols only");
         let abs_enum = env.ast_info.get_enum(ast_id);
 
-        let enum_def = &self.compiler.get_enum(parent_sym_id);
+        let enum_def = &self
+            .compiler
+            .get_enum(parent_sym_id.into_tagged::<EnumTag>());
 
         // Glob conds
         for (i, member_id) in enum_def.variants.iter().enumerate() {
