@@ -25,7 +25,7 @@ fn first_core_func(compiler: &ScriptCompiler) -> (SymbolId, TypeId) {
     for symbol in compiler.syms.iter() {
         if let SymbolKind::Type(type_id) = &symbol.kind {
             if let Type::Func(func_def) = &compiler.types[*type_id].ty {
-                return (symbol.sym_id, func_def.ret_type);
+                return (symbol.self_id, func_def.ret_type);
             }
         }
     }
@@ -38,7 +38,7 @@ fn type_of(compiler: &ScriptCompiler, interner: &Intern, name: &str) -> TypeId {
         .try_search_str(name)
         .unwrap_or_else(|| panic!("Variable '{}' was not interned", name));
     let var_def = compiler
-        .variables
+        .vars
         .iter()
         .find(|v| v.name_id == name_id)
         .unwrap_or_else(|| panic!("Variable '{}' not found", name));
@@ -461,7 +461,7 @@ fn infer_intrinsic_namespace_constant_test() {
             .try_search_str("CONSTANT")
             .expect("`CONSTANT` should be interned");
         let var_def = compiler
-            .variables
+            .vars
             .iter()
             .find(|var| var.name_id == name_id)
             .expect("`CONSTANT` should be declared");

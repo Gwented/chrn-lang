@@ -49,7 +49,7 @@ use compilation::semantic::hir::hir_concepts::Type;
 use compilation::semantic::hir::hir_impls::{
     ConfigMemberMetadataKind, ConfigRoot, ConfigRootMetadataKind, ImplMemberKind,
 };
-use compilation::semantic::hir::hir_symbols::{Symbol, SymbolKind, VariableState};
+use compilation::semantic::hir::hir_symbols::{FuncForm, Symbol, SymbolKind, VariableState};
 use parking_lot::RwLock;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
@@ -504,14 +504,16 @@ fn symbol_completion_kind(compiler: &ScriptCompiler, sym: &Symbol) -> Completion
                     CompletionItemKind::STRUCT
                 }
                 Type::Alias(_) => CompletionItemKind::FUNCTION,
-                Type::Func(func_def) if func_def.is_callable => CompletionItemKind::FUNCTION,
-                Type::Func(_) => CompletionItemKind::CONSTANT,
+                Type::Func(func_def) => match func_def.kind.form() {
+                    FuncForm::Call => CompletionItemKind::FUNCTION,
+                    FuncForm::Predicate => CompletionItemKind::CONSTANT,
+                },
                 Type::Unknown | Type::Boundaries(_) => CompletionItemKind::VARIABLE,
                 Type::Deferred(_) => unreachable!(),
             }
         }
         SymbolKind::Variable(var_id) => {
-            let var = &compiler.variables[var_id];
+            let var = &compiler.vars[var_id];
             let VariableState::Known(val_id) = var.state else {
                 return CompletionItemKind::VARIABLE;
             };
@@ -522,8 +524,10 @@ fn symbol_completion_kind(compiler: &ScriptCompiler, sym: &Symbol) -> Completion
                     CompletionItemKind::VARIABLE
                 }
                 Type::Alias(_) => CompletionItemKind::FUNCTION,
-                Type::Func(func_def) if func_def.is_callable => CompletionItemKind::FUNCTION,
-                Type::Func(_) => CompletionItemKind::CONSTANT,
+                Type::Func(func_def) => match func_def.kind.form() {
+                    FuncForm::Call => CompletionItemKind::FUNCTION,
+                    FuncForm::Predicate => CompletionItemKind::CONSTANT,
+                },
                 Type::Unknown | Type::Boundaries(_) => CompletionItemKind::VARIABLE,
                 Type::Deferred(_) => unreachable!(),
             }
@@ -1368,11 +1372,11 @@ fn classify_id_token(
                             Type::Alias(_) => {
                                 return Some(SemanticTokenType::Function.as_u32());
                             }
-                            Type::Func(func_def) if func_def.is_callable => {
-                                return Some(SemanticTokenType::Function.as_u32());
-                            }
-                            Type::Func(_) => {
-                                return Some(SemanticTokenType::String.as_u32());
+                            Type::Func(func_def) => {
+                                return Some(match func_def.kind.form() {
+                                    FuncForm::Call => SemanticTokenType::Function.as_u32(),
+                                    FuncForm::Predicate => SemanticTokenType::String.as_u32(),
+                                });
                             }
                             Type::Unknown | Type::Boundaries(_) | Type::Deferred(_) => {
                                 return Some(SemanticTokenType::Type.as_u32());

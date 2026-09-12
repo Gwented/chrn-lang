@@ -38,7 +38,7 @@ use crate::{
 };
 
 /// Registers symbols for every front-facing ast item. Members are not accounted for and should
-/// be handled by `MemberResolver`.
+/// be handled by `MemberResolver` right after.
 ///
 /// This resolver at most reports symbols with the same identifiers in the same scope, but still
 /// registers them.
@@ -47,7 +47,6 @@ pub struct NamespaceResolver<'a> {
     interner: &'a Intern,
     compiler: &'a mut ScriptCompiler,
     summary: SourceDiagnosticSummary,
-    //NOTE: May handle this differently but ok for now
 }
 
 impl NamespaceResolver<'_> {
@@ -136,11 +135,11 @@ impl NamespaceResolver<'_> {
 
         (comp_units, summary)
     }
-    // These registrations:
-    // - Create a new symbol
-    // - Create a new `var`, `nest`, `complex`, or `override` scope if the scope was not pushed yet.
-    // - If a symbol with the same identifier as another is in the same scope, it overwrites the last symbol
-    // and pushes the diagnostic
+
+    /// Registers `ConfigRoot` as a symbol
+    ///
+    /// Does not insert identifier into scope if it collides with an existent identifier. Still
+    /// registers as a symbol.
     fn register_config_root(
         &mut self,
         abs_cfg: &AbstractConfig,
@@ -200,11 +199,10 @@ impl NamespaceResolver<'_> {
         tagged
     }
 
-    /// Attaches ast_id to the name_id of it's ast structure.
-    /// Gives it a unique symbol id and attaches the ast id to it.
-    /// Gives the typedef an id attached to `Unknown` which is to be resolved later
-    /// Registers the unfinished representation with it's symbol id so that it can still be
-    /// referenced
+    /// Registers `AbstractTypeDef` as a symbol
+    ///
+    /// Does not insert identifier into scope if it collides with an existent identifier. Still
+    /// registers as a symbol.
     fn register_typedef(
         &mut self,
         abs_typedef: &AbstractTypeDef,
@@ -269,6 +267,10 @@ impl NamespaceResolver<'_> {
         tagged
     }
 
+    /// Registers `AbstractStruct` as a symbol
+    ///
+    /// Does not insert identifier into scope if it collides with an existent identifier. Still
+    /// registers as a symbol.
     fn register_struct(
         &mut self,
         abs_struct: &AbstractStruct,
@@ -321,6 +323,10 @@ impl NamespaceResolver<'_> {
         tagged
     }
 
+    /// Registers `AbstractEnum` as a symbol
+    ///
+    /// Does not insert identifier into scope if it collides with an existent identifier. Still
+    /// registers as a symbol.
     fn register_enum(
         &mut self,
         abs_enum: &AbstractEnum,
@@ -373,6 +379,10 @@ impl NamespaceResolver<'_> {
         tagged
     }
 
+    /// Registers `AbstractAlias` as a symbol
+    ///
+    /// Does not insert identifier into scope if it collides with an existent identifier. Still
+    /// registers as a symbol.
     fn register_alias(
         &mut self,
         abs_alias: &AbstractAlias,
@@ -443,9 +453,10 @@ impl NamespaceResolver<'_> {
         tagged
     }
 
-    /// Pushes neutral scope if needed, exports variable if public, then stores it with the state
-    /// `ReservedTypeSlot` so that it can reserve a type slot without making an expression this
-    /// early on, which would complicate the process.
+    /// Registers `AbstractVar` as a symbol
+    ///
+    /// Does not insert identifier into scope if it collides with an existent identifier. Still
+    /// registers as a symbol.
     fn register_var(
         &mut self,
         abs_var: &AbstractVar,
@@ -474,7 +485,7 @@ impl NamespaceResolver<'_> {
         let type_id = TypeId::new(self.compiler.types.len() as u32);
         let ty_info = TypeInfo::new(Type::Unknown, env.current_mod);
 
-        let var_id = VariableId::new(self.compiler.variables.len() as u32);
+        let var_id = VariableId::new(self.compiler.vars.len() as u32);
 
         // TypeId is stored here so that the slot is reserved for anything that may need to refer
         // to it's type before it's actually declared
@@ -500,7 +511,7 @@ impl NamespaceResolver<'_> {
 
         self.compiler.syms.push(symbol);
         self.compiler.types.push(ty_info);
-        self.compiler.variables.push(var);
+        self.compiler.vars.push(var);
 
         if let Some(orig_sym_id) = orig_sym_opt {
             self.report_duplicate(orig_sym_id, sym_id, env);

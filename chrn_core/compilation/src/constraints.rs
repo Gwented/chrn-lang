@@ -205,30 +205,30 @@ pub enum OrderingType {
 // impl ArgConstraint {
 //     // TODO: Composable constraints for aliases
 //     /// Takes in a function kind that is built in and returns it's constraints
-//     pub fn from_builtin(kind: FuncKind) -> Vec<ArgConstraint> {
+//     pub fn from_builtin(kind: BuiltinFuncKind) -> Vec<ArgConstraint> {
 //         match kind {
-//             FuncKind::IsEmpty => vec![ArgConstraint::ArgCount(0), ArgConstraint::Str],
-//             FuncKind::StartsW => {
+//             BuiltinFuncKind::IsEmpty => vec![ArgConstraint::ArgCount(0), ArgConstraint::Str],
+//             BuiltinFuncKind::StartsW => {
 //                 // Maybe if we got something like 0x1FF it could StartsW(0x1FF)?
 //                 vec![ArgConstraint::ArgCount(1), ArgConstraint::DynType]
 //             }
-//             FuncKind::EndsW => {
+//             BuiltinFuncKind::EndsW => {
 //                 vec![ArgConstraint::ArgCount(1), ArgConstraint::DynType]
 //             }
-//             FuncKind::Contains => {
+//             BuiltinFuncKind::Contains => {
 //                 vec![ArgConstraint::ArgCount(1), ArgConstraint::DynType]
 //             }
-//             FuncKind::Range => {
+//             BuiltinFuncKind::Range => {
 //                 vec![
 //                     ArgConstraint::ArgCount(2),
 //                     ArgConstraint::Numeric,
 //                     ArgConstraint::MatchingArgumentTypes,
 //                 ]
 //             }
-//             FuncKind::Equals => {
+//             BuiltinFuncKind::Equals => {
 //                 vec![ArgConstraint::Variadic]
 //             }
-//             FuncKind::IsWhitespace => {
+//             BuiltinFuncKind::IsWhitespace => {
 //                 vec![ArgConstraint::ArgCount(0), ArgConstraint::CharacterMappable]
 //             }
 //         }

@@ -268,7 +268,7 @@ pub(crate) fn create_diag_builder_preset(
                 engine::enrich(compiler, interner, builder, opts)
             }
             LookupError::InvalidSymbolMemberAccess(sp_sym) => {
-                let core_msg = format!("Symbol `{}` cannot use member access", sp_sym.inner);
+                let core_msg = format!("`{}` cannot use member access", sp_sym.inner);
                 SourceDiagnostic::builder(None, DiagnosticLevel::Error, core_msg, region.path_id)
                     .add_annotation(sp_sym.span, AnnotationKind::Primary, None)
             }

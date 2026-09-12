@@ -590,7 +590,7 @@ pub(super) fn value_of(compiler: &ScriptCompiler, interner: &Intern, name: &str)
         .try_search_str(name)
         .unwrap_or_else(|| panic!("Variable '{}' was not interned", name));
     let var_def = compiler
-        .variables
+        .vars
         .iter()
         .find(|v| v.name_id == name_id)
         .unwrap_or_else(|| panic!("Variable '{}' not found", name));

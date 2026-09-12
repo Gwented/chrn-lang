@@ -8,7 +8,7 @@
 //! |-----------------------|-----------------------------|--------|
 //! | [`KEYWORD_DOCS`]      | `Keyword as usize`          | 15     |
 //! | [`BUILTIN_TYPE_DOCS`] | `BuiltinTypeKind as usize`  | 27     |
-//! | [`FUNC_DOCS`]         | `FuncKind as usize`         | 7      |
+//! | [`FUNC_DOCS`]         | `BuiltinFuncKind as usize`         | 7      |
 //! | [`DIRECTIVE_DOCS`]    | preloaded [`InternedId`]     | 6      |
 //! | [`CONFIG_OPTION_DOCS`]| preloaded [`InternedId`]     | 3      |
 //!
@@ -29,7 +29,7 @@ use chrn_utils::{
         INTERNED_IGNORE, INTERNED_OCTAL, INTERNED_SCIENT, INTERNED_WARN,
     },
 };
-use compilation::semantic::hir::hir_symbols::FuncKind;
+use compilation::semantic::hir::hir_symbols::BuiltinFuncKind;
 use lang::keywords::Keyword;
 use lang::types::builtins::BuiltinTypeKind;
 
@@ -77,7 +77,7 @@ impl Document {
     }
 
     /// Returns the document for a given intrinsic function kind.
-    pub const fn func_docs(kind: FuncKind) -> &'static Document {
+    pub const fn func_docs(kind: BuiltinFuncKind) -> &'static Document {
         &FUNC_DOCS[kind as usize]
     }
 
@@ -372,11 +372,11 @@ pub static BUILTIN_TYPE_DOCS: [Document; 27] = [
 
 // ── Intrinsic functions ───────────────────────────────────────────────────────
 //
-// Indexed by `FuncKind as usize`.  Variants must appear in the same order as the
-// `FuncKind` enum definition in `compilation::semantic::hir`.
+// Indexed by `BuiltinFuncKind as usize`.  Variants must appear in the same order as the
+// `BuiltinFuncKind` enum definition in `compilation::semantic::hir`.
 /// Hover documentation for each Chern intrinsic (built-in) function.
 ///
-/// Indexed by [`FuncKind`] discriminant via [`Document::func_docs`].
+/// Indexed by [`BuiltinFuncKind`] discriminant via [`Document::func_docs`].
 pub static FUNC_DOCS: [Document; 7] = [
     Document {
         key: "IsEmpty",
@@ -524,7 +524,7 @@ mod tests {
         assert_eq!(
             FUNC_DOCS.len(),
             7,
-            "FUNC_DOCS must have one entry per FuncKind variant"
+            "FUNC_DOCS must have one entry per BuiltinFuncKind variant"
         );
     }
 

@@ -64,31 +64,32 @@ pub struct ScriptCompiler {
     /// Optional bind statement that is obtained from the main module
     // Maybe the module should keep it's bind info rather than give it to the compiler so that the
     // information isn't lossy and contextual
+    // Maybe, the compiler should know main, but the compiler shouldn't know the bind.
+    // But main is intrinsically mods[0] so doesn't really matter.
     pub bind: Option<Bind>,
     /// All modules found during compilation
     pub mods: Arena<Module, ModuleId>,
-    /// Type table which contains every module's stored types
+    /// Contains every module's stored types
     pub types: Arena<TypeInfo, TypeId>,
-    /// All values that were cached
+    /// Held `ValueInfo`s
     pub values: Arena<ValueInfo, ValueId>,
-    /// All expressions that were found
+    /// Held `Exprs`s
     pub exprs: Arena<ResolvedExpr, ExprId>,
-    /// All symbols that were found
+    /// Held `Symbol`s
     pub syms: Arena<Symbol, SymbolId>,
-    /// impls!
+    /// Held `ImplHir`s
     pub impls: Arena<ImplHir, ImplId>,
     /// All symbols considered a "member" of another. This is here to serve the same purpose of a
     /// collection that would be considered fields, but more general since the language is small
     /// scale and would likely not benefit much from such a wide variety of collections.
     pub sym_members: Arena<MemberSymbolKind, MemberId>,
-    /// Impl members
+    /// Held `ImplMemberKind`s
     pub impl_membs: Arena<ImplMemberKind, ImplMemberId>,
-    /// All variables that were found
-    pub variables: Arena<VarDef, VariableId>,
-    /// All user defined config. Is considered it's own class instead of a type since it
-    /// behaves uniquely
+    /// Held `VarDef`s
+    pub vars: Arena<VarDef, VariableId>,
+    /// All user defined `ConfigRoot`s
     pub cfgs: Arena<ConfigRoot, ConfigRootId>,
-    /// All directives that were found
+    /// Contains compiler generated directives. No user input driven directives exist currently.
     pub directives: Arena<Directive, DirectiveId>,
     /// Scope arena
     pub scopes: Arena<ScopeInfo, ScopeId>,
@@ -157,7 +158,7 @@ impl ScriptCompiler {
             sym_members: Arena::new(),
             impls: Arena::new(),
             impl_membs: Arena::new(),
-            variables: Arena::with_capacity(ns_counts.variables),
+            vars: Arena::with_capacity(ns_counts.variables),
             cfgs: Arena::new(),
             // ignore this
             scopes: Arena::with_capacity(scope_capacity),
@@ -408,7 +409,7 @@ impl ScriptCompiler {
     pub(super) fn get_var(&self, sym_id: TaggedId<SymbolId, VarTag>) -> &VarDef {
         match &self.syms[sym_id.inner()] {
             sym_info => match &sym_info.kind {
-                SymbolKind::Variable(var_id) => &self.variables[*var_id],
+                SymbolKind::Variable(var_id) => &self.vars[*var_id],
                 _ => unreachable!(),
             },
         }
@@ -418,7 +419,7 @@ impl ScriptCompiler {
     pub(super) fn get_var_mut(&mut self, sym_id: TaggedId<SymbolId, VarTag>) -> &mut VarDef {
         match &self.syms[sym_id.inner()] {
             sym_info => match &sym_info.kind {
-                SymbolKind::Variable(var_id) => &mut self.variables[*var_id],
+                SymbolKind::Variable(var_id) => &mut self.vars[*var_id],
                 _ => unreachable!(),
             },
         }
@@ -584,7 +585,7 @@ impl ScriptCompiler {
         match &self.syms[sym_id] {
             sym => match &sym.kind {
                 SymbolKind::Type(type_id) => *type_id,
-                SymbolKind::Variable(var_id) => match self.variables[*var_id].state {
+                SymbolKind::Variable(var_id) => match self.vars[*var_id].state {
                     VariableState::ReservedTypeSlot(type_id) => type_id,
                     VariableState::Known(val_id) => self.values[val_id].type_id,
                 },
@@ -601,7 +602,7 @@ impl ScriptCompiler {
         match &self.syms[sym_id] {
             sym_info => match &sym_info.kind {
                 SymbolKind::Type(type_id) => Some(*type_id),
-                SymbolKind::Variable(var_id) => match self.variables[*var_id].state {
+                SymbolKind::Variable(var_id) => match self.vars[*var_id].state {
                     VariableState::ReservedTypeSlot(type_id) => Some(type_id),
                     VariableState::Known(val_id) => Some(self.values[val_id].type_id),
                 },
@@ -617,11 +618,11 @@ impl ScriptCompiler {
     pub(super) fn get_sym_id_from_type_id(&self, mut type_id: TypeId) -> Option<SymbolId> {
         let checked = walk_type_id_deferred!(&self.types, type_id);
         match &self.types[checked.inner].ty {
-            Type::Struct(struct_def) => Some(struct_def.sym_id.inner()),
-            Type::Enum(enum_def) => Some(enum_def.sym_id.inner()),
-            Type::Func(func_def) => Some(func_def.sym_id.inner()),
-            Type::Alias(alias_def) => Some(alias_def.sym_id.inner()),
-            Type::TypeDef(type_def) => Some(type_def.sym_id.inner()),
+            Type::Struct(struct_def) => Some(struct_def.self_id.inner()),
+            Type::Enum(enum_def) => Some(enum_def.self_id.inner()),
+            Type::Func(func_def) => Some(func_def.self_id.inner()),
+            Type::Alias(alias_def) => Some(alias_def.self_id.inner()),
+            Type::TypeDef(type_def) => Some(type_def.self_id.inner()),
             Type::BuiltinTypeInfo(info) => Some(info.sym_id),
             Type::Boundaries(_) | Type::Unknown => None,
             Type::Deferred(_) => unreachable!(),
@@ -647,7 +648,7 @@ impl ScriptCompiler {
     pub(super) fn get_span_from_sym_id(&self, sym_id: SymbolId) -> Option<SourceSpan> {
         match &self.syms[sym_id].kind {
             SymbolKind::Type(type_id) => self.get_span_from_type_id(*type_id),
-            SymbolKind::Variable(var_id) => match self.variables[*var_id].meta {
+            SymbolKind::Variable(var_id) => match self.vars[*var_id].meta {
                 VariableMetadata::User(source_span) => source_span.into(),
                 VariableMetadata::Generated => None,
             },
@@ -712,10 +713,10 @@ impl ScriptCompiler {
 
         match &self.types[checked.inner].ty {
             Type::BuiltinTypeInfo(builtin_type) => builtin_type.ty.kind().name_id().into(),
-            Type::Struct(struct_def) => self.syms[struct_def.sym_id.inner()].name_id.into(),
-            Type::Enum(enum_def) => self.syms[enum_def.sym_id.inner()].name_id.into(),
+            Type::Struct(struct_def) => self.syms[struct_def.self_id.inner()].name_id.into(),
+            Type::Enum(enum_def) => self.syms[enum_def.self_id.inner()].name_id.into(),
             // Functions can't be declared
-            Type::Alias(alias_def) => self.syms[alias_def.sym_id.inner()].name_id.into(),
+            Type::Alias(alias_def) => self.syms[alias_def.self_id.inner()].name_id.into(),
             // WARN: Inconsistency
             Type::TypeDef(type_def) => type_def.name_id.into(),
             Type::Func(func) => func.name_id.into(),
@@ -1023,7 +1024,7 @@ impl ScriptCompiler {
         var: &InstantiationVariable,
     ) {
         let sym_id = SymbolId::new(self.syms.len() as u32);
-        let var_id = VariableId::new(self.variables.len() as u32);
+        let var_id = VariableId::new(self.vars.len() as u32);
 
         let sym = Symbol::new(
             base.name_id,
@@ -1062,7 +1063,7 @@ impl ScriptCompiler {
             VariableState::Known(val_id),
         );
 
-        self.variables.push(var_def);
+        self.vars.push(var_def);
         self.exprs.push(expr);
         self.values.push(val_info);
     }
@@ -1103,7 +1104,6 @@ impl ScriptCompiler {
             sym_id.into_tagged::<FuncTag>(),
             name_id,
             core_func.kind,
-            core_func.is_callable,
             core_func.type_constraints,
             core_func.arg_constraints.to_vec(),
             core_func.affects_type_constraint,

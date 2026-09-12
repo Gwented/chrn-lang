@@ -32,7 +32,7 @@ pub struct Symbol {
     pub name_id: InternedId,
     // pub name_span: Option<SourceSpan>,
     /// `SymbolId` of `self`
-    pub sym_id: SymbolId,
+    pub self_id: SymbolId,
     //err span purposes
     /// `AstId` of `self`
     pub ast_id: Option<AstId>,
@@ -49,7 +49,7 @@ impl Symbol {
         // May couple dbg info but fine for now
         name_id: InternedId,
         // name_span: Option<SourceSpan>,
-        sym_id: SymbolId,
+        self_id: SymbolId,
         // Maybe we can have an id enum instead with it possibility allowing for field types?
         ast_id: Option<AstId>,
         sym_origin: SymbolOrigin,
@@ -61,7 +61,7 @@ impl Symbol {
         Symbol {
             name_id,
             // name_span,
-            sym_id,
+            self_id,
             ast_id,
             kind,
             scope_origin,
@@ -161,22 +161,25 @@ impl ChrnClassifiable for SymbolKindFlat {
 #[derive(Debug)]
 pub struct VarDef {
     /// `SymbolId` of `self`
-    pub sym_id: TaggedId<SymbolId, VarTag>,
+    pub self_id: TaggedId<SymbolId, VarTag>,
+    /// Identifier of `self`
     pub name_id: InternedId,
+    /// Kind of variable
     pub meta: VariableMetadata,
     // Same job as SymbolKind::ReservedTypeSlot
+    /// State of variable
     pub state: VariableState,
 }
 
 impl VarDef {
     pub fn new(
-        sym_id: TaggedId<SymbolId, VarTag>,
+        self_id: TaggedId<SymbolId, VarTag>,
         name_id: InternedId,
         meta: VariableMetadata,
         state: VariableState,
     ) -> VarDef {
         VarDef {
-            sym_id,
+            self_id,
             name_id,
             meta,
             state,
@@ -266,8 +269,8 @@ impl MemberSymbolKind {
 
     pub fn memb_id(&self) -> MemberId {
         match self {
-            MemberSymbolKind::Field(field_repre) => field_repre.memb_id.inner(),
-            MemberSymbolKind::Variant(variant_repre) => variant_repre.memb_id.inner(),
+            MemberSymbolKind::Field(field_repre) => field_repre.self_id.inner(),
+            MemberSymbolKind::Variant(variant_repre) => variant_repre.self_id.inner(),
         }
     }
 
@@ -286,7 +289,7 @@ impl MemberSymbolKind {
 /// HIR representation of the language `struct` type
 #[derive(Debug)]
 pub struct StructDef {
-    pub sym_id: TaggedId<SymbolId, StructTag>,
+    pub self_id: TaggedId<SymbolId, StructTag>,
     pub name_span: SourceSpan,
     pub fields: Vec<TaggedId<MemberId, FieldTag>>,
     pub glob_conds: Vec<ExprId>,
@@ -295,12 +298,12 @@ pub struct StructDef {
 
 impl StructDef {
     pub fn new(
-        sym_id: TaggedId<SymbolId, StructTag>,
+        self_id: TaggedId<SymbolId, StructTag>,
         name_span: SourceSpan,
         fields: Vec<TaggedId<MemberId, FieldTag>>,
     ) -> StructDef {
         StructDef {
-            sym_id,
+            self_id,
             name_span,
             fields,
             glob_conds: Vec::new(),
@@ -318,7 +321,7 @@ impl ChrnClassifiable for StructDef {
 /// HIR representation of the language `enum` type
 #[derive(Debug)]
 pub struct EnumDef {
-    pub sym_id: TaggedId<SymbolId, EnumTag>,
+    pub self_id: TaggedId<SymbolId, EnumTag>,
     // Is not present because the symbol also holds the name id which would be duplicated an id. May
     // change to where it includes it anyways.
     // pub name_id: InternedId,
@@ -330,13 +333,13 @@ pub struct EnumDef {
 
 impl EnumDef {
     pub fn new(
-        sym_id: TaggedId<SymbolId, EnumTag>,
+        self_id: TaggedId<SymbolId, EnumTag>,
         // name_id: InternedId,
         name_span: SourceSpan,
         variants: Vec<TaggedId<MemberId, VariantTag>>,
     ) -> EnumDef {
         EnumDef {
-            sym_id,
+            self_id,
             // name_id,
             name_span,
             variants,
@@ -370,7 +373,7 @@ pub struct VariantRepre {
     /// an entirely different place
     pub local_parent_sym_id: TaggedId<SymbolId, EnumTag>,
     /// MemberId of `self`
-    pub memb_id: TaggedId<MemberId, VariantTag>,
+    pub self_id: TaggedId<MemberId, VariantTag>,
     pub name_id: InternedId,
     pub name_span: SourceSpan,
     // Because enum types are nullable
@@ -386,7 +389,7 @@ pub struct VariantRepre {
 impl VariantRepre {
     pub fn new(
         local_parent_sym_id: TaggedId<SymbolId, EnumTag>,
-        memb_id: TaggedId<MemberId, VariantTag>,
+        self_id: TaggedId<MemberId, VariantTag>,
         name_id: InternedId,
         name_span: SourceSpan,
         // spanned_ty: Option<SpannedContainer<TypeId>>,
@@ -395,7 +398,7 @@ impl VariantRepre {
     ) -> VariantRepre {
         VariantRepre {
             local_parent_sym_id,
-            memb_id,
+            self_id,
             name_id,
             name_span,
             type_id,
@@ -410,7 +413,7 @@ impl VariantRepre {
 /// Typedefs are: "var-> name: str" meaning the typedef type has types so it has a type id
 #[derive(Debug)]
 pub struct TypeDef {
-    pub sym_id: TaggedId<SymbolId, TypeDefTag>,
+    pub self_id: TaggedId<SymbolId, TypeDefTag>,
     // The padding fills this to 72 bytes anyways so this does nothing but give convenience and
     // reduce lookup
     pub name_id: InternedId,
@@ -423,13 +426,13 @@ pub struct TypeDef {
 
 impl TypeDef {
     pub fn new(
-        sym_id: TaggedId<SymbolId, TypeDefTag>,
+        self_id: TaggedId<SymbolId, TypeDefTag>,
         name_id: InternedId,
         name_span: SourceSpan,
         type_id: TypeId,
     ) -> TypeDef {
         TypeDef {
-            sym_id,
+            self_id,
             name_id,
             name_span,
             type_id,
@@ -447,11 +450,9 @@ impl ChrnClassifiable for TypeDef {
 
 #[derive(Debug)]
 pub struct FuncDef {
+    pub self_id: TaggedId<SymbolId, FuncTag>,
     pub name_id: InternedId,
-    pub sym_id: TaggedId<SymbolId, FuncTag>,
-    pub kind: FuncKind,
-    // May be separate structure
-    pub is_callable: bool,
+    pub kind: BuiltinFuncKind,
     /// Given:
     /// x: i32 \[IsEmpty\]
     /// IsEmpty's usage in this example directly depends on the type of self.
@@ -468,20 +469,18 @@ pub struct FuncDef {
 
 impl FuncDef {
     pub fn new(
-        sym_id: TaggedId<SymbolId, FuncTag>,
+        self_id: TaggedId<SymbolId, FuncTag>,
         name_id: InternedId,
-        kind: FuncKind,
-        is_callable: bool,
+        kind: BuiltinFuncKind,
         type_constraints: TypeBoundaryFlags,
         arg_constraints: Vec<ArgConstraint>,
         affects_type_constraint: bool,
         ret_type: TypeId,
     ) -> FuncDef {
         FuncDef {
-            sym_id,
+            self_id,
             name_id,
             kind,
-            is_callable,
             affects_type_constraint,
             type_constraints,
             arg_constraints,
@@ -505,7 +504,7 @@ pub struct FieldRepre {
     /// an entirely different place
     pub local_parent_sym_id: TaggedId<SymbolId, StructTag>,
     /// MemberId of `self`
-    pub memb_id: TaggedId<MemberId, FieldTag>,
+    pub self_id: TaggedId<MemberId, FieldTag>,
     pub name_id: InternedId,
     pub name_span: SourceSpan,
     // To TypeDef
@@ -519,14 +518,14 @@ pub struct FieldRepre {
 impl FieldRepre {
     pub fn new(
         local_parent_sym_id: TaggedId<SymbolId, StructTag>,
-        memb_id: TaggedId<MemberId, FieldTag>,
+        self_id: TaggedId<MemberId, FieldTag>,
         name_id: InternedId,
         name_span: SourceSpan,
         type_id: TypeId,
     ) -> FieldRepre {
         FieldRepre {
             local_parent_sym_id,
-            memb_id,
+            self_id,
             name_id,
             name_span,
             type_id,
@@ -538,7 +537,7 @@ impl FieldRepre {
 
 #[derive(Debug)]
 pub struct AliasDef {
-    pub sym_id: TaggedId<SymbolId, AliasTag>,
+    pub self_id: TaggedId<SymbolId, AliasTag>,
     pub name_span: SourceSpan,
     pub params: Vec<Param>,
     pub ty_constraints: TypeBoundaryFlags,
@@ -550,14 +549,14 @@ pub struct AliasDef {
 
 impl AliasDef {
     pub fn new(
-        sym_id: TaggedId<SymbolId, AliasTag>,
+        self_id: TaggedId<SymbolId, AliasTag>,
         name_span: SourceSpan,
         params: Vec<Param>,
         arg_constraints: Vec<ArgConstraint>,
         local_scope_id: ScopeId,
     ) -> AliasDef {
         AliasDef {
-            sym_id,
+            self_id,
             name_span,
             params,
             ty_constraints: TypeBoundaryFlags::runtime(),
@@ -575,8 +574,9 @@ impl ChrnClassifiable for AliasDef {
     }
 }
 
+/// Encodes all built-in functions
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FuncKind {
+pub enum BuiltinFuncKind {
     IsEmpty,
     IsWhitespace,
     Contains,
@@ -586,16 +586,43 @@ pub enum FuncKind {
     Equals,
 }
 
-impl ChrnClassifiable for FuncKind {
+pub enum FuncForm {
+    Call,
+    Predicate,
+}
+
+impl BuiltinFuncKind {
+    pub fn form(self) -> FuncForm {
+        match self {
+            BuiltinFuncKind::Equals
+            | BuiltinFuncKind::Range
+            | BuiltinFuncKind::StartsW
+            | BuiltinFuncKind::EndsW
+            | BuiltinFuncKind::Contains => FuncForm::Call,
+            BuiltinFuncKind::IsEmpty | BuiltinFuncKind::IsWhitespace => FuncForm::Predicate,
+        }
+    }
+}
+
+impl FuncForm {
+    pub fn is_callable(self) -> bool {
+        match self {
+            FuncForm::Call => true,
+            FuncForm::Predicate => false,
+        }
+    }
+}
+
+impl ChrnClassifiable for BuiltinFuncKind {
     fn to_classified(&self) -> ChrnClassified {
         match self {
-            FuncKind::Contains => ChrnClassified::FuncContains,
-            FuncKind::IsWhitespace => ChrnClassified::IsWhitespace,
-            FuncKind::Range => ChrnClassified::FuncRange,
-            FuncKind::StartsW => ChrnClassified::FuncStartsW,
-            FuncKind::EndsW => ChrnClassified::FuncEndsW,
-            FuncKind::Equals => ChrnClassified::FuncEquals,
-            FuncKind::IsEmpty => ChrnClassified::IsEmpty,
+            BuiltinFuncKind::Contains => ChrnClassified::FuncContains,
+            BuiltinFuncKind::IsWhitespace => ChrnClassified::IsWhitespace,
+            BuiltinFuncKind::Range => ChrnClassified::FuncRange,
+            BuiltinFuncKind::StartsW => ChrnClassified::FuncStartsW,
+            BuiltinFuncKind::EndsW => ChrnClassified::FuncEndsW,
+            BuiltinFuncKind::Equals => ChrnClassified::FuncEquals,
+            BuiltinFuncKind::IsEmpty => ChrnClassified::IsEmpty,
         }
     }
 }

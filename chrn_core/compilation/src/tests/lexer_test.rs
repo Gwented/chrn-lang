@@ -1,6 +1,39 @@
 use crate::config_loader::{ConfigLoader, ConfigLoaderOutput};
+use crate::lexer::token::TokenKind;
 
 use super::helpers::*;
+
+#[test]
+fn lex_compound_tokens_with_exact_spans() {
+    let src: &[u8] = b":= :: -> => == >= <= != && || ..=";
+    let mut interner = Intern::init();
+    let mut cfg = ChrnConfig::default();
+    let toks = Lexer::new(SourceRegionId::new(0), src, 0, &mut cfg)
+        .tokenize(&mut interner)
+        .toks;
+
+    let expected = [
+        (TokenKind::Walrus, 0, 2),
+        (TokenKind::StaticAccess, 3, 5),
+        (TokenKind::SlimArrow, 6, 8),
+        (TokenKind::NotSlimArrow, 9, 11),
+        (TokenKind::EqualTo, 12, 14),
+        (TokenKind::GreaterOrEq, 15, 17),
+        (TokenKind::LessOrEq, 18, 20),
+        (TokenKind::NotEq, 21, 23),
+        (TokenKind::And, 24, 26),
+        (TokenKind::Or, 27, 29),
+        (TokenKind::DotRangeInclusive, 30, 33),
+    ];
+
+    assert_eq!(toks.len(), expected.len() + 1);
+    for (tok, (expected_kind, expected_start, expected_end)) in toks.iter().zip(expected) {
+        assert_eq!(tok.tok.kind(), expected_kind);
+        assert_eq!(tok.span.start, expected_start, "{expected_kind} start");
+        assert_eq!(tok.span.end, expected_end, "{expected_kind} end");
+    }
+    assert_eq!(toks.last().unwrap().tok, Token::EOF);
+}
 
 #[test]
 fn lex_tok_test() {

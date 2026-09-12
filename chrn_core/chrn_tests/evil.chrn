@@ -43,7 +43,7 @@ for varthing1 {}
 // Says not found in module `evil` because the starting point is the actual module, not the namespace.
 // Makes it sound like it didn't search the namespace
 // let x = i32::e#3
-let x = i32::MAX
+let x = u32::MAX
 
 var->
 varthing1: str
@@ -59,6 +59,8 @@ struct Structure {
 struct varthing1 {}
 
 complex->
+// Should probably maintain the metadata of the option but leave it as an error node of some sort?
+// override JAVA { types { opt = 3 } }
 for Structure {
     cases = ["UpperSnakeCase", "camelCase"]
     field1 {

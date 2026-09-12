@@ -1302,13 +1302,24 @@ fn parse_expr(
                 },
                 span,
             );
-        } else if ctx.peek_tok() == Token::OParen {
-            // Handles conditions. lhs should be a name id or field access which is caught later
-            let bp = 100;
-            if bp < min_bp {
-                break;
-            }
+        } else {
+            break;
+        }
+    }
 
+    Ok(lhs)
+}
+
+fn parse_postfix(
+    ctx: &mut ParserContext,
+    budget: &ParserBudget,
+    interner: &Intern,
+) -> Result<SpannedExpr, Token> {
+    let mut lhs = parse_primary(ctx, budget, interner)?;
+
+    loop {
+        if ctx.peek_tok() == Token::OParen {
+            // Handles conditions. lhs should be a name id or field access which is caught later
             ctx.advance_tok();
 
             let args = parse_call_args(ctx, budget, interner)?;
@@ -1320,11 +1331,6 @@ fn parse_expr(
 
             lhs = SpannedExpr::new(AstExpr::Call(Box::new(lhs), args), span);
         } else if ctx.peek_kind() == TokenKind::Id && ctx.peek_ahead(1).tok == Token::OParen {
-            let bp = 100;
-            if bp < min_bp {
-                break;
-            }
-
             let call_start = ctx.advance_span();
             ctx.advance_tok();
 
@@ -1337,12 +1343,6 @@ fn parse_expr(
 
             lhs = SpannedExpr::new(AstExpr::Call(Box::new(lhs), args), span);
         } else if ctx.peek_tok() == Token::Dot && ctx.peek_ahead(1).tok.kind() == TokenKind::Id {
-            // Handles cases like field access
-            let bp = 100;
-            if bp < min_bp {
-                break;
-            }
-
             ctx.advance_tok();
 
             // Redundant
@@ -1567,7 +1567,6 @@ fn parse_unary(
         Token::Poison
     })?;
     match ctx.peek_tok() {
-        //BUG: Unary does not properly apply self to member access
         Token::Hyphen => {
             let start = ctx.advance_span().start;
             let expr = parse_unary(ctx, budget, interner)?;
@@ -1597,7 +1596,7 @@ fn parse_unary(
 
             Ok(SpannedExpr::new(AstExpr::Unary(unary), span))
         }
-        _ => parse_primary(ctx, budget, interner),
+        _ => parse_postfix(ctx, budget, interner),
     }
 }
 

@@ -299,7 +299,8 @@ fn core_funcs_follow_boundaries() {
             "name at {type_id:?}"
         );
         assert_eq!(
-            func_def.is_callable, core_func.is_callable,
+            func_def.kind.form().is_callable(),
+            core_func.kind.form().is_callable(),
             "is_callable at {type_id:?}"
         );
         assert_eq!(
@@ -354,7 +355,7 @@ fn core_funcs_are_symbols_in_core_scope() {
         };
 
         assert_eq!(
-            func_def.sym_id.inner(),
+            func_def.self_id.inner(),
             sym_id,
             "func def for {:?} does not point back at its symbol",
             core_func.kind
@@ -526,7 +527,7 @@ fn registered_constant<'a>(
         );
     };
 
-    let var = &compiler.variables[var_id];
+    let var = &compiler.vars[var_id];
 
     let VariableState::Known(val_id) = var.state else {
         panic!("`{name_id:?}` in {scope_id:?} has no known value");
@@ -789,7 +790,11 @@ fn core_namespace_constants_are_registered_as_variables() {
                 "{label} is a value and must own no scope"
             );
 
-            assert_eq!(found.var.sym_id.inner(), found.sym.sym_id, "var of {label}");
+            assert_eq!(
+                found.var.self_id.inner(),
+                found.sym.self_id,
+                "var of {label}"
+            );
             assert_eq!(found.var.name_id, base.name_id, "var name of {label}");
             assert!(
                 matches!(found.var.meta, VariableMetadata::Generated),
@@ -871,11 +876,7 @@ fn core_namespace_arenas_are_reserved_exactly() {
     // One `VarDef`, one `ResolvedExpr`, and one `ValueInfo` per constant, and nothing else has
     // been pushed yet, so the arenas are exactly as long as they were reserved
     for (label, len, capacity) in [
-        (
-            "variables",
-            compiler.variables.len(),
-            compiler.variables.capacity(),
-        ),
+        ("variables", compiler.vars.len(), compiler.vars.capacity()),
         ("exprs", compiler.exprs.len(), compiler.exprs.capacity()),
         ("values", compiler.values.len(), compiler.values.capacity()),
     ] {
@@ -883,9 +884,9 @@ fn core_namespace_arenas_are_reserved_exactly() {
         assert_eq!(capacity, ns_counts.variables, "{label} capacity");
     }
 
-    for (idx, var) in compiler.variables.iter().enumerate() {
+    for (idx, var) in compiler.vars.iter().enumerate() {
         let var_id = VariableId::new(idx as u32);
-        let sym = &compiler.syms[var.sym_id.inner()];
+        let sym = &compiler.syms[var.self_id.inner()];
 
         assert!(
             matches!(sym.kind, SymbolKind::Variable(found) if found == var_id),

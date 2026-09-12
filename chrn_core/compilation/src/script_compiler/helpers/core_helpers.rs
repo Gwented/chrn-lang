@@ -1,30 +1,25 @@
 //! Compiler generated compiler-specific helpers
 
 use chrn_utils::{id_types::InternedId, intern};
-use lang::types::{
-    boundaries::TypeBoundaryFlags,
-    builtins::{BuiltinType, BuiltinTypeKind},
-};
+use lang::types::{boundaries::TypeBoundaryFlags, builtins::BuiltinType};
 
 use crate::{
     constraints::ArgConstraint,
     lookup::scopes::scopes_concepts::ScopeType,
     script_compiler::{
-        compiler_constants::{
-            self, CORE_BOOL, CORE_F32, CORE_F64, CORE_F128, CORE_I8, CORE_I16, CORE_I32, CORE_I64,
-            CORE_I128, CORE_SIZED, CORE_U8, CORE_U16, CORE_U32, CORE_U64, CORE_U128, CORE_UNKNOWN,
-            CORE_UNSIZED,
-        },
+        compiler_constants::{CORE_BOOL, CORE_UNKNOWN},
         helpers::instantiation_symbols::{
             InstantiationSymbolBase, InstantiationSymbolKind, InstantiationVariable, InstiationType,
         },
     },
-    semantic::hir::hir_symbols::{FuncKind, SymbolOrigin},
+    semantic::hir::hir_symbols::{BuiltinFuncKind, SymbolOrigin},
 };
 
 use super::instantiation_symbols::InstiationValue;
 //TEST:
 
+//BUG: This is all technically a large bug because we have access to u64::MAX but the compiler only
+//allows i64. But keeping it like this because bugs are solved.
 static NAMESPACE_I8: [InstantiationSymbolBase; 2] = [
     new_max(InstantiationVariable::new(
         InstiationType::BuiltinType(BuiltinType::I8),
@@ -260,8 +255,8 @@ pub fn core_instantiation_reservations() -> InstantiationReservations {
 pub struct CoreFunc {
     /// Interned index of the function's name
     pub name: u32,
-    pub kind: FuncKind,
-    pub is_callable: bool,
+    pub kind: BuiltinFuncKind,
+    //TODO: Enum for clarity
     pub type_constraints: TypeBoundaryFlags,
     pub arg_constraints: &'static [ArgConstraint],
     pub affects_type_constraint: bool,
@@ -272,8 +267,7 @@ pub struct CoreFunc {
 impl CoreFunc {
     const fn new(
         name: u32,
-        kind: FuncKind,
-        is_callable: bool,
+        kind: BuiltinFuncKind,
         type_constraints: TypeBoundaryFlags,
         arg_constraints: &'static [ArgConstraint],
         affects_type_constraint: bool,
@@ -282,7 +276,6 @@ impl CoreFunc {
         CoreFunc {
             name,
             kind,
-            is_callable,
             type_constraints,
             arg_constraints,
             affects_type_constraint,
@@ -296,8 +289,7 @@ impl CoreFunc {
 pub static CORE_FUNCS_DATASET: [CoreFunc; 7] = [
     CoreFunc::new(
         intern::INTERNED_IS_EMPTY,
-        FuncKind::IsEmpty,
-        false,
+        BuiltinFuncKind::IsEmpty,
         TypeBoundaryFlags::COLLECTION,
         &[ArgConstraint::ArgCount(0)],
         true,
@@ -305,8 +297,7 @@ pub static CORE_FUNCS_DATASET: [CoreFunc; 7] = [
     ),
     CoreFunc::new(
         intern::INTERNED_IS_WHITESPACE,
-        FuncKind::IsWhitespace,
-        false,
+        BuiltinFuncKind::IsWhitespace,
         TypeBoundaryFlags::CHARACTER_MAPPABLE,
         &[ArgConstraint::ArgCount(0), ArgConstraint::CharacterMappable],
         true,
@@ -314,8 +305,7 @@ pub static CORE_FUNCS_DATASET: [CoreFunc; 7] = [
     ),
     CoreFunc::new(
         intern::INTERNED_CONTAINS,
-        FuncKind::Contains,
-        true,
+        BuiltinFuncKind::Contains,
         TypeBoundaryFlags::CHARACTER_MAPPABLE,
         &[ArgConstraint::ArgCount(1), ArgConstraint::CharacterMappable],
         true,
@@ -323,8 +313,7 @@ pub static CORE_FUNCS_DATASET: [CoreFunc; 7] = [
     ),
     CoreFunc::new(
         intern::INTERNED_STARTSW,
-        FuncKind::StartsW,
-        true,
+        BuiltinFuncKind::StartsW,
         TypeBoundaryFlags::CHARACTER_MAPPABLE,
         &[ArgConstraint::ArgCount(1), ArgConstraint::CharacterMappable],
         true,
@@ -332,8 +321,7 @@ pub static CORE_FUNCS_DATASET: [CoreFunc; 7] = [
     ),
     CoreFunc::new(
         intern::INTERNED_ENDSW,
-        FuncKind::EndsW,
-        true,
+        BuiltinFuncKind::EndsW,
         TypeBoundaryFlags::CHARACTER_MAPPABLE,
         &[ArgConstraint::ArgCount(1), ArgConstraint::CharacterMappable],
         true,
@@ -341,8 +329,7 @@ pub static CORE_FUNCS_DATASET: [CoreFunc; 7] = [
     ),
     CoreFunc::new(
         intern::INTERNED_RANGE,
-        FuncKind::Range,
-        true,
+        BuiltinFuncKind::Range,
         TypeBoundaryFlags::RANGED,
         &[
             ArgConstraint::ArgCount(2),
@@ -355,8 +342,7 @@ pub static CORE_FUNCS_DATASET: [CoreFunc; 7] = [
     ),
     CoreFunc::new(
         intern::INTERNED_EQUALS,
-        FuncKind::Equals,
-        true,
+        BuiltinFuncKind::Equals,
         TypeBoundaryFlags::COMPARABLE,
         &[
             ArgConstraint::ArgCount(1),

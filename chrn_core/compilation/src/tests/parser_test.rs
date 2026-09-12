@@ -815,6 +815,44 @@ fn parse_expr_unary_bitnot() {
 }
 
 #[test]
+fn postfix_expressions_bind_inside_unary_operators() {
+    for (operator, expected_op) in [
+        ('-', UnaryOp::Negate),
+        ('!', UnaryOp::Not),
+        ('~', UnaryOp::BitNot),
+    ] {
+        let text = format!("let x = {operator}value.field()");
+        let (ast, interner) = parse_text(&text);
+        let var = ast.get_var(section_items(&ast, SectionKind::Neutral)[0]);
+
+        let unary = match &var.spanned_expr.expr {
+            AstExpr::Unary(unary) => unary,
+            other => panic!("expected Unary({expected_op:?}), got {other:?}"),
+        };
+        assert_eq!(unary.op, expected_op);
+        assert_eq!(var.spanned_expr.span.start, 8);
+        assert_eq!(var.spanned_expr.span.end, 22);
+
+        let call_base = match &unary.spanned_expr.expr {
+            AstExpr::Call(base, args) => {
+                assert!(args.is_empty(), "expected no call arguments");
+                base
+            }
+            other => panic!("expected Call inside Unary({expected_op:?}), got {other:?}"),
+        };
+        let member = match &call_base.expr {
+            AstExpr::MemberAccess(member) => member,
+            other => panic!("expected MemberAccess inside Call, got {other:?}"),
+        };
+        assert_eq!(interner.search(member.field), "field");
+        match &member.base.expr {
+            AstExpr::Var(id) => assert_eq!(interner.search(*id), "value"),
+            other => panic!("expected Var(value), got {other:?}"),
+        }
+    }
+}
+
+#[test]
 fn parse_expr_shift_operators() {
     let text = "let x = 1 << 2 >> 1";
     let (ast, interner) = parse_text(text);

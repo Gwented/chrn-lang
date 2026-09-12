@@ -114,7 +114,7 @@ fn type_resolver_values_test() {
     let find_val = |name: &str| -> &Value {
         let name_id = interner.try_search_str(name).unwrap();
         let var_def = compiler
-            .variables
+            .vars
             .iter()
             .find(|v| v.name_id == name_id)
             .expect("Variable '{name}' not found");
@@ -381,7 +381,7 @@ fn const_dependency_circular_test() {
                 .try_search_str(name)
                 .unwrap_or_else(|| panic!("Variable '{name}' was not interned"));
             let var_def = compiler
-                .variables
+                .vars
                 .iter()
                 .find(|v| v.name_id == name_id)
                 .unwrap_or_else(|| panic!("Variable '{name}' not found"));
@@ -394,11 +394,7 @@ fn const_dependency_circular_test() {
                 .iter()
                 .map(|name| {
                     let name_id = interner.try_search_str(name).unwrap();
-                    let var_def = compiler
-                        .variables
-                        .iter()
-                        .find(|v| v.name_id == name_id)
-                        .unwrap();
+                    let var_def = compiler.vars.iter().find(|v| v.name_id == name_id).unwrap();
                     (name, &var_def.state)
                 })
                 .collect::<Vec<_>>()

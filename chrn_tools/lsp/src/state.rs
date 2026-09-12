@@ -571,7 +571,7 @@ impl DocumentState {
             }
             match &ty_info.ty {
                 Type::Struct(sdef) => {
-                    let sym = &compiler.syms[sdef.sym_id.inner()];
+                    let sym = &compiler.syms[sdef.self_id.inner()];
                     if let Some(Some(ast)) = self.asts.first()
                         && let Some(ast_id) = sym.ast_id
                     {
@@ -580,7 +580,7 @@ impl DocumentState {
                             map.push((
                                 field.name_span,
                                 SemanticEntity::Field {
-                                    owner_sym_id: sdef.sym_id.inner(),
+                                    owner_sym_id: sdef.self_id.inner(),
                                     field_idx: i,
                                 },
                             ));
@@ -588,7 +588,7 @@ impl DocumentState {
                     }
                 }
                 Type::Enum(edef) => {
-                    let sym = &compiler.syms[edef.sym_id.inner()];
+                    let sym = &compiler.syms[edef.self_id.inner()];
                     if let Some(Some(ast)) = self.asts.first()
                         && let Some(ast_id) = sym.ast_id
                     {
@@ -597,7 +597,7 @@ impl DocumentState {
                             map.push((
                                 variant.name_span,
                                 SemanticEntity::Variant {
-                                    owner_sym_id: edef.sym_id.inner(),
+                                    owner_sym_id: edef.self_id.inner(),
                                     variant_idx: i,
                                 },
                             ));
@@ -605,7 +605,7 @@ impl DocumentState {
                     }
                 }
                 Type::Alias(adef) => {
-                    let sym = &compiler.syms[adef.sym_id.inner()];
+                    let sym = &compiler.syms[adef.self_id.inner()];
                     if let Some(Some(ast)) = self.asts.first()
                         && let Some(ast_id) = sym.ast_id
                     {
@@ -617,7 +617,7 @@ impl DocumentState {
                                 SemanticEntity::Local {
                                     name_id: abs_param.name_id,
                                     decl_span: abs_param.name_span,
-                                    owner_sym_id: Some(adef.sym_id.inner()),
+                                    owner_sym_id: Some(adef.self_id.inner()),
                                 },
                             ));
                         }
@@ -753,7 +753,7 @@ impl DocumentState {
             .syms
             .iter()
             .filter(|sym| matches!(sym.kind, SymbolKind::Directive(_)))
-            .map(|sym| (sym.name_id.id, sym.sym_id))
+            .map(|sym| (sym.name_id.id, sym.self_id))
             .collect();
 
         // Track spans already in `map` to avoid shadowing user-defined symbols
@@ -2306,7 +2306,7 @@ impl RefCollector<'_> {
 
     /// The type of a variable whose value is already known, if it has one.
     fn variable_type(&self, var_id: chrn_utils::id_types::VariableId) -> Option<TypeId> {
-        let VariableState::Known(val_id) = self.compiler.variables[var_id].state else {
+        let VariableState::Known(val_id) = self.compiler.vars[var_id].state else {
             return None;
         };
         Some(self.compiler.values[val_id].type_id)

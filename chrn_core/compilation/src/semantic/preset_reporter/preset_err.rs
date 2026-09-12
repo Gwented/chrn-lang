@@ -15,7 +15,7 @@ use crate::{
     resolvers::typechecker::typechecker_concepts::{ExpectedKind, ExpectedKindType},
     semantic::hir::{
         hir_concepts::TypeKind,
-        hir_symbols::{FuncKind, SymbolKindFlat},
+        hir_symbols::{BuiltinFuncKind, SymbolKindFlat},
     },
 };
 
@@ -173,13 +173,13 @@ pub enum FuncConstraints {
     FuncConstraintMismatch {
         constraint: ArgConstraint,
         fmtted_ty: ChrnClassified,
-        func_kind: FuncKind,
+        func_kind: BuiltinFuncKind,
         spans: Vec<SourceSpan>,
     },
     /// Constraint, function type, amount of incorrect params found, spans
     ArgCountMismatch {
         constraint: ArgConstraint,
-        func_kind: FuncKind,
+        func_kind: BuiltinFuncKind,
         count: u32,
         spans: Vec<SourceSpan>,
     },

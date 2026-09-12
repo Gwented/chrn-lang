@@ -39,6 +39,7 @@ use crate::{
 /// Resolves Fields/Variants
 ///
 /// Intended to allow for future stages to assume all inner parts of data have been processed.
+/// Assumes that `TypeResolver` is used next
 pub struct MemberResolver<'a> {
     cfg: &'a mut ChrnConfig,
     interner: &'a Intern,

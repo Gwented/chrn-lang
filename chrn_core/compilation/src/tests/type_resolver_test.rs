@@ -177,7 +177,7 @@ fn type_resolver_complex_test() {
         SymbolKind::Variable(var_id) => *var_id,
         other => panic!("CONSTANT symbol should be Variable, got {:?}", other),
     };
-    let var_def = &compiler.variables[var_id];
+    let var_def = &compiler.vars[var_id];
     let val_id = match &var_def.state {
         VariableState::Known(val_id) => *val_id,
         other => panic!("CONSTANT should be Known, got {:?}", other),
@@ -220,7 +220,7 @@ fn type_resolver_string_concat_type_test() {
         .try_search_str("X")
         .expect("'X' should be interned");
     let var_def = compiler
-        .variables
+        .vars
         .iter()
         .find(|v| v.name_id == name_id)
         .expect("Variable 'X' not found");

@@ -22,7 +22,7 @@ use crate::{
 /// * compiler: Allows for engines to search for the semantic data from options.
 /// * interner: Allows for data carrying to remain small by using the already present interner.
 /// * builder: Passed by ownership, mutated, and returned since builders pass in `self` implicitly.
-/// * opts: Options to edit `builder`.
+/// * opt_bases: Options to edit `builder`.
 ///
 /// NOTE: This may not alter `builder` at all depending on if no data is producible from the data given.
 /// For example, a list available members option may be given, but if no members are present nothing
@@ -47,8 +47,6 @@ pub fn enrich(
                 }
             };
 
-            // Isn't this...like...expensive?
-            // Moving? Several times?
             builder = new_builder;
 
             if ok {
@@ -63,7 +61,7 @@ pub fn enrich(
 
 /// Returns builder and whether or not there was a no-op
 ///
-/// Returns `true` if succeeded, `false` on failure
+/// Returns `true` on success, `false` on failure
 pub(super) fn exec_list_available(
     compiler: &ScriptCompiler,
     interner: &Intern,

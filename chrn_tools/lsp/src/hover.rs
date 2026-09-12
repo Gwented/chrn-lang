@@ -45,7 +45,7 @@ use compilation::script_compiler::ScriptCompiler;
 use compilation::semantic::hir::hir_concepts::Type;
 use compilation::semantic::hir::hir_impls::{ConfigMemberMetadataKind, ImplMemberKind};
 use compilation::semantic::hir::hir_symbols::{
-    MemberSymbolKind, SymbolKind, SymbolOrigin, VariableState,
+    FuncForm, MemberSymbolKind, SymbolKind, SymbolOrigin, VariableState,
 };
 use lang::types::builtins::{BuiltinType, BuiltinTypeKind};
 use lang::types::externs::{
@@ -269,7 +269,7 @@ fn symbol_hover(
 
     let mut hover_text = match sym.kind {
         SymbolKind::Type(type_id) => type_symbol_hover(compiler, interner, sym, type_id),
-        SymbolKind::Variable(var_id) => match compiler.variables[var_id].state {
+        SymbolKind::Variable(var_id) => match compiler.vars[var_id].state {
             VariableState::Known(val_id) => {
                 let val_info = &compiler.values[val_id];
                 let type_str = format_type(
@@ -656,7 +656,7 @@ fn format_type(
             b => interner.search(b.kind().name_id()).to_string(),
         },
         Type::Struct(struct_def) => {
-            let name = interner.search(compiler.syms[struct_def.sym_id.inner()].name_id);
+            let name = interner.search(compiler.syms[struct_def.self_id.inner()].name_id);
 
             if matches!(style, TypeDisplay::Reference) {
                 return name.to_string();
@@ -681,7 +681,7 @@ fn format_type(
             }
         }
         Type::Enum(enum_def) => {
-            let name = interner.search(compiler.syms[enum_def.sym_id.inner()].name_id);
+            let name = interner.search(compiler.syms[enum_def.self_id.inner()].name_id);
 
             if matches!(style, TypeDisplay::Reference) {
                 return name.to_string();
@@ -712,16 +712,15 @@ fn format_type(
         }
         Type::Func(func) => {
             let name = interner.search(func.name_id);
-            let prefix = if func.is_callable {
-                "function"
-            } else {
-                "predicate"
+            let prefix = match func.kind.form() {
+                FuncForm::Call => "function",
+                FuncForm::Predicate => "predicate",
             };
 
             format!("{prefix} {name}")
         }
         Type::Alias(alias_def) => {
-            let name = interner.search(compiler.syms[alias_def.sym_id.inner()].name_id);
+            let name = interner.search(compiler.syms[alias_def.self_id.inner()].name_id);
 
             if matches!(style, TypeDisplay::Reference) {
                 return name.to_string();

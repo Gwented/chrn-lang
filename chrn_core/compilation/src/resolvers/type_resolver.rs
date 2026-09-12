@@ -38,7 +38,7 @@ use chrn_utils::source_map::source_diagnostic::{
 use chrn_utils::source_map::source_span::{self, SourceSpan};
 use chrn_utils::utils::containers::{SpannedContainer, SpannedContainerRef};
 use lang::chrn_classifier::ChrnClassified;
-use lang::values::{self, Value};
+use lang::values::Value;
 
 use crate::constraints::ArgConstraint;
 use crate::id_tag_decls::{
@@ -93,7 +93,7 @@ use crate::resolvers::type_resolver::type_context::{
     StandingExprState, TypeContext,
 };
 
-/// Resolves types and builds the rest of any structs, enums, or expressions that can be const
+/// Resolves types and builds the rest of compilation units that can be const
 /// evaluated. Does so by mutating the compiler given, and maintaining context to retain it's last
 /// state.
 pub struct TypeResolver<'a> {
@@ -248,12 +248,13 @@ impl<'res> TypeResolver<'res> {
         // is looped, given any new information.
         let mut last_resolved_count: u32 = 0;
         let mut current_resolved_count: u32 = 0;
+
+        //TODO: (Possibly bad) What if we stored seen ids in order which made it so type ctx is far
+        //more likely to loop over the most optimized order?
         while self.ty_ctx.needs_check {
-            // let sym = &self.compiler.symbols[44];
-            // let name = self.interner.search(sym.name_id );
-            // dbg!(name);
-            //actually resolved already.
             self.ty_ctx.needs_check = false;
+            //FIXME: Could be linked to perf inconsistency
+
             // Giving ownership to a variable since the traversal chosen needs mutation while
             // traversing
             let mut pending_syms: Vec<(SymbolId, PendingSymbol)> =
@@ -644,8 +645,31 @@ impl<'res> TypeResolver<'res> {
             //Was about to say the same thing.
             //Could also just converge into a match guarded set of arms, which at the end reports all
             //Hi
+            //FIXME: Doesn't stop override from doing this.
             match abs_stmt {
                 AstStmt::OptAssignment(opt) => {
+                    //TODO: Should not skip so that the semantics are still picked up by tooling
+                    if !matches!(root_meta, ConfigRootMetadataKind::Complex) {
+                        // Should make this a general typechecker act
+                        // can_use_* or can use based enum for cfg root/memb
+                        let core_msg = "Cannot use options outside of `complex`";
+                        let builder = SourceDiagnostic::builder(
+                            //TODO: Member and root specific version maybe since this is getting pretty
+                            //specific
+                            ErrorCode::ConfigDeclErr.into(),
+                            DiagnosticLevel::Error,
+                            core_msg,
+                            env.region.path_id,
+                        )
+                        .add_annotation(
+                            opt.name_span,
+                            AnnotationKind::Primary,
+                            None,
+                        );
+                        self.summary.push_diag(builder.build());
+                        continue;
+                    }
+
                     //TODO: Needs (opt, associated_scope, scope_type, env)
                     let sp_name_id = SpannedContainer::new(opt.name_id, opt.name_span);
                     ident_tracker.insert_or_store(sp_name_id);
@@ -996,6 +1020,14 @@ impl<'res> TypeResolver<'res> {
                     //NOTE: This is more like a root context, and member context. Should we make
                     //this or is that over-complication?
                     let memb_ctx = ConfigMemberComplexContext::new(memb_id);
+
+                    let current_cfg_memb_id =
+                        ImplMemberId::new(self.compiler.impl_membs.len() as u32);
+                    self.compiler.impl_membs.push(ImplMemberKind::Unknown {
+                        sp_name_id: sp_memb_name_id.clone(),
+                        reserved_memb_id: current_cfg_memb_id,
+                    });
+
                     let id = self.resolve_cfg_member(
                         parent_impl_id,
                         // The type expr is derivative of path segments which may or may not be a valid type
@@ -1003,12 +1035,12 @@ impl<'res> TypeResolver<'res> {
                         last_seg.span,
                         &root_ctx,
                         &ConfigMemberContextKind::Complex(memb_ctx),
+                        abs_cfg_memb,
                         // sp_path_segs,
                         // &mut cfg_dfs,
                         &mut seen_cfg_idents,
                         // NOTE: Opt ident tracker
                         ident_tracker,
-                        abs_cfg_memb,
                         scope_type,
                         1,
                         env,
@@ -1092,12 +1124,12 @@ impl<'res> TypeResolver<'res> {
                         last_seg.span,
                         &root_ctx,
                         &ConfigMemberContextKind::Override(memb_ctx),
+                        abs_cfg_memb,
                         // sp_path_segs,
                         // &mut cfg_dfs,
                         &mut seen_cfg_idents,
                         // NOTE: Opt ident tracker
                         ident_tracker,
-                        abs_cfg_memb,
                         scope_type,
                         1,
                         env,
@@ -1285,10 +1317,12 @@ impl<'res> TypeResolver<'res> {
     /// ignored, meaning there is no real discernment.
     fn resolve_cfg_member<'env>(
         &mut self,
-        root_parent_impl_id: TaggedId<ImplId, ConfigRootTag>,
+        root_impl_id: TaggedId<ImplId, ConfigRootTag>,
         root_span: SourceSpan,
         cfg_root_ctx: &ConfigRootContextKind,
         parent_cfg_memb_ctx: &ConfigMemberContextKind,
+        // parent_cfg_memb_id: TaggedId<ImplMemberId, ConfigMemberTag>,
+        parent_abs_cfg: &'env AbstractConfig,
         // NOTE: Recursive errors no longer exist at the moment because override can only access known
         // configs like "types" inside of "RUST { types {} }".
         //
@@ -1302,7 +1336,6 @@ impl<'res> TypeResolver<'res> {
         // Carried over and reset through cfg member recursive resolution to track duplicate
         // identifiers.
         seen_opt_idents: &mut DuplicateTracker<SpannedContainer<InternedId>>,
-        parent_abs_cfg: &'env AbstractConfig,
         scope_type: ScopeType,
         depth: u8,
         env: &ResolverEnv,
@@ -1401,13 +1434,15 @@ impl<'res> TypeResolver<'res> {
 
                     // Really seems like this should have a direct tie to the exact member of symbol
                     // it's affecting.
-                    let impl_memb_id = ImplMemberId::new(self.compiler.impl_membs.len() as u32);
-                    // todo!("parent_memb_id needs to be an impl member id to it's parent");
+                    let self_impl_memb_id =
+                        ImplMemberId::new(self.compiler.impl_membs.len() as u32);
+                    todo!("parent_memb_id needs to be an impl member id to it's parent");
                     //
                     // Should this maybe not be it's own id member holder?
                     let opt = OptionAssignmentMember::new(
+                        todo!(),
                         parent_memb_id,
-                        impl_memb_id.into_tagged::<OptionAssignmentMemberTag>(),
+                        self_impl_memb_id.into_tagged::<OptionAssignmentMemberTag>(),
                         abs_opt.name_id,
                         abs_opt.name_span,
                         expr_id,
@@ -1416,7 +1451,7 @@ impl<'res> TypeResolver<'res> {
                     self.compiler
                         .impl_membs
                         .push(ImplMemberKind::OptAssignmentMember(opt));
-                    impl_membs.push(impl_memb_id);
+                    impl_membs.push(self_impl_memb_id);
                 }
                 AstStmt::MultiAssignType(abs_multi) => {
                     // Doesn't do if override checks yet so that the semantic properties are still
@@ -1579,8 +1614,7 @@ impl<'res> TypeResolver<'res> {
                         continue;
                     };
 
-                    let extern_tag: TaggedId<SymbolId, ExternTypeTag> =
-                        extern_type_sym_id.into_tagged::<ExternTypeTag>();
+                    let extern_tag = extern_type_sym_id.into_tagged::<ExternTypeTag>();
 
                     let impl_memb_id = ImplMemberId::new(self.compiler.impl_membs.len() as u32);
                     let self_tag = impl_memb_id.into_tagged::<MultiTypeAssignmentTag>();
@@ -1935,14 +1969,14 @@ impl<'res> TypeResolver<'res> {
                     };
 
                     let cfg_memb_id = self.resolve_cfg_member(
-                        root_parent_impl_id,
+                        root_impl_id,
                         root_span,
                         cfg_root_ctx,
                         &inner_memb_ctx,
+                        abs_cfg_memb,
                         // cfg_dfs,
                         seen_cfg_idents,
                         seen_opt_idents,
-                        abs_cfg_memb,
                         scope_type,
                         depth + 1,
                         env,
@@ -2004,13 +2038,13 @@ impl<'res> TypeResolver<'res> {
                         ConfigMemberOverrideContext::new(override_sym_id, ctx.linked_kind);
 
                     let cfg_memb_id = self.resolve_cfg_member(
-                        root_parent_impl_id,
+                        root_impl_id,
                         root_span,
                         cfg_root_ctx,
                         &ConfigMemberContextKind::Override(memb_ctx),
+                        abs_cfg_memb,
                         seen_cfg_idents,
                         seen_opt_idents,
-                        abs_cfg_memb,
                         scope_type,
                         depth + 1,
                         env,
@@ -2202,7 +2236,7 @@ impl<'res> TypeResolver<'res> {
             let root_expr = &mut self.compiler.exprs[root_id];
             match self.compiler.syms[resolved_sym_id].kind {
                 SymbolKind::Variable(var_id) => {
-                    let var = &self.compiler.variables[var_id];
+                    let var = &self.compiler.vars[var_id];
                     let VariableState::Known(val_id) = var.state else {
                         continue;
                     };
@@ -3124,7 +3158,7 @@ impl<'res> TypeResolver<'res> {
             };
 
             let param_sym_id = SymbolId::new(self.compiler.syms.len() as u32);
-            let var_id = VariableId::new(self.compiler.variables.len() as u32);
+            let var_id = VariableId::new(self.compiler.vars.len() as u32);
 
             let var = VarDef::new(
                 param_sym_id.into_tagged::<VarTag>(),
@@ -3156,7 +3190,7 @@ impl<'res> TypeResolver<'res> {
             let val_info = ValueInfo::new(type_id, expr_id, None);
 
             self.compiler.syms.push(param_sym);
-            self.compiler.variables.push(var);
+            self.compiler.vars.push(var);
             self.compiler.exprs.push(resolved_expr);
             self.compiler.values.push(val_info);
 
@@ -3294,7 +3328,7 @@ impl<'res> TypeResolver<'res> {
                         let expr_id = ExprId::new(self.compiler.exprs.len() as u32);
                         let expr = match self.compiler.syms[local_sym_id].kind {
                             SymbolKind::Variable(var_id) => {
-                                let var = &self.compiler.variables[var_id];
+                                let var = &self.compiler.vars[var_id];
                                 let expr_hir = ExprHir::Var(local_sym_id);
 
                                 let VariableState::Known(val_id) = var.state else {
@@ -3437,7 +3471,7 @@ impl<'res> TypeResolver<'res> {
                             }
                         }
                         SymbolKind::Variable(var_id) => {
-                            let var = &self.compiler.variables[var_id];
+                            let var = &self.compiler.vars[var_id];
 
                             match var.state {
                                 // A value is attached to the variable found

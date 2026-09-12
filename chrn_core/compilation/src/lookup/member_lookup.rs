@@ -81,7 +81,7 @@ pub fn lookup_member(
                 for memb_id in &struct_def.fields {
                     let field = compiler.get_field(*memb_id);
                     if field.name_id == target_name_id {
-                        return MemberLookupResult::Found(field.memb_id.inner());
+                        return MemberLookupResult::Found(field.self_id.inner());
                     }
                 }
 
@@ -91,7 +91,7 @@ pub fn lookup_member(
                 for memb_id in &enum_def.variants {
                     let variant = compiler.get_variant(*memb_id);
                     if variant.name_id == target_name_id {
-                        return MemberLookupResult::Found(variant.memb_id.inner());
+                        return MemberLookupResult::Found(variant.self_id.inner());
                     }
                 }
 

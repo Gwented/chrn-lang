@@ -73,7 +73,7 @@ pub fn find_type_id(
                 match &compiler.syms[current_sym_id].kind {
                     SymbolKind::Type(type_id) => return Some(*type_id),
                     SymbolKind::Variable(var_id) => {
-                        let type_id = match compiler.variables[*var_id].state {
+                        let type_id = match compiler.vars[*var_id].state {
                             VariableState::ReservedTypeSlot(type_id) => type_id,
                             VariableState::Known(val_id) => compiler.values[val_id].type_id,
                         };
@@ -325,13 +325,13 @@ pub fn find_symbols_named<'a>(
     for sym in compiler.syms.iter() {
         if exact_match {
             if sym.name_id == target_name_id {
-                found_syms.push(sym.sym_id);
+                found_syms.push(sym.self_id);
             }
         } else {
             let sym_bytes = interner.search(sym.name_id).as_bytes();
 
             if algoc::bytes::is_similar(sym_bytes, target_bytes) {
-                found_syms.push(sym.sym_id);
+                found_syms.push(sym.self_id);
             }
         }
     }
@@ -456,7 +456,7 @@ fn collect_inner_symbols<'a>(
             for memb_id in &struct_def.fields {
                 let field = compiler.get_field(*memb_id);
                 if field.name_id == target_name_id {
-                    found.push(field.memb_id.inner());
+                    found.push(field.self_id.inner());
                 }
             }
         }
@@ -464,7 +464,7 @@ fn collect_inner_symbols<'a>(
             for memb_id in &enum_def.variants {
                 let variant = compiler.get_variant(*memb_id);
                 if variant.name_id == target_name_id {
-                    found.push(variant.memb_id.inner());
+                    found.push(variant.self_id.inner());
                 }
             }
         }

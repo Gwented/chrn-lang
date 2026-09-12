@@ -1,3 +1,4 @@
+// Why is this a macro????
 /// Given a len, determines if it should use a plural s
 #[macro_export]
 macro_rules! s_suffix {
