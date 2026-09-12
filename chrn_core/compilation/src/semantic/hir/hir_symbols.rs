@@ -13,7 +13,9 @@ use lang::{
 
 use crate::{
     constraints::ArgConstraint,
-    id_tag_decls::{FieldTag, VariantTag},
+    id_tag_decls::{
+        AliasTag, EnumTag, FieldTag, FuncTag, StructTag, TypeDefTag, VarTag, VariantTag,
+    },
     lookup::scopes::scopes_concepts::{AssociatedScopeKind, ScopeType},
     script_compiler::ScriptCompiler,
     semantic::hir::{hir_concepts::Type, hir_exprs::Param},
@@ -159,7 +161,7 @@ impl ChrnClassifiable for SymbolKindFlat {
 #[derive(Debug)]
 pub struct VarDef {
     /// `SymbolId` of `self`
-    pub sym_id: SymbolId,
+    pub sym_id: TaggedId<SymbolId, VarTag>,
     pub name_id: InternedId,
     pub meta: VariableMetadata,
     // Same job as SymbolKind::ReservedTypeSlot
@@ -168,7 +170,7 @@ pub struct VarDef {
 
 impl VarDef {
     pub fn new(
-        sym_id: SymbolId,
+        sym_id: TaggedId<SymbolId, VarTag>,
         name_id: InternedId,
         meta: VariableMetadata,
         state: VariableState,
@@ -224,7 +226,7 @@ pub enum MemberSymbolKind {
     //// Member that has reserved a slot but not yet defined
     // Unknown {
     //     sp_name_id: SpannedContainer<InternedId>,
-    //     reserved_member_id: MemberId,
+    //     reserved_memb_id: MemberId,
     // },
 }
 
@@ -233,8 +235,8 @@ impl MemberSymbolKind {
     ///
     /// Only field and variant members are considered to have underlying types.
     // Should that be the case though?
-    pub fn boundaries(compiler: &ScriptCompiler, member_id: MemberId) -> Option<TypeBoundaryFlags> {
-        let type_id_opt = match &compiler.sym_members[member_id] {
+    pub fn boundaries(compiler: &ScriptCompiler, memb_id: MemberId) -> Option<TypeBoundaryFlags> {
+        let type_id_opt = match &compiler.sym_members[memb_id] {
             MemberSymbolKind::Field(field_repre) => Some(field_repre.type_id),
             MemberSymbolKind::Variant(variant_repre) => variant_repre.type_id,
         };
@@ -262,10 +264,10 @@ impl MemberSymbolKind {
         }
     }
 
-    pub fn member_id(&self) -> MemberId {
+    pub fn memb_id(&self) -> MemberId {
         match self {
-            MemberSymbolKind::Field(field_repre) => field_repre.member_id,
-            MemberSymbolKind::Variant(variant_repre) => variant_repre.member_id,
+            MemberSymbolKind::Field(field_repre) => field_repre.memb_id.inner(),
+            MemberSymbolKind::Variant(variant_repre) => variant_repre.memb_id.inner(),
         }
     }
 
@@ -275,8 +277,8 @@ impl MemberSymbolKind {
     /// is `Person`, but the actual parent would be considered the declaration of `State` itself.
     pub fn local_parent_sym_id(&self) -> SymbolId {
         match self {
-            MemberSymbolKind::Field(field_repre) => field_repre.local_parent_sym_id,
-            MemberSymbolKind::Variant(variant_repre) => variant_repre.local_parent_sym_id,
+            MemberSymbolKind::Field(field_repre) => field_repre.local_parent_sym_id.inner(),
+            MemberSymbolKind::Variant(variant_repre) => variant_repre.local_parent_sym_id.inner(),
         }
     }
 }
@@ -284,7 +286,7 @@ impl MemberSymbolKind {
 /// HIR representation of the language `struct` type
 #[derive(Debug)]
 pub struct StructDef {
-    pub sym_id: SymbolId,
+    pub sym_id: TaggedId<SymbolId, StructTag>,
     pub name_span: SourceSpan,
     pub fields: Vec<TaggedId<MemberId, FieldTag>>,
     pub glob_conds: Vec<ExprId>,
@@ -293,7 +295,7 @@ pub struct StructDef {
 
 impl StructDef {
     pub fn new(
-        sym_id: SymbolId,
+        sym_id: TaggedId<SymbolId, StructTag>,
         name_span: SourceSpan,
         fields: Vec<TaggedId<MemberId, FieldTag>>,
     ) -> StructDef {
@@ -316,7 +318,7 @@ impl ChrnClassifiable for StructDef {
 /// HIR representation of the language `enum` type
 #[derive(Debug)]
 pub struct EnumDef {
-    pub sym_id: SymbolId,
+    pub sym_id: TaggedId<SymbolId, EnumTag>,
     // Is not present because the symbol also holds the name id which would be duplicated an id. May
     // change to where it includes it anyways.
     // pub name_id: InternedId,
@@ -328,7 +330,7 @@ pub struct EnumDef {
 
 impl EnumDef {
     pub fn new(
-        sym_id: SymbolId,
+        sym_id: TaggedId<SymbolId, EnumTag>,
         // name_id: InternedId,
         name_span: SourceSpan,
         variants: Vec<TaggedId<MemberId, VariantTag>>,
@@ -366,9 +368,9 @@ pub struct VariantRepre {
     /// So if struct `Person` had a field of `State`, `State` would consider `Person` it's local
     /// parent, but the actual declaration location of `State` as a struct/enum itself would be in
     /// an entirely different place
-    pub local_parent_sym_id: SymbolId,
+    pub local_parent_sym_id: TaggedId<SymbolId, EnumTag>,
     /// MemberId of `self`
-    pub member_id: MemberId,
+    pub memb_id: TaggedId<MemberId, VariantTag>,
     pub name_id: InternedId,
     pub name_span: SourceSpan,
     // Because enum types are nullable
@@ -383,8 +385,8 @@ pub struct VariantRepre {
 
 impl VariantRepre {
     pub fn new(
-        local_parent_sym_id: SymbolId,
-        member_id: MemberId,
+        local_parent_sym_id: TaggedId<SymbolId, EnumTag>,
+        memb_id: TaggedId<MemberId, VariantTag>,
         name_id: InternedId,
         name_span: SourceSpan,
         // spanned_ty: Option<SpannedContainer<TypeId>>,
@@ -393,7 +395,7 @@ impl VariantRepre {
     ) -> VariantRepre {
         VariantRepre {
             local_parent_sym_id,
-            member_id,
+            memb_id,
             name_id,
             name_span,
             type_id,
@@ -408,7 +410,7 @@ impl VariantRepre {
 /// Typedefs are: "var-> name: str" meaning the typedef type has types so it has a type id
 #[derive(Debug)]
 pub struct TypeDef {
-    pub sym_id: SymbolId,
+    pub sym_id: TaggedId<SymbolId, TypeDefTag>,
     // The padding fills this to 72 bytes anyways so this does nothing but give convenience and
     // reduce lookup
     pub name_id: InternedId,
@@ -421,7 +423,7 @@ pub struct TypeDef {
 
 impl TypeDef {
     pub fn new(
-        sym_id: SymbolId,
+        sym_id: TaggedId<SymbolId, TypeDefTag>,
         name_id: InternedId,
         name_span: SourceSpan,
         type_id: TypeId,
@@ -446,7 +448,7 @@ impl ChrnClassifiable for TypeDef {
 #[derive(Debug)]
 pub struct FuncDef {
     pub name_id: InternedId,
-    pub sym_id: SymbolId,
+    pub sym_id: TaggedId<SymbolId, FuncTag>,
     pub kind: FuncKind,
     // May be separate structure
     pub is_callable: bool,
@@ -466,7 +468,7 @@ pub struct FuncDef {
 
 impl FuncDef {
     pub fn new(
-        sym_id: SymbolId,
+        sym_id: TaggedId<SymbolId, FuncTag>,
         name_id: InternedId,
         kind: FuncKind,
         is_callable: bool,
@@ -501,9 +503,9 @@ pub struct FieldRepre {
     /// So if struct `Person` had a field of `State`, `State` would consider `Person` it's local
     /// parent, but the actual declaration location of `State` as a struct/enum itself would be in
     /// an entirely different place
-    pub local_parent_sym_id: SymbolId,
+    pub local_parent_sym_id: TaggedId<SymbolId, StructTag>,
     /// MemberId of `self`
-    pub member_id: MemberId,
+    pub memb_id: TaggedId<MemberId, FieldTag>,
     pub name_id: InternedId,
     pub name_span: SourceSpan,
     // To TypeDef
@@ -516,15 +518,15 @@ pub struct FieldRepre {
 
 impl FieldRepre {
     pub fn new(
-        local_parent_sym_id: SymbolId,
-        member_id: MemberId,
+        local_parent_sym_id: TaggedId<SymbolId, StructTag>,
+        memb_id: TaggedId<MemberId, FieldTag>,
         name_id: InternedId,
         name_span: SourceSpan,
         type_id: TypeId,
     ) -> FieldRepre {
         FieldRepre {
             local_parent_sym_id,
-            member_id,
+            memb_id,
             name_id,
             name_span,
             type_id,
@@ -536,7 +538,7 @@ impl FieldRepre {
 
 #[derive(Debug)]
 pub struct AliasDef {
-    pub sym_id: SymbolId,
+    pub sym_id: TaggedId<SymbolId, AliasTag>,
     pub name_span: SourceSpan,
     pub params: Vec<Param>,
     pub ty_constraints: TypeBoundaryFlags,
@@ -548,7 +550,7 @@ pub struct AliasDef {
 
 impl AliasDef {
     pub fn new(
-        sym_id: SymbolId,
+        sym_id: TaggedId<SymbolId, AliasTag>,
         name_span: SourceSpan,
         params: Vec<Param>,
         arg_constraints: Vec<ArgConstraint>,

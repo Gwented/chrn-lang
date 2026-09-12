@@ -9,7 +9,8 @@ use chrn_utils::{
 
 use crate::{
     id_tag_decls::{
-        ConfigMemberTag, ExternTypeTag, OptionAssignmentMemberTag, OptionAssignmentRootTag,
+        ConfigMemberTag, ConfigRootTag, ExternTypeTag, MultiTypeAssignmentTag,
+        OptionAssignmentMemberTag, OptionAssignmentRootTag,
     },
     lookup::scopes::scopes_concepts::{ScopeLookupPattern, ScopeType},
 };
@@ -56,7 +57,7 @@ pub enum ImplMemberKind {
     /// Member that has reserved a slot but not yet defined
     Unknown {
         sp_name_id: SpannedContainer<InternedId>,
-        reserved_member_id: ImplMemberId,
+        reserved_memb_id: ImplMemberId,
     },
 }
 
@@ -73,22 +74,20 @@ impl ImplMemberKind {
 #[derive(Debug)]
 pub struct ConfigRootCommon {
     /// `ImplId` of `self`
-    pub impl_id: ImplId,
+    pub impl_id: TaggedId<ImplId, ConfigRootTag>,
     /// ConfigId of `self`
     pub cfg_root_id: ConfigRootId,
     /// Lookup pattern that needs to be used to properly discern if
     /// `ScopeLookupPattern::Namespace/OnlyVar` should be used to search for the symbol associated with
     /// thie config
     pub lookup_pat: ScopeLookupPattern,
-    // /// ISOLATE
-    // pub kind: ConfigRootKindFlat,
     /// `ConfigMembers` held by `self`
     pub cfg_membs: Vec<TaggedId<ImplMemberId, ConfigMemberTag>>,
 }
 
 impl ConfigRootCommon {
     pub fn new(
-        impl_id: ImplId,
+        impl_id: TaggedId<ImplId, ConfigRootTag>,
         cfg_root_id: ConfigRootId,
         lookup_pat: ScopeLookupPattern,
         // kind: ConfigRootKindFlat,
@@ -98,7 +97,6 @@ impl ConfigRootCommon {
             impl_id,
             cfg_root_id,
             lookup_pat,
-            // kind,
             cfg_membs,
         }
     }
@@ -117,7 +115,7 @@ pub struct ConfigRoot {
     /// Must be `Namespace` or `Type`
     // Wrap in `Checked`?
     pub linked_sym_id: Option<SymbolId>,
-    /// What is expected depends on the root.
+    /// Expects: Option assignments. No other statements can be made at root.
     pub stmts: Vec<ImplMemberId>,
     pub kind: ConfigRootKind,
 }
@@ -152,11 +150,15 @@ pub struct ConfigMemberCommon {
     // This is not a `SpannedContainer` because it may become an Option
     pub name_span: SourceSpan,
     /// `ImplMemberId` of `self`
-    pub impl_memb_id: ImplMemberId,
+    pub impl_memb_id: TaggedId<ImplMemberId, ConfigMemberTag>,
 }
 
 impl ConfigMemberCommon {
-    pub fn new(name_id: InternedId, name_span: SourceSpan, impl_memb_id: ImplMemberId) -> Self {
+    pub fn new(
+        name_id: InternedId,
+        name_span: SourceSpan,
+        impl_memb_id: TaggedId<ImplMemberId, ConfigMemberTag>,
+    ) -> Self {
         Self {
             name_id,
             name_span,
@@ -170,8 +172,9 @@ impl ConfigMemberCommon {
 #[derive(Debug)]
 pub struct ConfigMember {
     pub common: ConfigMemberCommon,
-    /// Expects `OptionAssignmentMember`
-    pub ast_stmts: Vec<ImplMemberId>,
+    /// complex expects: Option assignments
+    /// override expects: MultiTypeAssignment
+    pub stmts: Vec<ImplMemberId>,
     // These configs are supposed to be usable by override too so maybe this becomes an enum where
     // it exposes metadata depending on override or not.
     pub meta: ConfigMemberMetadataKind,
@@ -191,13 +194,13 @@ impl ConfigMember {
         common: ConfigMemberCommon,
         meta: ConfigMemberMetadataKind,
         lookup_pat: ScopeLookupPattern,
-        ast_stmts: Vec<ImplMemberId>,
+        stmts: Vec<ImplMemberId>,
         cfg_members: Vec<TaggedId<ImplMemberId, ConfigMemberTag>>,
     ) -> ConfigMember {
         ConfigMember {
             common,
             meta,
-            ast_stmts,
+            stmts,
             lookup_pat,
             cfg_members,
         }
@@ -275,10 +278,10 @@ pub enum LinkedConfigOverrideMemberKind {
 /// Represents options and their values assigned by the user in a root config
 #[derive(Debug)]
 pub struct OptionAssignmentRoot {
-    /// `ImplId` of the `ConfigRoot`
-    pub parent_impl_id: ImplId,
+    /// `ImplId` of the `ConfigRoot` this is applied to
+    pub parent_impl_id: TaggedId<ImplId, ConfigRootTag>,
     /// `ImplMemberId` of `self`
-    pub impl_memb_id: ImplMemberId,
+    pub impl_memb_id: TaggedId<ImplMemberId, OptionAssignmentRootTag>,
     /// Identifier of option
     pub name_id: InternedId,
     /// Span of identifier
@@ -289,8 +292,8 @@ pub struct OptionAssignmentRoot {
 
 impl OptionAssignmentRoot {
     pub const fn new(
-        parent_impl_id: ImplId,
-        impl_memb_id: ImplMemberId,
+        parent_impl_id: TaggedId<ImplId, ConfigRootTag>,
+        impl_memb_id: TaggedId<ImplMemberId, OptionAssignmentRootTag>,
         name_id: InternedId,
         name_span: SourceSpan,
         array_expr_id: ExprId,
@@ -318,6 +321,7 @@ impl OptionAssignmentRoot {
 pub struct OptionAssignmentMember {
     // /// `ImplMemberId`
     // pub parent_impl_memb_id: ImplMemberId,
+    // FIX:
     /// `MemberId` of the `ConfigMember` it is derivative of
     pub parent_memb_id: MemberId,
     /// `ImplMemberId` of `self`
@@ -355,7 +359,7 @@ impl OptionAssignmentMember {
 #[derive(Debug)]
 pub struct MultiTypeAssignment {
     /// `ImplMemberId` of `self`
-    pub impl_memb_id: ImplMemberId,
+    pub impl_memb_id: TaggedId<ImplMemberId, MultiTypeAssignmentTag>,
     pub to_assign: Vec<TypeId>,
     // Maybe there will be `ExternTypeId` usage but not sure about that.
     /// `ExternType` to assign `to_assign` to
@@ -364,7 +368,7 @@ pub struct MultiTypeAssignment {
 
 impl MultiTypeAssignment {
     pub fn new(
-        impl_memb_id: ImplMemberId,
+        impl_memb_id: TaggedId<ImplMemberId, MultiTypeAssignmentTag>,
         to_assign: Vec<TypeId>,
         assign_to: TaggedId<SymbolId, ExternTypeTag>,
     ) -> Self {

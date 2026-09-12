@@ -1,12 +1,14 @@
-use chrn_utils::id_types::{
-    ArenaIndex, ImplId, SymbolId,
-    id_tags::{ArenaIndexTag, TaggedId},
-};
+use chrn_utils::id_types::{ImplId, SymbolId, id_tags::TaggedId};
 
-//NOTE: Could attach kind directly
+use crate::id_tag_decls::{AliasTag, ConfigRootTag, EnumTag, StructTag, TypeDefTag, VarTag};
+
 /// Represents all possible user compilation units
 #[derive(Debug, Copy, Clone)]
 pub enum CompilationUnit {
-    Symbol(SymbolId),
-    Impl(ImplId),
+    TypeDef(TaggedId<SymbolId, TypeDefTag>),
+    Struct(TaggedId<SymbolId, StructTag>),
+    Enum(TaggedId<SymbolId, EnumTag>),
+    Alias(TaggedId<SymbolId, AliasTag>),
+    Var(TaggedId<SymbolId, VarTag>),
+    ConfigRoot(TaggedId<ImplId, ConfigRootTag>),
 }

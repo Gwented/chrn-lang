@@ -24,7 +24,7 @@ use crate::{
         compilation_unit::CompilationUnit,
         hir::{
             hir_concepts::Type,
-            hir_symbols::{FieldRepre, MemberSymbolKind, SymbolKind, VariantRepre},
+            hir_symbols::{FieldRepre, MemberSymbolKind, VariantRepre},
         },
         preset_reporter::{self, preset_err::PresetErr},
         resolution::{self, resolution_concepts::TypeExprResult},
@@ -84,22 +84,14 @@ impl MemberResolver<'_> {
         // append to.
         for comp_unit in env.compilation_syms.iter().cloned() {
             match comp_unit {
-                CompilationUnit::Symbol(sym_id) => {
-                    match self.compiler.syms[sym_id].kind {
-                        // This split is more so, users can define these set of symbols, and users cannot
-                        // define the unreacables.
-                        SymbolKind::Type(type_id) => match &self.compiler.types[type_id].ty {
-                            Type::Struct(_) => self.resolve_struct(sym_id, &mut ident_tracker, env),
-                            Type::Enum(_) => self.resolve_enum(sym_id, &mut ident_tracker, env),
-                            _ => (),
-                        },
-                        // Still uses sym id since their actual ids make it a little more complicated to get
-                        // to their ast id
-                        // Users cannot define these but they exist internally.
-                        _ => (),
-                    }
+                CompilationUnit::Struct(sym_id) => {
+                    self.resolve_struct(sym_id, &mut ident_tracker, env)
                 }
-                CompilationUnit::Impl(_) => (),
+                CompilationUnit::Enum(sym_id) => self.resolve_enum(sym_id, &mut ident_tracker, env),
+                CompilationUnit::TypeDef(_)
+                | CompilationUnit::Alias(_)
+                | CompilationUnit::Var(_)
+                | CompilationUnit::ConfigRoot(_) => (),
             }
             ident_tracker.clear();
         }
@@ -114,11 +106,11 @@ impl MemberResolver<'_> {
 
     fn resolve_struct(
         &mut self,
-        parent_sym_id: SymbolId,
+        parent_sym_id: TaggedId<SymbolId, StructTag>,
         ident_tracker: &mut DuplicateTracker<SpannedContainer<InternedId>>,
         env: &ResolverEnv,
     ) {
-        let ast_id = self.compiler.syms[parent_sym_id]
+        let ast_id = self.compiler.syms[parent_sym_id.inner()]
             .ast_id
             .expect("Should be user symbols only");
         let abs_struct = env.ast_info.get_struct(ast_id);
@@ -212,7 +204,7 @@ impl MemberResolver<'_> {
             //but it probably still should hold it's local parent
             let field = FieldRepre::new(
                 parent_sym_id,
-                memb_id,
+                memb_id.into_tagged::<FieldTag>(),
                 field_typedef.name_id,
                 field_typedef.name_span,
                 type_id,
@@ -246,20 +238,18 @@ impl MemberResolver<'_> {
             self.summary.push_diag(builder.build());
         }
 
-        let struct_def = self
-            .compiler
-            .get_struct_mut(parent_sym_id.into_tagged::<StructTag>());
+        let struct_def = self.compiler.get_struct_mut(parent_sym_id);
         debug_assert_eq!(struct_def.fields.len(), 0);
         struct_def.fields.append(&mut fields);
     }
 
     fn resolve_enum(
         &mut self,
-        parent_sym_id: SymbolId,
+        parent_sym_id: TaggedId<SymbolId, EnumTag>,
         ident_tracker: &mut DuplicateTracker<SpannedContainer<InternedId>>,
         env: &ResolverEnv,
     ) {
-        let ast_id = self.compiler.syms[parent_sym_id]
+        let ast_id = self.compiler.syms[parent_sym_id.inner()]
             .ast_id
             .expect("Should be user symbols only");
         let abs_enum = env.ast_info.get_enum(ast_id);
@@ -274,7 +264,7 @@ impl MemberResolver<'_> {
             let sp_name_id = SpannedContainer::new(variant.name_id, variant.name_span);
             ident_tracker.insert_or_store(sp_name_id);
 
-            let member_id = MemberId::new(self.compiler.sym_members.len() as u32);
+            let memb_id = MemberId::new(self.compiler.sym_members.len() as u32);
             let variant_repre = if let Some(sp_ty_expr) = &variant.sp_ty_expr {
                 let type_id = match resolution::resolve_type_expr(
                     self.compiler,
@@ -330,7 +320,7 @@ impl MemberResolver<'_> {
 
                 VariantRepre::new(
                     parent_sym_id,
-                    member_id,
+                    memb_id.into_tagged::<VariantTag>(),
                     variant.name_id,
                     variant.name_span,
                     Some(type_id),
@@ -340,7 +330,7 @@ impl MemberResolver<'_> {
             } else {
                 VariantRepre::new(
                     parent_sym_id,
-                    member_id,
+                    memb_id.into_tagged::<VariantTag>(),
                     variant.name_id,
                     variant.name_span,
                     None,
@@ -352,7 +342,7 @@ impl MemberResolver<'_> {
                 .sym_members
                 .push(MemberSymbolKind::Variant(variant_repre));
 
-            variants.push(member_id.into_tagged::<VariantTag>());
+            variants.push(memb_id.into_tagged::<VariantTag>());
         }
 
         for found in ident_tracker.found_dups.drain(..) {
@@ -377,9 +367,7 @@ impl MemberResolver<'_> {
             self.summary.push_diag(builder.build());
         }
 
-        let enum_def = self
-            .compiler
-            .get_enum_mut(parent_sym_id.into_tagged::<EnumTag>());
+        let enum_def = self.compiler.get_enum_mut(parent_sym_id);
         debug_assert_eq!(enum_def.variants.len(), 0);
         enum_def.variants.append(&mut variants);
     }

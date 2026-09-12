@@ -273,7 +273,7 @@ impl ScriptCompiler {
     }
 
     pub(super) fn get_typedef(&self, sym_id: TaggedId<SymbolId, TypeDefTag>) -> &TypeDef {
-        match &self.syms[sym_id.inner] {
+        match &self.syms[sym_id.inner()] {
             sym_info => match &sym_info.kind {
                 SymbolKind::Type(type_id) => match &self.types[*type_id].ty {
                     Type::TypeDef(type_def) => type_def,
@@ -288,7 +288,7 @@ impl ScriptCompiler {
         &mut self,
         sym_id: TaggedId<SymbolId, TypeDefTag>,
     ) -> &mut TypeDef {
-        match &self.syms[sym_id.inner] {
+        match &self.syms[sym_id.inner()] {
             sym_info => match &sym_info.kind {
                 SymbolKind::Type(type_id) => match &mut self.types[*type_id].ty {
                     Type::TypeDef(type_def) => type_def,
@@ -303,7 +303,7 @@ impl ScriptCompiler {
     ///
     /// Panics when the symbol is not a struct type.
     pub fn get_struct(&self, sym_id: TaggedId<SymbolId, StructTag>) -> &StructDef {
-        match &self.syms[sym_id.inner] {
+        match &self.syms[sym_id.inner()] {
             sym_info => match &sym_info.kind {
                 SymbolKind::Type(type_id) => match &self.types[*type_id].ty {
                     Type::Struct(struct_def) => struct_def,
@@ -318,7 +318,7 @@ impl ScriptCompiler {
         &mut self,
         sym_id: TaggedId<SymbolId, StructTag>,
     ) -> &mut StructDef {
-        match self.syms.get_mut(sym_id.inner).expect("misusage") {
+        match self.syms.get_mut(sym_id.inner()).expect("misusage") {
             sym_info => match &mut sym_info.kind {
                 SymbolKind::Type(type_id) => match &mut self.types[*type_id].ty {
                     Type::Struct(struct_def) => struct_def,
@@ -330,7 +330,7 @@ impl ScriptCompiler {
     }
 
     pub(super) fn get_func(&self, sym_id: TaggedId<SymbolId, FuncTag>) -> &FuncDef {
-        match &self.syms[sym_id.inner] {
+        match &self.syms[sym_id.inner()] {
             sym_info => match &sym_info.kind {
                 SymbolKind::Type(type_id) => match &self.types[*type_id].ty {
                     Type::Func(func_def) => func_def,
@@ -342,7 +342,7 @@ impl ScriptCompiler {
     }
 
     pub(super) fn get_func_mut(&mut self, sym_id: TaggedId<SymbolId, FuncTag>) -> &mut FuncDef {
-        match self.syms.get_mut(sym_id.inner).expect("misusage") {
+        match self.syms.get_mut(sym_id.inner()).expect("misusage") {
             sym_info => match &mut sym_info.kind {
                 SymbolKind::Type(type_id) => match &mut self.types[*type_id].ty {
                     Type::Func(func_def) => func_def,
@@ -357,7 +357,7 @@ impl ScriptCompiler {
     ///
     /// Panics when the symbol is not an enum type.
     pub fn get_enum(&self, sym_id: TaggedId<SymbolId, EnumTag>) -> &EnumDef {
-        match &self.syms[sym_id.inner] {
+        match &self.syms[sym_id.inner()] {
             sym_info => match &sym_info.kind {
                 SymbolKind::Type(type_id) => match &self.types[*type_id].ty {
                     Type::Enum(enum_def) => enum_def,
@@ -369,7 +369,7 @@ impl ScriptCompiler {
     }
 
     pub(super) fn get_enum_mut(&mut self, sym_id: TaggedId<SymbolId, EnumTag>) -> &mut EnumDef {
-        match self.syms.get_mut(sym_id.inner).expect("misusage") {
+        match self.syms.get_mut(sym_id.inner()).expect("misusage") {
             sym_info => match &mut sym_info.kind {
                 SymbolKind::Type(type_id) => match &mut self.types[*type_id].ty {
                     Type::Enum(enum_def) => enum_def,
@@ -381,7 +381,7 @@ impl ScriptCompiler {
     }
 
     pub(super) fn get_alias(&self, sym_id: TaggedId<SymbolId, AliasTag>) -> &AliasDef {
-        match &self.syms[sym_id.inner] {
+        match &self.syms[sym_id.inner()] {
             sym_info => match &sym_info.kind {
                 SymbolKind::Type(type_id) => match &self.types[*type_id].ty {
                     Type::Alias(alias_def) => alias_def,
@@ -393,7 +393,7 @@ impl ScriptCompiler {
     }
 
     pub(super) fn get_alias_mut(&mut self, sym_id: TaggedId<SymbolId, AliasTag>) -> &mut AliasDef {
-        match self.syms.get_mut(sym_id.inner).expect("Misusage") {
+        match self.syms.get_mut(sym_id.inner()).expect("Misusage") {
             sym_info => match &mut sym_info.kind {
                 SymbolKind::Type(type_id) => match &mut self.types[*type_id].ty {
                     Type::Alias(alias_def) => alias_def,
@@ -406,7 +406,7 @@ impl ScriptCompiler {
 
     /// Assumes the symbol given is a variable, meaning a symbol with a value inside of it
     pub(super) fn get_var(&self, sym_id: TaggedId<SymbolId, VarTag>) -> &VarDef {
-        match &self.syms[sym_id.inner] {
+        match &self.syms[sym_id.inner()] {
             sym_info => match &sym_info.kind {
                 SymbolKind::Variable(var_id) => &self.variables[*var_id],
                 _ => unreachable!(),
@@ -416,7 +416,7 @@ impl ScriptCompiler {
 
     /// Assumes the symbol given is a variable, meaning a symbol with a value inside of it
     pub(super) fn get_var_mut(&mut self, sym_id: TaggedId<SymbolId, VarTag>) -> &mut VarDef {
-        match &self.syms[sym_id.inner] {
+        match &self.syms[sym_id.inner()] {
             sym_info => match &sym_info.kind {
                 SymbolKind::Variable(var_id) => &mut self.variables[*var_id],
                 _ => unreachable!(),
@@ -426,7 +426,7 @@ impl ScriptCompiler {
 
     /// Extracts the config root represented by `impl_id`.
     pub fn get_cfg_root(&self, impl_id: TaggedId<ImplId, ConfigRootTag>) -> &ConfigRoot {
-        match &self.impls[impl_id.inner].kind {
+        match &self.impls[impl_id.inner()].kind {
             ImplHirKind::Config(cfg_id) => &self.cfgs[*cfg_id],
         }
     }
@@ -435,7 +435,7 @@ impl ScriptCompiler {
         &mut self,
         impl_id: TaggedId<ImplId, ConfigRootTag>,
     ) -> &mut ConfigRoot {
-        match &self.impls[impl_id.inner] {
+        match &self.impls[impl_id.inner()] {
             impl_hir => match &impl_hir.kind {
                 ImplHirKind::Config(cfg_id) => &mut self.cfgs[*cfg_id],
             },
@@ -443,7 +443,7 @@ impl ScriptCompiler {
     }
 
     pub(super) fn get_directive(&self, sym_id: TaggedId<SymbolId, DirectiveTag>) -> &Directive {
-        match &self.syms[sym_id.inner] {
+        match &self.syms[sym_id.inner()] {
             sym_info => match &sym_info.kind {
                 SymbolKind::Directive(directive_id) => &self.directives[*directive_id],
                 _ => unreachable!(),
@@ -453,7 +453,7 @@ impl ScriptCompiler {
 
     /// Assumes the member symbol given is a field
     pub fn get_field(&self, memb_id: TaggedId<MemberId, FieldTag>) -> &FieldRepre {
-        match &self.sym_members[memb_id.inner] {
+        match &self.sym_members[memb_id.inner()] {
             MemberSymbolKind::Field(field_repre) => field_repre,
             MemberSymbolKind::Variant(_) => unreachable!(),
         }
@@ -462,17 +462,17 @@ impl ScriptCompiler {
     /// Assumes the member symbol given is a field
     pub(super) fn get_field_mut(
         &mut self,
-        member_id: TaggedId<MemberId, FieldTag>,
+        memb_id: TaggedId<MemberId, FieldTag>,
     ) -> &mut FieldRepre {
-        match &mut self.sym_members[member_id.inner] {
+        match &mut self.sym_members[memb_id.inner()] {
             MemberSymbolKind::Field(field_repre) => field_repre,
             _ => unreachable!(),
         }
     }
 
     /// Assumes the member symbol given is a variant
-    pub fn get_variant(&self, member_id: TaggedId<MemberId, VariantTag>) -> &VariantRepre {
-        match &self.sym_members[member_id.inner] {
+    pub fn get_variant(&self, memb_id: TaggedId<MemberId, VariantTag>) -> &VariantRepre {
+        match &self.sym_members[memb_id.inner()] {
             MemberSymbolKind::Variant(variant_repre) => variant_repre,
             _ => unreachable!(),
         }
@@ -481,9 +481,9 @@ impl ScriptCompiler {
     /// Assumes the member symbol given is a variant
     pub(super) fn get_variant_mut(
         &mut self,
-        member_id: TaggedId<MemberId, VariantTag>,
+        memb_id: TaggedId<MemberId, VariantTag>,
     ) -> &mut VariantRepre {
-        match &mut self.sym_members[member_id.inner] {
+        match &mut self.sym_members[memb_id.inner()] {
             MemberSymbolKind::Variant(variant_repre) => variant_repre,
             _ => unreachable!(),
         }
@@ -494,7 +494,7 @@ impl ScriptCompiler {
         &self,
         impl_memb_id: TaggedId<ImplMemberId, ConfigMemberTag>,
     ) -> &ConfigMember {
-        match &self.impl_membs[impl_memb_id.inner] {
+        match &self.impl_membs[impl_memb_id.inner()] {
             ImplMemberKind::ConfigMember(cfg_member) => cfg_member,
             _ => unreachable!(),
         }
@@ -505,7 +505,7 @@ impl ScriptCompiler {
         &mut self,
         impl_memb_id: TaggedId<ImplMemberId, ConfigMemberTag>,
     ) -> &mut ConfigMember {
-        match &mut self.impl_membs[impl_memb_id.inner] {
+        match &mut self.impl_membs[impl_memb_id.inner()] {
             ImplMemberKind::ConfigMember(cfg_member) => cfg_member,
             _ => unreachable!(),
         }
@@ -516,7 +516,7 @@ impl ScriptCompiler {
         &self,
         impl_memb_id: TaggedId<ImplMemberId, OptionAssignmentRootTag>,
     ) -> &OptionAssignmentRoot {
-        match &self.impl_membs[impl_memb_id.inner] {
+        match &self.impl_membs[impl_memb_id.inner()] {
             ImplMemberKind::OptAssignmentRoot(opt_root) => opt_root,
             _ => unreachable!(),
         }
@@ -527,7 +527,7 @@ impl ScriptCompiler {
         &mut self,
         impl_memb_id: TaggedId<ImplMemberId, OptionAssignmentRootTag>,
     ) -> &mut OptionAssignmentRoot {
-        match &mut self.impl_membs[impl_memb_id.inner] {
+        match &mut self.impl_membs[impl_memb_id.inner()] {
             ImplMemberKind::OptAssignmentRoot(opt_root) => opt_root,
             _ => unreachable!(),
         }
@@ -538,7 +538,7 @@ impl ScriptCompiler {
         &self,
         impl_memb_id: TaggedId<ImplMemberId, OptionAssignmentMemberTag>,
     ) -> &OptionAssignmentMember {
-        match &self.impl_membs[impl_memb_id.inner] {
+        match &self.impl_membs[impl_memb_id.inner()] {
             ImplMemberKind::OptAssignmentMember(opt_member) => opt_member,
             _ => unreachable!(),
         }
@@ -549,7 +549,7 @@ impl ScriptCompiler {
         &mut self,
         impl_memb_id: TaggedId<ImplMemberId, OptionAssignmentMemberTag>,
     ) -> &mut OptionAssignmentMember {
-        match &mut self.impl_membs[impl_memb_id.inner] {
+        match &mut self.impl_membs[impl_memb_id.inner()] {
             ImplMemberKind::OptAssignmentMember(opt_member) => opt_member,
             _ => unreachable!(),
         }
@@ -560,7 +560,7 @@ impl ScriptCompiler {
         &mut self,
         impl_memb_id: TaggedId<ImplMemberId, MultiTypeAssignmentTag>,
     ) -> &MultiTypeAssignment {
-        match &self.impl_membs[impl_memb_id.inner] {
+        match &self.impl_membs[impl_memb_id.inner()] {
             ImplMemberKind::MultiTypeAssignment(multi) => multi,
             _ => unreachable!(),
         }
@@ -571,7 +571,7 @@ impl ScriptCompiler {
         &mut self,
         impl_memb_id: TaggedId<ImplMemberId, MultiTypeAssignmentTag>,
     ) -> &mut MultiTypeAssignment {
-        match &mut self.impl_membs[impl_memb_id.inner] {
+        match &mut self.impl_membs[impl_memb_id.inner()] {
             ImplMemberKind::MultiTypeAssignment(multi) => multi,
             _ => unreachable!(),
         }
@@ -617,11 +617,11 @@ impl ScriptCompiler {
     pub(super) fn get_sym_id_from_type_id(&self, mut type_id: TypeId) -> Option<SymbolId> {
         let checked = walk_type_id_deferred!(&self.types, type_id);
         match &self.types[checked.inner].ty {
-            Type::Struct(struct_def) => Some(struct_def.sym_id),
-            Type::Enum(enum_def) => Some(enum_def.sym_id),
-            Type::Func(func_def) => Some(func_def.sym_id),
-            Type::Alias(alias_def) => Some(alias_def.sym_id),
-            Type::TypeDef(type_def) => Some(type_def.sym_id),
+            Type::Struct(struct_def) => Some(struct_def.sym_id.inner()),
+            Type::Enum(enum_def) => Some(enum_def.sym_id.inner()),
+            Type::Func(func_def) => Some(func_def.sym_id.inner()),
+            Type::Alias(alias_def) => Some(alias_def.sym_id.inner()),
+            Type::TypeDef(type_def) => Some(type_def.sym_id.inner()),
             Type::BuiltinTypeInfo(info) => Some(info.sym_id),
             Type::Boundaries(_) | Type::Unknown => None,
             Type::Deferred(_) => unreachable!(),
@@ -629,15 +629,15 @@ impl ScriptCompiler {
     }
 
     /// Attempts to get a `TypeId` out of the given `MemberId` if possible
-    pub fn get_type_id_from_memb_id(&self, member_id: MemberId) -> Option<TypeId> {
-        match &self.sym_members[member_id] {
+    pub fn get_type_id_from_memb_id(&self, memb_id: MemberId) -> Option<TypeId> {
+        match &self.sym_members[memb_id] {
             MemberSymbolKind::Field(field_repre) => Some(field_repre.type_id),
             MemberSymbolKind::Variant(variant_repre) => variant_repre.type_id,
         }
     }
 
-    pub(super) fn get_sym_id_from_memb_id(&self, member_id: MemberId) -> Option<TypeId> {
-        match &self.sym_members[member_id] {
+    pub(super) fn get_sym_id_from_memb_id(&self, memb_id: MemberId) -> Option<TypeId> {
+        match &self.sym_members[memb_id] {
             MemberSymbolKind::Field(field_repre) => Some(field_repre.type_id),
             MemberSymbolKind::Variant(variant_repre) => variant_repre.type_id,
         }
@@ -656,8 +656,8 @@ impl ScriptCompiler {
         }
     }
 
-    pub(super) fn get_span_from_member_id(&self, member_id: MemberId) -> SourceSpan {
-        match &self.sym_members[member_id] {
+    pub(super) fn get_span_from_memb_id(&self, memb_id: MemberId) -> SourceSpan {
+        match &self.sym_members[memb_id] {
             MemberSymbolKind::Field(field_repre) => field_repre.name_span,
             MemberSymbolKind::Variant(variant_repre) => variant_repre.name_span,
         }
@@ -712,10 +712,10 @@ impl ScriptCompiler {
 
         match &self.types[checked.inner].ty {
             Type::BuiltinTypeInfo(builtin_type) => builtin_type.ty.kind().name_id().into(),
-            Type::Struct(struct_def) => self.syms[struct_def.sym_id].name_id.into(),
-            Type::Enum(enum_def) => self.syms[enum_def.sym_id].name_id.into(),
+            Type::Struct(struct_def) => self.syms[struct_def.sym_id.inner()].name_id.into(),
+            Type::Enum(enum_def) => self.syms[enum_def.sym_id.inner()].name_id.into(),
             // Functions can't be declared
-            Type::Alias(alias_def) => self.syms[alias_def.sym_id].name_id.into(),
+            Type::Alias(alias_def) => self.syms[alias_def.sym_id.inner()].name_id.into(),
             // WARN: Inconsistency
             Type::TypeDef(type_def) => type_def.name_id.into(),
             Type::Func(func) => func.name_id.into(),
@@ -1056,7 +1056,7 @@ impl ScriptCompiler {
         let val_info = ValueInfo::new(type_id, expr_id, var.val.to_val().into());
 
         let var_def = VarDef::new(
-            sym_id,
+            sym_id.into_tagged::<VarTag>(),
             base.name_id,
             VariableMetadata::Generated,
             VariableState::Known(val_id),
@@ -1100,7 +1100,7 @@ impl ScriptCompiler {
         let name_id = InternedId::new(core_func.name);
 
         let func_def = FuncDef::new(
-            sym_id,
+            sym_id.into_tagged::<FuncTag>(),
             name_id,
             core_func.kind,
             core_func.is_callable,

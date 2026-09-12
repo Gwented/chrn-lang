@@ -62,7 +62,7 @@ complex->
 for Structure {
     cases = ["UpperSnakeCase", "camelCase"]
     field1 {
-        opt = 3
+        opts = 3
         // Assuming `self` is going to exist
         //
         // Too terminal, should try to look for '{' and '}' maybe

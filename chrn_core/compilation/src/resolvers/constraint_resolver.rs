@@ -4,7 +4,7 @@
 use chrn_utils::{
     chrn_config::{ChrnConfig, chrn_perf::ChrnPerfStage},
     err_codes::ErrorCode,
-    id_types::{ExprId, ImplId, InternedId, SymbolId, TypeId},
+    id_types::{ExprId, ImplId, InternedId, SymbolId, TypeId, id_tags::TaggedId},
     intern::Intern,
     source_map::{
         source_diagnostic::{
@@ -27,7 +27,7 @@ use crate::{
     constraints::ArgConstraint,
     id_tag_decls::{
         AliasTag, ConfigRootTag, EnumTag, OptionAssignmentMemberTag, OptionAssignmentRootTag,
-        StructTag, TypeDefTag,
+        StructTag, TypeDefTag, VarTag,
     },
     lookup::schema_lookup::{self, SchemaResult},
     resolvers::{resolver_env::ResolverEnv, resolver_state::ResolverState},
@@ -36,8 +36,8 @@ use crate::{
         compilation_unit::CompilationUnit,
         hir::{
             hir_concepts::Type,
-            hir_impls::{ConfigMember, ConfigMemberMetadataKind, ConfigRootKind, ImplHirKind},
-            hir_symbols::{MemberSymbolKind, SymbolKind},
+            hir_impls::{ConfigMember, ConfigMemberMetadataKind, ConfigRootKind},
+            hir_symbols::MemberSymbolKind,
         },
         preset_reporter::{self, preset_err::PresetErr},
     },
@@ -74,38 +74,12 @@ impl<'a> ConstraintResolver<'a> {
         // Everything skipped is not a factor in this compilation step.
         for comp_unit in env.compilation_syms.iter().cloned() {
             match comp_unit {
-                CompilationUnit::Symbol(sym_id) => {
-                    match self.compiler.syms[sym_id].kind {
-                        // This split is more so, users can define these set of symbols, and users cannot
-                        // define the unreacables.
-                        SymbolKind::Type(type_id) => match &self.compiler.types[type_id].ty {
-                            Type::Struct(_) => self.resolve_struct(sym_id, env),
-                            Type::Enum(_) => self.resolve_enum(sym_id, env),
-                            Type::Alias(_) => self.resolve_alias(sym_id, env),
-                            Type::TypeDef(_) => self.resolve_typedef(sym_id, env),
-                            // Not sure about this right now
-                            // New functions cannot be declared as symbols, only the compiler creates them.
-                            // None of these can be user-defined, but exist internally.
-                            Type::Deferred(_)
-                            | Type::Func(_)
-                            | Type::Boundaries(_)
-                            | Type::Unknown
-                            | Type::BuiltinTypeInfo(_) => {
-                                unreachable!()
-                            }
-                        },
-                        // Still uses sym id since their actual ids make it a little more complicated to get
-                        // to their ast id
-                        SymbolKind::Variable(_) => self.resolve_var(sym_id, env),
-                        // Users cannot define these but they exist internally.
-                        SymbolKind::ExternType(_)
-                        | SymbolKind::Namespace
-                        | SymbolKind::Directive(_) => unreachable!(),
-                    }
-                }
-                CompilationUnit::Impl(impl_id) => match self.compiler.impls[impl_id].kind {
-                    ImplHirKind::Config(_) => self.resolve_cfg_root(impl_id, env),
-                },
+                CompilationUnit::TypeDef(sym_id) => self.resolve_typedef(sym_id, env),
+                CompilationUnit::Struct(sym_id) => self.resolve_struct(sym_id, env),
+                CompilationUnit::Enum(sym_id) => self.resolve_enum(sym_id, env),
+                CompilationUnit::Alias(sym_id) => self.resolve_alias(sym_id, env),
+                CompilationUnit::Var(sym_id) => self.resolve_var(sym_id, env),
+                CompilationUnit::ConfigRoot(impl_id) => self.resolve_cfg_root(impl_id, env),
             }
         }
 
@@ -121,11 +95,10 @@ impl<'a> ConstraintResolver<'a> {
     //
     // Maybe we can privacy check here so semantic information is still present, and the error is
     // also present
-    fn resolve_var(&mut self, parent_sym_id: SymbolId, env: &ResolverEnv) {
+    fn resolve_var(&mut self, parent_sym_id: TaggedId<SymbolId, VarTag>, env: &ResolverEnv) {
         // Not sure what this might need checked yet other than privacy
-        let ast_id = self.compiler.syms[parent_sym_id]
-            .ast_id
-            .expect("Should be user symbols only");
+        let sym = &self.compiler.syms[parent_sym_id.inner()];
+        let ast_id = sym.ast_id.expect("Should be user symbols only");
         let abs_var = env.ast_info.get_var(ast_id);
 
         // let val_info = self.compiler.get_var(sym_id);
@@ -142,16 +115,18 @@ impl<'a> ConstraintResolver<'a> {
     //
     // The code below is far far worse than all prior because the concept of what a config is and
     // enforces is not 100% done, but the end-behavior exists so the specifics will be sorted later.
-    fn resolve_cfg_root(&mut self, parent_impl_id: ImplId, env: &ResolverEnv) {
+    fn resolve_cfg_root(
+        &mut self,
+        parent_impl_id: TaggedId<ImplId, ConfigRootTag>,
+        env: &ResolverEnv,
+    ) {
         // let ast_id = self.compiler.symbols[parent_sym_id]
         //     .ast_id
         //     .expect("Should be user symbols only");
         // let abs_cfg_root = env.ast_info.get_cfg_root(ast_id);
 
         // leconstraint_reot module = &self.compiler.mods[env.current_mod];
-        let cfg_root = self
-            .compiler
-            .get_cfg_root(parent_impl_id.into_tagged::<ConfigRootTag>());
+        let cfg_root = self.compiler.get_cfg_root(parent_impl_id);
 
         let Some(linked_sym_id) = cfg_root.linked_sym_id else {
             return;
@@ -164,7 +139,7 @@ impl<'a> ConstraintResolver<'a> {
                 }
 
                 for cfg_memb_id in cfg_root.common.cfg_membs.iter().copied() {
-                    if self.compiler.impl_membs[cfg_memb_id.inner].is_unknown() {
+                    if self.compiler.impl_membs[cfg_memb_id.inner()].is_unknown() {
                         continue;
                     }
 
@@ -233,7 +208,7 @@ impl<'a> ConstraintResolver<'a> {
 
                 for cfg_memb_id in cfg_root.common.cfg_membs.iter().copied() {
                     //WARN: Suspicious
-                    if self.compiler.impl_membs[cfg_memb_id.inner].is_unknown() {
+                    if self.compiler.impl_membs[cfg_memb_id.inner()].is_unknown() {
                         continue;
                     }
 
@@ -246,7 +221,7 @@ impl<'a> ConstraintResolver<'a> {
 
                             //TODO: Given the scope type, should react differently to depths of members.
                             //Or, maybe `TypeResolver` can just do this? This actually isn't that hard to check.
-                            for opt_memb_id in cfg_memb.ast_stmts.iter().copied() {
+                            for opt_memb_id in cfg_memb.stmts.iter().copied() {
                                 // Variant and field specific schemas?
                                 let opt_memb = self.compiler.get_opt_assignment_member(
                                     opt_memb_id.into_tagged::<OptionAssignmentMemberTag>(),
@@ -293,7 +268,7 @@ impl<'a> ConstraintResolver<'a> {
                             // Woah (em-dash) Relax
                             //
                             // Recursively resolves inner members
-                            // self.resolve_cfg_member(cfg_member_id, env);
+                            // self.resolve_cfg_member(cfg_memb_id, env);
 
                             // for thing in cfg_member.cfg_members.iter().cloned() {
                             //     let mem = self.compiler.get_cfg_member(thing);
@@ -523,15 +498,16 @@ impl<'a> ConstraintResolver<'a> {
         }
     }
 
-    fn resolve_typedef(&mut self, parent_sym_id: SymbolId, env: &ResolverEnv) {
-        let ast_id = self.compiler.syms[parent_sym_id]
-            .ast_id
-            .expect("Should be user symbols only");
+    fn resolve_typedef(
+        &mut self,
+        parent_sym_id: TaggedId<SymbolId, TypeDefTag>,
+        env: &ResolverEnv,
+    ) {
+        let sym = &self.compiler.syms[parent_sym_id.inner()];
+        let ast_id = sym.ast_id.expect("Should be user symbols only");
         let abs_typedef = env.ast_info.get_typedef(ast_id);
 
-        let type_def = self
-            .compiler
-            .get_typedef(parent_sym_id.into_tagged::<TypeDefTag>());
+        let type_def = self.compiler.get_typedef(parent_sym_id);
         let ty_info = &self.compiler.types[type_def.type_id];
 
         // Checking if condition is valid for the given type
@@ -636,19 +612,16 @@ impl<'a> ConstraintResolver<'a> {
 
     // Alias should probably be ran first by default
     // Also needs to infer it's own constraints
-    fn resolve_alias(&mut self, parent_sym_id: SymbolId, env: &ResolverEnv) {
-        let ast_id = self.compiler.syms[parent_sym_id]
-            .ast_id
-            .expect("Should be user symbols only");
+    fn resolve_alias(&mut self, parent_sym_id: TaggedId<SymbolId, AliasTag>, env: &ResolverEnv) {
+        let sym = &self.compiler.syms[parent_sym_id.inner()];
+        let ast_id = sym.ast_id.expect("Should be user symbols only");
         let abs_alias = env.ast_info.get_alias(ast_id);
 
         //TODO: Need to typecheck based off of the conditional expressions found
 
         // let alias_type_id = self.compiler.get_type_id(sym_id);
-        let alias_def = self
-            .compiler
-            .get_alias(parent_sym_id.into_tagged::<AliasTag>());
-        let alias_type_id = self.compiler.extract_type_id(parent_sym_id);
+        let alias_def = self.compiler.get_alias(parent_sym_id);
+        let alias_type_id = self.compiler.extract_type_id(parent_sym_id.inner());
 
         // TODO: This should now just check instead of infer
 
@@ -739,17 +712,13 @@ impl<'a> ConstraintResolver<'a> {
         // constraints, otherwise, keep the same concrete type checks with builtins
 
         // Only the type of functions used matter if they depend on self.
-        let alias_def = self
-            .compiler
-            .get_alias_mut(parent_sym_id.into_tagged::<AliasTag>());
+        let alias_def = self.compiler.get_alias_mut(parent_sym_id);
         // alias_def.ty_constraints = found_constraints.iter().filter_map(|c| c.is_some());
 
         // Currently assuming that if we see none here it's fine since technically, you could
         // declare a parameter and have it just not be used and never face any type errors.
 
-        let alias_def = self
-            .compiler
-            .get_alias(parent_sym_id.into_tagged::<AliasTag>());
+        let alias_def = self.compiler.get_alias(parent_sym_id);
         // Need a system where it takes a local variable, looks through each expression, sees if
         // it's used, then if so attempts to assign the constraint to the used argument.
 
@@ -914,23 +883,20 @@ impl<'a> ConstraintResolver<'a> {
 
     // Needs:
     //
-    fn resolve_struct(&mut self, parent_sym_id: SymbolId, env: &ResolverEnv) {
+    fn resolve_struct(&mut self, parent_sym_id: TaggedId<SymbolId, StructTag>, env: &ResolverEnv) {
         //TODO: global condition and argument setting.
         //field arg and cond settings.
         //same for enums.
 
-        let ast_id = self.compiler.syms[parent_sym_id]
-            .ast_id
-            .expect("Should be user symbols only");
+        let sym = &self.compiler.syms[parent_sym_id.inner()];
+        let ast_id = sym.ast_id.expect("Should be user symbols only");
         let abs_struct = env.ast_info.get_struct(ast_id);
 
-        let struct_def = self
-            .compiler
-            .get_struct(parent_sym_id.into_tagged::<StructTag>());
+        let struct_def = self.compiler.get_struct(parent_sym_id);
 
         // Glob conds
-        for (i, member_id) in struct_def.fields.iter().enumerate() {
-            let field = self.compiler.get_field(*member_id);
+        for (i, memb_id) in struct_def.fields.iter().enumerate() {
+            let field = self.compiler.get_field(*memb_id);
             let ty_span = abs_struct.fields[i].sp_ty_expr.span;
 
             for cond_expr in &struct_def.glob_conds {
@@ -950,8 +916,8 @@ impl<'a> ConstraintResolver<'a> {
         }
 
         // Field conds
-        for (i, member_id) in struct_def.fields.iter().enumerate() {
-            let field = self.compiler.get_field(*member_id);
+        for (i, memb_id) in struct_def.fields.iter().enumerate() {
+            let field = self.compiler.get_field(*memb_id);
             let ty_span = abs_struct.fields[i].sp_ty_expr.span;
 
             for cond_expr in &field.conds {
@@ -971,8 +937,8 @@ impl<'a> ConstraintResolver<'a> {
         }
 
         // Glob directives
-        for (i, member_id) in struct_def.fields.iter().enumerate() {
-            let field = self.compiler.get_field(*member_id);
+        for (i, memb_id) in struct_def.fields.iter().enumerate() {
+            let field = self.compiler.get_field(*memb_id);
             let ty_span = abs_struct.fields[i].sp_ty_expr.span;
 
             for sp_directive in &struct_def.glob_directives {
@@ -998,8 +964,8 @@ impl<'a> ConstraintResolver<'a> {
         }
 
         // Field directives
-        for (i, member_id) in struct_def.fields.iter().enumerate() {
-            let field = self.compiler.get_field(*member_id);
+        for (i, memb_id) in struct_def.fields.iter().enumerate() {
+            let field = self.compiler.get_field(*memb_id);
             //WARN: Type spanning is not done yet
             let field_ty_span = &abs_struct.fields[i].sp_ty_expr.span;
 
@@ -1026,19 +992,16 @@ impl<'a> ConstraintResolver<'a> {
         }
     }
 
-    fn resolve_enum(&mut self, parent_sym_id: SymbolId, env: &ResolverEnv) {
-        let ast_id = self.compiler.syms[parent_sym_id]
-            .ast_id
-            .expect("Should be user symbols only");
+    fn resolve_enum(&mut self, parent_sym_id: TaggedId<SymbolId, EnumTag>, env: &ResolverEnv) {
+        let sym = &self.compiler.syms[parent_sym_id.inner()];
+        let ast_id = sym.ast_id.expect("Should be user symbols only");
         let abs_enum = env.ast_info.get_enum(ast_id);
 
-        let enum_def = &self
-            .compiler
-            .get_enum(parent_sym_id.into_tagged::<EnumTag>());
+        let enum_def = &self.compiler.get_enum(parent_sym_id);
 
         // Glob conds
-        for (i, member_id) in enum_def.variants.iter().enumerate() {
-            let variant = self.compiler.get_variant(*member_id);
+        for (i, memb_id) in enum_def.variants.iter().enumerate() {
+            let variant = self.compiler.get_variant(*memb_id);
             if let Some(inner_id) = variant.type_id {
                 let ty_span = abs_enum.variants[i]
                     .sp_ty_expr
@@ -1064,8 +1027,8 @@ impl<'a> ConstraintResolver<'a> {
         }
 
         // Variant conds
-        for (i, member_id) in enum_def.variants.iter().enumerate() {
-            let variant = self.compiler.get_variant(*member_id);
+        for (i, memb_id) in enum_def.variants.iter().enumerate() {
+            let variant = self.compiler.get_variant(*memb_id);
             if let Some(inner_id) = variant.type_id {
                 let ty_span = abs_enum.variants[i]
                     .sp_ty_expr
@@ -1091,8 +1054,8 @@ impl<'a> ConstraintResolver<'a> {
         }
 
         // Glob args
-        for (i, member_id) in enum_def.variants.iter().enumerate() {
-            let variant = self.compiler.get_variant(*member_id);
+        for (i, memb_id) in enum_def.variants.iter().enumerate() {
+            let variant = self.compiler.get_variant(*memb_id);
             if let Some(inner_id) = variant.type_id {
                 let ty_span = abs_enum.variants[i]
                     .sp_ty_expr
@@ -1124,8 +1087,8 @@ impl<'a> ConstraintResolver<'a> {
         }
 
         // Variant args
-        for (i, member_id) in enum_def.variants.iter().enumerate() {
-            let variant = self.compiler.get_variant(*member_id);
+        for (i, memb_id) in enum_def.variants.iter().enumerate() {
+            let variant = self.compiler.get_variant(*memb_id);
             if let Some(inner_id) = variant.type_id {
                 let abs_variant = &abs_enum.variants[i];
                 let variant_ty_span = abs_variant.sp_ty_expr.as_ref().expect("Just checked").span;
@@ -1411,8 +1374,8 @@ impl<'a> ConstraintResolver<'a> {
                 visited.push(type_id);
 
                 // No cross module reporting so all messages are shallow in spanning
-                for member_id in &struct_def.fields {
-                    let field = self.compiler.get_field(*member_id);
+                for memb_id in &struct_def.fields {
+                    let field = self.compiler.get_field(*memb_id);
                     // Checking if one of it's variants are self referencing, or if the type from
                     // the last call stack, possibly a tuple, is self referencing the current
                     // struct.
@@ -1452,8 +1415,8 @@ impl<'a> ConstraintResolver<'a> {
             Type::Enum(enum_def) => {
                 visited.push(type_id);
 
-                for member_id in &enum_def.variants {
-                    let variant = self.compiler.get_variant(*member_id);
+                for memb_id in &enum_def.variants {
+                    let variant = self.compiler.get_variant(*memb_id);
                     if let Some(inner) = variant.type_id {
                         // Checking if one of it's variants are self referencing, or if the type we
                         // just came from, possibly a tuple, is referring to itself from a

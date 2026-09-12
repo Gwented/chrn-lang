@@ -354,7 +354,8 @@ fn core_funcs_are_symbols_in_core_scope() {
         };
 
         assert_eq!(
-            func_def.sym_id, sym_id,
+            func_def.sym_id.inner(),
+            sym_id,
             "func def for {:?} does not point back at its symbol",
             core_func.kind
         );
@@ -788,7 +789,7 @@ fn core_namespace_constants_are_registered_as_variables() {
                 "{label} is a value and must own no scope"
             );
 
-            assert_eq!(found.var.sym_id, found.sym.sym_id, "var of {label}");
+            assert_eq!(found.var.sym_id.inner(), found.sym.sym_id, "var of {label}");
             assert_eq!(found.var.name_id, base.name_id, "var name of {label}");
             assert!(
                 matches!(found.var.meta, VariableMetadata::Generated),
@@ -884,7 +885,7 @@ fn core_namespace_arenas_are_reserved_exactly() {
 
     for (idx, var) in compiler.variables.iter().enumerate() {
         let var_id = VariableId::new(idx as u32);
-        let sym = &compiler.syms[var.sym_id];
+        let sym = &compiler.syms[var.sym_id.inner()];
 
         assert!(
             matches!(sym.kind, SymbolKind::Variable(found) if found == var_id),

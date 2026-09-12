@@ -39,7 +39,7 @@
 
 use chrn_utils::source_map::source_span::SourceSpan;
 use compilation::config_loader::{ConfigLoader, ConfigLoaderOutput};
-use compilation::id_tag_decls::{ConfigMemberTag, ConfigRootTag};
+use compilation::id_tag_decls::ConfigMemberTag;
 use compilation::lexer::token::Token as ScriptToken;
 use compilation::lookup::scopes::{self, scopes_concepts};
 use compilation::module::module_concepts::ModuleState;
@@ -825,9 +825,9 @@ fn config_type_info(
                 let members = struct_def
                     .fields
                     .iter()
-                    .map(|member_id| {
+                    .map(|memb_id| {
                         (
-                            compiler.get_field(*member_id).name_id,
+                            compiler.get_field(*memb_id).name_id,
                             CompletionItemKind::FIELD,
                         )
                     })
@@ -838,9 +838,9 @@ fn config_type_info(
                 let members = enum_def
                     .variants
                     .iter()
-                    .map(|member_id| {
+                    .map(|memb_id| {
                         (
-                            compiler.get_variant(*member_id).name_id,
+                            compiler.get_variant(*memb_id).name_id,
                             CompletionItemKind::ENUM_MEMBER,
                         )
                     })
@@ -866,7 +866,7 @@ fn configured_option_names(
 ) -> Vec<InternedId> {
     option_ids
         .iter()
-        .filter_map(|member_id| match &compiler.impl_membs[*member_id] {
+        .filter_map(|memb_id| match &compiler.impl_membs[*memb_id] {
             ImplMemberKind::OptAssignmentRoot(option) => Some(option.name_id),
             ImplMemberKind::OptAssignmentMember(option) => Some(option.name_id),
             //TODO: `MultiTypeAssignment` assigns types, not config options, and is
@@ -895,12 +895,12 @@ fn config_root_type_id(compiler: &ScriptCompiler, cfg_root: &ConfigRoot) -> Opti
 
 fn config_candidate_for_member(
     compiler: &ScriptCompiler,
-    member_id: TaggedId<ImplMemberId, ConfigMemberTag>,
+    memb_id: TaggedId<ImplMemberId, ConfigMemberTag>,
     state: &DocumentState,
     pairs: &HashMap<u32, u32>,
     candidates: &mut Vec<ConfigCompletionCandidate>,
 ) {
-    let member = compiler.get_cfg_member(member_id);
+    let member = compiler.get_cfg_member(memb_id);
 
     if let Some((open, close)) = config_block_bounds(state, pairs, member.common.name_span.end) {
         let configured_members = member
@@ -916,7 +916,7 @@ fn config_candidate_for_member(
             type_id: config_member_type_id(member),
             scope_id: config_namespace_scope_id(state, compiler, member.common.name_span),
             is_root: false,
-            configured_options: configured_option_names(compiler, &member.ast_stmts),
+            configured_options: configured_option_names(compiler, &member.stmts),
             configured_members,
         });
     }
@@ -994,10 +994,11 @@ fn cursor_in_override_config(
     }
 
     main_units.iter().any(|unit| {
-        let compilation::semantic::compilation_unit::CompilationUnit::Impl(impl_id) = unit else {
+        let compilation::semantic::compilation_unit::CompilationUnit::ConfigRoot(impl_id) = unit
+        else {
             return false;
         };
-        let Some(ast_id) = compiler.impls[*impl_id].ast_id else {
+        let Some(ast_id) = compiler.impls[impl_id.inner()].ast_id else {
             return false;
         };
         contains_override(ast.get_cfg_root(ast_id), state, &pairs, relative_cursor)
@@ -1016,15 +1017,16 @@ fn config_completion_candidate(
     let mut candidates = Vec::new();
 
     for unit in main_units {
-        let compilation::semantic::compilation_unit::CompilationUnit::Impl(impl_id) = unit else {
+        let compilation::semantic::compilation_unit::CompilationUnit::ConfigRoot(impl_id) = unit
+        else {
             continue;
         };
-        let impl_hir = &compiler.impls[*impl_id];
+        let impl_hir = &compiler.impls[impl_id.inner()];
         if impl_hir.scope_origin != scopes_concepts::ScopeType::Complex {
             continue;
         }
 
-        let cfg_root = compiler.get_cfg_root(impl_id.into_tagged::<ConfigRootTag>());
+        let cfg_root = compiler.get_cfg_root(*impl_id);
         let Some(ast_id) = impl_hir.ast_id else {
             continue;
         };
@@ -1063,12 +1065,12 @@ fn config_completion_candidate(
                 .common
                 .cfg_membs
                 .iter()
-                .map(|member_id| compiler.get_cfg_member(*member_id).common.name_id)
+                .map(|memb_id| compiler.get_cfg_member(*memb_id).common.name_id)
                 .collect(),
         });
 
-        for &member_id in &cfg_root.common.cfg_membs {
-            config_candidate_for_member(compiler, member_id, state, &pairs, &mut candidates);
+        for &memb_id in &cfg_root.common.cfg_membs {
+            config_candidate_for_member(compiler, memb_id, state, &pairs, &mut candidates);
         }
     }
 
@@ -2133,8 +2135,8 @@ impl LanguageServer for Backend {
                     // or an intrinsic override namespace. Its members live in the
                     // associated scope rather than in a module export list.
                     let ns_scope = &compiler.scopes[scope_id];
-                    for (_, member_id) in ns_scope.scope.table.iter_interned() {
-                        let member = &compiler.syms[member_id];
+                    for (_, memb_id) in ns_scope.scope.table.iter_interned() {
+                        let member = &compiler.syms[memb_id];
                         let member_name = state.interner.search(member.name_id);
                         if prefix.is_empty() || member_name.starts_with(prefix) {
                             let kind = symbol_completion_kind(compiler, member);

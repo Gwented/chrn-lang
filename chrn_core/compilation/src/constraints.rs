@@ -28,8 +28,8 @@ pub(super) fn check_type_constraint(
             visited.push(type_id);
 
             // No cross module reporting so all messages are shallow in spanning
-            for member_id in &struct_def.fields {
-                let field = compiler.get_field(*member_id);
+            for memb_id in &struct_def.fields {
+                let field = compiler.get_field(*memb_id);
                 // Not sure if this incurs any errors this time
                 if visited.contains(&field.type_id) {
                     // if spanned_directive.arg.has_restrictions() {
@@ -66,8 +66,8 @@ pub(super) fn check_type_constraint(
         Type::Enum(enum_def) => {
             visited.push(type_id);
 
-            for member_id in &enum_def.variants {
-                let variant = compiler.get_variant(*member_id);
+            for memb_id in &enum_def.variants {
+                let variant = compiler.get_variant(*memb_id);
                 if let Some(inner_id) = variant.type_id {
                     visited.push(inner_id);
 

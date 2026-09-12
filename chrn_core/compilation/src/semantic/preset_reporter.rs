@@ -754,7 +754,7 @@ pub fn static_access_result_to_preset_err(
     }
 }
 
-// let member_id = match member_lookup::lookup_member(
+// let memb_id = match member_lookup::lookup_member(
 //     self.compiler,
 //     found_type_id,
 //     //TODO: CHANGE THIS

@@ -36,7 +36,7 @@
 //! of cross-module dependency edges so that editing a shared import file correctly
 //! invalidates all documents that import it.
 
-use compilation::id_tag_decls::{ConfigMemberTag, ConfigRootTag, EnumTag, StructTag};
+use compilation::id_tag_decls::{ConfigMemberTag, ConfigRootTag};
 use compilation::lexer::Lexer;
 use compilation::lexer::token::SpannedToken;
 use compilation::lexer::token::Token as ScriptToken;
@@ -66,8 +66,7 @@ use compilation::semantic::compilation_unit::CompilationUnit;
 use compilation::semantic::hir::hir_concepts::Type;
 use compilation::semantic::hir::hir_exprs::{ExprHir, ResolvedExprMetadata};
 use compilation::semantic::hir::hir_impls::{
-    ConfigMemberMetadataKind, ConfigRoot, ConfigRootCommon, ConfigRootKind, ImplHirKind,
-    ImplMemberKind,
+    ConfigMemberMetadataKind, ConfigRoot, ConfigRootCommon, ConfigRootKind, ImplMemberKind,
 };
 use compilation::semantic::hir::hir_symbols::MemberSymbolKind;
 use compilation::semantic::hir::hir_symbols::SymbolKind;
@@ -127,19 +126,19 @@ pub enum SemanticEntity {
         owner_sym_id: Option<SymbolId>,
     },
     /// A nested config member block (`.fieldName { }`) inside a `complex->` block.
-    /// Resolves to a `ConfigMember` whose `linked_member_id` points to the actual field.
+    /// Resolves to a `ConfigMember` whose `linked_memb_id` points to the actual field.
     ConfigMember {
         /// `ImplId` of the `ImplHir` (config root) this member belongs to.
         cfg_root_impl_id: ImplId,
         /// `ImplMemberId` of the `ConfigMember` itself.
-        member_id: ImplMemberId,
+        memb_id: ImplMemberId,
     },
     /// An option-assignment key (e.g. `.casing = [...]`) inside a root or member config block.
     ConfigOption {
         /// `ImplId` of the enclosing `ImplHir`.
         cfg_root_impl_id: ImplId,
         /// `ImplMemberId` of the `OptionAssignmentRoot` or `OptionAssignmentMember`.
-        member_id: ImplMemberId,
+        memb_id: ImplMemberId,
     },
 }
 
@@ -478,11 +477,8 @@ impl DocumentState {
                             .filter(|unit| {
                                 !matches!(
                                     unit,
-                                    CompilationUnit::Impl(impl_id)
-                                        if matches!(
-                                    &compiler.impls[*impl_id].kind,
-                                    ImplHirKind::Config(_) if config_has_override(&compiler, *impl_id)
-                                )
+                                    CompilationUnit::ConfigRoot(impl_id)
+                                        if config_has_override(&compiler, *impl_id)
                                 )
                             })
                             .cloned()
@@ -575,7 +571,7 @@ impl DocumentState {
             }
             match &ty_info.ty {
                 Type::Struct(sdef) => {
-                    let sym = &compiler.syms[sdef.sym_id];
+                    let sym = &compiler.syms[sdef.sym_id.inner()];
                     if let Some(Some(ast)) = self.asts.first()
                         && let Some(ast_id) = sym.ast_id
                     {
@@ -584,7 +580,7 @@ impl DocumentState {
                             map.push((
                                 field.name_span,
                                 SemanticEntity::Field {
-                                    owner_sym_id: sdef.sym_id,
+                                    owner_sym_id: sdef.sym_id.inner(),
                                     field_idx: i,
                                 },
                             ));
@@ -592,7 +588,7 @@ impl DocumentState {
                     }
                 }
                 Type::Enum(edef) => {
-                    let sym = &compiler.syms[edef.sym_id];
+                    let sym = &compiler.syms[edef.sym_id.inner()];
                     if let Some(Some(ast)) = self.asts.first()
                         && let Some(ast_id) = sym.ast_id
                     {
@@ -601,7 +597,7 @@ impl DocumentState {
                             map.push((
                                 variant.name_span,
                                 SemanticEntity::Variant {
-                                    owner_sym_id: edef.sym_id,
+                                    owner_sym_id: edef.sym_id.inner(),
                                     variant_idx: i,
                                 },
                             ));
@@ -609,7 +605,7 @@ impl DocumentState {
                     }
                 }
                 Type::Alias(adef) => {
-                    let sym = &compiler.syms[adef.sym_id];
+                    let sym = &compiler.syms[adef.sym_id.inner()];
                     if let Some(Some(ast)) = self.asts.first()
                         && let Some(ast_id) = sym.ast_id
                     {
@@ -621,7 +617,7 @@ impl DocumentState {
                                 SemanticEntity::Local {
                                     name_id: abs_param.name_id,
                                     decl_span: abs_param.name_span,
-                                    owner_sym_id: Some(adef.sym_id),
+                                    owner_sym_id: Some(adef.sym_id.inner()),
                                 },
                             ));
                         }
@@ -641,11 +637,10 @@ impl DocumentState {
             .flatten()
         {
             let impl_id = match comp_unit {
-                CompilationUnit::Impl(impl_id) => impl_id,
+                CompilationUnit::ConfigRoot(impl_id) => impl_id,
                 _ => continue,
             };
-            let (cfg_common, root_stmts) =
-                cfg_root_parts(compiler.get_cfg_root(impl_id.into_tagged::<ConfigRootTag>()));
+            let (cfg_common, root_stmts) = cfg_root_parts(compiler.get_cfg_root(*impl_id));
 
             let mut queue: Vec<TaggedId<ImplMemberId, ConfigMemberTag>> = Vec::new();
 
@@ -655,8 +650,8 @@ impl DocumentState {
                     map.push((
                         opt.name_span,
                         SemanticEntity::ConfigOption {
-                            cfg_root_impl_id: cfg_common.impl_id,
-                            member_id: impl_memb_id,
+                            cfg_root_impl_id: cfg_common.impl_id.inner(),
+                            memb_id: impl_memb_id,
                         },
                     ));
                 }
@@ -668,37 +663,37 @@ impl DocumentState {
                 map.push((
                     member.common.name_span,
                     SemanticEntity::ConfigMember {
-                        cfg_root_impl_id: cfg_common.impl_id,
-                        member_id: impl_memb_id.inner,
+                        cfg_root_impl_id: cfg_common.impl_id.inner(),
+                        memb_id: impl_memb_id.inner(),
                     },
                 ));
                 queue.push(impl_memb_id);
             }
 
             // Traverse nested members
-            while let Some(current_member_id) = queue.pop() {
-                let member = compiler.get_cfg_member(current_member_id);
-                for &opt_id in &member.ast_stmts {
+            while let Some(current_memb_id) = queue.pop() {
+                let member = compiler.get_cfg_member(current_memb_id);
+                for &opt_id in &member.stmts {
                     if let ImplMemberKind::OptAssignmentMember(opt) = &compiler.impl_membs[opt_id] {
                         map.push((
                             opt.name_span,
                             SemanticEntity::ConfigOption {
-                                cfg_root_impl_id: cfg_common.impl_id,
-                                member_id: opt_id,
+                                cfg_root_impl_id: cfg_common.impl_id.inner(),
+                                memb_id: opt_id,
                             },
                         ));
                     }
                 }
-                for &child_member_id in &member.cfg_members {
-                    let child = compiler.get_cfg_member(child_member_id);
+                for &child_memb_id in &member.cfg_members {
+                    let child = compiler.get_cfg_member(child_memb_id);
                     map.push((
                         child.common.name_span,
                         SemanticEntity::ConfigMember {
-                            cfg_root_impl_id: cfg_common.impl_id,
-                            member_id: child_member_id.inner,
+                            cfg_root_impl_id: cfg_common.impl_id.inner(),
+                            memb_id: child_memb_id.inner(),
                         },
                     ));
-                    queue.push(child_member_id);
+                    queue.push(child_memb_id);
                 }
             }
         }
@@ -1122,10 +1117,10 @@ impl DocumentState {
                 *decl_span,
                 *owner_sym_id,
             )),
-            SemanticEntity::ConfigMember { member_id, .. } => {
+            SemanticEntity::ConfigMember { memb_id, .. } => {
                 let compiler = self.compiler.as_ref()?;
                 let name_span = compiler
-                    .get_cfg_member(member_id.into_tagged::<ConfigMemberTag>())
+                    .get_cfg_member(memb_id.into_tagged::<ConfigMemberTag>())
                     .common
                     .name_span;
                 Some((self.module_path(ModuleId::new(0))?, name_span, None))
@@ -1788,17 +1783,20 @@ impl Default for DocumentCache {
 
 /// Returns whether a config implementation contains an override branch that
 /// the core constraint resolver cannot inspect yet.
-fn config_has_override(compiler: &ScriptCompiler, impl_id: ImplId) -> bool {
-    let cfg_root = compiler.get_cfg_root(impl_id.into_tagged::<ConfigRootTag>());
+fn config_has_override(
+    compiler: &ScriptCompiler,
+    impl_id: TaggedId<ImplId, ConfigRootTag>,
+) -> bool {
+    let cfg_root = compiler.get_cfg_root(impl_id);
     if matches!(cfg_root.kind, ConfigRootKind::Override) {
         return true;
     }
 
     fn member_has_override(
         compiler: &ScriptCompiler,
-        member_id: TaggedId<ImplMemberId, ConfigMemberTag>,
+        memb_id: TaggedId<ImplMemberId, ConfigMemberTag>,
     ) -> bool {
-        let member = compiler.get_cfg_member(member_id);
+        let member = compiler.get_cfg_member(memb_id);
         matches!(&member.meta, ConfigMemberMetadataKind::Override(_))
             || member
                 .cfg_members
@@ -1812,7 +1810,7 @@ fn config_has_override(compiler: &ScriptCompiler, impl_id: ImplId) -> bool {
         .cfg_membs
         .iter()
         .copied()
-        .any(|member_id| member_has_override(compiler, member_id))
+        .any(|memb_id| member_has_override(compiler, memb_id))
 }
 
 /// Read-only context shared by the AST reference walks that populate
@@ -2217,36 +2215,34 @@ impl RefCollector<'_> {
             name_id,
             MemberLookupPattern::NoRestrictions,
         ) {
-            MemberLookupResult::Found(member_id) => {
-                let entity = match &compiler.sym_members[member_id] {
+            MemberLookupResult::Found(memb_id) => {
+                let entity = match &compiler.sym_members[memb_id] {
                     MemberSymbolKind::Field(field) => {
-                        let owner = compiler
-                            .get_struct(field.local_parent_sym_id.into_tagged::<StructTag>());
+                        let owner = compiler.get_struct(field.local_parent_sym_id);
                         let field_idx = owner
                             .fields
                             .iter()
-                            .position(|candidate| candidate.inner == member_id)
+                            .position(|candidate| candidate.inner() == memb_id)
                             .expect("field must belong to its local parent struct");
                         SemanticEntity::Field {
-                            owner_sym_id: field.local_parent_sym_id,
+                            owner_sym_id: field.local_parent_sym_id.inner(),
                             field_idx,
                         }
                     }
                     MemberSymbolKind::Variant(variant) => {
-                        let owner =
-                            compiler.get_enum(variant.local_parent_sym_id.into_tagged::<EnumTag>());
+                        let owner = compiler.get_enum(variant.local_parent_sym_id);
                         let variant_idx = owner
                             .variants
                             .iter()
-                            .position(|candidate| candidate.inner == member_id)
+                            .position(|candidate| candidate.inner() == memb_id)
                             .expect("variant must belong to its local parent enum");
                         SemanticEntity::Variant {
-                            owner_sym_id: variant.local_parent_sym_id,
+                            owner_sym_id: variant.local_parent_sym_id.inner(),
                             variant_idx,
                         }
                     }
                 };
-                (entity, compiler.get_type_id_from_memb_id(member_id))
+                (entity, compiler.get_type_id_from_memb_id(memb_id))
             }
             MemberLookupResult::ImpossibleTypeMemberAccess(resolved_type_id)
                 if let Type::BuiltinTypeInfo(builtin_info) =

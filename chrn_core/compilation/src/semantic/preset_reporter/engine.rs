@@ -89,8 +89,8 @@ pub(super) fn exec_list_available(
             let s_suffix = s_suffix!(available_members.len());
             available_str.push_str(&format!("member{s_suffix}: "));
 
-            for (i, member_id) in available_members.iter().enumerate() {
-                let member_name = interner.search(compiler.sym_members[*member_id].name_id());
+            for (i, memb_id) in available_members.iter().enumerate() {
+                let member_name = interner.search(compiler.sym_members[*memb_id].name_id());
                 available_str.push_str(&format!("`{member_name}`"));
                 if i + 1 < available_members.len() {
                     available_str.push_str(", ");

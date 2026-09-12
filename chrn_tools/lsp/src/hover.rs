@@ -249,11 +249,11 @@ fn entity_hover(
         SemanticEntity::Local { name_id, .. } => {
             format!("{}: (param)", state.interner.search(*name_id))
         }
-        SemanticEntity::ConfigMember { member_id, .. } => {
-            config_member_hover(state, compiler, *member_id)
+        SemanticEntity::ConfigMember { memb_id, .. } => {
+            config_member_hover(state, compiler, *memb_id)
         }
-        SemanticEntity::ConfigOption { member_id, .. } => {
-            config_option_hover(state, compiler, *member_id)
+        SemanticEntity::ConfigOption { memb_id, .. } => {
+            config_option_hover(state, compiler, *memb_id)
         }
     }
 }
@@ -550,9 +550,9 @@ fn module_hover(
 fn config_member_hover(
     state: &crate::state::DocumentState,
     compiler: &ScriptCompiler,
-    member_id: chrn_utils::id_types::ImplMemberId,
+    memb_id: chrn_utils::id_types::ImplMemberId,
 ) -> String {
-    let cfg_member = compiler.get_cfg_member(member_id.into_tagged::<ConfigMemberTag>());
+    let cfg_member = compiler.get_cfg_member(memb_id.into_tagged::<ConfigMemberTag>());
     let name = state.interner.search(cfg_member.common.name_id);
     let type_of = |type_id| {
         format_type(
@@ -590,9 +590,9 @@ fn config_member_hover(
 fn config_option_hover(
     state: &crate::state::DocumentState,
     compiler: &ScriptCompiler,
-    member_id: chrn_utils::id_types::ImplMemberId,
+    memb_id: chrn_utils::id_types::ImplMemberId,
 ) -> String {
-    let name_id = match &compiler.impl_membs[member_id] {
+    let name_id = match &compiler.impl_membs[memb_id] {
         ImplMemberKind::OptAssignmentRoot(opt) => opt.name_id,
         ImplMemberKind::OptAssignmentMember(opt) => opt.name_id,
         _ => return String::new(),
@@ -656,7 +656,7 @@ fn format_type(
             b => interner.search(b.kind().name_id()).to_string(),
         },
         Type::Struct(struct_def) => {
-            let name = interner.search(compiler.syms[struct_def.sym_id].name_id);
+            let name = interner.search(compiler.syms[struct_def.sym_id.inner()].name_id);
 
             if matches!(style, TypeDisplay::Reference) {
                 return name.to_string();
@@ -668,8 +668,8 @@ fn format_type(
                 let fields: Vec<String> = struct_def
                     .fields
                     .iter()
-                    .map(|member_id| {
-                        let field = compiler.get_field(*member_id);
+                    .map(|memb_id| {
+                        let field = compiler.get_field(*memb_id);
                         let field_name = interner.search(field.name_id);
                         let field_ty = &compiler.types[field.type_id].ty;
                         let field_ty_str =
@@ -681,7 +681,7 @@ fn format_type(
             }
         }
         Type::Enum(enum_def) => {
-            let name = interner.search(compiler.syms[enum_def.sym_id].name_id);
+            let name = interner.search(compiler.syms[enum_def.sym_id.inner()].name_id);
 
             if matches!(style, TypeDisplay::Reference) {
                 return name.to_string();
@@ -693,8 +693,8 @@ fn format_type(
                 let variants: Vec<String> = enum_def
                     .variants
                     .iter()
-                    .map(|member_id| {
-                        let variant = compiler.get_variant(*member_id);
+                    .map(|memb_id| {
+                        let variant = compiler.get_variant(*memb_id);
                         let variant_name = interner.search(variant.name_id);
 
                         if let Some(type_id) = variant.type_id {
@@ -721,7 +721,7 @@ fn format_type(
             format!("{prefix} {name}")
         }
         Type::Alias(alias_def) => {
-            let name = interner.search(compiler.syms[alias_def.sym_id].name_id);
+            let name = interner.search(compiler.syms[alias_def.sym_id.inner()].name_id);
 
             if matches!(style, TypeDisplay::Reference) {
                 return name.to_string();

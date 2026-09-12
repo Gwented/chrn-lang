@@ -453,18 +453,18 @@ fn collect_inner_symbols<'a>(
 
     match &compiler.types[type_id].ty {
         Type::Struct(struct_def) => {
-            for member_id in &struct_def.fields {
-                let field = compiler.get_field(*member_id);
+            for memb_id in &struct_def.fields {
+                let field = compiler.get_field(*memb_id);
                 if field.name_id == target_name_id {
-                    found.push(field.member_id);
+                    found.push(field.memb_id.inner());
                 }
             }
         }
         Type::Enum(enum_def) => {
-            for member_id in &enum_def.variants {
-                let variant = compiler.get_variant(*member_id);
+            for memb_id in &enum_def.variants {
+                let variant = compiler.get_variant(*memb_id);
                 if variant.name_id == target_name_id {
-                    found.push(variant.member_id);
+                    found.push(variant.memb_id.inner());
                 }
             }
         }
