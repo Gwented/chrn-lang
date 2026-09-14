@@ -60,7 +60,7 @@ pub fn find_type_id(
         // In this scenario the scope may or may not exist since this could be used from
         // another module
         if let Some(scope_info) =
-            find_scope_in_mod(compiler, allowed_scope_type, current_mod.mod_id)
+            find_scope_in_mod(compiler, allowed_scope_type, current_mod.self_id)
         {
             //NOTE: Make sure I work
             if let Some(current_sym_id) = scope_info
@@ -149,7 +149,7 @@ pub fn find_sym_id_intrinsic(
                                 let associated = compiler.syms[sym_id].associated_scope;
                                 return Some(SymbolLookupOutput::new(
                                     sym_id,
-                                    scope_info.scope.scope_id,
+                                    scope_info.scope.self_id,
                                 ));
                             }
                         }
@@ -226,7 +226,7 @@ pub fn find_sym_id(
                     {
                         // Storing what would be the default return if preferences aren't matched
                         default_return =
-                            Some(SymbolLookupOutput::new(sym_id, scope_info.scope.scope_id));
+                            Some(SymbolLookupOutput::new(sym_id, scope_info.scope.self_id));
 
                         // Only looping again if not matched
                         let flat = compiler.syms[sym_id].kind.to_flat();
@@ -260,10 +260,8 @@ pub fn find_sym_id(
                                 //WARN: This is a bit dangerous since it kinda depends on preference
                                 //managers having this exact code.
                                 let flat = compiler.syms[sym_id].kind.to_flat();
-                                default_return = Some(SymbolLookupOutput::new(
-                                    sym_id,
-                                    scope_info.scope.scope_id,
-                                ));
+                                default_return =
+                                    Some(SymbolLookupOutput::new(sym_id, scope_info.scope.self_id));
 
                                 if !lookup_pref.is_preferred(flat) {
                                     continue;

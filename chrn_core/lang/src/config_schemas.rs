@@ -17,23 +17,26 @@ impl ConfigSchema {
     }
     //TODO: Change to O(1) with interned id -> idx mapppppppppppppppppppppppppppppping
     //Huh
-    //We would need a static hashmap to do this since the name is the only actual entity
-    //that can be checkeddddjdoiajdod
+    // Manual hashmap.
 
     /// Attempts to find option from the given identifier and returns it's `OptionSchema`
-    pub fn get_opt(&self, target_name_id: InternedId) -> Option<&OptionSchema> {
-        self.opt_schema
-            .iter()
-            .find(|opt| opt.name_id == target_name_id)
+    pub const fn get_opt(&self, target_name_id: InternedId) -> Option<&OptionSchema> {
+        let mut i = 0;
+        while i < self.opt_schema.len() {
+            let opt = &self.opt_schema[i];
+            if opt.name_id.id == target_name_id.id {
+                return Some(opt);
+            }
+            i += 1;
+        }
+        None
     }
 
     /// Attempts to find option from the given identifier
     ///
     /// Returns `true` if present, `false` if not
-    pub fn has_opt(&self, target_name_id: InternedId) -> bool {
-        self.opt_schema
-            .iter()
-            .any(|opt| opt.name_id == target_name_id)
+    pub const fn has_opt(&self, target_name_id: InternedId) -> bool {
+        self.get_opt(target_name_id).is_some()
     }
 }
 
@@ -77,14 +80,15 @@ impl Display for ConfigSchemaKind {
 /// All known preset schemas and the options associated with them
 pub static PRESET_CONFIG_SCHEMAS: [ConfigSchema; 3] = [
     // ONLY 3 VALID SCHEMAS RIGHT NOW
-    ConfigSchema::new(ConfigSchemaKind::Struct, &[OPTION_CASES, OPTION_IDENTS]),
-    ConfigSchema::new(ConfigSchemaKind::Enum, &[OPTION_CASES, OPTION_IDENTS]),
+    ConfigSchema::new(ConfigSchemaKind::Struct, &[OPT_CASES, OPT_IDENTS]),
+    ConfigSchema::new(ConfigSchemaKind::Enum, &[OPT_CASES, OPT_IDENTS]),
     ConfigSchema::new(
         ConfigSchemaKind::Member,
-        &[OPTION_CASES, OPTION_IDENTS, OPTION_DEFAULT_VAL],
+        &[OPT_CASES, OPT_IDENTS, OPT_DEFAULT_VAL],
     ),
 ];
 
+/// Types of option restrictions
 #[derive(Debug, Clone)]
 pub enum OptionSchemaConstraint {
     Boundaries(TypeBoundaryFlags),
@@ -92,32 +96,18 @@ pub enum OptionSchemaConstraint {
     // None,
 }
 
-const OPTION_DEFAULT_VAL: OptionSchema = OptionSchema::new(
+const OPT_DEFAULT_VAL: OptionSchema = OptionSchema::new(
     InternedId::new(intern::INTERNED_DEFAULT_VAL),
     Some(OptionSchemaConstraint::SameTypeAsConfig),
 );
-const OPTION_IDENTS: OptionSchema = OptionSchema::new(
+const OPT_IDENTS: OptionSchema = OptionSchema::new(
     InternedId::new(intern::INTERNED_IDENTS),
     Some(OptionSchemaConstraint::Boundaries(TypeBoundaryFlags::STR)),
 );
-const OPTION_CASES: OptionSchema = OptionSchema::new(
+const OPT_CASES: OptionSchema = OptionSchema::new(
     InternedId::new(intern::INTERNED_CASES),
     Some(OptionSchemaConstraint::Boundaries(TypeBoundaryFlags::STR)),
 );
-
-// pub const fn load_schemas() -> &'static [ConfigSchema; 1] {
-// Default value
-// let default_val_opt: OptionSchema =
-//     OptionSchema::new(InternedId::new(intern::INTERNED_DEFAULT_VALUE), None);
-//
-// // Field Schema
-// let field_schema = ConfigSchema {
-//     kind: ConfigSchemaKind::Field,
-//     option_schema: &'static [default_val_opt],
-// };
-//
-// &[field_schema]
-// }
 
 pub const fn get_cfg_schema(kind: ConfigSchemaKind) -> &'static ConfigSchema {
     match kind {

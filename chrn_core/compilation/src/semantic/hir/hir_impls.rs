@@ -320,8 +320,9 @@ impl OptionAssignmentRoot {
 /// Represents option in a config member
 #[derive(Debug)]
 pub struct OptionAssignmentMember {
-    /// `ImplMemberId` of the `ConfigMember` this is attached to
-    pub parent_impl_memb_id: TaggedId<ImplMemberId, ConfigMemberTag>,
+    //TODO: Later
+    //// `ImplMemberId` of the `ConfigMember` this is attached to
+    // pub parent_impl_memb_id: TaggedId<ImplMemberId, ConfigMemberTag>,
     // Could remove this. Just here to avoid going into the parent
     /// `MemberId` this is attached to
     pub linked_memb_id: MemberId,
@@ -337,7 +338,7 @@ pub struct OptionAssignmentMember {
 
 impl OptionAssignmentMember {
     pub const fn new(
-        parent_impl_memb_id: TaggedId<ImplMemberId, ConfigMemberTag>,
+        // parent_impl_memb_id: TaggedId<ImplMemberId, ConfigMemberTag>,
         linked_memb_id: MemberId,
         self_id: TaggedId<ImplMemberId, OptionAssignmentMemberTag>,
         name_id: InternedId,
@@ -345,7 +346,7 @@ impl OptionAssignmentMember {
         array_expr_id: ExprId,
     ) -> OptionAssignmentMember {
         OptionAssignmentMember {
-            parent_impl_memb_id,
+            // parent_impl_memb_id,
             linked_memb_id,
             self_id,
             name_id,

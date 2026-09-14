@@ -3,6 +3,9 @@ use std::{fmt::Debug, hash::Hash};
 use crate::id_types::id_tags::{ArenaIndexTag, TaggedId};
 pub mod id_tags;
 
+/// Represents a type that can be turned into `usize`
+///
+/// Specifically for `Arena<T, I>`
 pub trait ArenaIndex: Copy {
     fn into_usize(self) -> usize;
     fn from_usize(val: usize) -> Self;

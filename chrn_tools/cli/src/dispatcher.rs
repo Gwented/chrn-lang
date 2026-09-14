@@ -432,7 +432,7 @@ fn exec_embed(
         Cow::Borrowed(&region.src_bytes)
     } else {
         // Wraps the src in @def[bytes]@end
-        let def_end_size = keywords::REGION_CLAUSE_SIZE * 2;
+        let def_end_size = keywords::EMBEDDING_CLAUSE_SIZE * 2;
         let mut altered_bytes = Vec::with_capacity(region.src_bytes.len() + def_end_size);
         altered_bytes.extend_from_slice(keywords::DEF_CLAUSE_STR.as_bytes());
         altered_bytes.extend_from_slice(&region.src_bytes);

@@ -193,7 +193,7 @@ pub(super) fn build_registration_envs<'a>(
             }
         };
 
-        let env = RegistrationEnv::new(current_ast, current_region, module.mod_id);
+        let env = RegistrationEnv::new(current_ast, current_region, module.self_id);
         all_envs.push(Some(env));
     }
     all_envs
@@ -244,7 +244,7 @@ pub(super) fn build_resolver_envs<'a>(
             }
         };
 
-        let env = ResolverEnv::new(current_ast, current_region, module.mod_id, comp_syms);
+        let env = ResolverEnv::new(current_ast, current_region, module.self_id, comp_syms);
         all_envs.push(Some(env));
     }
     all_envs

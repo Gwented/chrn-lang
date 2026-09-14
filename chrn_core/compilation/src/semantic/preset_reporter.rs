@@ -94,7 +94,7 @@ pub(crate) fn create_diag_builder_preset(
             }
 
             let core_msg = format!(
-                "Only types that satisfy {} can use the directive `#{}`",
+                "Type must satisfy {} to use `#{}`",
                 boundaries_str,
                 sp_directive.inner.to_classified()
             );

@@ -65,7 +65,7 @@ pub struct Module {
     /// File name that will be used internally
     pub name_id: InternedId,
     /// It's own module id position
-    pub mod_id: ModuleId,
+    pub self_id: ModuleId,
     /// Imports found in the module
     // What if imports were tagged with bit-wise?
     pub imports: Vec<Import>,
@@ -85,7 +85,7 @@ impl Module {
     pub const fn new(
         name_id: InternedId,
         state: ModuleState,
-        mod_id: ModuleId,
+        self_id: ModuleId,
         bind: Option<Bind>,
         imports: Vec<Import>,
         //TODO: Convert to explicit kind
@@ -93,7 +93,7 @@ impl Module {
     ) -> Module {
         Module {
             name_id,
-            mod_id,
+            self_id,
             state,
             bind,
             imports,

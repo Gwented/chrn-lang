@@ -49,17 +49,17 @@ pub struct AbstractTypeMultiAssign {
     /// -> (i32, u32, u8) = java::int
     pub to_assign: Vec<SpannedContainer<TypeExpr>>,
     /// i32, u32, u8 = (java::int) <-
-    pub assigned_to: Vec<SpannedContainer<PathSegment>>,
+    pub assign_to: Vec<SpannedContainer<PathSegment>>,
 }
 
 impl AbstractTypeMultiAssign {
     pub fn new(
         to_assign: Vec<SpannedContainer<TypeExpr>>,
-        assigned_to: Vec<SpannedContainer<PathSegment>>,
+        assign_to: Vec<SpannedContainer<PathSegment>>,
     ) -> Self {
         Self {
             to_assign,
-            assigned_to,
+            assign_to,
         }
     }
 }

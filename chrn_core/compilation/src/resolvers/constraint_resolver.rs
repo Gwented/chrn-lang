@@ -132,21 +132,21 @@ impl<'a> ConstraintResolver<'a> {
             return;
         };
 
+        //NOTE: Doesn't seem like multi-type assignment has any action needed here.
+        // `TypeResolver` already guarantees it's a built-in type, since it's compiler-generated
+        // there are no impossible paths for `change` assignments.
+        //
+        // When the intent of extern type is gone into more will possibly have this map out what is
+        // altering what on what level to deal with possible conflicts like override being applied
+        // to `JAVA` twice emitting a warn or err. But won't do anything right now since it'll
+        // probably be too hallucinated.
         match cfg_root.kind {
             ConfigRootKind::Override => {
-                for multi_assign_id in cfg_root.stmts.iter().copied() {
-                    todo!()
-                }
-
-                for cfg_memb_id in cfg_root.common.cfg_membs.iter().copied() {
-                    if self.compiler.impl_membs[cfg_memb_id.inner()].is_unknown() {
-                        continue;
-                    }
-
-                    let cfg_memb = self.compiler.get_cfg_member(cfg_memb_id);
-                    self.check_cfg_memb(cfg_memb);
-                    todo!("I dont")
-                }
+                debug_assert_eq!(
+                    cfg_root.stmts.len(),
+                    0,
+                    "No compiler generated or user instantiated stmts are expected for `override`"
+                );
             }
             ConfigRootKind::Complex => {
                 // Should probably store it in the kind itself, or at least `Option<Kind>`
@@ -278,9 +278,9 @@ impl<'a> ConstraintResolver<'a> {
                             //     todo!("Ok");
                             // }
                         }
-                        ConfigMemberMetadataKind::Override(meta) => {
-                            todo!()
-                        }
+                        // `MultiAssignType` requires no handling here which is `override`'s only
+                        // current job
+                        ConfigMemberMetadataKind::Override(_) => {}
                     }
                 }
             }

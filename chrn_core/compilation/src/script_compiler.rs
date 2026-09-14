@@ -196,7 +196,7 @@ impl ScriptCompiler {
 
             // Avoiding borrow issues by storing the ids
             let current_mod_name_id = module.name_id;
-            let current_mod_id = module.mod_id;
+            let current_mod_id = module.self_id;
 
             // Pushing the module symbol inside of itself. So if we're indexing module `main`, we
             // would be pushing `main` inside of itself, once, as a known symbol.
@@ -746,7 +746,7 @@ impl ScriptCompiler {
     /// This method exists along with extract_scope_id due to cross module namespace checking not
     /// innately confirming whether or not it contains a particular `ScopeType`
     pub fn get_scope_id(&self, scope_type: ScopeType, owner: ModuleId) -> Option<ScopeId> {
-        scopes::find_scope_in_mod(self, scope_type, owner).map(|s| s.scope.scope_id)
+        scopes::find_scope_in_mod(self, scope_type, owner).map(|s| s.scope.self_id)
     }
 
     /// Get's the `ScopeId` assuming that the scope already exists. Panics otherwise.
@@ -757,7 +757,7 @@ impl ScriptCompiler {
         scopes::find_scope_in_mod(self, scope_type, owner_id)
             .expect("Either misuage of function, semantic broke, parser broke, or modules broke")
             .scope
-            .scope_id
+            .self_id
     }
 
     /// Get's scope using a `ScopeId`
@@ -774,7 +774,7 @@ impl ScriptCompiler {
     /// exists then it returns the existent `ScopeId`.
     pub fn push_scope(&mut self, scope_type: ScopeType, owner_id: ModuleId) -> ScopeId {
         if let Some(scope_info) = scopes::find_scope_in_mod(self, scope_type, owner_id) {
-            return scope_info.scope.scope_id;
+            return scope_info.scope.self_id;
         }
 
         // Beep
@@ -851,8 +851,8 @@ impl ScriptCompiler {
 
         core_mod.scopes.push(core_scope_id);
 
-        self.load_core_types(core_mod.mod_id, core_scope_id);
-        self.load_core_funcs(core_mod.mod_id, core_scope_id);
+        self.load_core_types(core_mod.self_id, core_scope_id);
+        self.load_core_funcs(core_mod.self_id, core_scope_id);
 
         let table = &mut self.scopes[core_scope_id].scope.table;
         core_mod.exports.reserve_exact(table.interned_to_sym.len());

@@ -288,7 +288,7 @@ impl DocumentState {
         // assume when they index `mods` positionally and read `module.mod_id`.
         for (slot, sub_mod) in sub_mods.into_iter().enumerate() {
             debug_assert_eq!(
-                sub_mod.mod_id.id as usize,
+                sub_mod.self_id.id as usize,
                 slot + 1,
                 "Imported module ids are dense and start at 1"
             );
@@ -2365,7 +2365,7 @@ impl RefCollector<'_> {
                     }
                     if let Some(scope) = context.and_then(PathCursor::as_scope) {
                         self.path_refs_from_scope(
-                            &multi.assigned_to,
+                            &multi.assign_to,
                             scope,
                             ScopeType::Complex,
                             ScopeLookupPattern::NoRestrictions,

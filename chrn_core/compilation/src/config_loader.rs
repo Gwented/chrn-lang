@@ -32,7 +32,7 @@ use chrn_utils::{
     utils::FreezeTrackerU32,
 };
 
-use lang::keywords::REGION_CLAUSE_SIZE;
+use lang::keywords::EMBEDDING_CLAUSE_SIZE;
 
 /// Can read 32KB before stopping if no `@def` or EOF is found
 const MAX_SEARCH_READ: usize = 1024 * 32;
@@ -272,9 +272,9 @@ impl<R: Read> ConfigLoader<'_, R> {
                 b'@' => {
                     // This @ is not skipped for the sake of keeping self.pos at the same starting point.
 
-                    let clause_end_abs = self.cursor + (REGION_CLAUSE_SIZE - 1);
+                    let clause_end_abs = self.cursor + (EMBEDDING_CLAUSE_SIZE - 1);
                     // The limit is relative to 32Kib so we need a rel version
-                    let clause_end_rel = (self.cursor - script_start) + (REGION_CLAUSE_SIZE - 1);
+                    let clause_end_rel = (self.cursor - script_start) + (EMBEDDING_CLAUSE_SIZE - 1);
 
                     //TODO: Help msg for if an @ was seen but it would exceed size
                     // Helper boolean
@@ -304,13 +304,13 @@ impl<R: Read> ConfigLoader<'_, R> {
                     // Probably should not be allowed since the behavior from this is fairly
                     // non-deterministic unless someone is actively counting bytes
                     if can_check
-                        && &self.handle.buffer()[self.cursor..self.cursor + REGION_CLAUSE_SIZE]
+                        && &self.handle.buffer()[self.cursor..self.cursor + EMBEDDING_CLAUSE_SIZE]
                             == b"@end"
                     {
                         // Starts exactly 1 byte after "@end"
                         // This variable being set is proof there was a script block, but not proof
                         // there's serial data
-                        let serial_start = self.cursor + REGION_CLAUSE_SIZE;
+                        let serial_start = self.cursor + EMBEDDING_CLAUSE_SIZE;
 
                         // If doesn't require end then that means this is an `@end` only block,
                         // which needs to start at the start of the file line tracking-wise
@@ -355,7 +355,7 @@ impl<R: Read> ConfigLoader<'_, R> {
                         // Since we are at "@" if we want to read "@def"/"@end" it's an
                         // (inclusive, exclusive) spanning operation since "@def".len() + 4 would be
                         // 1 above the actual length
-                        && &self.handle.buffer()[self.cursor..self.cursor + REGION_CLAUSE_SIZE]
+                        && &self.handle.buffer()[self.cursor..self.cursor + EMBEDDING_CLAUSE_SIZE]
                             == b"@def"
                     {
                         requires_end = true;
@@ -385,7 +385,7 @@ impl<R: Read> ConfigLoader<'_, R> {
                         //
                         // Skips "@def" to the byte after it. This is safe since it will
                         // return  `None` which avoids over-indexing being a possibility
-                        self.skip_unchecked(REGION_CLAUSE_SIZE);
+                        self.skip_unchecked(EMBEDDING_CLAUSE_SIZE);
 
                         //WARN: This needs to be relative since only regions are used
                         // This is safe to hard-code because the condition itself only allows for

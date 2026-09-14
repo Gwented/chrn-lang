@@ -2,16 +2,16 @@ use crate::lexer::{token::SpannedToken, trivia::Trivia};
 
 /// Container for lexer-specific output data
 pub struct LexerOutput {
-    /// Bloop bloop
+    // Not even going to comment on what was here before.
+    /// Tokens collected by Lexer
     pub toks: Vec<SpannedToken>,
-    /// Bloop bloop bolbobp
+    /// Trivia collected by Lexer
     pub trivia: Vec<Trivia>,
     /// Amount of `Token::Invalid` spotted
     pub found_invalid_toks: u8,
 }
 
 impl LexerOutput {
-    //Yes.
     pub const fn new(toks: Vec<SpannedToken>, trivia: Vec<Trivia>, found_invalid_toks: u8) -> Self {
         Self {
             toks,

@@ -1,7 +1,7 @@
 use std::{collections::VecDeque, io::Read, path::Path};
 
-pub mod mod_finder;
 pub mod module_concepts;
+pub mod module_finder;
 
 use crate::{
     config_loader::{ConfigLoader, ConfigLoaderOutput},
@@ -26,7 +26,7 @@ use chrn_utils::{
 };
 
 use crate::{
-    module::mod_finder::ModuleFinder,
+    module::module_finder::ModuleFinder,
     script_compiler::{
         ScriptCompiler, reporter::Reporter, script_compiler_store::ScriptCompilerStore,
     },
@@ -208,7 +208,7 @@ pub fn extract_modules(
     mut interner: Intern,
     mut cfg: ChrnConfig,
 ) -> (ScriptCompiler, ScriptCompilerStore, SourceDiagnosticSummary) {
-    debug_assert_eq!(main_mod.mod_id.id, 0);
+    debug_assert_eq!(main_mod.self_id.id, 0);
     let mut summary = SourceDiagnosticSummary::default();
 
     let main_bind = main_mod.bind.clone();
@@ -334,7 +334,7 @@ pub fn extract_modules(
                 Ok(m) => {
                     // Need to set the current import to a resolved source or it stays unresolved
                     importer_mod.imports[imp_idx].kind =
-                        ImportKind::Source(sp_path_id.clone(), m.mod_id);
+                        ImportKind::Source(sp_path_id.clone(), m.self_id);
                     m
                 }
                 // Need to transition state from unresolved source to error so future users of this
@@ -519,8 +519,8 @@ fn resolve_module(
     // Tracks the id of the current module by tracking however many imports were seen, which
     // all represent one module
     //
-    // This uses expect() because mod_finder is the only collector imports.
-    // We are iterating through said imports. Meaning for this iteration to happen mod_finder
+    // This uses expect() because module_finder is the only collector imports.
+    // We are iterating through said imports. Meaning for this iteration to happen module_finder
     // would have to register the path first.
 
     //WARN: This can't fail, if the mod finder found it that means it normalized it, which means

@@ -303,7 +303,7 @@ fn symbol_hover(
             }
             AssociatedScopeKind::Scope(scope_id) => {
                 let namespace_kind = if compiler.scopes[scope_id].scope.is_intrinsic {
-                    "Intrinsic Namespace"
+                    "Namespace (Intrinsic)"
                 } else {
                     "Namespace"
                 };

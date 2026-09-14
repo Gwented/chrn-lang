@@ -6,7 +6,7 @@ use chrn_utils::{
 };
 use compilation::{
     lexer::{Lexer, lexer_output::LexerOutput, token::SpannedToken},
-    module::{self, module_concepts::ModuleState},
+    module::module_concepts::ModuleState,
     parser::{self, ast::ast_concepts::AstInfo},
     resolvers::{
         constraint_resolver::ConstraintResolver,
@@ -25,7 +25,7 @@ use crate::script_compiler_cache::ScriptCompilerCache;
 
 // Ok...
 // TODO: This should, um
-/// Runs every compiler step associated with script
+/// Runs every compiler step associated with config/script
 pub fn run_all(
     reporter: &mut Reporter,
     compiler: &mut ScriptCompiler,
@@ -290,7 +290,7 @@ fn create_registration_envs<'a>(
 
         //NOTE: pre store envs? Part of cache or store?
         // Can't !,!.
-        let env = RegistrationEnv::new(current_ast, current_region, module.mod_id);
+        let env = RegistrationEnv::new(current_ast, current_region, module.self_id);
         all_envs.push(Some(env));
     }
 
@@ -344,7 +344,12 @@ fn create_resolver_envs<'a>(
 
         //NOTE: pre store envs? Part of cache or store?
         // Can't !,!.
-        let env = ResolverEnv::new(current_ast, current_region, module.mod_id, compilation_syms);
+        let env = ResolverEnv::new(
+            current_ast,
+            current_region,
+            module.self_id,
+            compilation_syms,
+        );
         all_envs.push(Some(env));
     }
 

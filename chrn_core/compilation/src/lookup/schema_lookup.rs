@@ -1,7 +1,6 @@
 use chrn_utils::{
     arena::Arena,
-    id_types::{InternedId, SymbolId, TypeId},
-    loop_abort,
+    id_types::{InternedId, TypeId},
 };
 use lang::{
     config_schemas::{self, ConfigSchema, ConfigSchemaKind, OptionSchemaConstraint},
@@ -10,7 +9,6 @@ use lang::{
 };
 
 use crate::{
-    script_compiler::ScriptCompiler,
     semantic::hir::hir_concepts::{Type, TypeInfo},
     walk_type_id_deferred,
 };

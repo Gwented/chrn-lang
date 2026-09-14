@@ -7,8 +7,8 @@ use super::helpers::*;
 use crate::config_loader::ConfigLoader;
 use crate::module::extract_all_modules;
 use crate::module::extract_main;
-use crate::module::mod_finder::ModuleFinder;
 use crate::module::module_concepts::{ImportKind, Module, ModuleState};
+use crate::module::module_finder::ModuleFinder;
 use crate::script_compiler::reporter::Reporter;
 use chrn_utils::{
     chrn_config::ChrnConfig,
@@ -622,7 +622,7 @@ fn extract_main_simple_script() {
         ModuleState::Loaded,
         "main module should be Loaded"
     );
-    assert_eq!(main_mod.mod_id, ModuleId::new(0), "main gets mod_id 0");
+    assert_eq!(main_mod.self_id, ModuleId::new(0), "main gets mod_id 0");
     let main_name = interner.search(main_mod.name_id);
     assert_eq!(
         main_name, "main",
@@ -772,7 +772,7 @@ fn extract_main_broken_config() {
         ModuleState::BrokenRegion,
         "broken config should result in BrokenRegion state"
     );
-    assert_eq!(main_mod.mod_id, ModuleId::new(0));
+    assert_eq!(main_mod.self_id, ModuleId::new(0));
     assert!(
         main_mod.region_id.is_some(),
         "even a broken region gets a region_id"
@@ -1348,7 +1348,7 @@ fn extract_all_modules_diamond_dependency() {
 
     // Verify shared appears only once
     let shared_mod = find_module_by_name(&compiler, interner, "shared").unwrap();
-    let shared_mod_id = shared_mod.mod_id;
+    let shared_mod_id = shared_mod.self_id;
     // Count how many imports reference this id
     let mut ref_count = 0;
     for i in 0..compiler.mods.len() {
@@ -1528,7 +1528,7 @@ fn extract_all_modules_complex_overlap() {
 
     // Verify deduplication: shared must appear only once
     let shared_mod = find_module_by_name(&compiler, interner, "shared").unwrap();
-    let shared_mod_id = shared_mod.mod_id;
+    let shared_mod_id = shared_mod.self_id;
     let mut shared_ref_count = 0;
     for i in 0..compiler.mods.len() {
         let m = &compiler.mods[ModuleId::new(i as u32)];
@@ -1687,7 +1687,7 @@ fn main_module_id_is_zero_in_compiler() {
 
     let main_mod = &compiler.mods[ModuleId::new(0)];
     assert_eq!(
-        main_mod.mod_id,
+        main_mod.self_id,
         ModuleId::new(0),
         "main module must have mod_id 0 after re-assignment"
     );
@@ -1810,17 +1810,17 @@ fn mod_ids_sequential_chain() {
 
     // -- Exact mod_id checks --
     let main_mod = find_module_by_name(&compiler, interner, "main").expect("main must be present");
-    assert_eq!(main_mod.mod_id, ModuleId::new(0), "main gets mod_id 0");
+    assert_eq!(main_mod.self_id, ModuleId::new(0), "main gets mod_id 0");
 
     let a_mod = find_module_by_name(&compiler, interner, "a").expect("a must be present");
     assert_eq!(
-        a_mod.mod_id,
+        a_mod.self_id,
         ModuleId::new(1),
         "a (imported first) gets mod_id 1"
     );
 
     let b_mod = find_module_by_name(&compiler, interner, "b").expect("b must be present");
-    assert_eq!(b_mod.mod_id, ModuleId::new(2), "b (leaf) gets mod_id 2");
+    assert_eq!(b_mod.self_id, ModuleId::new(2), "b (leaf) gets mod_id 2");
 
     // -- Import numbering --
     let core_mod_id = ModuleId::new(user_count as u32); // 3 = last index
@@ -1926,18 +1926,18 @@ fn mod_ids_diamond_dedup() {
 
     // — Exact mod_id checks (deterministic registration order) —
     let main_mod = find_module_by_name(&compiler, interner, "main").expect("main must be present");
-    assert_eq!(main_mod.mod_id, ModuleId::new(0), "main gets mod_id 0");
+    assert_eq!(main_mod.self_id, ModuleId::new(0), "main gets mod_id 0");
 
     let a_mod = find_module_by_name(&compiler, interner, "a").expect("a must be present");
     assert_eq!(
-        a_mod.mod_id,
+        a_mod.self_id,
         ModuleId::new(1),
         "a (first import of main) gets mod_id 1"
     );
 
     let b_mod = find_module_by_name(&compiler, interner, "b").expect("b must be present");
     assert_eq!(
-        b_mod.mod_id,
+        b_mod.self_id,
         ModuleId::new(2),
         "b (second import of main) gets mod_id 2"
     );
@@ -1945,7 +1945,7 @@ fn mod_ids_diamond_dedup() {
     let shared_mod =
         find_module_by_name(&compiler, interner, "shared").expect("shared must be present");
     assert_eq!(
-        shared_mod.mod_id,
+        shared_mod.self_id,
         ModuleId::new(3),
         "shared (resolved as a's import) gets mod_id 3"
     );
@@ -2064,7 +2064,7 @@ fn mod_ids_nonexistent_import_does_not_consume_id() {
     let core_mod_id = ModuleId::new(user_count as u32); // 2
 
     let main_mod = find_module_by_name(&compiler, interner, "main").expect("main must be present");
-    assert_eq!(main_mod.mod_id, ModuleId::new(0), "main gets mod_id 0");
+    assert_eq!(main_mod.self_id, ModuleId::new(0), "main gets mod_id 0");
     assert_eq!(
         main_mod.state,
         ModuleState::Loaded,
@@ -2097,12 +2097,12 @@ fn mod_ids_nonexistent_import_does_not_consume_id() {
     // -- Sub assertions --
     let sub_mod = find_module_by_name(&compiler, interner, "sub").expect("sub must be present");
     assert_eq!(
-        sub_mod.mod_id,
+        sub_mod.self_id,
         ModuleId::new(1),
         "sub gets mod_id 1 (sequential, no gap)"
     );
     assert_eq!(
-        sub_import_mod_id, sub_mod.mod_id,
+        sub_import_mod_id, sub_mod.self_id,
         "main's import to sub must carry sub's mod_id"
     );
 
@@ -2148,7 +2148,7 @@ fn mod_ids_main_module_id_is_zero() {
     let core_mod_id = ModuleId::new(user_count as u32); // 1
 
     assert_eq!(
-        compiler.mods[ModuleId::new(0)].mod_id,
+        compiler.mods[ModuleId::new(0)].self_id,
         ModuleId::new(0),
         "main module at index 0 must have mod_id 0"
     );

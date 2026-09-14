@@ -40,7 +40,7 @@ pub struct Lexer<'a> {
     pos: usize,
     current_region_id: SourceRegionId,
     cfg: &'a mut ChrnConfig,
-    /// Invalid toks found count
+    /// For threshold of invalid tokens before terminating lex
     invalid_toks: u8,
     trivia: Vec<Trivia>,
     trivia_start_idx: usize,
@@ -85,17 +85,9 @@ impl Lexer<'_> {
     /// tokens, as well as avoiding the parser reporting the same errors as the lexer since both act
     /// off the same token data.
     pub fn tokenize(&mut self, interner: &mut Intern) -> LexerOutput {
-        self.cfg.perf_tracker_mut().start();
         // 40 bytes : 1 token
-        //
-        // The partitioning of 40 was chosen to account for the fact that tokens are compressed
-        // bytes meaning there will of course be less, but also with the fact that the odds of there
-        // being not even ONE token in 40 entire bytes is extremely unlikely.
         let speculated_toks = self.src_bytes.len() / 40;
         let mut toks: Vec<SpannedToken> = Vec::with_capacity(speculated_toks);
-
-        // For threshold of invalid tokens before just giving up
-        let mut invalid_toks: u8 = 0;
 
         // Could be removed
         // let mut in_def = false;
@@ -103,7 +95,7 @@ impl Lexer<'_> {
         loop {
             self.handle_trivia();
 
-            if self.peek() == b'\0' || invalid_toks > MAX_INVALID_TOKS {
+            if self.peek() == b'\0' || self.invalid_toks > MAX_INVALID_TOKS {
                 // Over-indexes if not subtracted
                 // Could be an empty file so needs saturation
                 //WARN: EXCLUSIVE SPANNING. NO LONGER DOES - 1 FOR eof_pos
@@ -290,13 +282,13 @@ impl Lexer<'_> {
                                 self.pos as u32,
                                 // WARN: EXCLUSVIE SPANNING: NO LONGER USES - 1 ON
                                 // ANNOTATION_CLAUSE_SIZE
-                                (self.pos + keywords::REGION_CLAUSE_SIZE) as u32,
+                                (self.pos + keywords::EMBEDDING_CLAUSE_SIZE) as u32,
                             ),
                             leading_trivia_indices: self.trivia_start_idx as u32
                                 ..self.trivia_end_idx as u32,
                         });
 
-                        self.skip(keywords::REGION_CLAUSE_SIZE);
+                        self.skip(keywords::EMBEDDING_CLAUSE_SIZE);
                     } else if self.is_def_end() {
                         // in_def = false;
 
@@ -307,7 +299,7 @@ impl Lexer<'_> {
                                 self.pos as u32,
                                 // WARN: EXCLUSVIE SPANNING: NO LONGER USES - 1 ON
                                 // ANNOTATION_CLAUSE_SIZE
-                                (self.pos + keywords::REGION_CLAUSE_SIZE) as u32,
+                                (self.pos + keywords::EMBEDDING_CLAUSE_SIZE) as u32,
                             ),
                             leading_trivia_indices: self.trivia_start_idx as u32
                                 ..self.trivia_end_idx as u32,
@@ -459,13 +451,6 @@ impl Lexer<'_> {
                 }
                 // Trivia handles comment possbibilites
                 '/' => {
-                    // if self.peek_ahead(1) == b'/' {
-                    //     self.skip(2);
-                    //     self.handle_comment();
-                    // } else if self.peek_ahead(1) == b'*' {
-                    //     self.skip(2);
-                    //     self.handle_multi_comment();
-                    // } else {
                     let pos = self.pos as u32;
                     toks.push(SpannedToken {
                         tok: Token::Slash,
@@ -475,7 +460,6 @@ impl Lexer<'_> {
                     });
 
                     self.advance();
-                    // }
                 }
                 '=' => {
                     let start = self.pos as u32;
@@ -551,10 +535,8 @@ impl Lexer<'_> {
                     self.advance();
                 }
                 _ => {
-                    invalid_toks += 1;
-
                     toks.push(self.recover_invalid(None, interner));
-                    if invalid_toks > MAX_INVALID_TOKS {
+                    if self.invalid_toks > MAX_INVALID_TOKS {
                         // TODO: Maybe this should be at the end because technically @ is invalid too
                         // Is this still needed?
                         eprintln!("Maximum invalid tokens found.\nReporting then aborting...");
@@ -735,6 +717,7 @@ impl Lexer<'_> {
         let raw_str = match str::from_utf8(&self.src_bytes[start..end]) {
             Ok(val) => val,
             Err(_) => {
+                self.increment_invalid_tok();
                 // NOTE: I don't actually think this is possible. Like at all.
                 let msg_id = interner.intern("<invalid ASCII in numeric>");
                 return SpannedToken {
@@ -751,6 +734,7 @@ impl Lexer<'_> {
                 let digits = raw_str[2..].replace('_', "");
 
                 if digits.is_empty() {
+                    self.increment_invalid_tok();
                     let msg_id = interner.intern("<empty numeric literal>");
                     return SpannedToken {
                         tok: Token::Invalid(msg_id),
@@ -771,6 +755,7 @@ impl Lexer<'_> {
                 let num = match i64::from_str_radix(&digits, radix) {
                     Ok(n) => n,
                     Err(_) => {
+                        self.increment_invalid_tok();
                         let msg_id = interner.intern("<invalid numeric literal>");
                         return SpannedToken {
                             tok: Token::Invalid(msg_id),
@@ -855,8 +840,8 @@ impl Lexer<'_> {
                 }
             }
             Err(_) => {
+                self.increment_invalid_tok();
                 let msg_id = interner.intern("<invalid UTF-8 in string literal>");
-
                 SpannedToken {
                     tok: Token::Invalid(msg_id),
                     span,
@@ -887,6 +872,7 @@ impl Lexer<'_> {
                             char_count += 1;
                         }
                         None => {
+                            dbg!("Hi");
                             return self.recover_invalid(Some(escape_start), interner);
                         }
                     }
@@ -924,6 +910,7 @@ impl Lexer<'_> {
                 leading_trivia_indices: self.trivia_start_idx as u32..self.trivia_end_idx as u32,
             },
             None => {
+                self.increment_invalid_tok();
                 let id = interner.intern("empty character literal");
                 SpannedToken {
                     tok: Token::Invalid(id),
@@ -1034,7 +1021,7 @@ impl Lexer<'_> {
             return false;
         }
 
-        let possible_start = &self.src_bytes[self.pos..self.pos + keywords::REGION_CLAUSE_SIZE];
+        let possible_start = &self.src_bytes[self.pos..self.pos + keywords::EMBEDDING_CLAUSE_SIZE];
 
         if possible_start == "@def".as_bytes() {
             return true;
@@ -1058,14 +1045,26 @@ impl Lexer<'_> {
     }
 
     fn recover_invalid(&mut self, start: Option<usize>, interner: &mut Intern) -> SpannedToken {
-        self.invalid_toks += 1;
+        self.increment_invalid_tok();
         let start = if let Some(s) = start { s } else { self.pos };
+
+        // This feels like attaching an if to a deeper problem, but at the same time I don't really
+        // see the issue.
+
+        // Needs to check first because if self.pos > src_bytes.len(), that would mean that it's
+        // advancing past the exclusive end for the initial advance.
+        if self.pos + 1 < self.src_bytes.len() {
+            // Advances first because if something like an invalid whitespace were found, it would
+            // infinitely loop since no other path wants the whitespace, and `recover_invalid` also skips it.
+            self.advance_char();
+        }
 
         while self.pos < self.src_bytes.len() && !self.peek_char().is_whitespace() {
             self.advance_char();
         }
         //WARN: Same behavior as read_id
         let end = self.pos;
+        dbg!(start, end, self.src_bytes.len());
         let err_str = String::from_utf8_lossy(&self.src_bytes[start..end]);
 
         let id = interner.intern(&err_str);
@@ -1123,6 +1122,12 @@ impl Lexer<'_> {
         }
     }
 
+    fn increment_invalid_tok(&mut self) {
+        dbg!(self.invalid_toks);
+        dbg!("Happened");
+        self.invalid_toks += 1;
+    }
+
     // May return byte
     // WARN: This could be an issue. Many other places alike are present.
     fn skip(&mut self, dest: usize) {
@@ -1144,9 +1149,7 @@ impl Lexer<'_> {
 
     fn advance_char(&mut self) -> char {
         let ch = self.peek_char();
-
         self.pos += ch.len_utf8();
-
         ch
     }
 
@@ -1174,9 +1177,6 @@ impl Lexer<'_> {
                     if self.peek_ahead(1) == b'/' {
                         self.skip(2);
                         self.handle_comment();
-                        // THIS IS REAL
-                        // Maintaining (inclusive, exclusive)
-                        // let trivia_end = self.pos;
 
                         self.trivia.push(Trivia::new(
                             TriviaKind::SingleComment,
@@ -1202,10 +1202,7 @@ impl Lexer<'_> {
                         break;
                     }
                 }
-                //TODO: Check if windows is ok
                 '\r' if self.peek_ahead(1) == b'\n' => {
-                    // self.advance();
-                    // Changed to singular skip
                     self.skip(2);
 
                     self.trivia.push(Trivia::new(

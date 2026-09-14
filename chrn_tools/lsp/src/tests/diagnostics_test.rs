@@ -438,7 +438,7 @@ async fn test_session_reports_parse_errors_from_imported_modules() {
     let workspace = TempWorkspace::new("imported_parse_errors");
     let sub_uri = workspace.write("sub.chrn", "let = 3\n");
     // Import paths canonicalize against the process cwd, so fixtures import by
-    // absolute path (see `create_pathbuf` in `mod_finder`).
+    // absolute path (see `create_pathbuf` in `module_finder`).
     let text = format!("import \"{}\"\nlet value = 2\n", sub_uri.path());
     let uri = workspace.write("main.chrn", &text);
 
@@ -463,7 +463,7 @@ async fn test_session_reports_duplicate_import_identifiers() {
     let alpha_uri = workspace.write("alpha.chrn", "let a = 1\n");
     let beta_uri = workspace.write("beta.chrn", "let b = 2\n");
     // Import paths canonicalize against the process cwd, so fixtures import by
-    // absolute path (see `create_pathbuf` in `mod_finder`).
+    // absolute path (see `create_pathbuf` in `module_finder`).
     let text = format!(
         "import \"{}\"\nimport \"{}\" as alpha\nlet x = 3\n",
         alpha_uri.path(),
@@ -493,7 +493,7 @@ async fn test_session_rejects_import_of_reserved_core_module() {
     let workspace = TempWorkspace::new("reserved_core_import");
     let core_uri = workspace.write("core.chrn", "let c = 1\n");
     // Import paths canonicalize against the process cwd, so fixtures import by
-    // absolute path (see `create_pathbuf` in `mod_finder`).
+    // absolute path (see `create_pathbuf` in `module_finder`).
     let text = format!("import \"{}\"\nlet x = 2\n", core_uri.path());
     let uri = workspace.write("main.chrn", &text);
 
@@ -520,7 +520,7 @@ async fn test_session_rejected_import_does_not_shift_later_module_ids() {
     let core_uri = workspace.write("core.chrn", "export let C = 1\n");
     let good_uri = workspace.write("good.chrn", "export let GOOD = 1\n");
     // Import paths canonicalize against the process cwd, so fixtures import by
-    // absolute path (see `create_pathbuf` in `mod_finder`).
+    // absolute path (see `create_pathbuf` in `module_finder`).
     let text = format!(
         "import \"{}\"\nimport \"{}\"\nlet x = good::GOOD\n",
         core_uri.path(),
@@ -602,7 +602,7 @@ async fn test_session_anchors_transitively_imported_diagnostics_on_the_import() 
     let workspace = TempWorkspace::new("foreign_diag_anchor");
     let deep_uri = workspace.write("deep.chrn", "let a = 1\nlet b = 2\nlet c = 3\nlet = 3\n");
     // Import paths canonicalize against the process cwd, so fixtures import by
-    // absolute path (see `create_pathbuf` in `mod_finder`).
+    // absolute path (see `create_pathbuf` in `module_finder`).
     let mid = format!("import \"{}\"\nlet m = 1\n", deep_uri.path());
     let mid_uri = workspace.write("mid.chrn", &mid);
     let text = format!("import \"{}\"\nlet value = 2\n", mid_uri.path());

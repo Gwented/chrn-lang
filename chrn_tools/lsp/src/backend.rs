@@ -2091,12 +2091,12 @@ impl LanguageServer for Backend {
             {
                 if let Some(mod_id) = crate::state::visible_module(compiler, target_id) {
                     let module = &compiler.mods[mod_id];
-                    if module.mod_id.id == 0 {
+                    if module.self_id.id == 0 {
                         // Current module: everything reachable through the module's own scope
                         // tables plus the injected core scope. This mirrors real scope lookup,
                         // so compiler-internal namespace members such as `i8::MAX` (which live
                         // in builtin-type namespace scopes) are never offered here.
-                        for sym_id in reachable_module_symbols(compiler, module.mod_id) {
+                        for sym_id in reachable_module_symbols(compiler, module.self_id) {
                             let sym = &compiler.syms[sym_id];
                             if sym.scope_origin == scopes_concepts::ScopeType::Var
                                 || matches!(sym.kind, SymbolKind::Directive(_))

@@ -106,9 +106,9 @@ impl ModuleFinder<'_> {
                         // Start should always be valid
                         || self.pos == 0
                         // Same as checking for start of file
-                        || (self.pos == keywords::REGION_CLAUSE_SIZE
+                        || (self.pos == keywords::EMBEDDING_CLAUSE_SIZE
                             // Is + 1 because we haven't actually advanced
-                        && &self.src_bytes[0..keywords::REGION_CLAUSE_SIZE]
+                        && &self.src_bytes[0..keywords::EMBEDDING_CLAUSE_SIZE]
                             == b"@def");
 
                     if can_check {
@@ -620,10 +620,6 @@ impl ModuleFinder<'_> {
             } else {
                 self.advance();
             }
-        }
-
-        if depth > 0 {
-            eprintln!("Could not find end of multi-line comment");
         }
     }
 

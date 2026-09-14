@@ -265,7 +265,6 @@ It is recommended that `=>` is used for `override NAME=>types {}` to avoid nesti
 
 `"."`: Member access operator for accessing fields
 
-// "Special" :skull:
 ### SPECIAL
 `=>`: Allows config declarations to do "first=>second=>third{}" instead of "first{second{third{}}}"
 to avoid nesting overhead if no properties wish to be set.

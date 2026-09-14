@@ -289,7 +289,7 @@ async fn test_hover_resolves_intrinsic_namespaces_and_extern_type_metadata() {
         .await
         .expect("hovering an intrinsic namespace returns contents");
     assert!(
-        hover_text(&namespace_hover).contains("Intrinsic Namespace"),
+        hover_text(&namespace_hover).contains("Namespace (Intrinsic)"),
         "namespace hover identifies intrinsic scope, got `{}`",
         hover_text(&namespace_hover)
     );
@@ -298,7 +298,7 @@ async fn test_hover_resolves_intrinsic_namespaces_and_extern_type_metadata() {
         .await
         .expect("hovering a nested intrinsic namespace returns contents");
     assert!(
-        hover_text(&nested_namespace_hover).contains("Intrinsic Namespace"),
+        hover_text(&nested_namespace_hover).contains("Namespace (Intrinsic)"),
         "nested namespace hover identifies intrinsic scope, got `{}`",
         hover_text(&nested_namespace_hover)
     );

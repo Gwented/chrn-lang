@@ -712,6 +712,7 @@ fn read_ident_includes_trailing_underscore() {
     assert_eq!(span.end, 4);
 }
 
+// You can tell from the very second word the writer of this test.
 /// A bare `_` at the end of input must lex without panicking.
 #[test]
 fn read_ident_handles_bare_underscore() {
@@ -763,4 +764,193 @@ fn read_ident_mixed_alphanumeric_and_underscore() {
             ("a_b_c_".to_string(), 13, 19),
         ]
     );
+}
+//TODO: Verity
+//
+// #[test]
+// fn embedded_nul_is_invalid_without_truncating_following_tokens() {
+//     let src: &[u8] = b"left\0 right";
+//     let mut interner = Intern::init();
+//     let mut cfg = ChrnConfig::default();
+//     let output = Lexer::new(SourceRegionId::new(0), src, 0, &mut cfg).tokenize(&mut interner);
+//
+//     assert_eq!(
+//         output
+//             .toks
+//             .iter()
+//             .map(|tok| tok.tok.kind())
+//             .collect::<Vec<_>>(),
+//         vec![TokenKind::Id, TokenKind::Invalid, TokenKind::Id, TokenKind::EOF],
+//     );
+//     assert_eq!(output.toks[1].span.start, 4);
+//     assert_eq!(output.toks[1].span.end, 5);
+//     assert_eq!(output.toks[2].span.start, 6);
+//     assert_eq!(output.toks[2].span.end, 11);
+//     let Token::Id(id) = output.toks[2].tok else {
+//         unreachable!("token kind asserted above")
+//     };
+//     assert_eq!(interner.search(id), "right");
+// }
+
+#[test]
+fn invalid_control_whitespace_recovery_makes_progress() {
+    let src: &[u8] = b"\x0bvalid";
+    let mut interner = Intern::init();
+    let mut cfg = ChrnConfig::default();
+    let output = Lexer::new(SourceRegionId::new(0), src, 0, &mut cfg).tokenize(&mut interner);
+
+    assert_eq!(
+        output
+            .toks
+            .iter()
+            .map(|tok| tok.tok.kind())
+            .collect::<Vec<_>>(),
+        vec![TokenKind::Invalid, TokenKind::EOF],
+    );
+    assert_eq!(output.found_invalid_toks, 1);
+    assert_eq!(output.toks[0].span.start, 0);
+    assert_eq!(output.toks[0].span.end, 6);
+}
+
+// TODO: Not a "failure", but more so a better recovery semantic to hinge off of. Where maybe we
+// take in the ctx that we are in a str, which now means recover_invalid looks for the end quote,
+// not whitespace. Or maybe just an `Option<char>` which just chooses '\"' and is ' ' by default
+// #[test]
+// fn invalid_string_escape_recovers_through_closing_quote() {
+//     let src: &[u8] = b"\"a\\q rest\" next";
+//     let mut interner = Intern::init();
+//     let mut cfg = ChrnConfig::default();
+//     let output = Lexer::new(SourceRegionId::new(0), src, 0, &mut cfg).tokenize(&mut interner);
+//
+//     assert_eq!(
+//         output
+//             .toks
+//             .iter()
+//             .map(|tok| tok.tok.kind())
+//             .collect::<Vec<_>>(),
+//         vec![TokenKind::Invalid, TokenKind::Id, TokenKind::EOF],
+//     );
+//     assert_eq!(output.found_invalid_toks, 1);
+//     assert_eq!(output.toks[0].span.start, 0);
+//     assert_eq!(output.toks[0].span.end, 10);
+//     assert_eq!(output.toks[1].span.start, 11);
+//     assert_eq!(output.toks[1].span.end, 15);
+// }
+
+// Test all invalid tok locations to ensure it doesn't regress.
+// Each case targets a distinct `increment_invalid_tok` / `recover_invalid` route in
+// `lexer.rs`, first in isolation (exactly one `Invalid` + `EOF`) and then combined
+// (emitted `Invalid` count must match `found_invalid_toks`).
+#[test]
+fn invalid_token_count_matches_emitted_invalid_tokens() {
+    // Each entry: (bytes, label identifying the lexer.rs route).
+    let cases: Vec<(Vec<u8>, &str)> = vec![
+        // tokenize catch-all `_` -> recover_invalid (lexer.rs `match ch { _ => ... }`).
+        (b"$".to_vec(), "tokenize catch-all"),
+        // read_ident empty escaped `e#` -> recover_invalid.
+        (b"e#".to_vec(), "read_ident empty escaped ident"),
+        // read_quotes bad escape -> recover_invalid.
+        (b"\"a\\q\"".to_vec(), "read_quotes invalid escape"),
+        // read_char bad escape -> recover_invalid.
+        (b"'\\q'".to_vec(), "read_char invalid escape"),
+        // read_char multi-char -> recover_invalid.
+        (b"'aa'".to_vec(), "read_char multi-char"),
+        // read_num empty prefixed literal -> Invalid (hex / bin / octal prefixes
+        // share the `<empty numeric literal>` branch).
+        (b"0x".to_vec(), "read_num empty hex"),
+        (b"0b".to_vec(), "read_num empty bin"),
+        (b"0o".to_vec(), "read_num empty octal"),
+        // read_num radix parse failure (i64 overflow) -> Invalid.
+        (b"0xFFFFFFFFFFFFFFFFFF".to_vec(), "read_num radix overflow"),
+        // read_quotes invalid UTF-8 -> Invalid.
+        (vec![b'"', 0xFF, b'"'], "read_quotes invalid utf-8"),
+        // read_char empty literal -> Invalid.
+        (b"''".to_vec(), "read_char empty literal"),
+    ];
+    // NOTE: `read_ident` non-UTF8 and `read_num` non-UTF8 slices are defensive-only:
+    // both advance on char/ASCII boundaries so the slice stays valid UTF-8 and the
+    // branch is unreachable from lexer input; no case can target them.
+
+    for (src, label) in &cases {
+        let mut interner = Intern::init();
+        let mut cfg = ChrnConfig::default();
+        let output = Lexer::new(SourceRegionId::new(0), src, 0, &mut cfg).tokenize(&mut interner);
+
+        let invalid_count = output
+            .toks
+            .iter()
+            .filter(|tok| tok.tok.kind() == TokenKind::Invalid)
+            .count();
+        assert_eq!(
+            invalid_count, 1,
+            "{label} ({src:?}) must emit exactly one Invalid token"
+        );
+        assert_eq!(
+            output.found_invalid_toks, 1,
+            "{label} ({src:?}) counter must match emitted Invalid tokens"
+        );
+        assert_eq!(
+            output.toks.len(),
+            2,
+            "{label} ({src:?}) must emit Invalid + EOF only"
+        );
+        assert_eq!(output.toks.last().unwrap().tok, Token::EOF);
+    }
+
+    // Combined: every route at once. `recover_invalid` unconditionally advances once
+    // before consuming to whitespace, so a single separating space after `e#` / `'aa'`
+    // (where recovery starts already on the separator) would skip it and merge with
+    // the next case; use a double space so the advance lands on whitespace and each
+    // case stays a separate `Invalid`. Total (11) stays below `MAX_INVALID_TOKS` (12)
+    // so the cap path does not truncate the count.
+    let mut combined: Vec<u8> = Vec::new();
+    for (idx, (src, _)) in cases.iter().enumerate() {
+        if idx > 0 {
+            combined.extend_from_slice(b"  ");
+        }
+        combined.extend_from_slice(src);
+    }
+
+    let mut interner = Intern::init();
+    let mut cfg = ChrnConfig::default();
+    let output = Lexer::new(SourceRegionId::new(0), &combined, 0, &mut cfg).tokenize(&mut interner);
+
+    let invalid_count = output
+        .toks
+        .iter()
+        .filter(|tok| tok.tok.kind() == TokenKind::Invalid)
+        .count();
+    assert_eq!(
+        invalid_count,
+        cases.len(),
+        "combined input must emit one Invalid per route"
+    );
+    assert_eq!(
+        output.found_invalid_toks as usize,
+        cases.len(),
+        "combined counter must match emitted Invalid tokens"
+    );
+    assert_eq!(output.toks.len(), cases.len() + 1);
+    assert_eq!(output.toks.last().unwrap().tok, Token::EOF);
+}
+
+#[test]
+fn invalid_escape_tokens_obey_invalid_token_cap_without_overflow() {
+    let mut src = b"'\\q' ".repeat(256);
+    src.extend_from_slice(b"valid");
+    let mut interner = Intern::init();
+    let mut cfg = ChrnConfig::default();
+    let output = Lexer::new(SourceRegionId::new(0), &src, 0, &mut cfg).tokenize(&mut interner);
+
+    assert_eq!(
+        output
+            .toks
+            .iter()
+            .filter(|tok| tok.tok.kind() == TokenKind::Invalid)
+            .count(),
+        13,
+    );
+    assert_eq!(output.found_invalid_toks, 13);
+    assert_eq!(output.toks.len(), 14);
+    assert_eq!(output.toks.last().unwrap().tok, Token::EOF);
 }

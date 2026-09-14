@@ -91,7 +91,7 @@ pub static SCOPE_NEST_ONLY: [ScopeType; 1] = [ScopeType::Nest];
 pub struct Scope {
     pub table: Table,
     /// Own `ScopeId`
-    pub scope_id: ScopeId,
+    pub self_id: ScopeId,
     /// `ScopeType` this scope represents
     pub scope_type: ScopeType,
     /// An `Option` scope that is intrinsically a part of this scope
@@ -104,7 +104,7 @@ pub struct Scope {
 
 impl Scope {
     pub(crate) fn new(
-        scope_id: ScopeId,
+        self_id: ScopeId,
         scope_type: ScopeType,
         is_intrinsic: bool,
         intrinsic_scope: Option<ScopeId>,
@@ -112,7 +112,7 @@ impl Scope {
         let accessible_scopes = scope_type.accessible_scopes();
         Scope {
             table: Table::new(),
-            scope_id,
+            self_id,
             scope_type,
             intrinsic_scope,
             accessible_scopes,
@@ -122,7 +122,7 @@ impl Scope {
     }
 
     pub(crate) fn with_table(
-        scope_id: ScopeId,
+        self_id: ScopeId,
         scope_type: ScopeType,
         intrinsic_scope: Option<ScopeId>,
         is_intrinsic: bool,
@@ -131,7 +131,7 @@ impl Scope {
         let accessible_scopes = scope_type.accessible_scopes();
         Scope {
             table,
-            scope_id,
+            self_id,
             scope_type,
             is_intrinsic,
             intrinsic_scope,

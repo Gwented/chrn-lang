@@ -1749,8 +1749,9 @@ fn parse_multi_assign_type(
     budget: &ParserBudget,
     interner: &Intern,
 ) -> Result<AbstractTypeMultiAssign, Token> {
-    let mut to_assign = Vec::new();
+    let mut to_assign = Vec::with_capacity(1);
 
+    //WARN: The parser allows "change = Type" as valid syntax so semantic info can still be given.
     while ctx.peek_tok() != Token::Assign {
         if ctx.peek_tok() == Token::Comma {
             break;

@@ -53,42 +53,39 @@ nest->
 struct Structure {
     field1: i32
     field2: u32
-    field3: u64
-}
+    field3: str
+} #hex
 
 struct varthing1 {}
 
 complex->
+override JAVA {
+    types { change i32 = java::short }
+}
 // Should probably maintain the metadata of the option but leave it as an error node of some sort?
 // override JAVA { types { opt = 3 } }
 for Structure {
     cases = ["UpperSnakeCase", "camelCase"]
     field1 {
-        opts = 3
         // Assuming `self` is going to exist
         //
-        // Too terminal, should try to look for '{' and '}' maybe
-        override JAVA=>types {change u32 = java::char}
-        // So, override cfg just isn't closing.
-        // This should probably emit an error. Probably.
-        override RUST=>types {change i32 = rust::i32}
+        override JAVA=>types{change u32 = java::char}
+        override RUST=>types{change i32 = rust::i32}
         // Says is a variable and not a type, but should point to the source where it saw the
         // variable over type. Also should this be public facing where it says it works off preference
         // not separation?
         // override RUST=>types {change x = rust::char}
-        //
-        // You can also assign non-built-ins which probably shouldn't be allowed. Probably.
-        // override RUST=>types {change varthing1 = rust::char}
     }
     field2 {
-        override C=>types {self = f32}
+        // Fails because it sees field2 is u32 but numbers are i64 internally.
+        default_val = 3
+        // override C=>types {self = f32}
     }
     field3 {
-        override C=>types {self = u16}
+        // override C=>types {self = u16}
     }
 }
 
 for var varthing1 {}
 
 for varthing1 {}
-/*

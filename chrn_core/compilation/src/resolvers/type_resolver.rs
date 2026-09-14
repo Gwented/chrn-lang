@@ -722,9 +722,7 @@ impl<'res> TypeResolver<'res> {
                     };
 
                     let start = abs_multi.to_assign[0].span.start;
-                    let end = abs_multi.assigned_to[abs_multi.assigned_to.len() - 1]
-                        .span
-                        .end;
+                    let end = abs_multi.assign_to[abs_multi.assign_to.len() - 1].span.end;
                     let span = SourceSpan::new(env.region.region_id, start, end);
 
                     //TODO: Would like a help message with this specifying that namespaces are
@@ -1436,11 +1434,10 @@ impl<'res> TypeResolver<'res> {
                     // it's affecting.
                     let self_impl_memb_id =
                         ImplMemberId::new(self.compiler.impl_membs.len() as u32);
-                    todo!("parent_memb_id needs to be an impl member id to it's parent");
-                    //
                     // Should this maybe not be it's own id member holder?
                     let opt = OptionAssignmentMember::new(
-                        todo!(),
+                        //TODO:
+                        // todo!(),
                         parent_memb_id,
                         self_impl_memb_id.into_tagged::<OptionAssignmentMemberTag>(),
                         abs_opt.name_id,
@@ -1538,9 +1535,7 @@ impl<'res> TypeResolver<'res> {
                         let core_msg = "Cannot use `change` outside of `override`";
 
                         let start = abs_multi.to_assign[0].span.start;
-                        let end = abs_multi.assigned_to[abs_multi.assigned_to.len() - 1]
-                            .span
-                            .end;
+                        let end = abs_multi.assign_to[abs_multi.assign_to.len() - 1].span.end;
                         let span = SourceSpan::new(env.region.region_id, start, end);
 
                         let builder = SourceDiagnostic::builder(
@@ -1564,7 +1559,7 @@ impl<'res> TypeResolver<'res> {
                         match scopes_helpers::find_sym_id_with_static_ret_preset(
                             self.compiler,
                             initial_scope,
-                            &abs_multi.assigned_to,
+                            &abs_multi.assign_to,
                             scope_type,
                             StaticAccessOption::Val,
                             ScopeLookupPattern::NamespaceOnly,
@@ -1593,10 +1588,8 @@ impl<'res> TypeResolver<'res> {
                         SymbolKindFlat::ExternType,
                         extern_type_sym_id,
                     ) {
-                        let start = abs_multi.assigned_to[0].span.start;
-                        let end = abs_multi.assigned_to[abs_multi.assigned_to.len() - 1]
-                            .span
-                            .end;
+                        let start = abs_multi.assign_to[0].span.start;
+                        let end = abs_multi.assign_to[abs_multi.assign_to.len() - 1].span.end;
                         let span = SourceSpan::new(env.region.region_id, start, end);
 
                         let preset_err = PresetErr::SymbolMismatch {
@@ -1613,6 +1606,27 @@ impl<'res> TypeResolver<'res> {
                         );
                         continue;
                     };
+
+                    //WARN: Allows for an empty invalid to_assign to pass.
+                    if to_assign.is_empty() {
+                        let core_msg = "Assigns nothing";
+                        let start = abs_multi.assign_to[0].span.start;
+                        let end = abs_multi.assign_to[abs_multi.assign_to.len() - 1].span.end;
+                        let span = SourceSpan::new(env.region.region_id, start, end);
+
+                        let builder = SourceDiagnostic::builder(
+                            None,
+                            DiagnosticLevel::Warn,
+                            core_msg,
+                            env.region.path_id,
+                        )
+                        .add_annotation(
+                            span,
+                            AnnotationKind::Primary,
+                            None,
+                        );
+                        self.summary.push_diag(builder.build());
+                    }
 
                     let extern_tag = extern_type_sym_id.into_tagged::<ExternTypeTag>();
 

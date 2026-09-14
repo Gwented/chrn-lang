@@ -41,8 +41,8 @@ use chrn_utils::source_map::source_diagnostic::annotations::AnnotationKind;
 use compilation::config_loader::{ConfigLoader, ConfigLoaderOutput};
 use compilation::lexer::Lexer;
 use compilation::module::{
-    mod_finder::ModuleFinder,
     module_concepts::{Bind, ImportKind, Module, ModuleState},
+    module_finder::ModuleFinder,
 };
 use parking_lot::RwLock;
 use std::collections::{HashMap, VecDeque};
@@ -1515,9 +1515,9 @@ pub(crate) fn resolve_modules_lsp(
         // records nothing about the imports that failed to load, which must stay
         // `ErrorSource`.
         let resolved_imports = importer_mod.imports;
-        if importer_mod.mod_id.id == 0 {
+        if importer_mod.self_id.id == 0 {
             main_mod.imports = resolved_imports;
-        } else if let Some(stored) = modules.get_mut((importer_mod.mod_id.id - 1) as usize) {
+        } else if let Some(stored) = modules.get_mut((importer_mod.self_id.id - 1) as usize) {
             stored.imports = resolved_imports;
         }
     }
