@@ -39,54 +39,20 @@ fn cfg_at_def_no_separator_before_at_end_test() {
     }
 }
 
-/// -- OLD BEHAVIOR --
-/// `@end` (4 bytes) appearing with no preceding `@def` must NOT terminate a script
-/// block. The whole file is the script, and `@end` should be reported as plain text.
-/// -- NEW BEHAVIOR --
-/// `@end` is allowed is allowed to be used without `@def` so it is not treated as plain text.
-/// Serial start is some since the conceptual idea of a serial start is just that a script block
-/// in a file exists, with no actual guarantee of if there is actually serial data, which is
-/// impossible to know from the loader's point of view.
+/// A file beginning with `@end` is treated as an empty chrn embedding.
+/// The serialized-data offset is immediately after the marker.
 #[test]
-fn cfg_at_end_without_at_def_is_plain_text_test() {
+fn cfg_at_end_without_at_def_marks_empty_embedding_test() {
     let res = load_cfg("@end").expect_success();
     assert_eq!(res.src_bytes, b"@end");
-    // Is some since
-    assert!(res.serial_start.is_some());
+    assert_eq!(res.serial_start, Some(4));
     assert_eq!(res.script_start, 0);
 }
 
-//NOTE: IT DOES NOT CARE ABOUT NUL BYTES (This is intended) May remove these tests
-
-// /// A NUL byte (`\0`) anywhere in the file should terminate the loader's scan
-// /// immediately, regardless of whether an `@def` is in progress.
-// #[test]
-// fn cfg_null_byte_terminates_scan_mid_file_test() {
-//     // The bytes after the NUL are never observed, so the unclosed `@def` does NOT
-//     // produce a "missing @end" diagnostic - the NUL is treated as the end of the script.
-//     let res = load_cfg("@def var-> x: i32\0this would normally break things@end");
-//     dbg!(&res);
-//     assert!(
-//         matches!(res, ConfigLoaderOutput::Broken(_, _)),
-//         "NUL after @def should produce a Broken region, not silently swallow the missing-@end error."
-//     );
-// }
-//
-// /// A NUL byte at the very start of the file should produce an empty region.
-// #[test]
-// fn cfg_null_byte_at_start_test() {
-//     let res = load_cfg("\0hello world").expect_success();
-//     dbg!(&res.src_bytes);
-//     assert_eq!(res.src_bytes, []);
-//     assert!(res.serial_start.is_none());
-// }
-
-/// An `@` sign inside a double-quoted string must be treated as part of the string,
-/// NOT as a marker. The string is consumed by `read_quotes` before the `@` arm is reached.
+/// Marker-like text inside a quoted string is treated as string content rather than as a
+/// configuration marker.
 #[test]
 fn cfg_at_sign_inside_string_is_not_a_marker_test() {
-    // The string contains "@def" as text. The loader should report no error and treat the
-    // string as opaque content of the script body (no @def was ever seen at the top level).
     let input = r#""this has @def inside it" remaining"#;
     let res = load_cfg(input).expect_success();
     assert_eq!(res.script_start, 0, "No @def was ever matched");
@@ -98,8 +64,7 @@ fn cfg_at_sign_inside_string_is_not_a_marker_test() {
     );
 }
 
-/// The substring `/*` inside a string must NOT be treated as a multi-line comment.
-/// Confirms `read_quotes` fully consumes the string before any other branch fires.
+/// Comment delimiters inside a quoted string are treated as string content.
 #[test]
 fn cfg_multi_comment_syntax_inside_string_is_not_comment_test() {
     let input = r#""/* still just text " trailing"#;
@@ -112,8 +77,7 @@ fn cfg_multi_comment_syntax_inside_string_is_not_comment_test() {
     );
 }
 
-/// `@def` written inside a `//` line comment must be ignored. The comment handler
-/// advances until `\n`, so the `@` arm never sees this `@def`.
+/// Marker-like text inside a line comment is ignored by the loader.
 #[test]
 fn cfg_at_def_inside_line_comment_is_ignored_test() {
     let input = "// @def @end\nreal code\n";
@@ -129,8 +93,8 @@ fn cfg_at_def_inside_line_comment_is_ignored_test() {
     );
 }
 
-/// `@def` written inside a `/* */` multi-line comment must be ignored. Tests the
-/// interaction between comment depth tracking and `@` matching.
+/// Marker-like text inside a multi-line comment is ignored, including when comment
+/// delimiters are nested.
 #[test]
 fn cfg_at_def_inside_multi_comment_is_ignored_test() {
     let input = "/* @def @end */\nreal\n";
@@ -149,12 +113,10 @@ fn cfg_at_def_inside_multi_comment_is_ignored_test() {
     assert_eq!(std::str::from_utf8(&res.src_bytes).unwrap(), input);
 }
 
-/// A backslash escape inside a string must skip the next byte verbatim, so `"a\b"`
-/// closes at the second `"` and the `\b` is part of the string content. This catches
-/// off-by-one bugs in `read_quotes` where the escape could consume the closing quote.
+/// An escape inside a quoted string consumes the following byte as string content and
+/// does not cause an escaped quote to terminate the string.
 #[test]
 fn cfg_escape_sequence_in_string_test() {
-    // Content: "a\b"  — the \b is an escape; the closing " is at index 4.
     let input = r#""a\b" after"#;
     let res = load_cfg(input).expect_success();
     assert!(res.serial_start.is_none());
@@ -165,12 +127,10 @@ fn cfg_escape_sequence_in_string_test() {
     );
 }
 
-/// A string opened with `"` and never closed must produce an unclosed-quotes error.
-/// The diagnostic should point to the opening quote location.
+/// An unterminated double-quoted string produces a diagnostic whose primary span identifies
+/// the opening delimiter.
 #[test]
 fn cfg_unclosed_double_quote_errors_test() {
-    // "hello "world" → the `"` before `world` opens an unclosed string.
-    // The opening quote sits at byte 6 of the input.
     let res = load_cfg("hello \"world");
     match res {
         ConfigLoaderOutput::Broken(_, ConfigLoadError::Diagnostic(diag)) => {
@@ -189,12 +149,10 @@ fn cfg_unclosed_double_quote_errors_test() {
     }
 }
 
-/// A string opened with `'` and never closed must produce an unclosed-quotes error.
-/// The diagnostic should point to the opening quote location.
+/// An unterminated single-quoted string produces a diagnostic whose primary span identifies
+/// the opening delimiter.
 #[test]
 fn cfg_unclosed_single_quote_errors_test() {
-    // "hello 'world" → the `'` before `world` opens an unclosed character/string.
-    // The opening quote sits at byte 6 of the input.
     let res = load_cfg("hello 'world");
     match res {
         ConfigLoaderOutput::Broken(_, ConfigLoadError::Diagnostic(diag)) => {
@@ -213,12 +171,10 @@ fn cfg_unclosed_single_quote_errors_test() {
     }
 }
 
-/// A backslash at the very end of the file, inside a string, must cause the string
-/// to be considered unclosed. The escape handler does `self.skip(2)`, so a trailing `\`
-/// runs off the buffer and `read_quotes` returns `Err`.
+/// A trailing escape in a quoted string leaves the string unterminated and produces a
+/// diagnostic for the opening delimiter.
 #[test]
 fn cfg_escape_at_eof_in_string_errors_test() {
-    // Input: `"abc\` — opening `"` at byte 0, backslash at byte 4 (EOF).
     let res = load_cfg(r#""abc\"#);
     match res {
         ConfigLoaderOutput::Broken(_, ConfigLoadError::Diagnostic(diag)) => {
@@ -237,8 +193,7 @@ fn cfg_escape_at_eof_in_string_errors_test() {
     }
 }
 
-/// An empty input should yield a valid empty region with no serial start and a
-/// script_start of 0. This is the canonical "no markers at all" case.
+/// Empty input yields a valid empty region without embedding offsets.
 #[test]
 fn cfg_empty_file_test() {
     let res = load_cfg("").expect_success();
@@ -247,12 +202,10 @@ fn cfg_empty_file_test() {
     assert!(res.serial_start.is_none());
 }
 
-/// `\r\n` (Windows) line endings must behave the same as `\n`. The line-comment
-/// handler stops at `\n`, but a stray `\r` should not cause issues. This catches any
-/// accidental `\n`-only termination.
+/// Line comments terminated by CRLF preserve source bytes and do not interfere with
+/// subsequent source scanning.
 #[test]
 fn cfg_crlf_line_endings_test() {
-    // Comment then real content with CRLF separators.
     let input = "\r//\r\r\r header\r\nlet A = 1\r\nlet B = 2\r\n";
     let res = load_cfg(input).expect_success();
     assert!(res.serial_start.is_none());
@@ -264,9 +217,8 @@ fn cfg_crlf_line_endings_test() {
     );
 }
 
-/// A bare `@` at the end of the file with `requires_end == false` triggers the
-/// `!can_check` short-circuit branch which skips the remaining bytes and breaks. This
-/// must not panic and must report no error (no `@def` was opened).
+/// An incomplete marker at EOF is treated as ordinary source text and does not produce
+/// a loader error.
 #[test]
 fn cfg_lone_at_sign_at_eof_test() {
     let res = load_cfg("some text @").expect_success();
@@ -275,9 +227,8 @@ fn cfg_lone_at_sign_at_eof_test() {
     assert_eq!(std::str::from_utf8(&res.src_bytes).unwrap(), "some text @");
 }
 
-/// A long run of `@` characters in normal text must all be consumed as individual
-/// `@` tokens, none of which form `@def` or `@end`. Verifies that the `@` arm's
-/// `self.advance()` covers the case where neither annotation matches.
+/// Unmatched `@` characters remain ordinary source text; only complete recognized markers
+/// affect embedding boundaries.
 #[test]
 fn cfg_many_at_signs_in_a_row_test() {
     let input = "@@@@@@@@@@@@ plain@ @ text @@@@@@@@@@@@";
@@ -287,16 +238,13 @@ fn cfg_many_at_signs_in_a_row_test() {
     assert_eq!(std::str::from_utf8(&res.src_bytes).unwrap(), input);
 }
 
-/// A file containing only a multi-line comment that never closes must report an
-/// unclosed multi-line comment error. The handler tracks depth and produces a diagnostic
-/// pointing at the start of the comment.
+/// An unterminated multi-line comment returns a broken region with a diagnostic identifying
+/// both the opening delimiter and the unexpected EOF.
 #[test]
 fn cfg_unclosed_multi_line_comment_test() {
     let res = load_cfg("/* this comment never ends");
     match res {
-        ConfigLoaderOutput::UnrecoverableErr(ConfigLoadError::Diagnostic(diag)) => {
-            // The diagnostic should carry *two* annotations: a secondary pointing at the
-            // opening `// ` (byte 0) and a primary pointing at EOF (last byte).
+        ConfigLoaderOutput::Broken(_, ConfigLoadError::Diagnostic(diag)) => {
             let secondaries: Vec<_> = diag
                 .annotations
                 .iter()
@@ -318,52 +266,43 @@ fn cfg_unclosed_multi_line_comment_test() {
             );
             assert_eq!(primaries.len(), 1, "one primary annotation for EOF");
         }
-        other => panic!("UnrecoverableErr with Diagnostic expected, got {other:?}"),
+        other => panic!("Broken with Diagnostic expected, got {other:?}"),
     }
 }
 
-/// Tab characters must be treated as ordinary bytes by the loader — they are not
-/// treated as whitespace specially (the lexer would normalize later, but the loader
-/// must not skip or mis-handle them). This test interleaves tabs with `@def` and `@end`
-/// separated by tabs only to confirm the byte scanner does not confuse tab with newline.
+/// Tab characters are preserved as ordinary source bytes and do not alter marker recognition
+/// or offset accounting.
 #[test]
 fn cfg_tab_characters_around_at_def_test() {
-    // Use tabs (not spaces, not newlines) between @def and @end.
-    // :crab:
     let res = load_cfg("\t@def\tva\nr->\tx:\ti3\r2\t\r\u{32}@end\t");
     match res {
         ConfigLoaderOutput::Success(region, _) => {
-            // The leading tab (byte 0) is serial; @def starts at byte 1.
             assert_eq!(region.script_start, 1);
-            // @end starts at byte 23; serial_start = 23 + 4 = 27.
             assert_eq!(region.serial_start, Some(27));
             let s = std::str::from_utf8(&region.src_bytes).unwrap();
             assert!(s.contains("@def"));
             assert!(s.contains("@end"));
         }
-        other => {
-            // If the loader rejects it, the rejection should be about the actual
-            // content (missing @end, etc.) — never a panic from a confused byte position.
-            panic!("Loader errored on tab-separated @def/@end: {other:?}");
-        }
+        other => panic!("Loader errored on tab-separated @def/@end: {other:?}"),
     }
 }
 
+/// Nested multi-line comments are accepted when all delimiters close; an unclosed comment
+/// returns a broken region with a diagnostic.
 #[test]
 fn multi_line_comment_test() {
-    // Properly closed multi-line comment
+    // Properly closed nested multi-line comment.
     let correct_input = "
             /* /* */ */
         "
     .as_bytes();
 
-    // Unclosed multi-line comment
+    // Unclosed nested multi-line comment.
     let wrong_input = "
             /* /* */
         "
     .as_bytes();
 
-    let interner = mock_interner(0, 2);
     let region_id = SourceRegionId::new(0);
 
     let correct = ConfigLoader::new(
@@ -389,7 +328,7 @@ fn multi_line_comment_test() {
     );
 
     match wrong {
-        ConfigLoaderOutput::UnrecoverableErr(ConfigLoadError::Diagnostic(diag)) => {
+        ConfigLoaderOutput::Broken(_, ConfigLoadError::Diagnostic(diag)) => {
             let primaries: Vec<_> = diag
                 .annotations
                 .iter()
@@ -401,7 +340,7 @@ fn multi_line_comment_test() {
             );
         }
         other => {
-            panic!("unclosed multi-line comment should produce UnrecoverableErr, got {other:?}")
+            panic!("unclosed multi-line comment should produce Broken, got {other:?}")
         }
     }
 }
@@ -409,7 +348,6 @@ fn multi_line_comment_test() {
 #[test]
 fn start_and_serial_offset_test() {
     let text = format!("adwh@def var-> int: i32 @endhi");
-    let interner = mock_interner(0, 1);
     let region_id = SourceRegionId::new(0);
 
     let metadata = ConfigLoader::new(
@@ -424,4 +362,423 @@ fn start_and_serial_offset_test() {
     assert_eq!(&text[4..], &text[metadata.script_start..]);
     assert_eq!("hi", &text[metadata.serial_start.unwrap()..]);
     assert_eq!(28, metadata.serial_start.unwrap());
+}
+
+/// An escape sequence that reaches the region limit must not let scanning exceed the cap.
+/// The loader reports an unclosed quote with an in-bounds opening-quote span.
+#[test]
+fn cfg_escape_straddling_read_limit_stops_at_cap_test() {
+    const LIMIT: usize = chrn_utils::MAX_REGION_SIZE; // 32KB == 32768
+    const TOTAL: usize = 64 * 1024;
+
+    // Place the escape at the final byte in the region budget and its target beyond the budget.
+    let mut input = String::with_capacity(TOTAL);
+    input.push('"');
+    input.extend(std::iter::repeat('a').take(LIMIT - 2));
+    input.push('\\');
+    input.push('x');
+    input.push('"');
+    assert_eq!(input.len(), LIMIT + 2);
+    input.extend(std::iter::repeat('a').take(TOTAL - input.len()));
+    assert_eq!(input.len(), TOTAL);
+    assert_eq!(
+        input.as_bytes()[LIMIT - 1],
+        b'\\',
+        "escape must sit at the final byte in the region budget"
+    );
+
+    match load_cfg(&input) {
+        ConfigLoaderOutput::Broken(region, ConfigLoadError::Diagnostic(diag)) => {
+            let primary = diag
+                .annotations
+                .iter()
+                .find(|a| a.kind == AnnotationKind::Primary)
+                .expect("unclosed-quote diagnostic should have a primary annotation");
+            assert_eq!(
+                primary.span.start, 0,
+                "span must point at the opening quote"
+            );
+            assert_eq!(primary.span.end, 1, "span must be exactly 1 byte");
+            assert!(
+                region.src_bytes.len() <= LIMIT,
+                "loader must stop at the 32KB cap, got {} bytes",
+                region.src_bytes.len()
+            );
+            assert!(
+                region.src_bytes.len() < input.len(),
+                "loader must not consume the entire 64KB buffer, consumed {}",
+                region.src_bytes.len()
+            );
+        }
+        other => {
+            panic!("escape straddling the read limit must produce Broken (cap held), got {other:?}")
+        }
+    }
+}
+
+/// An unclosed multi-line comment at EOF must produce diagnostic spans within the recovered
+/// region, including when the opening delimiter reaches EOF.
+#[test]
+fn cfg_unclosed_multi_comment_eof_span_bounds_test() {
+    for (input, expected_span) in [("/*", 0..2), ("/* this comment never ends", 25..26)] {
+        let len = input.len() as u32;
+        let res = load_cfg(input);
+        match res {
+            ConfigLoaderOutput::Broken(_, ConfigLoadError::Diagnostic(diag)) => {
+                let secondaries: Vec<_> = diag
+                    .annotations
+                    .iter()
+                    .filter(|a| a.kind == AnnotationKind::Secondary)
+                    .collect();
+                let primaries: Vec<_> = diag
+                    .annotations
+                    .iter()
+                    .filter(|a| a.kind == AnnotationKind::Primary)
+                    .collect();
+                assert_eq!(
+                    secondaries.len(),
+                    1,
+                    "one secondary for comment start in {input:?}"
+                );
+                assert_eq!(
+                    primaries.len(),
+                    1,
+                    "one primary for comment start in {input:?}"
+                );
+
+                let secondary = secondaries[0];
+                assert_eq!(
+                    secondary.span.start, 0,
+                    "secondary must start at `/` in {input:?}"
+                );
+                assert_eq!(
+                    secondary.span.end - secondary.span.start,
+                    2,
+                    "secondary must cover both bytes of `/*` in {input:?}"
+                );
+
+                assert_eq!(primaries.len(), 1, "one primary for EOF in {input:?}");
+                let primary = primaries[0];
+                assert_eq!(
+                    primary.span.start..primary.span.end,
+                    expected_span,
+                    "primary must cover the final byte in {input:?}"
+                );
+                assert_eq!(
+                    primary.span.end, len,
+                    "primary EOF span must remain in bounds in {input:?}"
+                );
+            }
+            other => {
+                panic!("unclosed multi-line comment must produce Broken, got {other:?}")
+            }
+        }
+    }
+}
+
+/// A marker-less input may exceed the region limit without being malformed; the loader returns
+/// a successful region containing only the bytes within the limit.
+#[test]
+fn cfg_oversized_markerless_file_is_capped_test() {
+    const LIMIT: usize = chrn_utils::MAX_REGION_SIZE;
+    let input = vec![b'a'; LIMIT + 1024];
+    assert_eq!(input.len(), 33 * 1024);
+
+    match load_cfg_bytes(&input) {
+        ConfigLoaderOutput::Success(region, _) => {
+            assert_eq!(
+                region.src_bytes.len(),
+                LIMIT,
+                "marker-less region must be capped at exactly 32KiB"
+            );
+            assert_eq!(region.src_bytes, input[..LIMIT]);
+            assert_eq!(region.script_start, 0);
+            assert!(region.serial_start.is_none());
+        }
+        other => panic!("oversized marker-less input must remain loadable, got {other:?}"),
+    }
+}
+
+/// An escaped newline in quoted text updates line and column metadata as a newline before
+/// the loader records a following embedding's starting position.
+#[test]
+fn cfg_backslash_newline_in_string_bumps_line_test() {
+    let input = "\"\\\n\" @def@end";
+    assert_eq!(
+        &input.as_bytes()[1..3],
+        b"\\\n",
+        "test input must contain backslash-newline"
+    );
+
+    let region = load_cfg(input).expect_success();
+    assert_eq!(region.script_start, 5, "script must start at `@def`");
+    assert_eq!(
+        region.serial_start,
+        Some(13),
+        "serial must start one past `@end`"
+    );
+    assert_eq!(
+        region.abs_ln_num_start, 2,
+        "escaped newline must increment the region start line (got line {})",
+        region.abs_ln_num_start
+    );
+    assert_eq!(
+        region.abs_col_start, 3,
+        "column must reset after the escaped newline (got col {})",
+        region.abs_col_start
+    );
+    assert_eq!(region.src_bytes, b"@def@end");
+}
+
+/// A complete embedding preserves its source boundaries, serialized-data offset, and starting
+/// line and column metadata.
+#[test]
+fn cfg_at_def_end_single_region_offsets_test() {
+    let input = "pre @def body @endpost";
+
+    let region = load_cfg(input).expect_success();
+    assert_eq!(region.script_start, 4, "script must start at `@def`");
+    assert_eq!(
+        region.serial_start,
+        Some(18),
+        "serial must start one past `@end`"
+    );
+    assert_eq!(
+        region.src_bytes, b"@def body @end",
+        "region bytes must be exact"
+    );
+    assert_eq!(
+        &input[region.serial_start.unwrap()..],
+        "post",
+        "trailing serial slice must be exact"
+    );
+    assert_eq!(region.abs_ln_num_start, 1, "no newlines precede `@def`");
+    assert_eq!(
+        region.abs_col_start, 5,
+        "four `pre ` advances precede `@def`"
+    );
+}
+
+/// The 32KiB limit applies to the chrn region beginning at `@def`, not to its
+/// absolute position in a file that contains a serialized-data prefix.
+#[test]
+fn cfg_at_end_budget_is_relative_to_nonzero_script_start_test() {
+    const LIMIT: usize = chrn_utils::MAX_REGION_SIZE;
+    const PREFIX_LEN: usize = 100;
+    const END_START: usize = LIMIT - 3;
+
+    let mut input = vec![b'p'; PREFIX_LEN];
+    input.extend_from_slice(b"@def");
+    input.extend(std::iter::repeat_n(b'a', END_START - input.len()));
+    assert_eq!(input.len(), END_START, "`@end` boundary setup drifted");
+    input.extend_from_slice(b"@end");
+
+    let region = match load_cfg_bytes(&input) {
+        ConfigLoaderOutput::Success(region, _) => region,
+        ConfigLoaderOutput::Broken(_, err) => {
+            panic!("in-budget `@end` must close the region, got Broken: {err:?}")
+        }
+        ConfigLoaderOutput::UnrecoverableErr(err) => {
+            panic!("in-budget `@end` must close the region, got UnrecoverableErr: {err:?}")
+        }
+    };
+    assert_eq!(region.script_start, PREFIX_LEN);
+    assert_eq!(region.serial_start, Some(END_START + 4));
+    assert_eq!(
+        region.src_bytes.len(),
+        END_START + 4 - PREFIX_LEN,
+        "the complete in-budget region must be retained"
+    );
+    assert_eq!(&region.src_bytes[..4], b"@def");
+    assert_eq!(&region.src_bytes[region.src_bytes.len() - 4..], b"@end");
+}
+
+/// Diagnostics attached to a recovered region use offsets relative to that region.
+/// A nonzero `script_start` must not be included in the missing-`@end` EOF span.
+#[test]
+fn cfg_missing_at_end_eof_span_is_region_relative_test() {
+    let input = "prefix@def xyz";
+
+    match load_cfg(input) {
+        ConfigLoaderOutput::Broken(region, ConfigLoadError::Diagnostic(diag)) => {
+            assert_eq!(region.script_start, 6);
+            assert_eq!(region.src_bytes, b"@def xyz");
+
+            let primary = diag
+                .annotations
+                .iter()
+                .find(|annotation| annotation.kind == AnnotationKind::Primary)
+                .expect("missing-`@end` diagnostic must identify the unexpected EOF");
+            let region_len = region.src_bytes.len() as u32;
+            assert_eq!(
+                primary.span.start..primary.span.end,
+                region_len - 1..region_len,
+                "EOF span must cover the final byte relative to the recovered region"
+            );
+            assert_eq!(
+                primary.span.end as usize + region.script_start,
+                input.len(),
+                "converting the relative EOF span back to file coordinates must reach true EOF"
+            );
+        }
+        other => panic!("missing `@end` must return a broken region and diagnostic, got {other:?}"),
+    }
+}
+
+/// A multi-line comment delimiter that crosses the region limit is not recognized as complete.
+/// Out-of-budget lookahead must not close an in-budget comment.
+#[test]
+fn cfg_multi_comment_close_straddling_read_limit_is_unclosed_test() {
+    const LIMIT: usize = chrn_utils::MAX_REGION_SIZE;
+
+    let mut input = Vec::with_capacity(LIMIT + 1);
+    input.extend_from_slice(b"/*");
+    input.extend(std::iter::repeat_n(b'a', LIMIT - 3));
+    input.extend_from_slice(b"*/");
+    assert_eq!(input.len(), LIMIT + 1);
+    assert_eq!(input[LIMIT - 1], b'*');
+    assert_eq!(input[LIMIT], b'/');
+
+    match load_cfg_bytes(&input) {
+        ConfigLoaderOutput::Broken(_, ConfigLoadError::Diagnostic(diag)) => {
+            assert_eq!(diag.core_msg, "Unclosed multi-line comment");
+            let primary = diag
+                .annotations
+                .iter()
+                .find(|annotation| annotation.kind == AnnotationKind::Primary)
+                .expect("straddling comment diagnostic must identify the in-budget EOF");
+            assert_eq!(
+                primary.span.start..primary.span.end,
+                (LIMIT - 1) as u32..LIMIT as u32,
+                "the diagnostic must stop at the last byte inside the region budget"
+            );
+        }
+        ConfigLoaderOutput::Success(_, _) => {
+            panic!("a comment closed only beyond the region limit must not produce loader success")
+        }
+        ConfigLoaderOutput::UnrecoverableErr(err) => {
+            panic!(
+                "an unclosed multi-line comment must produce Broken, got UnrecoverableErr: {err:?}"
+            )
+        }
+        ConfigLoaderOutput::Broken(_, err) => {
+            panic!("expected diagnostic for unclosed multi-line comment, got: {err:?}")
+        }
+    }
+}
+
+/// Region-relative lookahead remains valid after a serialized-data prefix, so a valid
+/// multi-line comment in the embedding is recognized and the embedding closes successfully.
+#[test]
+fn cfg_multi_comment_past_search_limit_with_prefix_succeeds_test() {
+    const PREFIX_LEN: usize = 32_000;
+    let mut input = vec![b'p'; PREFIX_LEN];
+    input.extend_from_slice(b"@def ");
+    input.extend(std::iter::repeat_n(b' ', 1_000));
+    input.extend_from_slice(b"/* valid closed comment */ @end");
+
+    let region = load_cfg_bytes(&input).expect_success();
+    assert_eq!(region.script_start, PREFIX_LEN);
+    assert!(region.src_bytes.ends_with(b"@end"));
+}
+
+/// Region-relative lookahead remains valid after a serialized-data prefix, so escaped quotes
+/// remain inside quoted strings and a valid embedding closes successfully.
+#[test]
+fn cfg_string_escape_past_search_limit_with_prefix_succeeds_test() {
+    const PREFIX_LEN: usize = 32_000;
+    let mut input = vec![b'p'; PREFIX_LEN];
+    input.extend_from_slice(b"@def ");
+    input.extend(std::iter::repeat_n(b' ', 1_000));
+    input.extend_from_slice(b"\"escaped \\\" quote\" @end");
+
+    let region = load_cfg_bytes(&input).expect_success();
+    assert_eq!(region.script_start, PREFIX_LEN);
+    assert!(region.src_bytes.ends_with(b"@end"));
+}
+
+/// A marker whose bytes cross the region limit is not recognized as a complete `@end` marker.
+/// The loader returns a bounded broken region and diagnostic instead of exceeding the limit.
+#[test]
+fn cfg_at_end_straddling_read_limit_is_rejected_test() {
+    const LIMIT: usize = chrn_utils::MAX_REGION_SIZE;
+    let mut input = Vec::with_capacity(LIMIT + 16);
+    input.extend_from_slice(b"@def");
+    // Place the marker's first byte at the final byte in the region budget.
+    input.extend(std::iter::repeat_n(b'a', (LIMIT - 1) - 4));
+    assert_eq!(input.len(), LIMIT - 1);
+    input.extend_from_slice(b"@end\nserial");
+
+    match load_cfg_bytes(&input) {
+        ConfigLoaderOutput::Broken(region, ConfigLoadError::Diagnostic(diag)) => {
+            assert!(
+                region.src_bytes.len() <= LIMIT,
+                "region must not exceed 32KiB cap, got {} bytes",
+                region.src_bytes.len()
+            );
+            assert_eq!(diag.core_msg, "Could not find `@end` after `@def`");
+        }
+        other => panic!("expected Broken with Diagnostic, got: {other:?}"),
+    }
+}
+
+/// An unterminated comment retains all consumed bytes and keeps its EOF diagnostic span within
+/// the recovered region.
+#[test]
+fn cfg_unclosed_multi_comment_retains_final_byte_and_in_bounds_span_test() {
+    let input = "/* hello";
+    match load_cfg(input) {
+        ConfigLoaderOutput::Broken(region, ConfigLoadError::Diagnostic(diag)) => {
+            assert_eq!(
+                region.src_bytes,
+                input.as_bytes(),
+                "all input bytes must be retained in region.src_bytes"
+            );
+            let primary = diag
+                .annotations
+                .iter()
+                .find(|a| a.kind == AnnotationKind::Primary)
+                .expect("must have primary annotation");
+            assert_eq!(
+                primary.span.end as usize,
+                region.src_bytes.len(),
+                "primary EOF span end must equal region length"
+            );
+            let sliced = &region.src_bytes[primary.span.start as usize..primary.span.end as usize];
+            assert_eq!(
+                sliced, b"o",
+                "EOF span must point to the final byte of the region"
+            );
+        }
+        other => panic!("expected Broken with Diagnostic, got: {other:?}"),
+    }
+}
+
+/// Diagnostic spans for an unclosed comment are relative to the recovered region, even when
+/// the embedding follows a serialized-data prefix.
+#[test]
+fn cfg_unclosed_multi_comment_inside_at_def_spans_are_region_relative_test() {
+    let input = "prefix serialized data @def /* unclosed comment";
+    match load_cfg(input) {
+        ConfigLoaderOutput::Broken(region, ConfigLoadError::Diagnostic(diag)) => {
+            assert_eq!(region.script_start, 23);
+            let secondary = diag
+                .annotations
+                .iter()
+                .find(|a| a.kind == AnnotationKind::Secondary)
+                .expect("must have comment start annotation");
+            assert_eq!(
+                secondary.span.start..secondary.span.end,
+                5..7,
+                "comment start span must be relative to recovered region"
+            );
+            let sliced =
+                &region.src_bytes[secondary.span.start as usize..secondary.span.end as usize];
+            assert_eq!(
+                sliced, b"/*",
+                "secondary span must point to /* in region bytes"
+            );
+        }
+        other => panic!("expected Broken with Diagnostic, got: {other:?}"),
+    }
 }

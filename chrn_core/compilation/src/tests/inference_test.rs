@@ -324,7 +324,7 @@ fn infer_binary_comparisons_always_produce_bool() {
 }
 
 /// Bitwise ops are pinned to `i64` rather than being endomorphic over the operand type, so a
-/// bitwise op on narrower integers still reports `i64`. Flagged `//WARN: Endo` in-source.
+/// bitwise op on narrower integers still reports `i64`.
 #[test]
 fn infer_binary_bitwise_always_produces_i64() {
     let lhs = TypeId::new(100);

@@ -130,8 +130,7 @@ fn lex_tok_test_rev() {
     assert_eq!(toks[3].span.end, 26);
 
     // Improper @def without an @end
-    // This type of error is more likely to break the diagnostic reporting but is fixed for
-    // now.
+    // This malformed region must not destabilize diagnostic reporting.
     let wrong = r#"@defbind "./some/path""#;
 
     let opt = ConfigLoader::new(region_id, wrong.as_bytes(), path_id, &ChrnConfig::default())

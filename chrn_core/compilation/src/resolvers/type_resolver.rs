@@ -64,7 +64,7 @@ use crate::resolvers::type_resolver::cfg_ctx::{
     ConfigRootComplexContext, ConfigRootContextKind, ConfigRootOverrideContext,
 };
 use crate::resolvers::typechecker;
-use crate::resolvers::typechecker::typechecker_concepts::{ExpectedKind, ExpectedKindType};
+use crate::resolvers::typechecker::typechecker_concepts::ExpectedKindType;
 use crate::script_compiler::{ScriptCompiler, compiler_constants};
 use crate::semantic::checker_helpers::{DuplicateIdentResult, DuplicateTracker};
 use crate::semantic::compilation_unit::CompilationUnit;
@@ -84,7 +84,7 @@ use crate::semantic::hir::hir_symbols::{
 };
 use crate::semantic::hir::value_info::ValueInfo;
 use crate::semantic::preset_reporter::preset_err::{LookupError, MathError, PresetErr};
-use crate::semantic::resolution::resolution_concepts::{StaticAccessOption, StaticAccessResult};
+use crate::semantic::resolution::resolution_concepts::StaticAccessOption;
 use crate::semantic::resolution::resolution_helpers;
 use crate::semantic::{checker_helpers, evaluator, inference, preset_reporter, resolution};
 

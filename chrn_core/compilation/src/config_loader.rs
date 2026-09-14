@@ -1,4 +1,9 @@
 //TODO: Config summmarryyyy
+//
+//TODO: Should be 64Kib when the change is made. (Could be hallucinating)
+// - 64 Kib persistent buffer
+// - 32 KiB revolving memory
+// - Scratch buffer 4 bytes OR 64Kib persistent buffer keeps 4 extra bytes but is only sliced - 4
 //! This module represents the stage of `chrn` processing where there it may read an entire file, or
 //! it may read between `@def` and `@end`. This exists so that if there is serial data within the
 //! file, the entire file isn't forced to be loaded into memory, which would be a net negative.
@@ -56,8 +61,9 @@ pub struct ConfigLoader<'a, R: Read> {
     cursor: usize,
     /// The max amount of bytes to stop it, which is dynamically set, hence why it's apart of the struct.
     limit: usize,
-    /// Overall bytes consumed
-    bytes_consumed: usize,
+    // Need to keep script_start to have this be a method where we have the abs version by default.
+    /// Relative bytes consumed
+    bytes_consumed_rel: usize,
 }
 
 // At most will read
@@ -101,7 +107,7 @@ impl<R: Read> ConfigLoader<'_, R> {
             ln_num_tracker: FreezeTrackerU32::new(1),
             cursor: 0,
             limit: MAX_SEARCH_READ,
-            bytes_consumed: 0,
+            bytes_consumed_rel: 0,
             // IGNORE THIS I NEED TO KEEP THE TRAIN OF THOUGHT
             // persistent_buffer: vec![0u8; chrn_utils::MAX_REGION_SIZE],
             // state: SearchingState::InDef,
@@ -253,18 +259,25 @@ impl<R: Read> ConfigLoader<'_, R> {
                         self.handle_comment();
                     } else if self.peek() == Some(b'*') {
                         self.advance();
-                        match self.handle_multi_comment() {
+                        match self.handle_multi_comment(script_start) {
                             Ok(_) => (),
                             // Can only return err on unexpected <eof>
-                            Err(cfg_err) => return ConfigLoaderOutput::UnrecoverableErr(cfg_err),
+                            Err(cfg_err) => {
+                                let region = self.create_region(script_start, None, !requires_end);
+                                return ConfigLoaderOutput::Broken(region, cfg_err);
+                            }
                         };
                     }
                 }
                 b'@' => {
                     // This @ is not skipped for the sake of keeping self.pos at the same starting point.
 
+                    let clause_end_abs = self.cursor + (REGION_CLAUSE_SIZE - 1);
+                    // The limit is relative to 32Kib so we need a rel version
+                    let clause_end_rel = (self.cursor - script_start) + (REGION_CLAUSE_SIZE - 1);
+
+                    //TODO: Help msg for if an @ was seen but it would exceed size
                     // Helper boolean
-                    // WARN: Suspicious
                     //
                     // Possible source of indexing bug could be that ANNOTATION_CLAUSE_SIZE, which
                     // is sliced exclusively here, would exceed the length since it didn't ensure
@@ -274,9 +287,11 @@ impl<R: Read> ConfigLoader<'_, R> {
                     // least a '\n' after @def and @end, making most operations succeed anyways
                     // since it's impossible to get the error unless the environment specifically
                     // does not have at most one extra byte
+                    //
+                    // Checks if < self.limit to prevent over-stepping 32Kib limit
+
                     let can_check =
-                        // DID THE - 1 FIX?
-                        self.cursor + (REGION_CLAUSE_SIZE - 1) < self.handle.buffer().len();
+                        clause_end_abs < self.handle.buffer().len() && clause_end_rel < self.limit;
 
                     // OLD BEHAVIOR THAT MAY BE RE-APPLIED
                     // If `@def` was seen, there is enough space to check, and `@end` aligns with
@@ -296,15 +311,15 @@ impl<R: Read> ConfigLoader<'_, R> {
                         // This variable being set is proof there was a script block, but not proof
                         // there's serial data
                         let serial_start = self.cursor + REGION_CLAUSE_SIZE;
-                        // dbg!(str::from_utf8(
-                        //     &self.handle.buffer()[script_start..serial_start]
-                        // ));
-                        // panic!("Not done");
 
                         // If doesn't require end then that means this is an `@end` only block,
                         // which needs to start at the start of the file line tracking-wise
                         let needs_reset = !requires_end;
-                        self.create_region(script_start, Some(serial_start), needs_reset);
+
+                        if needs_reset {
+                            self.ln_num_tracker.reset_soft();
+                            self.col_tracker.reset_soft();
+                        }
 
                         //WARN: Doesn't use helper because the helper doesn't take in a position
                         //argument. It doesn't take one because it doesn't seem meaningful, it seems
@@ -317,6 +332,11 @@ impl<R: Read> ConfigLoader<'_, R> {
                             self.current_path_id,
                             script_start,
                             Some(serial_start),
+                        );
+                        debug_assert!(
+                            region.src_bytes.len() <= chrn_utils::MAX_REGION_SIZE,
+                            "Max region size exceeded [Found {}]",
+                            region.src_bytes.len()
                         );
 
                         return ConfigLoaderOutput::Success(region, diag_summary);
@@ -341,10 +361,13 @@ impl<R: Read> ConfigLoader<'_, R> {
                         requires_end = true;
                         // PURELY METADATA IN REGARDS TO THE SRC
                         script_start = self.cursor;
-                        // Limit is set to the maximum region size from the default READ_LIMIT size.
-                        self.limit = chrn_utils::MAX_REGION_SIZE;
+                        //NOTE: This is not set because bytes consumed is checked against the limit,
+                        //which is relative.
+                        // Limit is set to the maximum region size from the default MAX_SEARCH_READ size.
+                        // self.limit = chrn_utils::MAX_REGION_SIZE * 2;
+
                         // Resets so that the max region size can be properly accounted for
-                        self.bytes_consumed = 0;
+                        self.bytes_consumed_rel = 0;
                         self.ln_num_tracker.freeze();
                         self.col_tracker.freeze();
                         // Allows for `try_refill` to account for total turns in a way where it's
@@ -392,6 +415,10 @@ impl<R: Read> ConfigLoader<'_, R> {
         // TODO: Assert this...
 
         let region = self.create_region(script_start, None, true);
+        debug_assert!(
+            region.src_bytes.len() <= chrn_utils::MAX_REGION_SIZE,
+            "Max region size exceeded"
+        );
 
         // If the loop was broken because the limit was reached, and there is a byte after the
         // limit, that means it stopped because it reached the max read bytes not because of a valid
@@ -402,7 +429,7 @@ impl<R: Read> ConfigLoader<'_, R> {
         // NOTE: Needs direct indexing because peek already reached it's limit
         if self.handle.buffer().get(self.cursor).is_some() {
             // Sole reason this is here
-            let core_msg = "Amount of bytes in file exceeds max of 32KB";
+            let core_msg = "Amount of bytes in file exceeds max of 32KiB";
             let diag = SourceDiagnostic::builder(
                 ErrorCode::CompilerSafetyLimits.into(),
                 DiagnosticLevel::Warn,
@@ -435,7 +462,7 @@ impl<R: Read> ConfigLoader<'_, R> {
             //
             //  If we have "text<eof>", it advances "t" stopping at "<eof>", which naturally fits
             //  exclusive since eof is just a byte position that will never be touched
-            let eof_pos = self.cursor as u32;
+            let eof_pos = (self.cursor - script_start) as u32;
 
             // Need to - 1 so that the spanning doesn't have a len of 0.
             // Cannot do + 1 to the end of the span or it extends one past len
@@ -471,8 +498,6 @@ impl<R: Read> ConfigLoader<'_, R> {
     // TODO: LEXER SHOULD ALSO HANDLE THIS ALONE
     fn read_quotes(&mut self, quote_type: u8) -> Result<(), ()> {
         while let Some(b) = self.peek() {
-            // IS this `OK`?
-
             match b {
                 b'\\' => {
                     // If this isn't checked for then in the scenario "Hello\" it'll go past eof
@@ -532,11 +557,12 @@ impl<R: Read> ConfigLoader<'_, R> {
         }
     }
 
-    fn handle_multi_comment(&mut self) -> Result<(), ConfigLoadError> {
+    fn handle_multi_comment(&mut self, script_start: usize) -> Result<(), ConfigLoadError> {
         let mut depth = 1;
 
+        //WARN: DOES THIS NEED RELATIVE?
         // To adjust multi-comment start to the first '/'. /*c - 2 = /
-        let comment_start = self.cursor - 2;
+        let comment_start_abs = self.cursor - 2;
         while let Some(current_byte) = self.peek()
             && depth > 0
         {
@@ -551,6 +577,8 @@ impl<R: Read> ConfigLoader<'_, R> {
                     self.advance();
                 }
             } else {
+                // Since the while let itself is just a peek we need to make we need to advance here too
+                self.advance();
                 break;
             }
         }
@@ -558,17 +586,29 @@ impl<R: Read> ConfigLoader<'_, R> {
         if depth > 0 {
             let core_msg = "Unclosed multi-line comment";
 
-            // To include full multi-line syntax. / + 1 = /*
-            let comment_start = comment_start as u32;
-            let comment_start_span =
-                SourceSpan::new(self.current_region_id, comment_start, comment_start + 1);
+            // To include full multi-line syntax. / + 2 = /*
+            let comment_start_rel = (comment_start_abs - script_start) as u32;
+            let comment_start_span = SourceSpan::new(
+                self.current_region_id,
+                comment_start_rel,
+                comment_start_rel + 2,
+            );
 
-            let current_pos = self.cursor as u32;
+            let current_pos = (self.cursor - script_start) as u32;
             //WARN: + 1 EXCLUSIVE SPANNING CHANGE, current_pos -> current_pos + 1
             // Intended to allow it to at least cover one byte since its an exclusive span end
-            let eof_span = SourceSpan::new(self.current_region_id, current_pos, current_pos + 1);
 
-            let src_diag = SourceDiagnostic::builder(
+            //WARN: This is very suspicious. Veri
+            // If the comment's span end is eof itself then it clamps to the comment span to avoid
+            // spanning past the eof byte
+            let eof_span = if current_pos != comment_start_span.end as u32 {
+                // Since current pos is the len, this needs len - 1 for the actual last byte start.
+                SourceSpan::new(self.current_region_id, current_pos - 1, current_pos)
+            } else {
+                comment_start_span
+            };
+
+            let builder = SourceDiagnostic::builder(
                 None,
                 DiagnosticLevel::Error,
                 core_msg,
@@ -583,14 +623,14 @@ impl<R: Read> ConfigLoader<'_, R> {
                 eof_span,
                 AnnotationKind::Primary,
                 "Unexpected <eof>".to_string().into(),
-            )
-            .build();
+            );
+
             //TODO: Should still point. The error is invisible otherwise.
 
             // If a file really did hit eof during a multi-line comment the file is more likely than
             // not broken to even attempt to view. Also the lexer would get really really scared if
             // it had to deal with this.
-            return Err(ConfigLoadError::Diagnostic(src_diag));
+            return Err(ConfigLoadError::Diagnostic(builder.build()));
         }
 
         Ok(())
@@ -599,13 +639,14 @@ impl<R: Read> ConfigLoader<'_, R> {
     // This skip operation has only be used safely in this context. It's only used in scenarios like
     // multi-comments where look-ahead was already done to know that 2 bytes at most exist.
     fn skip_unchecked(&mut self, dest: usize) {
-        self.cursor += dest;
-        self.bytes_consumed += dest;
-        self.col_tracker.increment_many(dest as u32);
+        // Uses this so othat it can re-use `advance()` since it still needs to '\n' and col track
+        for _ in 0..dest {
+            self.advance();
+        }
     }
 
     fn advance(&mut self) -> Option<u8> {
-        if self.bytes_consumed == self.limit {
+        if self.bytes_consumed_rel == self.limit {
             return None;
         }
 
@@ -619,12 +660,17 @@ impl<R: Read> ConfigLoader<'_, R> {
             self.col_tracker.increment();
         }
         self.cursor += 1;
-        self.bytes_consumed += 1;
+        self.bytes_consumed_rel += 1;
         b
     }
 
     fn peek_ahead(&mut self, dest: usize) -> Option<u8> {
-        if self.bytes_consumed == self.limit {
+        // Checks for cursor + dest because BUFFER_SIZE is 32Kib + 1 and the buffer get would return
+        // the byte since it is `Some`
+        //
+        // GE should be find here since limit is based off len, so cursor == len would mean we are
+        // pointing at the limit directly
+        if self.bytes_consumed_rel == self.limit || self.bytes_consumed_rel + dest >= self.limit {
             return None;
         }
 
@@ -632,7 +678,7 @@ impl<R: Read> ConfigLoader<'_, R> {
     }
 
     fn peek(&mut self) -> Option<u8> {
-        if self.bytes_consumed == self.limit {
+        if self.bytes_consumed_rel == self.limit {
             return None;
         }
 

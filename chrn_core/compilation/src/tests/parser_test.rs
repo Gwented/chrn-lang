@@ -628,19 +628,6 @@ fn parse_complex_config_nested() {
     assert_eq!(interner.search(opt.name_id), "opt");
 }
 
-// CANNOT CHECK RIGHT NOW SINCE ROOTS CANT USE CONFIGS AND OVERRIDE DOES NOT EXIST YET. THIS WILL BE
-// REPLACED WITH AN OVERRIDE SPECIFIC TEST SINCE THAT CAN USE "=>" DEEPER
-// #[test]
-// fn parse_complex_config_arrow_syntax() {
-//     let text = "complex->\n    MyConfig => option = [1]";
-//     let (ast, interner) = parse_text(text);
-//
-//     let cfg = ast.get_cfg_root(section_items(&ast, SectionKind::Complex)[0]);
-//     assert_eq!(interner.search(cfg_name_id(cfg)), "MyConfig");
-//     assert_eq!(cfg.opt_assignments.len(), 1);
-//     assert_eq!(interner.search(cfg.opt_assignments[0].name_id), "option");
-// }
-
 // =============================================================================
 // Expression parsing tests (pratt parser)
 // =============================================================================

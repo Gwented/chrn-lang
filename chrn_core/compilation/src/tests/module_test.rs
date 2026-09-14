@@ -240,8 +240,8 @@ fn modfinder_single_import() {
         "import span must extract the exact path string from src bytes"
     );
 
-    // ModuleFinder no longer registers module ids, so no assertions about
-    // a `seen` vector are needed here.
+    // ModuleFinder records unresolved import paths; module ids and graph state belong to
+    // module resolution.
 
     _ = fs::remove_dir_all(&dir);
 }
@@ -795,9 +795,7 @@ fn extract_main_broken_config() {
     _ = fs::remove_dir_all(&dir);
 }
 
-/// `extract_main` with an arbitrary path and an empty source should still
-/// succeed since it no longer opens the file itself — the caller provides
-/// the source via `R: Read`.
+/// `extract_main` must accept an arbitrary path when the caller supplies the source via `R: Read`.
 #[test]
 fn extract_main_missing_file() {
     let dir = create_temp_dir("extract_main_missing");

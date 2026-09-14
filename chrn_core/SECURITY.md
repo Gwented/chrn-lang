@@ -1,4 +1,4 @@
-Config loader rejects any script block/file above 32KB in [config_loader](./compilation/src/config_loader.rs)
+Config loader rejects any script block/file above 32 KiB in [config_loader](./compilation/src/config_loader.rs). If a file exceeds 32 Kib it is truncated and a warn is given.
 
 Module amount can't exceed MAX_MODULES in [chrn_utils](./chrn_utils/src/lib.rs)
 Max diagnostics are controlled by external tooling decisions through `Budget` usage in [source_diagnostic](./chrn_utils/src/source_map/source_diagnostic.rs)
