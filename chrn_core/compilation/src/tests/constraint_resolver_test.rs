@@ -261,7 +261,17 @@ fn const_dependency_resolution_test() {
             let E = 4
         ",
     );
+    assert!(matches!(value_of(&compiler, &interner, "A"), Value::I64(6)));
+    assert!(matches!(
+        value_of(&compiler, &interner, "B"),
+        Value::I64(18)
+    ));
+    assert!(matches!(
+        value_of(&compiler, &interner, "C"),
+        Value::I64(17)
+    ));
     assert!(matches!(value_of(&compiler, &interner, "D"), Value::I64(8)));
+    assert!(matches!(value_of(&compiler, &interner, "E"), Value::I64(4)));
 
     // 2) Diamond dependency: one base value feeds two branches that are later combined.
     let (compiler, interner) = compile_and_resolve_single_module(
@@ -306,7 +316,6 @@ fn const_dependency_resolution_test() {
         Value::I64(21)
     ));
 
-    // What is thresh 😭
     // 5) Boolean values derived from numeric comparisons.
     let (compiler, interner) = compile_and_resolve_single_module(
         "

@@ -1,5 +1,6 @@
 use crate::config_loader::{ConfigLoader, ConfigLoaderOutput};
 use crate::lexer::token::TokenKind;
+use crate::lexer::trivia::{Trivia, TriviaKind};
 
 use super::helpers::*;
 
@@ -954,3 +955,613 @@ fn invalid_escape_tokens_obey_invalid_token_cap_without_overflow() {
     assert_eq!(output.toks.len(), 14);
     assert_eq!(output.toks.last().unwrap().tok, Token::EOF);
 }
+
+// -----------------------------------------------------------------------------------------
+// Trivia tests
+// -----------------------------------------------------------------------------------------
+
+#[test]
+fn trivia_kind_predicate_methods() {
+    // TriviaKind::Tab
+    assert!(TriviaKind::Tab.is_spacing_no_newline());
+    assert!(TriviaKind::Tab.is_spacing());
+    assert!(!TriviaKind::Tab.is_comment());
+
+    // TriviaKind::Whitespace
+    assert!(TriviaKind::Whitespace.is_spacing_no_newline());
+    assert!(TriviaKind::Whitespace.is_spacing());
+    assert!(!TriviaKind::Whitespace.is_comment());
+
+    // TriviaKind::Newline
+    assert!(!TriviaKind::Newline.is_spacing_no_newline());
+    assert!(TriviaKind::Newline.is_spacing());
+    assert!(!TriviaKind::Newline.is_comment());
+
+    // TriviaKind::SingleComment
+    assert!(!TriviaKind::SingleComment.is_spacing_no_newline());
+    assert!(!TriviaKind::SingleComment.is_spacing());
+    assert!(TriviaKind::SingleComment.is_comment());
+
+    // TriviaKind::MultiComment
+    assert!(!TriviaKind::MultiComment.is_spacing_no_newline());
+    assert!(!TriviaKind::MultiComment.is_spacing());
+    assert!(TriviaKind::MultiComment.is_comment());
+}
+
+#[test]
+fn trivia_whitespace_coalesces_spaces_and_unicode_whitespace() {
+    // Single space
+    let src: &[u8] = b" x";
+    let mut interner = Intern::init();
+    let mut cfg = ChrnConfig::default();
+    let output = Lexer::new(SourceRegionId::new(0), src, 0, &mut cfg).tokenize(&mut interner);
+
+    assert_eq!(output.trivia.len(), 1);
+    assert_eq!(output.trivia[0].kind, TriviaKind::Whitespace);
+    assert_eq!(output.trivia[0].span.start, 0);
+    assert_eq!(output.trivia[0].span.end, 1);
+    assert_eq!(&src[output.trivia[0].span.start as usize..output.trivia[0].span.end as usize], b" ");
+    assert_eq!(output.toks[0].leading_trivia_indices, 0..1);
+
+    // Consecutive spaces coalesce into a single TriviaKind::Whitespace
+    let src: &[u8] = b"    x";
+    let output = Lexer::new(SourceRegionId::new(0), src, 0, &mut cfg).tokenize(&mut interner);
+
+    assert_eq!(output.trivia.len(), 1);
+    assert_eq!(output.trivia[0].kind, TriviaKind::Whitespace);
+    assert_eq!(output.trivia[0].span.start, 0);
+    assert_eq!(output.trivia[0].span.end, 4);
+    assert_eq!(&src[output.trivia[0].span.start as usize..output.trivia[0].span.end as usize], b"    ");
+    assert_eq!(output.toks[0].leading_trivia_indices, 0..1);
+
+    // Unicode whitespace: NO-BREAK SPACE (\u{00A0}, 2 bytes in UTF-8)
+    let src_str = "\u{00A0}x";
+    let src = src_str.as_bytes();
+    let output = Lexer::new(SourceRegionId::new(0), src, 0, &mut cfg).tokenize(&mut interner);
+
+    assert_eq!(output.trivia.len(), 1);
+    assert_eq!(output.trivia[0].kind, TriviaKind::Whitespace);
+    assert_eq!(output.trivia[0].span.start, 0);
+    assert_eq!(output.trivia[0].span.end, 2);
+    assert_eq!(output.toks[0].leading_trivia_indices, 0..1);
+
+    // Mixed ASCII spaces and Unicode whitespace coalesce into a single Whitespace trivia
+    // ' ' (1 byte) + '\u{00A0}' (2 bytes) + ' ' (1 byte) = 4 bytes
+    let src_str = " \u{00A0} x";
+    let src = src_str.as_bytes();
+    let output = Lexer::new(SourceRegionId::new(0), src, 0, &mut cfg).tokenize(&mut interner);
+
+    assert_eq!(output.trivia.len(), 1);
+    assert_eq!(output.trivia[0].kind, TriviaKind::Whitespace);
+    assert_eq!(output.trivia[0].span.start, 0);
+    assert_eq!(output.trivia[0].span.end, 4);
+    assert_eq!(output.toks[0].leading_trivia_indices, 0..1);
+}
+
+#[test]
+fn trivia_tabs_are_emitted_individually() {
+    // Consecutive tabs are NOT coalesced; each tab gets its own TriviaKind::Tab
+    let src: &[u8] = b"\t\t\tx";
+    let mut interner = Intern::init();
+    let mut cfg = ChrnConfig::default();
+    let output = Lexer::new(SourceRegionId::new(0), src, 0, &mut cfg).tokenize(&mut interner);
+
+    assert_eq!(output.trivia.len(), 3);
+    for (i, trivia) in output.trivia.iter().enumerate() {
+        assert_eq!(trivia.kind, TriviaKind::Tab, "trivia[{i}] should be Tab");
+        assert_eq!(trivia.span.start, i as u32);
+        assert_eq!(trivia.span.end, (i + 1) as u32);
+    }
+    assert_eq!(output.toks[0].leading_trivia_indices, 0..3);
+
+    // Mixed spaces and tabs alternate
+    let src: &[u8] = b" \t  \tx";
+    let output = Lexer::new(SourceRegionId::new(0), src, 0, &mut cfg).tokenize(&mut interner);
+
+    assert_eq!(output.trivia.len(), 4);
+    assert_eq!(output.trivia[0].kind, TriviaKind::Whitespace);
+    assert_eq!(output.trivia[0].span.start, 0);
+    assert_eq!(output.trivia[0].span.end, 1);
+
+    assert_eq!(output.trivia[1].kind, TriviaKind::Tab);
+    assert_eq!(output.trivia[1].span.start, 1);
+    assert_eq!(output.trivia[1].span.end, 2);
+
+    assert_eq!(output.trivia[2].kind, TriviaKind::Whitespace);
+    assert_eq!(output.trivia[2].span.start, 2);
+    assert_eq!(output.trivia[2].span.end, 4);
+
+    assert_eq!(output.trivia[3].kind, TriviaKind::Tab);
+    assert_eq!(output.trivia[3].span.start, 4);
+    assert_eq!(output.trivia[3].span.end, 5);
+
+    assert_eq!(output.toks[0].leading_trivia_indices, 0..4);
+}
+
+#[test]
+fn trivia_newlines_lf_and_crlf() {
+    let mut interner = Intern::init();
+    let mut cfg = ChrnConfig::default();
+
+    // Single LF (\n)
+    let src: &[u8] = b"\nx";
+    let output = Lexer::new(SourceRegionId::new(0), src, 0, &mut cfg).tokenize(&mut interner);
+    assert_eq!(output.trivia.len(), 1);
+    assert_eq!(output.trivia[0].kind, TriviaKind::Newline);
+    assert_eq!(output.trivia[0].span.start, 0);
+    assert_eq!(output.trivia[0].span.end, 1);
+    assert_eq!(output.toks[0].leading_trivia_indices, 0..1);
+
+    // Single CRLF (\r\n) -> 2-byte span
+    let src: &[u8] = b"\r\nx";
+    let output = Lexer::new(SourceRegionId::new(0), src, 0, &mut cfg).tokenize(&mut interner);
+    assert_eq!(output.trivia.len(), 1);
+    assert_eq!(output.trivia[0].kind, TriviaKind::Newline);
+    assert_eq!(output.trivia[0].span.start, 0);
+    assert_eq!(output.trivia[0].span.end, 2);
+    assert_eq!(&src[0..2], b"\r\n");
+    assert_eq!(output.toks[0].leading_trivia_indices, 0..1);
+
+    // Mixed consecutive newlines
+    let src: &[u8] = b"\r\n\n\r\nx";
+    let output = Lexer::new(SourceRegionId::new(0), src, 0, &mut cfg).tokenize(&mut interner);
+    assert_eq!(output.trivia.len(), 3);
+
+    assert_eq!(output.trivia[0].kind, TriviaKind::Newline);
+    assert_eq!(output.trivia[0].span.start, 0);
+    assert_eq!(output.trivia[0].span.end, 2);
+
+    assert_eq!(output.trivia[1].kind, TriviaKind::Newline);
+    assert_eq!(output.trivia[1].span.start, 2);
+    assert_eq!(output.trivia[1].span.end, 3);
+
+    assert_eq!(output.trivia[2].kind, TriviaKind::Newline);
+    assert_eq!(output.trivia[2].span.start, 3);
+    assert_eq!(output.trivia[2].span.end, 5);
+
+    assert_eq!(output.toks[0].leading_trivia_indices, 0..3);
+}
+
+#[test]
+fn trivia_single_line_comments_basic() {
+    let mut interner = Intern::init();
+    let mut cfg = ChrnConfig::default();
+
+    // Standard comment followed by newline
+    let src: &[u8] = b"// a single line comment\nfoo";
+    let output = Lexer::new(SourceRegionId::new(0), src, 0, &mut cfg).tokenize(&mut interner);
+
+    assert_eq!(output.trivia.len(), 2);
+    assert_eq!(output.trivia[0].kind, TriviaKind::SingleComment);
+    assert_eq!(output.trivia[0].span.start, 0);
+    assert_eq!(output.trivia[0].span.end, 24);
+    assert_eq!(
+        &src[output.trivia[0].span.start as usize..output.trivia[0].span.end as usize],
+        b"// a single line comment"
+    );
+
+    assert_eq!(output.trivia[1].kind, TriviaKind::Newline);
+    assert_eq!(output.trivia[1].span.start, 24);
+    assert_eq!(output.trivia[1].span.end, 25);
+
+    assert_eq!(output.toks[0].leading_trivia_indices, 0..2);
+
+    // Empty single comment: `//\n`
+    let src: &[u8] = b"//\nfoo";
+    let output = Lexer::new(SourceRegionId::new(0), src, 0, &mut cfg).tokenize(&mut interner);
+    assert_eq!(output.trivia.len(), 2);
+    assert_eq!(output.trivia[0].kind, TriviaKind::SingleComment);
+    assert_eq!(output.trivia[0].span.start, 0);
+    assert_eq!(output.trivia[0].span.end, 2);
+    assert_eq!(output.trivia[1].kind, TriviaKind::Newline);
+    assert_eq!(output.trivia[1].span.start, 2);
+    assert_eq!(output.trivia[1].span.end, 3);
+
+    // Single comment at EOF without trailing newline
+    let src: &[u8] = b"foo // trailing at eof";
+    let output = Lexer::new(SourceRegionId::new(0), src, 0, &mut cfg).tokenize(&mut interner);
+
+    assert_eq!(output.toks.len(), 2); // Id("foo"), EOF
+    assert_eq!(output.toks[0].leading_trivia_indices, 0..0);
+    assert_eq!(output.toks[1].leading_trivia_indices, 0..2); // attached to EOF
+
+    assert_eq!(output.trivia.len(), 2);
+    assert_eq!(output.trivia[0].kind, TriviaKind::Whitespace);
+    assert_eq!(output.trivia[0].span.start, 3);
+    assert_eq!(output.trivia[0].span.end, 4);
+
+    assert_eq!(output.trivia[1].kind, TriviaKind::SingleComment);
+    assert_eq!(output.trivia[1].span.start, 4);
+    assert_eq!(output.trivia[1].span.end, src.len() as u32);
+    assert_eq!(
+        &src[output.trivia[1].span.start as usize..output.trivia[1].span.end as usize],
+        b"// trailing at eof"
+    );
+
+    // Single comment with Unicode text
+    let src_str = "// 🦀 Ferris\nfoo";
+    let src = src_str.as_bytes();
+    let output = Lexer::new(SourceRegionId::new(0), src, 0, &mut cfg).tokenize(&mut interner);
+    assert_eq!(output.trivia[0].kind, TriviaKind::SingleComment);
+    assert_eq!(
+        &src[output.trivia[0].span.start as usize..output.trivia[0].span.end as usize],
+        "// 🦀 Ferris".as_bytes()
+    );
+}
+
+#[test]
+fn trivia_multi_line_comments_basic() {
+    let mut interner = Intern::init();
+    let mut cfg = ChrnConfig::default();
+
+    // Standard block comment
+    let src: &[u8] = b"/* hello block */ foo";
+    let output = Lexer::new(SourceRegionId::new(0), src, 0, &mut cfg).tokenize(&mut interner);
+
+    assert_eq!(output.trivia.len(), 2);
+    assert_eq!(output.trivia[0].kind, TriviaKind::MultiComment);
+    assert_eq!(output.trivia[0].span.start, 0);
+    assert_eq!(output.trivia[0].span.end, 17);
+    assert_eq!(
+        &src[output.trivia[0].span.start as usize..output.trivia[0].span.end as usize],
+        b"/* hello block */"
+    );
+
+    assert_eq!(output.trivia[1].kind, TriviaKind::Whitespace);
+    assert_eq!(output.trivia[1].span.start, 17);
+    assert_eq!(output.trivia[1].span.end, 18);
+
+    assert_eq!(output.toks[0].leading_trivia_indices, 0..2);
+
+    // Empty block comment: `/**/`
+    let src: &[u8] = b"/**/foo";
+    let output = Lexer::new(SourceRegionId::new(0), src, 0, &mut cfg).tokenize(&mut interner);
+    assert_eq!(output.trivia.len(), 1);
+    assert_eq!(output.trivia[0].kind, TriviaKind::MultiComment);
+    assert_eq!(output.trivia[0].span.start, 0);
+    assert_eq!(output.trivia[0].span.end, 4);
+    assert_eq!(output.toks[0].leading_trivia_indices, 0..1);
+
+    // Block comment spanning multiple lines (newlines inside are not separate trivia)
+    let src: &[u8] = b"/* line 1\nline 2\r\nline 3 */foo";
+    let output = Lexer::new(SourceRegionId::new(0), src, 0, &mut cfg).tokenize(&mut interner);
+    assert_eq!(output.trivia.len(), 1);
+    assert_eq!(output.trivia[0].kind, TriviaKind::MultiComment);
+    assert_eq!(output.trivia[0].span.start, 0);
+    assert_eq!(output.trivia[0].span.end, 27);
+    assert_eq!(output.toks[0].leading_trivia_indices, 0..1);
+
+    // Block comment containing extra asterisks and slashes
+    let src: &[u8] = b"/*** not close / nor * ***/foo";
+    let output = Lexer::new(SourceRegionId::new(0), src, 0, &mut cfg).tokenize(&mut interner);
+    assert_eq!(output.trivia.len(), 1);
+    assert_eq!(output.trivia[0].kind, TriviaKind::MultiComment);
+    assert_eq!(output.trivia[0].span.start, 0);
+    assert_eq!(output.trivia[0].span.end, 27);
+    assert_eq!(output.toks[0].leading_trivia_indices, 0..1);
+}
+
+#[test]
+fn trivia_nested_multi_line_comments() {
+    let mut interner = Intern::init();
+    let mut cfg = ChrnConfig::default();
+
+    // Nested multi-line comment: `/* outer /* inner */ outer */`
+    let src: &[u8] = b"/* outer /* inner */ outer */foo";
+    let output = Lexer::new(SourceRegionId::new(0), src, 0, &mut cfg).tokenize(&mut interner);
+
+    assert_eq!(output.trivia.len(), 1);
+    assert_eq!(output.trivia[0].kind, TriviaKind::MultiComment);
+    assert_eq!(output.trivia[0].span.start, 0);
+    assert_eq!(output.trivia[0].span.end, 29);
+    assert_eq!(
+        &src[output.trivia[0].span.start as usize..output.trivia[0].span.end as usize],
+        b"/* outer /* inner */ outer */"
+    );
+    assert_eq!(output.toks[0].leading_trivia_indices, 0..1);
+}
+
+#[test]
+fn trivia_empty_source_and_trivia_only_source() {
+    let mut interner = Intern::init();
+    let mut cfg = ChrnConfig::default();
+
+    // Empty source
+    let src: &[u8] = b"";
+    let output = Lexer::new(SourceRegionId::new(0), src, 0, &mut cfg).tokenize(&mut interner);
+    assert_eq!(output.toks.len(), 1);
+    assert_eq!(output.toks[0].tok, Token::EOF);
+    assert_eq!(output.toks[0].leading_trivia_indices, 0..0);
+    assert!(output.trivia.is_empty());
+
+    // Source with only trivia (no semantic tokens)
+    let src: &[u8] = b"  // comment\n/* block */\n\t ";
+    let output = Lexer::new(SourceRegionId::new(0), src, 0, &mut cfg).tokenize(&mut interner);
+
+    assert_eq!(output.toks.len(), 1);
+    assert_eq!(output.toks[0].tok, Token::EOF);
+    assert_eq!(output.toks[0].leading_trivia_indices, 0..7);
+
+    assert_eq!(output.trivia.len(), 7);
+    assert_eq!(output.trivia[0].kind, TriviaKind::Whitespace);
+    assert_eq!(output.trivia[1].kind, TriviaKind::SingleComment);
+    assert_eq!(output.trivia[2].kind, TriviaKind::Newline);
+    assert_eq!(output.trivia[3].kind, TriviaKind::MultiComment);
+    assert_eq!(output.trivia[4].kind, TriviaKind::Newline);
+    assert_eq!(output.trivia[5].kind, TriviaKind::Tab);
+    assert_eq!(output.trivia[6].kind, TriviaKind::Whitespace);
+}
+
+#[test]
+fn trivia_single_line_comment_crlf_handling() {
+    let mut interner = Intern::init();
+    let mut cfg = ChrnConfig::default();
+
+    // In a CRLF-terminated file, `// comment\r\n` ends with a 2-byte CRLF newline.
+    // The comment content is `// comment` (bytes 0..10), and the newline is `\r\n` (bytes 10..12).
+    let src: &[u8] = b"// comment\r\nfoo";
+    let output = Lexer::new(SourceRegionId::new(0), src, 0, &mut cfg).tokenize(&mut interner);
+
+    assert_eq!(output.trivia.len(), 2);
+    assert_eq!(output.trivia[0].kind, TriviaKind::SingleComment);
+    assert_eq!(
+        output.trivia[0].span.end, 10,
+        "SingleComment span should end before '\\r', but got end={}",
+        output.trivia[0].span.end
+    );
+    assert_eq!(output.trivia[1].kind, TriviaKind::Newline);
+    assert_eq!(
+        output.trivia[1].span.start, 10,
+        "Newline span should start at '\\r', but got start={}",
+        output.trivia[1].span.start
+    );
+    assert_eq!(
+        output.trivia[1].span.end, 12,
+        "Newline span should cover both '\\r' and '\\n' (span 10..12), but got end={}",
+        output.trivia[1].span.end
+    );
+}
+
+#[test]
+fn trivia_nested_multi_line_comment_delimiter_tracking() {
+    let mut interner = Intern::init();
+    let mut cfg = ChrnConfig::default();
+
+    // Source contains: outer `/*`, inner `/*/` (starts nested comment), and only ONE closing `*/`.
+    // Since there are two `/*` openings and only one `*/` closing, depth should be 1 at `*/` and
+    // remain unclosed through `foo` up to EOF.
+    let src: &[u8] = b"/* a /*/ b */ foo";
+    let output = Lexer::new(SourceRegionId::new(0), src, 0, &mut cfg).tokenize(&mut interner);
+
+    // If depth tracking skipped only 1 byte for `/*`, the `*` and `/` in `/*/` are matched as
+    // both opening and immediately closing the nested comment, causing the single `*/` to close
+    // the outer comment early and emitting `foo` as a token instead of treating it as part of
+    // the unclosed comment.
+    assert_eq!(
+        output.toks.len(),
+        1,
+        "Expected unclosed multi-comment to swallow 'foo' until EOF, but emitted tokens: {:?}",
+        output.toks
+    );
+    assert_eq!(output.toks[0].tok, Token::EOF);
+    assert_eq!(output.trivia.len(), 1);
+    assert_eq!(output.trivia[0].kind, TriviaKind::MultiComment);
+    assert_eq!(output.trivia[0].span.end as usize, src.len());
+}
+
+#[test]
+fn trivia_interleaved_mixed_sequence() {
+    let mut interner = Intern::init();
+    let mut cfg = ChrnConfig::default();
+
+    let src: &[u8] = b"  /* block */ \t // line\n\r\n\tbar";
+    let output = Lexer::new(SourceRegionId::new(0), src, 0, &mut cfg).tokenize(&mut interner);
+
+    // Expected sequence:
+    // 0: Whitespace "  " (0..2)
+    // 1: MultiComment "/* block */" (2..13)
+    // 2: Whitespace " " (13..14)
+    // 3: Tab "\t" (14..15)
+    // 4: Whitespace " " (15..16)
+    // 5: SingleComment "// line" (16..23)
+    // 6: Newline "\n" (23..24)
+    // 7: Newline "\r\n" (24..26)
+    // 8: Tab "\t" (26..27)
+    // Followed by Id("bar") at 27..30.
+    assert_eq!(output.trivia.len(), 9);
+
+    let expected_kinds = [
+        TriviaKind::Whitespace,
+        TriviaKind::MultiComment,
+        TriviaKind::Whitespace,
+        TriviaKind::Tab,
+        TriviaKind::Whitespace,
+        TriviaKind::SingleComment,
+        TriviaKind::Newline,
+        TriviaKind::Newline,
+        TriviaKind::Tab,
+    ];
+
+    for (i, (&expected_kind, trivia)) in expected_kinds.iter().zip(&output.trivia).enumerate() {
+        assert_eq!(trivia.kind, expected_kind, "mismatch at trivia[{i}]");
+    }
+
+    // Verify byte coverage continuity
+    let mut prev_end = 0u32;
+    for (i, trivia) in output.trivia.iter().enumerate() {
+        assert_eq!(trivia.span.start, prev_end, "trivia[{i}] start != prev_end");
+        prev_end = trivia.span.end;
+    }
+    assert_eq!(prev_end, 27);
+
+    assert_eq!(output.toks[0].leading_trivia_indices, 0..9);
+    assert_eq!(output.toks[0].span.start, 27);
+    assert_eq!(output.toks[0].span.end, 30);
+}
+
+#[test]
+fn trivia_token_stream_contiguity_and_association() {
+    let mut interner = Intern::init();
+    let mut cfg = ChrnConfig::default();
+
+    let src: &[u8] = b"let x: int = 42 // assign\n/* next */ struct Point { x: int }";
+    let output = Lexer::new(SourceRegionId::new(0), src, 0, &mut cfg).tokenize(&mut interner);
+
+    // Verify contiguity across all tokens:
+    // Every token's leading_trivia_indices.start must equal the previous token's leading_trivia_indices.end.
+    assert_eq!(output.toks[0].leading_trivia_indices.start, 0);
+    for i in 1..output.toks.len() {
+        assert_eq!(
+            output.toks[i].leading_trivia_indices.start,
+            output.toks[i - 1].leading_trivia_indices.end,
+            "gap or overlap in trivia indices between token {} and {}",
+            i - 1,
+            i
+        );
+    }
+
+    // Total trivia coverage must equal output.trivia.len()
+    assert_eq!(
+        output.toks.last().unwrap().leading_trivia_indices.end as usize,
+        output.trivia.len(),
+        "last token end must equal total trivia count"
+    );
+
+    // Verify tokens with NO preceding trivia have empty leading_trivia_indices
+    // ":" has no space before it (after "x")
+    let colon_toks: Vec<_> = output.toks.iter().filter(|t| t.tok == Token::Colon).collect();
+    assert_eq!(colon_toks.len(), 2);
+    assert!(
+        colon_toks[0].leading_trivia_indices.is_empty(),
+        "first colon preceded directly by 'x' should have empty trivia range"
+    );
+    assert!(
+        colon_toks[1].leading_trivia_indices.is_empty(),
+        "second colon preceded directly by 'x' should have empty trivia range"
+    );
+
+    // "struct" is preceded by " // assign\n/* next */ "
+    let struct_tok = output
+        .toks
+        .iter()
+        .find(|t| matches!(t.tok, Token::Keyword(Keyword::Struct)))
+        .unwrap();
+    let struct_trivia: Vec<TriviaKind> = output.trivia
+        [struct_tok.leading_trivia_indices.start as usize..struct_tok.leading_trivia_indices.end as usize]
+        .iter()
+        .map(|t| t.kind)
+        .collect();
+
+    assert_eq!(
+        struct_trivia,
+        vec![
+            TriviaKind::Whitespace,
+            TriviaKind::SingleComment,
+            TriviaKind::Newline,
+            TriviaKind::MultiComment,
+            TriviaKind::Whitespace,
+        ]
+    );
+}
+
+#[test]
+fn trivia_with_embedding_def_and_end() {
+    let mut interner = Intern::init();
+    let mut cfg = ChrnConfig::default();
+
+    let src: &[u8] = b"@def\n  var x = 1\n@end";
+    let output = Lexer::new(SourceRegionId::new(0), src, 0, &mut cfg).tokenize(&mut interner);
+
+    // Tokens: Def, var, x, =, 1, End
+    assert_eq!(output.toks[0].tok, Token::Def);
+    assert_eq!(output.toks[0].leading_trivia_indices, 0..0);
+
+    assert!(matches!(output.toks[1].tok, Token::Keyword(Keyword::Var)));
+    assert_eq!(output.toks[1].leading_trivia_indices, 0..2); // \n, "  "
+    assert_eq!(output.trivia[0].kind, TriviaKind::Newline);
+    assert_eq!(output.trivia[1].kind, TriviaKind::Whitespace);
+
+    assert_eq!(output.toks.last().unwrap().tok, Token::End);
+    let end_tok = output.toks.last().unwrap();
+    assert_eq!(end_tok.leading_trivia_indices, 5..6); // \n
+    assert_eq!(output.trivia[5].kind, TriviaKind::Newline);
+}
+
+#[test]
+fn trivia_associated_with_invalid_tokens() {
+    let mut interner = Intern::init();
+    let mut cfg = ChrnConfig::default();
+
+    let src: &[u8] = b"  $  valid";
+    let output = Lexer::new(SourceRegionId::new(0), src, 0, &mut cfg).tokenize(&mut interner);
+
+    assert_eq!(output.toks.len(), 3); // Invalid, Id("valid"), EOF
+    assert!(matches!(output.toks[0].tok, Token::Invalid(_)));
+    assert_eq!(output.toks[0].leading_trivia_indices, 0..1);
+    assert_eq!(output.trivia[0].kind, TriviaKind::Whitespace);
+    assert_eq!(output.trivia[0].span.start, 0);
+    assert_eq!(output.trivia[0].span.end, 2);
+
+    assert!(matches!(output.toks[1].tok, Token::Id(_)));
+    assert_eq!(output.toks[1].leading_trivia_indices, 1..2);
+    assert_eq!(output.trivia[1].kind, TriviaKind::Whitespace);
+    assert_eq!(output.trivia[1].span.start, 3);
+    assert_eq!(output.trivia[1].span.end, 5);
+
+    assert_eq!(output.toks[2].tok, Token::EOF);
+    assert_eq!(output.toks[2].leading_trivia_indices, 2..2);
+}
+
+#[test]
+fn trivia_unclosed_multi_line_comment_at_eof() {
+    let mut interner = Intern::init();
+    let mut cfg = ChrnConfig::default();
+
+    let src: &[u8] = b"/* unclosed comment at eof";
+    let output = Lexer::new(SourceRegionId::new(0), src, 0, &mut cfg).tokenize(&mut interner);
+
+    assert_eq!(output.toks.len(), 1);
+    assert_eq!(output.toks[0].tok, Token::EOF);
+    assert_eq!(output.toks[0].leading_trivia_indices, 0..1);
+    assert_eq!(output.trivia.len(), 1);
+    assert_eq!(output.trivia[0].kind, TriviaKind::MultiComment);
+    assert_eq!(output.trivia[0].span.start, 0);
+    assert_eq!(output.trivia[0].span.end, src.len() as u32);
+}
+
+#[test]
+fn trivia_token_variety_leading_trivia_association() {
+    let mut interner = Intern::init();
+    let mut cfg = ChrnConfig::default();
+
+    // Exercise diverse token types each preceded by a unique whitespace span:
+    // Id, Integer, Float, Str, Char, Bool, and compound symbols
+    let src: &[u8] = b"  ident  100  3.14  \"hello\"  'c'  true  ::  :=  ->  =>  ..=";
+    let output = Lexer::new(SourceRegionId::new(0), src, 0, &mut cfg).tokenize(&mut interner);
+
+    // 11 semantic tokens + 1 EOF = 12 tokens
+    // Each of the 11 semantic tokens has exactly 1 leading whitespace trivia
+    assert_eq!(output.toks.len(), 12);
+    assert_eq!(output.trivia.len(), 11);
+
+    for (i, tok) in output.toks[..11].iter().enumerate() {
+        assert_eq!(
+            tok.leading_trivia_indices,
+            (i as u32)..(i as u32 + 1),
+            "token {i} ({:?}) should have leading_trivia_indices {}..{}",
+            tok.tok,
+            i,
+            i + 1
+        );
+        assert_eq!(
+            output.trivia[i].kind,
+            TriviaKind::Whitespace,
+            "trivia {i} should be Whitespace"
+        );
+    }
+
+    // EOF has no leading trivia (it immediately follows the last token)
+    assert_eq!(output.toks[11].leading_trivia_indices, 11..11);
+}
+
+

@@ -1,19 +1,8 @@
 //! Helper routing structs for config members that are from different sections, which have different
 //! semantics
-use chrn_utils::{
-    id_types::{MemberId, SymbolId, TypeId},
-    utils::containers::SpannedContainer,
-};
+use chrn_utils::id_types::{MemberId, SymbolId, TypeId};
 
-use crate::{
-    lookup::member_lookup::MemberLookupResult,
-    parser::ast::ast_exprs::PathSegment,
-    script_compiler::ScriptCompiler,
-    semantic::{
-        hir::hir_impls::LinkedConfigOverrideMemberKind,
-        resolution::resolution_concepts::{StaticAccessResult, TypeExprResult},
-    },
-};
+use crate::semantic::hir::hir_impls::LinkedConfigOverrideMemberKind;
 
 /// Struct for routing given a particular config member section origin setting
 
@@ -76,7 +65,7 @@ impl ConfigRootComplexContext {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub(super) enum ConfigMemberContextKind {
     // Config member member context
     // Maybe rename to base? The section discernment no longer exists so maybe remove the "complex"
@@ -86,6 +75,14 @@ pub(super) enum ConfigMemberContextKind {
 }
 
 impl ConfigMemberContextKind {
+    pub(super) fn expect_override(&self) -> &ConfigMemberOverrideContext {
+        match self {
+            ConfigMemberContextKind::Override(ctx) => &ctx,
+            ConfigMemberContextKind::Complex(_) => {
+                panic!("Expected `ConfigMemberOverrideContext` found `{self:?}`")
+            }
+        }
+    }
     /// Attempts to get `MemberId` out of `self`
     pub(super) const fn memb_id(&self) -> Option<MemberId> {
         match self {
@@ -103,7 +100,7 @@ impl ConfigMemberContextKind {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub(super) struct ConfigMemberComplexContext {
     pub(super) memb_id: MemberId,
 }
@@ -114,12 +111,10 @@ impl ConfigMemberComplexContext {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub(super) struct ConfigMemberOverrideContext {
     /// `SymbolId` of the current `override` symbol to go into the namespace of
     pub override_sym_id: SymbolId,
-    /// Is `Option` because if it's a global override usage like "override C {}" not being linked
-    /// would just be another state.
     pub linked_kind: LinkedConfigOverrideMemberKind,
 }
 

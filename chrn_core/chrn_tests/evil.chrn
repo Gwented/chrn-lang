@@ -1,3 +1,9 @@
+            let A = E + 2
+            let B = A * 3
+            let C = B - 1
+            let D = C / 2
+            let E = 4
+@end
 /*
 // chrn if it didn't use sections
 
@@ -43,7 +49,7 @@ for varthing1 {}
 // Says not found in module `evil` because the starting point is the actual module, not the namespace.
 // Makes it sound like it didn't search the namespace
 // let x = i32::e#3
-let x = u32::MAX
+let x = x
 
 var->
 varthing1: str
@@ -54,7 +60,8 @@ struct Structure {
     field1: i32
     field2: u32
     field3: str
-} #hex
+}
+enum Block {k}
 
 struct varthing1 {}
 
@@ -69,7 +76,7 @@ for Structure {
     field1 {
         // Assuming `self` is going to exist
         //
-        override JAVA=>types{change u32 = java::char}
+        override JAVA=>types{change = java::char}
         override RUST=>types{change i32 = rust::i32}
         // Says is a variable and not a type, but should point to the source where it saw the
         // variable over type. Also should this be public facing where it says it works off preference
@@ -77,14 +84,20 @@ for Structure {
         // override RUST=>types {change x = rust::char}
     }
     field2 {
+        override JAVA=>types{change = java::char}
         // Fails because it sees field2 is u32 but numbers are i64 internally.
-        default_val = 3
+        // default_val = 3
         // override C=>types {self = f32}
     }
     field3 {
         // override C=>types {self = u16}
     }
 }
+
+for Block {k {
+        override JAVA=>types{change = java::char}
+
+    }}
 
 for var varthing1 {}
 

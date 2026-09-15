@@ -27,8 +27,8 @@ use chrn_utils::chrn_config::chrn_perf::ChrnPerfStage;
 use chrn_utils::err_codes::ErrorCode;
 use chrn_utils::id_types::id_tags::TaggedId;
 use chrn_utils::id_types::{
-    AstId, DirectiveId, ExprId, ImplId, ImplMemberId, InternedId, MemberId, ScopeId, SymbolId,
-    TypeId, ValueId, VariableId,
+    AstId, DirectiveId, ExprId, ImplId, ImplMemberId, InternedId, MemberId, ModuleId, ScopeId,
+    SymbolId, TypeId, ValueId, VariableId,
 };
 use chrn_utils::intern::Intern;
 use chrn_utils::source_map::source_diagnostic::annotations::AnnotationKind;
@@ -341,7 +341,6 @@ impl<'res> TypeResolver<'res> {
                                 }
                             }
                         }
-                        //TEST:
                         //Doesn't need to update anything since it's a "Standing" expr which has no
                         //parent attached.
                         PendingExprKind::Standing(_) => (),
@@ -424,16 +423,16 @@ impl<'res> TypeResolver<'res> {
         //     _ => todo!(),
         // };
 
-        // if env.current_mod == self.compiler.mods[ModuleId::new(self.compiler.mods.len() - 2)].mod_id
+        // if env.current_mod
+        //     == self.compiler.mods[ModuleId::new((self.compiler.mods.len() - 2) as u32)].self_id
         // {
-        //     dbg!(&self.ty_ctx);
-        //     for symbol in &self.compiler.symbols {
-        //         if self.interner.search(symbol.name_id) == "y" {
+        //     for symbol in &self.compiler.syms {
+        //         if self.interner.search(symbol.name_id) == "B" {
         //             let name = self.interner.search(symbol.name_id);
         //             dbg!(name);
         //             match symbol.kind {
         //                 SymbolKind::Variable(var_id) => {
-        //                     let state = &self.compiler.variables[var_id].state;
+        //                     let state = &self.compiler.vars[var_id].state;
         //                     match state {
         //                         VariableState::ReservedTypeSlot(type_id) => {
         //                             dbg!("Reserved variable but not seen");
@@ -449,8 +448,8 @@ impl<'res> TypeResolver<'res> {
         //                 SymbolKind::Type(type_id) => {
         //                     let ty_info = &self.compiler.types[type_id];
         //                     match &ty_info.ty {
-        //                         Type::BuiltinType(builtin_type) => {
-        //                             dbg!(builtin_type);
+        //                         Type::BuiltinTypeInfo(info) => {
+        //                             dbg!(&info.ty);
         //                         }
         //                         Type::Struct(struct_def) => todo!(),
         //                         Type::Enum(enum_def) => todo!(),
@@ -1045,8 +1044,7 @@ impl<'res> TypeResolver<'res> {
                     );
                     id.into_tagged::<ConfigMemberTag>()
                 }
-                // The intent is to if `complex`, correctly route to the intrinsic scope, just as an
-                // override root would.
+                // `override` applied to root
                 AstConfigMemberMetadataKind::Override(_) => {
                     // Based off root, either get the namespace from the already existent intrinsic
                     // scope root.
@@ -1508,6 +1506,59 @@ impl<'res> TypeResolver<'res> {
                         to_assign.push(type_id);
                     }
 
+                    // `change` is applied to `self` if empty
+                    if to_assign.is_empty() {
+                        // Uses `bool` since either may warn
+                        let mut should_warn = false;
+
+                        if let ConfigMemberContextKind::Override(ov_ctx) = parent_cfg_memb_ctx {
+                            match ov_ctx.linked_kind {
+                                LinkedConfigOverrideMemberKind::Global => {
+                                    should_warn = true;
+                                }
+                                // Root must have a type since we know it's not global
+                                LinkedConfigOverrideMemberKind::Root(sym_id) => {
+                                    let type_id = self
+                                        .compiler
+                                        .get_type_id_from_sym_id(sym_id)
+                                        .expect("Linked kind tracking broke");
+                                    to_assign.push(type_id);
+                                }
+                                //NOTE: Maybe the member can be preserved meaningfully here but just
+                                //skips. (Also should point to location showing that it has no type?)
+                                LinkedConfigOverrideMemberKind::Member(memb_id) => {
+                                    if let Some(type_id) =
+                                        self.compiler.get_type_id_from_memb_id(memb_id)
+                                    {
+                                        to_assign.push(type_id);
+                                    } else {
+                                        should_warn = true;
+                                    };
+                                }
+                            }
+                        }
+
+                        if should_warn {
+                            let core_msg = "Assigns nothing";
+                            let start = abs_multi.assign_to[0].span.start;
+                            let end = abs_multi.assign_to[abs_multi.assign_to.len() - 1].span.end;
+                            let span = SourceSpan::new(env.region.region_id, start, end);
+
+                            let builder = SourceDiagnostic::builder(
+                                None,
+                                DiagnosticLevel::Warn,
+                                core_msg,
+                                env.region.path_id,
+                            )
+                            .add_annotation(
+                                span,
+                                AnnotationKind::Secondary,
+                                None,
+                            );
+                            self.summary.push_diag(builder.build());
+                        }
+                    }
+
                     // Namespace specifically needs to swap so that it can detect intrinsic
                     // namespaces for whatever the current override is
                     //
@@ -1517,18 +1568,23 @@ impl<'res> TypeResolver<'res> {
                     // Assuming we are currently inside `types`, that means we have access to the `java` namespace
                     // compiler intrinsic. This intrinsic has extern java type representations,
                     // which are ONLY routed to inside the `to` portion of the multi assign.
-                    //
                     let initial_scope = if let Some(sym_id) = parent_cfg_memb_ctx.sym_id() {
-                        // Would probably be best as a preset error so that it could call out, given
+                        // This IS confusing but this is just to avoid assumptions that override
+                        // WILL be the only `override` user
+                        debug_assert!(
+                            matches!(parent_cfg_memb_ctx, ConfigMemberContextKind::Override(_),),
+                            "Address me"
+                        );
+
+                        // TODO: Would probably be best as a preset error so that it could call out, given
                         // something like "types { types {}}" that it should remove some form of
                         // nesting or at least nest differently in some form, depending on how `override`
-                        // is iterated upon
+                        // is iterated upon. In some form.
                         if let Some(sc) = self.compiler.syms[sym_id].associated_scope {
                             sc
                         } else {
-                            // This is not reachable because override scopes are compiler generated.
-                            // I think.
-                            unimplemented!("Nothing reaches me yet")
+                            // Override scopes are compiler generated. This is not a possible state.
+                            unreachable!("Nothing reaches me yet")
                         }
                     } else {
                         // Catches !override
@@ -1606,27 +1662,6 @@ impl<'res> TypeResolver<'res> {
                         );
                         continue;
                     };
-
-                    //WARN: Allows for an empty invalid to_assign to pass.
-                    if to_assign.is_empty() {
-                        let core_msg = "Assigns nothing";
-                        let start = abs_multi.assign_to[0].span.start;
-                        let end = abs_multi.assign_to[abs_multi.assign_to.len() - 1].span.end;
-                        let span = SourceSpan::new(env.region.region_id, start, end);
-
-                        let builder = SourceDiagnostic::builder(
-                            None,
-                            DiagnosticLevel::Warn,
-                            core_msg,
-                            env.region.path_id,
-                        )
-                        .add_annotation(
-                            span,
-                            AnnotationKind::Primary,
-                            None,
-                        );
-                        self.summary.push_diag(builder.build());
-                    }
 
                     let extern_tag = extern_type_sym_id.into_tagged::<ExternTypeTag>();
 
@@ -2109,47 +2144,6 @@ impl<'res> TypeResolver<'res> {
             self.summary.push_diag(builder.build());
         };
 
-        for (i, current_cfg) in seen_cfg_slice.iter().enumerate() {
-            if let Some((_, original_cfg)) = seen_cfg_slice
-                .iter()
-                .enumerate()
-                // If the other index was declared after the current index and they have the same identifier
-                //
-                // Since this iteration specifically checks if the current was declared after the
-                // last and the iteration terminates upon the first match, this correctly points at
-                // the original field for all duplicates.
-                .find(|(other_i, cfg)| *other_i < i && current_cfg.inner == cfg.inner)
-            {
-                let dup_name = self.interner.search(current_cfg.inner);
-
-                let orig_span = original_cfg.span;
-                let current_cfg_span = current_cfg.span;
-
-                let core_msg = format!("More than one config member has identifier `{dup_name}`");
-
-                let src_diag = SourceDiagnostic::builder(
-                    None,
-                    DiagnosticLevel::Error,
-                    core_msg,
-                    env.region.path_id,
-                )
-                .add_annotation(
-                    sp_parent_name_id.span,
-                    AnnotationKind::Secondary,
-                    "Found inside this config member".to_string().into(),
-                )
-                .add_annotation(
-                    orig_span,
-                    AnnotationKind::Secondary,
-                    format!("Original usage of `{dup_name}` here").into(),
-                )
-                .add_annotation(current_cfg_span, AnnotationKind::Primary, None)
-                .build();
-
-                self.summary.push_diag(src_diag);
-            }
-        }
-
         // Final step of assigning the actual config member
 
         let common = ConfigMemberCommon::new(
@@ -2573,7 +2567,6 @@ impl<'res> TypeResolver<'res> {
                 self.compiler.types[expr.type_id].ty = Type::Deferred(new_type_id);
 
                 // Mutating inner value so that the symbol using this value reflects the new
-                // information
                 let inner_val = &mut self.compiler.values[expr.val_id];
                 self.compiler.types[inner_val.type_id].ty = Type::Deferred(new_type_id);
                 inner_val.const_val = const_val_opt;
@@ -2603,7 +2596,6 @@ impl<'res> TypeResolver<'res> {
 
                 // Composing this so it can be matched cleanly for if const eval can be performed
                 let lhs_val_opt = self.compiler.values[lhs_expr.val_id].const_val.as_ref();
-
                 let rhs_val_opt = self.compiler.values[rhs_expr.val_id].const_val.as_ref();
 
                 // This just checks if both are const, not if they were comptaible in the first
@@ -3389,49 +3381,13 @@ impl<'res> TypeResolver<'res> {
                     // If
                     if let Some(parent_sym_id) = parent_sym_id_opt {
                         self.check_cycle(parent_sym_id, found_sym_id, env)?;
-
-                        //NOTE: Only the PendingSymbol struct carries the PendingExpr struct, meaning
-                        //there is no way to check for cycles outside of `TypeContext`, so this has to
-                        //pick up the edge case of, "let x = x". Could change.
-                        if found_sym_id == parent_sym_id {
-                            let name = self
-                                .interner
-                                .search(self.compiler.syms[found_sym_id].name_id);
-
-                            let core_msg = format!("Cannot declare symbol `{name}` as itself");
-
-                            let dup_span = spanned_expr.span;
-
-                            //FIX: Not failable since the exntire expression has to be placed in one module,
-                            // to error to begin with, but should still operate off stored spans
-                            let parent_ast_id = self.compiler.syms[parent_sym_id]
-                                .ast_id
-                                .expect("Should be user symbol");
-
-                            let parent_span = env.ast_info.get_name_span(parent_ast_id);
-
-                            let src_diag = SourceDiagnostic::builder(
-                                None,
-                                DiagnosticLevel::Error,
-                                core_msg,
-                                env.region.path_id,
-                            )
-                            .add_annotation(parent_span, AnnotationKind::Primary, None)
-                            .add_annotation(
-                                dup_span,
-                                AnnotationKind::Primary,
-                                None,
-                            );
-
-                            return Err(PresetErr::General(src_diag));
-                        }
                     }
 
-                    let symbol = &self.compiler.syms[found_sym_id];
+                    let sym = &self.compiler.syms[found_sym_id];
                     let expr_id = ExprId::new(self.compiler.exprs.len() as u32);
 
                     // I don't think this is needed since types are already known
-                    let resolved_expr = match symbol.kind {
+                    let resolved_expr = match sym.kind {
                         //WARN: Should this be the same?
                         SymbolKind::Type(type_id) => {
                             // Not sure what to do with this yet
@@ -3491,12 +3447,13 @@ impl<'res> TypeResolver<'res> {
                                 // A value is attached to the variable found
                                 VariableState::Known(val_id) => {
                                     let val_info = &self.compiler.values[val_id];
-                                    let ty = &self.compiler.types[val_info.type_id].ty;
 
-                                    // The type of the variable is unknown meaning it still needs
+                                    // The type or const value of the variable is unknown meaning it still needs
                                     // to await
-                                    //WARN:
-                                    if let Type::Unknown = ty {
+                                    //WARN: Will this cause duplication?
+                                    if self.compiler.check_unknown(val_info.type_id)
+                                        || val_info.const_val.is_none()
+                                    {
                                         let pending_kind = if let Some(id) = parent_sym_id_opt {
                                             let parent_base =
                                                 ParentStateBase::new(id, ParentState::Unresolved);
@@ -3765,8 +3722,7 @@ impl<'res> TypeResolver<'res> {
                 };
 
                 let lhs_type_id = self.compiler.exprs[lhs_id].type_id;
-                let rhs_type_id = self.compiler.exprs[lhs_id].type_id;
-                // Maybe apply BinaryOp shouuld account for unknowns and return unknowns
+                let rhs_type_id = self.compiler.exprs[rhs_id].type_id;
 
                 // Tries two levels of inference before allocating an unknown type id
                 let type_id_opt: Option<TypeId> = if let Some(const_val) = &const_val_opt {

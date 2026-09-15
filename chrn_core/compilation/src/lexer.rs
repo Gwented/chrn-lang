@@ -1101,6 +1101,9 @@ impl Lexer<'_> {
 
     fn handle_comment(&mut self) {
         while self.pos < self.src_bytes.len() && self.peek() != b'\n' {
+            if self.peek() == b'\r' && self.peek_ahead(1) == b'\n' {
+                break;
+            }
             self.advance();
         }
     }
@@ -1111,7 +1114,7 @@ impl Lexer<'_> {
 
         while self.pos < self.src_bytes.len() && depth > 0 {
             if self.peek() == b'/' && self.peek_ahead(1) == b'*' {
-                self.skip(1);
+                self.skip(2);
                 depth += 1;
             } else if self.peek() == b'*' && self.peek_ahead(1) == b'/' {
                 self.skip(2);
@@ -1123,8 +1126,6 @@ impl Lexer<'_> {
     }
 
     fn increment_invalid_tok(&mut self) {
-        dbg!(self.invalid_toks);
-        dbg!("Happened");
         self.invalid_toks += 1;
     }
 

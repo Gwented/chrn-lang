@@ -60,6 +60,8 @@ pub struct ConfigLoader<'a, R: Read> {
     /// Position specifically used for navigating the IO buffer
     cursor: usize,
     /// The max amount of bytes to stop it, which is dynamically set, hence why it's apart of the struct.
+    /// (It says dynamically set but it's not dynamically set yet. It just relies on
+    /// `bytes_consumed_rel`)
     limit: usize,
     // Need to keep script_start to have this be a method where we have the abs version by default.
     /// Relative bytes consumed
