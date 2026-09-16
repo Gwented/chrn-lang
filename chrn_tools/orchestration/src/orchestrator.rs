@@ -209,6 +209,7 @@ pub fn run_lexer(
     // Should the lexer just own the interner? This looks weird.
     let out = Lexer::new(
         region.region_id,
+        region.path_id,
         &region.src_bytes,
         region.script_start,
         &mut compiler_store.cfg,

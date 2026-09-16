@@ -17,7 +17,6 @@ pub mod config_loader_summary;
 use std::io::{BufRead, BufReader, Read};
 
 use chrn_utils::{
-    chrn_config::ChrnConfig,
     core_error::ConfigLoadError,
     err_codes::ErrorCode,
     id_types::{PathId, SourceRegionId},
@@ -33,6 +32,8 @@ use chrn_utils::{
 };
 
 use lang::keywords::EMBEDDING_CLAUSE_SIZE;
+
+use crate::chrn_config::ChrnConfig;
 
 /// Can read 32KB before stopping if no `@def` or EOF is found
 const MAX_SEARCH_READ: usize = 1024 * 32;

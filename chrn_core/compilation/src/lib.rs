@@ -1,3 +1,4 @@
+pub mod chrn_config;
 pub mod config_loader;
 pub mod constraints;
 pub mod cst;

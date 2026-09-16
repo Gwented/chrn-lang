@@ -11,7 +11,6 @@ use crate::module::module_concepts::{ImportKind, Module, ModuleState};
 use crate::module::module_finder::ModuleFinder;
 use crate::script_compiler::reporter::Reporter;
 use chrn_utils::{
-    chrn_config::ChrnConfig,
     id_types::{InternedId, ModuleId, PathId, SourceRegionId},
     intern::Intern,
 };

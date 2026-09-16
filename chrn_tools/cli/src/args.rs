@@ -169,6 +169,10 @@ pub struct EmbedCmd {
     /// Changes behavior from streaming to loading all of `dest` in to memory.
     #[arg(long = "in-memory", default_value_t = false)]
     pub(crate) in_memory: bool,
+    // Should this truncate def if one exists?
+    /// Embeds file as "[content]@end" instead of "@def[content]@end"
+    #[arg(long = "no-def", default_value_t = false)]
+    pub(crate) no_def: bool,
     //TODO: Maybe just separate the minify and fmt cmd, like overall.
     // Ok but what if you could point cli format calls to a different binary through an env var or
     // something of that particular individual exact kind of conceptual topic?

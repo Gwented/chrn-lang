@@ -53,7 +53,7 @@ use tower_lsp::Client;
 use tower_lsp::lsp_types;
 
 use chrn_utils::arena::Arena;
-use chrn_utils::chrn_config::ChrnConfig;
+use compilation::chrn_config::ChrnConfig;
 use chrn_utils::core_error::{self, ConfigLoadError};
 use chrn_utils::err_codes::ErrorCode;
 use chrn_utils::id_types::{InternedId, ModuleId, PathId, SourceRegionId};
@@ -338,6 +338,7 @@ pub(crate) fn resolve_document_modules(
     // needs to surface them as LSP `Position`s.
     let lex_output = Lexer::new(
         SourceRegionId::new(0),
+        path_id,
         &main_region.src_bytes,
         main_region.script_start,
         chrn_cfg,

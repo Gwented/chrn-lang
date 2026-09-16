@@ -1,13 +1,13 @@
 use std::borrow::Cow;
 
 use chrn_utils::{
-    chrn_config::ChrnConfig,
     core_error::{ConfigLoadError, ScriptError},
     files::file_ops,
     id_types::SourceRegionId,
     source_map::source_region::SourceRegion,
 };
 use compilation::{
+    chrn_config::{ChrnConfig, chrn_perf::chrn_perf_concepts::ChrnPerfReportOptions},
     module::{self, module_concepts::ModuleState},
     script_compiler::reporter::Reporter,
 };
@@ -134,13 +134,11 @@ fn exec_check(
     };
 
     if compiler_store.cfg.perf_tracker().can_use() {
-        let perf_report = compiler_store.cfg.perf_tracker().form_report();
-        for report_opt in &perf_report.time_reports {
-            if let Some(report) = report_opt {
-                dbg!(report);
-                // let avg = report.time_spent / report.times as u32;
-            }
-        }
+        let perf_report = compiler_store
+            .cfg
+            .perf_tracker()
+            .form_report(&compiler_store.interner);
+        perf_report.print_all(ChrnPerfReportOptions::new_type_resolver());
     }
 
     msg_res
@@ -402,7 +400,7 @@ fn exec_embed(
                 let msg_opt = match init_err.cfg_err {
                     ConfigLoadError::Diagnostic(diag) => {
                         reporter.push_safe(diag);
-                        let msg = "`--check` failed, did not embed file".to_string();
+                        let msg = "Region formation failed. Could not embed file".to_string();
                         msg.into()
                     }
                     ConfigLoadError::IO(err) => {
@@ -423,8 +421,10 @@ fn exec_embed(
         }
     };
 
-    //If script start is above 0, that means there is an "@def -> @end", and if serial start is `Some`,
-    // that means there exists at least an `@end`.
+    // Not sure about truncating @def if already present
+
+    //If script start is above 0, there is an "@def -> @end".
+    //If serial start is `Some`, there exists at least an `@end`.
     //
     // Both of these mean that there doesn't need to be any insertion of an @def or @end since they
     // are already self-contained regions
@@ -432,9 +432,18 @@ fn exec_embed(
         Cow::Borrowed(&region.src_bytes)
     } else {
         // Wraps the src in @def[bytes]@end
-        let def_end_size = keywords::EMBEDDING_CLAUSE_SIZE * 2;
-        let mut altered_bytes = Vec::with_capacity(region.src_bytes.len() + def_end_size);
-        altered_bytes.extend_from_slice(keywords::DEF_CLAUSE_STR.as_bytes());
+        let embedding_size = if embed_cmd.no_def {
+            keywords::EMBEDDING_CLAUSE_SIZE
+        } else {
+            keywords::EMBEDDING_CLAUSE_SIZE * 2
+        };
+
+        let mut altered_bytes = Vec::with_capacity(region.src_bytes.len() + embedding_size);
+
+        if !embed_cmd.no_def {
+            altered_bytes.extend_from_slice(keywords::DEF_CLAUSE_STR.as_bytes());
+        }
+
         altered_bytes.extend_from_slice(&region.src_bytes);
         altered_bytes.extend_from_slice(keywords::END_CLAUSE_STR.as_bytes());
         Cow::Owned(altered_bytes)

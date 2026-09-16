@@ -76,7 +76,6 @@ pub enum ErrorCode {
     // This is so enums remain aligned with the source of truth and error on same numeric value
     /// Config loader originating errors
     ConfigLoadErr = CONFIG_LOAD_ERR,
-    // Rename to compiler internals?
     /// An error emitted because of internal compiler guarantees, not the user's fault
     CompilerInternals = COMPILER_INTERNALS,
     /// Error is from an option failing

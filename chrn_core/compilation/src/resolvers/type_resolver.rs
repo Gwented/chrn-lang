@@ -22,8 +22,6 @@
 mod cfg_ctx;
 pub mod type_context;
 
-use chrn_utils::chrn_config::ChrnConfig;
-use chrn_utils::chrn_config::chrn_perf::ChrnPerfStage;
 use chrn_utils::err_codes::ErrorCode;
 use chrn_utils::id_types::id_tags::TaggedId;
 use chrn_utils::id_types::{
@@ -40,6 +38,8 @@ use chrn_utils::utils::containers::{SpannedContainer, SpannedContainerRef};
 use lang::chrn_classifier::ChrnClassified;
 use lang::values::Value;
 
+use crate::chrn_config::ChrnConfig;
+use crate::chrn_config::chrn_perf::ChrnPerfStage;
 use crate::constraints::ArgConstraint;
 use crate::id_tag_decls::{
     AliasTag, ConfigMemberTag, ConfigRootTag, EnumTag, ExternTypeTag, FieldTag,
@@ -156,7 +156,7 @@ impl<'res> TypeResolver<'res> {
     /// explicitly allows for `TypeResolver` to maintain it's state throughout resolution while
     /// mutating off of given envs.
     pub fn resolve<'env>(&mut self, env: &'env ResolverEnv) -> SourceDiagnosticSummary {
-        self.cfg.perf_tracker_mut().start();
+        self.cfg.perf_tracker_mut().start(env.region.path_id);
         // Re-used hashet when identifiers are checked, like for configs, alias params, etc.
         let mut ident_tracker: DuplicateTracker<SpannedContainer<InternedId>> =
             DuplicateTracker::with_capacities(4, 0);
@@ -720,9 +720,15 @@ impl<'res> TypeResolver<'res> {
                         "No override context expects `change` at root"
                     };
 
-                    let start = abs_multi.to_assign[0].span.start;
-                    let end = abs_multi.assign_to[abs_multi.assign_to.len() - 1].span.end;
-                    let span = SourceSpan::new(env.region.region_id, start, end);
+                    let span = if let Some(first) = abs_multi.to_assign.get(0) {
+                        let start = first.span.start;
+                        let end = abs_multi.assign_to[abs_multi.assign_to.len() - 1].span.end;
+                        SourceSpan::new(env.region.region_id, start, end)
+                    } else {
+                        let start = abs_multi.assign_to[0].span.start;
+                        let end = abs_multi.assign_to[abs_multi.assign_to.len() - 1].span.end;
+                        SourceSpan::new(env.region.region_id, start, end)
+                    };
 
                     //TODO: Would like a help message with this specifying that namespaces are
                     //required to do something like this, or even the specific `types` on and use a

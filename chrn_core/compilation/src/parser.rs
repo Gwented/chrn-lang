@@ -7,6 +7,8 @@ mod parse_fmt;
 mod parser_budget;
 mod parser_state;
 
+use crate::chrn_config::ChrnConfig;
+use crate::chrn_config::chrn_perf::ChrnPerfStage;
 use crate::lexer::token::{SpannedToken, Token, TokenKind};
 use crate::lookup::scopes::scopes_concepts::ScopeLookupPattern;
 use crate::parser::ast::ast_concepts::{
@@ -27,8 +29,6 @@ use crate::parser::evidence::{Evidence, InitialEvidence, SemanticEnv, SemanticSi
 use crate::parser::parser_budget::ParserBudget;
 use crate::parser::parser_state::ParserState;
 use crate::semantic::hir::hir_impls::ConfigRootMetadataKind;
-use chrn_utils::chrn_config::ChrnConfig;
-use chrn_utils::chrn_config::chrn_perf::ChrnPerfStage;
 use chrn_utils::intern::Intern;
 use chrn_utils::source_map::source_diagnostic::SourceDiagnosticSummary;
 use chrn_utils::source_map::source_region::SourceRegion;
@@ -46,7 +46,7 @@ pub fn parse(
     tokens: &[SpannedToken],
     interner: &Intern,
 ) -> (AstInfo, SourceDiagnosticSummary) {
-    cfg.perf_tracker_mut().start();
+    cfg.perf_tracker_mut().start(region.path_id);
 
     // Not sure about this metric because 12 tokens, in relation to a complex section especially, is
     // possibly not even covering a config member. But to get more details, we'd need to carry known

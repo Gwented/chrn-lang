@@ -1,2 +1,7 @@
 nest->
-    struct Hi {  }
+    struct Hi {}
+complex->
+    override RUST=>types {change = rust::u8}
+    for Hi {
+        change = hi::i32
+    }

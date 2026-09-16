@@ -12,17 +12,19 @@ pub mod trivia;
 //  I don't know buddy
 
 use chrn_utils::{
-    chrn_config::{ChrnConfig, chrn_perf::ChrnPerfStage},
-    id_types::SourceRegionId,
+    id_types::{PathId, SourceRegionId},
     intern::{self, Intern},
     source_map::source_span::SourceSpan,
 };
 use lang::keywords::{self, Keyword};
 
-use crate::lexer::{
-    lexer_output::LexerOutput,
-    token::{Notation, SpannedToken, Token},
-    trivia::{Trivia, TriviaKind},
+use crate::{
+    chrn_config::{ChrnConfig, chrn_perf::ChrnPerfStage},
+    lexer::{
+        lexer_output::LexerOutput,
+        token::{Notation, SpannedToken, Token},
+        trivia::{Trivia, TriviaKind},
+    },
 };
 
 const MAX_INVALID_TOKS: u8 = 12;
@@ -39,6 +41,7 @@ pub struct Lexer<'a> {
     script_start: usize,
     pos: usize,
     current_region_id: SourceRegionId,
+    current_path_id: PathId,
     cfg: &'a mut ChrnConfig,
     /// For threshold of invalid tokens before terminating lex
     invalid_toks: u8,
@@ -54,6 +57,7 @@ impl Lexer<'_> {
     // here should MAYBE be removed
     pub fn new<'a>(
         current_region_id: SourceRegionId,
+        current_path_id: PathId,
         src: &'a [u8],
         script_start: usize,
         cfg: &'a mut ChrnConfig,
@@ -62,6 +66,7 @@ impl Lexer<'_> {
         let speculated_trivia = src.len() / 25;
         Lexer {
             current_region_id,
+            current_path_id,
             src_bytes: src,
             script_start,
             // Not even going to acknowledge what was here before
@@ -88,6 +93,8 @@ impl Lexer<'_> {
         // 40 bytes : 1 token
         let speculated_toks = self.src_bytes.len() / 40;
         let mut toks: Vec<SpannedToken> = Vec::with_capacity(speculated_toks);
+
+        self.cfg.perf_tracker_mut().start(self.current_path_id);
 
         // Could be removed
         // let mut in_def = false;

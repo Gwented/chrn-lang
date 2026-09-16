@@ -1,5 +1,3 @@
-use std::time::Instant;
-
 //TODO: Eventually will have it's own cli backend but not priority
 // Maybe not?
 use chrn::{args, config::CliConfig, dispatcher};

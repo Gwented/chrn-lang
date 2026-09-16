@@ -1,5 +1,4 @@
 use chrn_utils::{
-    chrn_config::{ChrnConfig, chrn_perf::ChrnPerfStage},
     err_codes::ErrorCode,
     id_types::{
         AstId, ConfigRootId, ImplId, ScopeId, SymbolId, TypeId, VariableId, id_tags::TaggedId,
@@ -12,6 +11,7 @@ use chrn_utils::{
 };
 
 use crate::{
+    chrn_config::{ChrnConfig, chrn_perf::ChrnPerfStage},
     id_tag_decls::{AliasTag, ConfigRootTag, EnumTag, StructTag, TypeDefTag, VarTag},
     lookup::scopes::scopes_concepts::{Scope, ScopeInfo, ScopeLookupPattern, ScopeType},
     parser::ast::ast_concepts::{
@@ -79,7 +79,7 @@ impl NamespaceResolver<'_> {
         &mut self,
         env: &RegistrationEnv,
     ) -> (Vec<CompilationUnit>, SourceDiagnosticSummary) {
-        self.cfg.perf_tracker_mut().start();
+        self.cfg.perf_tracker_mut().start(env.region.path_id);
         // Storing all symbols created associated with the current module so that compilation
         // doens't have to depend on the ast to keep a coherent understanding of
         let mut comp_units: Vec<CompilationUnit> = Vec::with_capacity(env.ast_info.items.len());

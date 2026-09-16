@@ -3,7 +3,6 @@
 //which is stacking infinitely (Infinitely as in the infinite sign here -> 🍔)
 
 use chrn_utils::{
-    chrn_config::{ChrnConfig, chrn_perf::ChrnPerfStage},
     id_types::{AstId, InternedId, MemberId, SymbolId, TypeId, id_tags::TaggedId},
     intern::Intern,
     source_map::source_diagnostic::{
@@ -15,11 +14,7 @@ use chrn_utils::{
 use lang::chrn_classifier::ChrnClassified;
 
 use crate::{
-    id_tag_decls::{EnumTag, FieldTag, StructTag, VariantTag},
-    lookup::scopes::scopes_concepts::{AssociatedScopeKind, ScopeLookupPattern, ScopeType},
-    resolvers::{resolver_env::ResolverEnv, resolver_state::ResolverState, typechecker},
-    script_compiler::{ScriptCompiler, compiler_constants},
-    semantic::{
+    chrn_config::{ChrnConfig, chrn_perf::ChrnPerfStage}, id_tag_decls::{EnumTag, FieldTag, StructTag, VariantTag}, lookup::scopes::scopes_concepts::{AssociatedScopeKind, ScopeLookupPattern, ScopeType}, resolvers::{resolver_env::ResolverEnv, resolver_state::ResolverState, typechecker}, script_compiler::{ScriptCompiler, compiler_constants}, semantic::{
         checker_helpers::DuplicateTracker,
         compilation_unit::CompilationUnit,
         hir::{
@@ -76,7 +71,7 @@ impl MemberResolver<'_> {
     /// If diagnostics > 0 then an error occured
     // Would options be ok here?
     pub fn resolve(&mut self, env: &ResolverEnv) -> SourceDiagnosticSummary {
-        self.cfg.perf_tracker_mut().start();
+        self.cfg.perf_tracker_mut().start(env.region.path_id);
         // Re-used hashet when identifiers are checked for members.
         let mut ident_tracker: DuplicateTracker<SpannedContainer<InternedId>> =
             DuplicateTracker::with_capacities(4, 0);

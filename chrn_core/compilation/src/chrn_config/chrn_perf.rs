@@ -1,32 +1,26 @@
-// -- PERF --
+pub mod chrn_perf_concepts;
 
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
-use crate::utils::trackers::perf_tracker::{PerfOutput, PerfTracker};
+use chrn_utils::{id_types::PathId, intern::Intern, utils::trackers::perf_tracker::PerfTracker};
 
-// Looking. Odd.
-
-// pub const LEXER: u16 = 1 << 0;
-// pub const PARSER: u16 = 1 << 1;
-// pub const NAMESPACE_RESOLVER: u16 = 1 << 2;
-// pub const MEMBER_RESOLVER: u16 = 1 << 3;
-// pub const TYPE_RESOLVER: u16 = 1 << 4;
-// pub const CONSTRAINT_RESOLVER: u16 = 1 << 5;
-// /// Does perf check for all stages
-// pub const ALL: u16 =
-//     LEXER | PARSER | NAMESPACE_RESOLVER | MEMBER_RESOLVER | TYPE_RESOLVER | CONSTRAINT_RESOLVER;
+use crate::chrn_config::chrn_perf::chrn_perf_concepts::{
+    ChrnPerfReport, ChrnPerfTimeReport, ModuleIdentity, ModulePerfData, ModulePerfReport,
+};
 
 //TODO: How will this compensate for each module without being massively inconvenient
-
 /// Compiler stages considered for performance review
 pub const STAGES_COUNT: usize = ChrnPerfStage::CONSTRAINT_RESOLVER_IDX + 1;
 
 /// Holds and orchestrates tracking info
 #[derive(Debug, Default)]
 pub struct ChrnPerf {
+    /// Whether or not every all should be a no-op
     can_use: bool,
-    active_tracker: Option<PerfTracker>,
-    tracked: [Option<PerfOutput>; STAGES_COUNT],
+    /// Currently active identifier
+    active_tracker: Option<(ModuleIdentity, PerfTracker)>,
+    /// Modules registered under an identifier that have performance metadata
+    tracked_mods: Vec<ModulePerfData>,
 }
 
 impl ChrnPerf {
@@ -34,16 +28,17 @@ impl ChrnPerf {
         Self {
             can_use,
             active_tracker: None,
-            tracked: [None; STAGES_COUNT],
+            tracked_mods: Vec::new(),
         }
     }
 
     // What if this took in a stage, and if the stage on stop doesn't match the start then it fails
     // an assertion?
     /// Returns perf tracker to use for the current run
-    pub fn start(&mut self) {
+    pub fn start(&mut self, path_id: PathId) {
         if self.can_use() {
-            self.active_tracker = Some(PerfTracker::new(Instant::now()));
+            let ident = ModuleIdentity::new(path_id);
+            self.active_tracker = Some((ident, PerfTracker::new(Instant::now())));
         }
     }
 
@@ -51,31 +46,53 @@ impl ChrnPerf {
     /// Stores stage's time using the active perf
     pub fn stop(&mut self, stage: ChrnPerfStage) {
         // Equivalent to can_use
-        if let Some(active) = self.active_tracker {
-            if let Some(present) = &mut self.tracked[stage.to_idx()] {
-                present.merge(active.stop());
+        if let Some((active_ident, active_tracker)) = self.active_tracker {
+            let existing_opt = self
+                .tracked_mods
+                .iter_mut()
+                .find(|d| active_ident.path_id() == d.ident.path_id());
+
+            let perf_data = if let Some(existing) = existing_opt {
+                existing
             } else {
-                self.tracked[stage.to_idx()] = Some(active.stop());
-            }
+                let new_perf = ModulePerfData::new(active_ident);
+                let idx = self.tracked_mods.len();
+                self.tracked_mods.push(new_perf);
+
+                &mut self.tracked_mods[idx]
+            };
+
+            let time_report = ChrnPerfTimeReport::with_perf_output(stage, active_tracker.stop());
+            perf_data.tracked_stages[stage.to_idx()] = Some(time_report);
             self.active_tracker = None;
         }
     }
 
     // Why are we trying so hard to keep it const!
-    pub fn form_report(&self) -> ChrnPerfReport {
-        let mut time_reports: [Option<ChrnPerfTimeReport>; STAGES_COUNT] = [None; STAGES_COUNT];
-        // This is...random..seeming
-        for (i, tracked) in self.tracked.iter().enumerate() {
-            let time_report_opt = if let Some(out) = tracked {
-                let stage = ChrnPerfStage::from_idx(i).expect("Idx should be aligned");
-                // dbg!(stage, i);
-                Some(ChrnPerfTimeReport::new(stage, out.elapsed, out.times))
-            } else {
-                None
-            };
-            time_reports[i] = time_report_opt;
+    pub fn form_report<'a>(&'a self, interner: &'a Intern) -> ChrnPerfReport<'a> {
+        // global means
+        let mut stage_means: [Option<ChrnPerfTimeReport>; STAGES_COUNT] = [None; STAGES_COUNT];
+        // Wrapper for visualizing data
+        let mut mod_reports = Vec::with_capacity(self.tracked_mods.len());
+
+        for mod_perf_data in &self.tracked_mods {
+            for (i, tracked) in mod_perf_data.tracked_stages.iter().enumerate() {
+                if let Some(out) = tracked {
+                    let stage = ChrnPerfStage::from_idx(i).expect("Idx should be aligned");
+                    let mean_report = ChrnPerfTimeReport::new(stage, out.elapsed, out.times);
+
+                    if let Some(exists) = &mut stage_means[i] {
+                        exists.merge(mean_report);
+                    } else {
+                        stage_means[i] = Some(mean_report);
+                    }
+                }
+            }
+            let path = interner.search_path(mod_perf_data.ident.path_id());
+            let mod_report = ModulePerfReport::new(path, mod_perf_data);
+            mod_reports.push(mod_report);
         }
-        ChrnPerfReport::new(time_reports)
+        ChrnPerfReport::new(stage_means, mod_reports)
     }
 
     // Might change again so stays wrapped
@@ -130,37 +147,4 @@ impl ChrnPerfStage {
             _ => None,
         }
     }
-}
-
-#[derive(Debug)]
-pub struct ChrnPerfReport {
-    pub time_reports: [Option<ChrnPerfTimeReport>; STAGES_COUNT],
-}
-
-impl ChrnPerfReport {
-    pub const fn new(time_reports: [Option<ChrnPerfTimeReport>; STAGES_COUNT]) -> Self {
-        Self { time_reports }
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct ChrnPerfTimeReport {
-    pub stage: ChrnPerfStage,
-    pub time_spent: Duration,
-    pub times: u16,
-}
-
-impl ChrnPerfTimeReport {
-    pub const fn new(stage: ChrnPerfStage, time_spent: Duration, times: u16) -> Self {
-        Self {
-            stage,
-            time_spent,
-            times,
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    fn chrn_perf_alignment_test() {}
 }

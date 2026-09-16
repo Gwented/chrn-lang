@@ -74,7 +74,7 @@ use crate::text::apply_text_change;
 
 // Semantic token support (keyword/string/number highlighting)
 use crate::state::SemanticEntity;
-use chrn_utils::chrn_config::ChrnConfig;
+use compilation::chrn_config::ChrnConfig;
 use chrn_utils::intern::Intern;
 use chrn_utils::source_map::source_diagnostic::SourceDiagnosticSummary;
 use lang::types::builtins::BuiltinTypeKind as ChBuiltinTypeKind;

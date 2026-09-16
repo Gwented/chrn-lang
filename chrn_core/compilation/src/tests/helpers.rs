@@ -252,12 +252,14 @@ pub(super) fn build_resolver_envs<'a>(
 
 pub(super) use std::path::Path;
 
-use crate::config_loader::{ConfigLoader, ConfigLoaderOutput};
+pub(super) use crate::{
+    chrn_config::ChrnConfig,
+    config_loader::{ConfigLoader, ConfigLoaderOutput},
+};
 use chrn_utils::utils::containers::SpannedContainer;
 pub(super) use chrn_utils::{
     arena::Arena,
     budget::mem_budget::{BudgetResult, MemoryBudget},
-    chrn_config::ChrnConfig,
     core_error::ConfigLoadError,
     id_types::{InternedId, ModuleId, PathId, SourceRegionId, SymbolId, ValueId},
     intern::Intern,
@@ -523,6 +525,7 @@ fn build_asts(
 
         let toks = Lexer::new(
             region.region_id,
+            region.path_id,
             &region.src_bytes,
             region.script_start,
             cfg,

@@ -3,6 +3,7 @@ mod engine_concepts;
 pub mod preset_err;
 mod static_enricher;
 
+use crate::chrn_config::ChrnConfig;
 use crate::lookup::member_lookup::MemberLookupResult;
 use crate::lookup::scopes;
 use crate::lookup::scopes::scopes_concepts::AssociatedScopeKind;
@@ -15,7 +16,6 @@ use crate::semantic::preset_reporter::engine_concepts::{
 };
 use crate::semantic::preset_reporter::preset_err::{LookupError, MathError, PresetErr};
 use crate::semantic::resolution::resolution_concepts::{StaticAccessResult, TypeExprResult};
-use chrn_utils::chrn_config::ChrnConfig;
 use chrn_utils::err_codes::ErrorCode;
 use chrn_utils::source_map::source_diagnostic::annotations::AnnotationKind;
 use chrn_utils::source_map::source_diagnostic::{

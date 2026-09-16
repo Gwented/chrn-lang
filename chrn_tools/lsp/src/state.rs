@@ -74,7 +74,7 @@ use compilation::semantic::hir::hir_symbols::SymbolOrigin;
 use compilation::semantic::hir::hir_symbols::VariableState;
 use parking_lot::RwLock;
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
@@ -86,7 +86,7 @@ pub(crate) const STATE_LOCK_TIMEOUT: Duration = Duration::from_millis(500);
 
 use chrn_utils::arena::Arena;
 use chrn_utils::budget::mem_budget::{BudgetResult, MemoryBudget};
-use chrn_utils::chrn_config::ChrnConfig;
+use compilation::chrn_config::ChrnConfig;
 use chrn_utils::id_types::{
     AstId, ImplId, ImplMemberId, InternedId, ModuleId, PathId, SourceRegionId, SymbolId, TypeId,
 };
@@ -326,6 +326,7 @@ impl DocumentState {
             } else {
                 let lex_output = Lexer::new(
                     region.region_id,
+                    region.path_id,
                     &region.src_bytes,
                     region.script_start,
                     &mut chrn_cfg,
@@ -1452,10 +1453,16 @@ impl DocumentCache {
         // (`get_token_at_offset`, `offset_in_comment`, `find_matching_entities`,
         // `hover`, `references`, `rename`) treats as relative.
         let mut interner = Intern::init();
+        let path_buf = tower_lsp::lsp_types::Url::parse(uri)
+            .ok()
+            .map(|u| crate::analyser::uri_to_path(&u))
+            .unwrap_or_else(|| PathBuf::from(uri));
+        let path_id = interner.intern_path(&path_buf);
         let mut chrn_cfg = ChrnConfig::default();
         let script_src = &text.as_bytes()[script_start..];
         let lex_output = Lexer::new(
             SourceRegionId::new(0),
+            path_id,
             script_src,
             script_start,
             &mut chrn_cfg,

@@ -1,7 +1,6 @@
 //! Module graph building parser that understands just enough to get `Bind` and `Import`
 use std::{ffi::OsStr, path::PathBuf, str::FromStr};
 
-use chrn_utils::chrn_config::ChrnConfig;
 use chrn_utils::err_codes::ErrorCode;
 use chrn_utils::source_map::source_diagnostic::annotations::AnnotationKind;
 use chrn_utils::source_map::source_diagnostic::{
@@ -18,6 +17,7 @@ use chrn_utils::{
 };
 use lang::keywords;
 
+use crate::chrn_config::ChrnConfig;
 use crate::module::module_concepts::Bind;
 use crate::module::{Import, ImportKind};
 

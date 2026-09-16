@@ -1,6 +1,5 @@
 // Static access help messages
 use chrn_utils::{
-    chrn_config::ChrnConfig,
     err_codes::ErrorCode,
     id_types::InternedId,
     intern::Intern,
@@ -21,6 +20,7 @@ use lang::{
 use macrosc::s_suffix;
 
 use crate::{
+    chrn_config::ChrnConfig,
     lexer::token::{self, Notation, SpannedToken, Token, TokenKind},
     parser::{
         Evidence, InitialEvidence, NeutralBranch, SectionBranch, SemanticSituation, branch::Branch,

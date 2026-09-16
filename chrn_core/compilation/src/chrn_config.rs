@@ -1,3 +1,4 @@
+// Should be in compilation/
 //! Chrn options that can be selected externally for extra chrn compiler behavior.
 //!
 //! The main intention of the config is to act as an abstraction layer that only works if it was
@@ -57,7 +58,7 @@ pub struct ChrnConfigBuilder {
 }
 
 impl ChrnConfigBuilder {
-    pub const fn build(self) -> ChrnConfig {
+    pub fn build(self) -> ChrnConfig {
         let logger = if let Some(inner) = self.logger {
             inner
         } else {
@@ -81,7 +82,7 @@ impl ChrnConfigBuilder {
         self
     }
 
-    pub const fn add_perf_tracker(mut self) -> Self {
+    pub fn add_perf_tracker(mut self) -> Self {
         self.perf_tracker = Some(ChrnPerf::new(true));
         self
     }

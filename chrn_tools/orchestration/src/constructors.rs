@@ -1,7 +1,8 @@
 use std::{io::Read, path::Path};
 
-use chrn_utils::{chrn_config::ChrnConfig, core_error::ModuleInitError, intern::Intern};
+use chrn_utils::{core_error::ModuleInitError, intern::Intern};
 use compilation::{
+    chrn_config::ChrnConfig,
     module,
     script_compiler::{
         ScriptCompiler, reporter::Reporter, script_compiler_store::ScriptCompilerStore,

@@ -2,6 +2,8 @@
 
 use std::time::{Duration, Instant};
 
+use crate::id_types::ModuleId;
+
 #[derive(Debug, Clone, Copy)]
 pub struct PerfTracker {
     start: Instant,

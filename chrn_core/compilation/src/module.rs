@@ -4,13 +4,13 @@ pub mod module_concepts;
 pub mod module_finder;
 
 use crate::{
+    chrn_config::{ChrnConfig, chrn_perf::ChrnPerfStage},
     config_loader::{ConfigLoader, ConfigLoaderOutput},
     module::module_concepts::{Import, ImportKind, Module, ModuleGraph, ModuleIdent, ModuleState},
     semantic::checker_helpers::DuplicateTracker,
 };
 use chrn_utils::{
     arena::Arena,
-    chrn_config::{ChrnConfig, chrn_perf::ChrnPerfStage},
     core_error::{self, ConfigLoadError, ModuleInitError},
     err_codes::ErrorCode,
     files::file_ops,
@@ -74,17 +74,17 @@ pub fn extract_main<R: Read>(
     main_src: R,
     cfg: &mut ChrnConfig,
 ) -> Result<(Module, ModuleGraph, Intern, SourceDiagnosticSummary), ModuleInitError> {
-    // A little concerning here because you CAN stop after this point, meaning the timer doesn't
-    // matter, but that should probably be factored in externally and just disallow perf entirely.
-    // Or at least warn it's inaccurate, or just, separate stages.
-    cfg.perf_tracker_mut().start();
-
     let mut interner = Intern::init();
 
     // Maybe the reporter should just be used
     let mut summary = SourceDiagnosticSummary::default();
 
     let main_path_id = interner.intern_path(&main_path);
+
+    // A little concerning here because you CAN stop after this point, meaning the timer doesn't
+    // matter, but that should probably be factored in externally and just disallow perf entirely.
+    // Or at least warn it's inaccurate, or just, separate stages.
+    cfg.perf_tracker_mut().start(main_path_id);
 
     let mut region_arena: Arena<SourceRegion, SourceRegionId> = Arena::with_capacity(1);
     let main_region_id = SourceRegionId::new(0);
@@ -123,7 +123,7 @@ pub fn extract_main<R: Read>(
             }
         };
 
-    // FIX: Aliasing maybe.
+    // NOTE: Aliasing maybe.
     let file_name = match main_path.file_prefix().map(|n| n.to_str()).flatten() {
         Some(p) => p,
         _ => {
@@ -221,7 +221,7 @@ pub fn extract_modules(
     // Only used when max modules have been exceeded
     let mut should_break_outer = false;
 
-    let max_mods_usize = chrn_utils::MAX_MODULES as usize;
+    const MAX_MODS_USIZE: usize = chrn_utils::MAX_MODULES as usize;
 
     // Duplicate tracker that will be re-used across different module contexts.
     let mut mod_ident_tracker: DuplicateTracker<ModuleIdent> =
@@ -354,7 +354,7 @@ pub fn extract_modules(
             //NOTE: Check if externals (like lsp) can share this if not already
             //SAFETY
             // Ensuring before any resizing that the total modules never exceed MAX_MODULES
-            if expected_len > max_mods_usize {
+            if expected_len > MAX_MODS_USIZE {
                 // Checking if the last processed is in the queue
                 let last_processed_name = if let Some(module) = pending_mods.iter().last() {
                     interner.search(module.name_id)
@@ -632,7 +632,6 @@ fn resolve_module(
     let (bind, sub_imports, finder_summary) = ModuleFinder::new(
         &sub_region.src_bytes,
         cfg,
-        // &mut graph.reserved_mod_ids,
         &sub_region,
         sub_region.script_start,
         sub_region.serial_start,

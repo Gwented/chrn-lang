@@ -1,12 +1,12 @@
 use chrn_utils::{
     arena::Arena,
-    chrn_config::ChrnConfig,
     id_types::{SourceRegionId, SymbolId},
     intern::Intern,
     source_map::source_region::SourceRegion,
 };
 
 use crate::{
+    chrn_config::ChrnConfig,
     lexer::{token::SpannedToken, trivia::Trivia},
     parser::ast::ast_concepts::AstInfo,
     semantic::compilation_unit::CompilationUnit,

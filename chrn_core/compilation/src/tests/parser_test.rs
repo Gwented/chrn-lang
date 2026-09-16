@@ -21,6 +21,7 @@ fn parse_text(text: &str) -> (AstInfo, Intern) {
     };
     let toks = Lexer::new(
         region.region_id,
+        region.path_id,
         &region.src_bytes,
         region.script_start,
         &mut settings,
@@ -40,6 +41,7 @@ fn parse_text_with_diags(text: &str) -> (AstInfo, Vec<SourceDiagnostic>, Intern)
     };
     let toks = Lexer::new(
         region.region_id,
+        region.path_id,
         &region.src_bytes,
         region.script_start,
         &mut settings,

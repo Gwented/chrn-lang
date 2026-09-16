@@ -2,7 +2,6 @@
 //TODO: Condition validation
 //TODO: Proper directive validation
 use chrn_utils::{
-    chrn_config::{ChrnConfig, chrn_perf::ChrnPerfStage},
     err_codes::ErrorCode,
     id_types::{ExprId, ImplId, InternedId, SymbolId, TypeId, id_tags::TaggedId},
     intern::Intern,
@@ -24,6 +23,7 @@ use lang::{
 };
 
 use crate::{
+    chrn_config::{ChrnConfig, chrn_perf::ChrnPerfStage},
     constraints::ArgConstraint,
     id_tag_decls::{
         AliasTag, ConfigRootTag, EnumTag, OptionAssignmentMemberTag, OptionAssignmentRootTag,
@@ -70,7 +70,7 @@ impl<'a> ConstraintResolver<'a> {
     }
 
     pub fn resolve(&mut self, env: &ResolverEnv) -> SourceDiagnosticSummary {
-        self.cfg.perf_tracker_mut().start();
+        self.cfg.perf_tracker_mut().start(env.region.path_id);
         // Everything skipped is not a factor in this compilation step.
         for comp_unit in env.compilation_syms.iter().cloned() {
             match comp_unit {
