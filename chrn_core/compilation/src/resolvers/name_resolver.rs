@@ -93,6 +93,7 @@ impl NamespaceResolver<'_> {
 
             let scope_type = abs_sect.kind.to_scope_type();
 
+            //NOTE: Maybe return a bool that decides on exports rather than O(verity)
             for ast_id in abs_sect.nodes.iter().cloned() {
                 // Maybe opt into section specific processing
                 let comp_unit = match &env.ast_info.items[ast_id] {
@@ -227,6 +228,11 @@ impl NamespaceResolver<'_> {
             None
         };
 
+        if !abs_typedef.is_priv {
+            let module = &mut self.compiler.mods[env.current_mod];
+            module.exports.push(sym_id);
+        }
+
         // The actual typedefs position to store inside it's symbol
         let type_def_type_id = TypeId::new(self.compiler.types.len() as u32);
 
@@ -350,6 +356,7 @@ impl NamespaceResolver<'_> {
             None
         };
 
+        //NOTE: Could be of concern since duplicates still get exported but no clear reason currently.
         if !abs_enum.is_priv {
             let module = &mut self.compiler.mods[env.current_mod];
             module.exports.push(sym_id);

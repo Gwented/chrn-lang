@@ -154,7 +154,7 @@ fn form_diag(
     }
 
     let mut ln_layouts = layout::create_render_line_layout(&group_manager);
-    let ln_num_width = line_mapping::get_num_width(highest_ln_num as usize);
+    let ln_num_width = algoc::nums::get_num_width_usize(highest_ln_num as usize);
 
     for layout in &mut ln_layouts {
         let current_idx = ln_views
@@ -403,7 +403,7 @@ fn render_line_layout_text(
     // -- FOURTH --
     // Padding using the max line number width as well as the current line number so that the
     // vertical bars are aligned even with line numbers
-    let current_ln_num_size = line_mapping::get_num_width(abs_ln_num as usize);
+    let current_ln_num_size = algoc::nums::get_num_width_usize(abs_ln_num as usize);
     let num_alignment = " ".repeat(ln_num_width - current_ln_num_size + 1);
 
     let fmtted_ln_num = format!("{}{num_alignment}", abs_ln_num);

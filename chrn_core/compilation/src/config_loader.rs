@@ -433,7 +433,7 @@ impl<R: Read> ConfigLoader<'_, R> {
             // Sole reason this is here
             let core_msg = "Amount of bytes in file exceeds max of 32KiB";
             let diag = SourceDiagnostic::builder(
-                ErrorCode::CompilerSafetyLimits.into(),
+                ErrorCode::CompilerInternals.into(),
                 DiagnosticLevel::Warn,
                 core_msg,
                 self.current_path_id,

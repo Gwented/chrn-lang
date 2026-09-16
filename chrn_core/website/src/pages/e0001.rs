@@ -27,6 +27,6 @@ pub fn page() -> ErrorDoc {
         .divider()
         .summary("Only @end")
         .chrn("let chrn = \"ch\" + \"rn\"\nlet super_chrn = \"super \" + chrn\n@end")
-        .see_also([ErrorCode::CompilerSafetyLimits])
+        .see_also([ErrorCode::CompilerInternals])
         .build()
 }

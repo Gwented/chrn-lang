@@ -369,7 +369,7 @@ pub fn extract_modules(
                 let core_msg = format!("Exceeded max module count of {}", chrn_utils::MAX_MODULES);
 
                 let src_diag = SourceDiagnostic::builder(
-                    ErrorCode::CompilerSafetyLimits.into(),
+                    ErrorCode::CompilerInternals.into(),
                     DiagnosticLevel::Error,
                     core_msg,
                     sp_path_id.inner,
@@ -546,17 +546,16 @@ fn resolve_module(
     // Creating region id for the current module on this level in the recursive stacke
     let sub_region_id = SourceRegionId::new(graph.region_arena.len() as u32);
 
-    //NOTE: If this were allowed, some odd undefined behavior would exist, which should likely just
+    //NOTE: If this were allowed, some odd behavior would exist, which should likely just
     //be omitted entirely. This is the only location where anything "core" in identifier is stopped.
-    //The "UB" in this scenario is just that the core module doesn't actually account for the user's
-    //"core" module, only the compiler generated one. May change, but probably not.
-    //
-    //THE BEHAVIOR IS DEFINED IT IS NOT UB,ekAPEKAIOJE$#$#
     if official_ident.id == intern::INTERNED_CORE {
-        //TODO: Maybe rename to compiler internals for the error codes to converge
         let core_msg = "`core` is a reserved module identifier";
-        let builder =
-            SourceDiagnostic::builder(None, DiagnosticLevel::Error, core_msg, sp_path_id.inner);
+        let builder = SourceDiagnostic::builder(
+            ErrorCode::CompilerInternals.into(),
+            DiagnosticLevel::Error,
+            core_msg,
+            sp_path_id.inner,
+        );
         summary.push_diag(builder.build());
         return Err(());
     }

@@ -26,7 +26,7 @@ const SUBSECTION_LEVEL: u8 = 3;
 pub fn error_title(code: ErrorCode) -> &'static str {
     match code {
         ErrorCode::ConfigLoadErr => "Config load error",
-        ErrorCode::CompilerSafetyLimits => "Compiler safety limit",
+        ErrorCode::CompilerInternals => "Compiler safety limit",
         ErrorCode::SchemaOptionErr => "Schema option error",
         ErrorCode::ScopeErr => "Scope error",
         ErrorCode::DirectiveErr => "Directive error",

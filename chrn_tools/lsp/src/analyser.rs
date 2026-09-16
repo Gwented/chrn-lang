@@ -1199,7 +1199,7 @@ pub(crate) fn resolve_modules_lsp(
             if reserved_mod_ids.len() > chrn_utils::MAX_MODULES as usize {
                 let core_msg = format!("Exceeded max module count of {}", chrn_utils::MAX_MODULES);
                 let src_diag = SourceDiagnostic::builder(
-                    ErrorCode::CompilerSafetyLimits.into(),
+                    ErrorCode::CompilerInternals.into(),
                     DiagnosticLevel::Error,
                     core_msg,
                     path_id,

@@ -16,3 +16,4 @@ dumper = { path = "../dumper/"}
 chrn_utils = {path = "../../chrn_core/chrn_utils/"}
 compilation = {path = "../../chrn_core/compilation/"}
 unicode-width = "0.2"
+algoc = {path = "../../common/algoc/"}

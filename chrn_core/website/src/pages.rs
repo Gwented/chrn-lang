@@ -28,7 +28,7 @@ use crate::errors::ErrorDoc;
 pub fn page(code: ErrorCode) -> ErrorDoc {
     match code {
         ErrorCode::ConfigLoadErr => e0001::page(),
-        ErrorCode::CompilerSafetyLimits => e0002::page(),
+        ErrorCode::CompilerInternals => e0002::page(),
         ErrorCode::SchemaOptionErr => e0003::page(),
         ErrorCode::ScopeErr => e0004::page(),
         ErrorCode::DirectiveErr => e0005::page(),

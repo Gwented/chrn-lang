@@ -84,10 +84,11 @@ pub enum SymbolKind {
     // /// to isolate this type of state inside of a kind of symbol, rather than polluting type-space.
     // ReservedTypeSlot(TypeId),
     /// Represents a namespace of any kind. Can currently be either a module symbol or plain
-    /// namespace.
+    /// namespace. This guarantees that the `Symbol` has an assigned `AssociatedScopeKind`
     Namespace,
+    /// Represents a directive symbol
     Directive(DirectiveId),
-    //TODO: Maybe it can get it's own arena.
+    /// Is a symbol instead of `Type` since they have no usage overlap.
     ExternType(ExternPlatformType),
 }
 

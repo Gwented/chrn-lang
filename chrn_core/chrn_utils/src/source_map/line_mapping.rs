@@ -349,19 +349,6 @@ fn get_ln_num(src_bytes: &[u8], start: usize) -> usize {
     ln_num
 }
 
-/// Is the preferred function for getting number widths to avoid allocating strings just for number sizes
-pub fn get_num_width(num: usize) -> usize {
-    let mut size = 0;
-    let mut i = num;
-
-    while i != 0 {
-        i /= 10;
-        size += 1;
-    }
-
-    size
-}
-
 /// Returns character width count within the given start and end (inclusive, exclusive)
 pub fn get_chars_width(s: &str, start: usize, end: usize) -> usize {
     // if start > end {

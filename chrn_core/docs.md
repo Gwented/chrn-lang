@@ -1,3 +1,5 @@
+// Maybe will make a start and end delimiter tool for this since the back quote chrn start end can be taken apart and but through the C H R N  C O M P I L E R.
+
 Ok but what if we wrote a program in go that read for "```chrn" at start and end then put it into separate files to be doc tested? What if it was in go? What i
 // Since sections use `->` the idea of NOT tabbing on `->` but instead only tabbing on nests seems like a better formatting heuristic, readability-wise.
 Like for:

@@ -18,7 +18,7 @@ pub const MAX_ERR_CODE_WIDTH: u16 = 4;
 // This is a soruce of truth value is shared
 const CONFIG_LOAD_ERR: isize = 0001;
 // chrn utils lib.rs constants as well as external tooling controlled constants
-const COMPILER_SAFETY_LIMITS: isize = 0002;
+const COMPILER_INTERNALS: isize = 0002;
 // NOTE: These were too granular but still important to remember to make the doc actually refer
 // to these.
 //
@@ -78,7 +78,7 @@ pub enum ErrorCode {
     ConfigLoadErr = CONFIG_LOAD_ERR,
     // Rename to compiler internals?
     /// An error emitted because of internal compiler guarantees, not the user's fault
-    CompilerSafetyLimits = COMPILER_SAFETY_LIMITS,
+    CompilerInternals = COMPILER_INTERNALS,
     /// Error is from an option failing
     SchemaOptionErr = SCHEMA_OPTION_ERR,
     /// Scope error of any kind. Should lead to scope semantics.
@@ -99,7 +99,7 @@ impl ErrorCode {
     pub fn code(self) -> u16 {
         (match self {
             ErrorCode::ConfigLoadErr => CONFIG_LOAD_ERR,
-            ErrorCode::CompilerSafetyLimits => COMPILER_SAFETY_LIMITS,
+            ErrorCode::CompilerInternals => COMPILER_INTERNALS,
             ErrorCode::SchemaOptionErr => SCHEMA_OPTION_ERR,
             ErrorCode::ScopeErr => SCOPE_ERR,
             ErrorCode::DirectiveErr => DIRECTIVE_ERR,
@@ -119,9 +119,8 @@ pub fn fmt_err_code(code: ErrorCode) -> String {
     format!("E{zero_padding}{}", code.code())
 }
 
-// Doesn't use same helper as module line_mapping to avoid conversion since the function is fairly simple
 /// Is the preferred function for getting number widths to avoid allocating strings just for number sizes
-pub fn get_code_width(num: u16) -> u16 {
+pub const fn get_code_width(num: u16) -> u16 {
     let mut size = 0;
     let mut i = num;
 
@@ -137,7 +136,7 @@ pub fn get_code_width(num: u16) -> u16 {
 /// a new `ErrorCode` variant a compile error rather than a silently missing page.
 pub const ALL_ERROR_CODES: [ErrorCode; 9] = [
     ErrorCode::ConfigLoadErr,
-    ErrorCode::CompilerSafetyLimits,
+    ErrorCode::CompilerInternals,
     ErrorCode::SchemaOptionErr,
     ErrorCode::ScopeErr,
     ErrorCode::DirectiveErr,

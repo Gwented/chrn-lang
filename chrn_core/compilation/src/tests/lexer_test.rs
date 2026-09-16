@@ -1,6 +1,6 @@
 use crate::config_loader::{ConfigLoader, ConfigLoaderOutput};
 use crate::lexer::token::TokenKind;
-use crate::lexer::trivia::{Trivia, TriviaKind};
+use crate::lexer::trivia::TriviaKind;
 
 use super::helpers::*;
 
@@ -1000,7 +1000,10 @@ fn trivia_whitespace_coalesces_spaces_and_unicode_whitespace() {
     assert_eq!(output.trivia[0].kind, TriviaKind::Whitespace);
     assert_eq!(output.trivia[0].span.start, 0);
     assert_eq!(output.trivia[0].span.end, 1);
-    assert_eq!(&src[output.trivia[0].span.start as usize..output.trivia[0].span.end as usize], b" ");
+    assert_eq!(
+        &src[output.trivia[0].span.start as usize..output.trivia[0].span.end as usize],
+        b" "
+    );
     assert_eq!(output.toks[0].leading_trivia_indices, 0..1);
 
     // Consecutive spaces coalesce into a single TriviaKind::Whitespace
@@ -1011,7 +1014,10 @@ fn trivia_whitespace_coalesces_spaces_and_unicode_whitespace() {
     assert_eq!(output.trivia[0].kind, TriviaKind::Whitespace);
     assert_eq!(output.trivia[0].span.start, 0);
     assert_eq!(output.trivia[0].span.end, 4);
-    assert_eq!(&src[output.trivia[0].span.start as usize..output.trivia[0].span.end as usize], b"    ");
+    assert_eq!(
+        &src[output.trivia[0].span.start as usize..output.trivia[0].span.end as usize],
+        b"    "
+    );
     assert_eq!(output.toks[0].leading_trivia_indices, 0..1);
 
     // Unicode whitespace: NO-BREAK SPACE (\u{00A0}, 2 bytes in UTF-8)
@@ -1429,7 +1435,11 @@ fn trivia_token_stream_contiguity_and_association() {
 
     // Verify tokens with NO preceding trivia have empty leading_trivia_indices
     // ":" has no space before it (after "x")
-    let colon_toks: Vec<_> = output.toks.iter().filter(|t| t.tok == Token::Colon).collect();
+    let colon_toks: Vec<_> = output
+        .toks
+        .iter()
+        .filter(|t| t.tok == Token::Colon)
+        .collect();
     assert_eq!(colon_toks.len(), 2);
     assert!(
         colon_toks[0].leading_trivia_indices.is_empty(),
@@ -1446,8 +1456,9 @@ fn trivia_token_stream_contiguity_and_association() {
         .iter()
         .find(|t| matches!(t.tok, Token::Keyword(Keyword::Struct)))
         .unwrap();
-    let struct_trivia: Vec<TriviaKind> = output.trivia
-        [struct_tok.leading_trivia_indices.start as usize..struct_tok.leading_trivia_indices.end as usize]
+    let struct_trivia: Vec<TriviaKind> = output.trivia[struct_tok.leading_trivia_indices.start
+        as usize
+        ..struct_tok.leading_trivia_indices.end as usize]
         .iter()
         .map(|t| t.kind)
         .collect();
@@ -1563,5 +1574,3 @@ fn trivia_token_variety_leading_trivia_association() {
     // EOF has no leading trivia (it immediately follows the last token)
     assert_eq!(output.toks[11].leading_trivia_indices, 11..11);
 }
-
-

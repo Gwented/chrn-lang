@@ -27,8 +27,8 @@ use chrn_utils::chrn_config::chrn_perf::ChrnPerfStage;
 use chrn_utils::err_codes::ErrorCode;
 use chrn_utils::id_types::id_tags::TaggedId;
 use chrn_utils::id_types::{
-    AstId, DirectiveId, ExprId, ImplId, ImplMemberId, InternedId, MemberId, ModuleId, ScopeId,
-    SymbolId, TypeId, ValueId, VariableId,
+    AstId, DirectiveId, ExprId, ImplId, ImplMemberId, InternedId, MemberId, ScopeId, SymbolId,
+    TypeId, ValueId, VariableId,
 };
 use chrn_utils::intern::Intern;
 use chrn_utils::source_map::source_diagnostic::annotations::AnnotationKind;
@@ -1354,6 +1354,7 @@ impl<'res> TypeResolver<'res> {
         //TODO: MAKE THIS, UM, NOT THIS. LOOKS BAD.
         // THIS IS PROBABLY NOT GOING TO BE THAT BAD SINCE OVERRIDE WOULD HAVE AN ENTIRELY
         // DIFFERENT PROCESS FOR HOW IT CONSUMES DATA. I AM SCARED.
+        // Don't be scared.
 
         //NOTE: How do we account for override?
         // Override doens't exist yet, but maybe, override has it's own specific method of
@@ -1506,23 +1507,26 @@ impl<'res> TypeResolver<'res> {
                         to_assign.push(type_id);
                     }
 
+                    //NOTE: Slightly inconvenient that the type is inferred but there is no variable
+                    //showing what type was inferred. But at the same time it's just inferring the
+                    //config member/root using it, which you'd know.
+                    //
                     // `change` is applied to `self` if empty
                     if to_assign.is_empty() {
-                        // Uses `bool` since either may warn
-                        let mut should_warn = false;
+                        let mut should_warn = true;
 
-                        if let ConfigMemberContextKind::Override(ov_ctx) = parent_cfg_memb_ctx {
+                        let warn_opt = if let ConfigMemberContextKind::Override(ov_ctx) =
+                            parent_cfg_memb_ctx
+                        {
                             match ov_ctx.linked_kind {
-                                LinkedConfigOverrideMemberKind::Global => {
-                                    should_warn = true;
-                                }
-                                // Root must have a type since we know it's not global
+                                LinkedConfigOverrideMemberKind::Global => (),
                                 LinkedConfigOverrideMemberKind::Root(sym_id) => {
-                                    let type_id = self
-                                        .compiler
-                                        .get_type_id_from_sym_id(sym_id)
-                                        .expect("Linked kind tracking broke");
-                                    to_assign.push(type_id);
+                                    if let Some(type_id) =
+                                        self.compiler.get_type_id_from_sym_id(sym_id)
+                                    {
+                                        should_warn = false;
+                                        to_assign.push(type_id);
+                                    }
                                 }
                                 //NOTE: Maybe the member can be preserved meaningfully here but just
                                 //skips. (Also should point to location showing that it has no type?)
@@ -1530,13 +1534,12 @@ impl<'res> TypeResolver<'res> {
                                     if let Some(type_id) =
                                         self.compiler.get_type_id_from_memb_id(memb_id)
                                     {
+                                        should_warn = false;
                                         to_assign.push(type_id);
-                                    } else {
-                                        should_warn = true;
                                     };
                                 }
                             }
-                        }
+                        };
 
                         if should_warn {
                             let core_msg = "Assigns nothing";
@@ -3444,7 +3447,7 @@ impl<'res> TypeResolver<'res> {
                             let var = &self.compiler.vars[var_id];
 
                             match var.state {
-                                // A value is attached to the variable found
+                                // A type and possibly const val is attached to the variable found
                                 VariableState::Known(val_id) => {
                                     let val_info = &self.compiler.values[val_id];
 

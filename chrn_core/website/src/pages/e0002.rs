@@ -10,7 +10,7 @@ use crate::errors::ErrorDoc;
 
 pub fn page() -> ErrorDoc {
     // Okk but なぜ英語だけある？We're not doing that yet
-    ErrorDoc::builder(ErrorCode::CompilerSafetyLimits)
+    ErrorDoc::builder(ErrorCode::CompilerInternals)
         .summary("These safety limits exist to ensure security issues are addressed.\n")
         .section("Internal safety limits")
         .bullets([
