@@ -277,6 +277,7 @@ impl ModuleFinder<'_> {
     }
 
     //WARN: Will be placed in different module
+    //FIX: ugf3 8
     fn create_pathbuf(&self, slice: &[u8]) -> Result<PathBuf, SourceDiagnostic> {
         if cfg!(unix) {
             #[cfg(unix)]
@@ -296,9 +297,6 @@ impl ModuleFinder<'_> {
             // }
             //TODO: Do not. Enforce. UTF-8. !
             match str::from_utf8(slice) {
-                // A valid UTF-8 string cannot fail conversion to a path,
-                // therefore this is infallable as said by the return type, which fits whatever
-                // type utilized with the From<T> conversion.
                 Ok(s) => return Ok(PathBuf::from_str(&s).expect("Infallable")),
                 Err(_) => {
                     let msg = "Invalid UTF-8 found within file".to_string();

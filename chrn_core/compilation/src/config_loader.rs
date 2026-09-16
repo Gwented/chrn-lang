@@ -673,7 +673,7 @@ impl<R: Read> ConfigLoader<'_, R> {
         //
         // GE should be find here since limit is based off len, so cursor == len would mean we are
         // pointing at the limit directly
-        if self.bytes_consumed_rel == self.limit || self.bytes_consumed_rel + dest >= self.limit {
+        if self.bytes_consumed_rel + dest >= self.limit {
             return None;
         }
 

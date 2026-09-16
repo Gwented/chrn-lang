@@ -92,6 +92,6 @@ for nest Block=>k {
     override JAVA=>types{change = java::char}
 }
 
-for var varthing1 {}
+for var varthing1 { override RUST=>types{change = rust::i32} }
 
 for varthing1 {}

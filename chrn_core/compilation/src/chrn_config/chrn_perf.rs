@@ -1,6 +1,6 @@
 pub mod chrn_perf_concepts;
 
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use chrn_utils::{id_types::PathId, intern::Intern, utils::trackers::perf_tracker::PerfTracker};
 
@@ -62,7 +62,13 @@ impl ChrnPerf {
                 &mut self.tracked_mods[idx]
             };
 
-            let time_report = ChrnPerfTimeReport::with_perf_output(stage, active_tracker.stop());
+            let perf_out = active_tracker.stop();
+            let time_report = ChrnPerfTimeReport::with_perf_output(
+                stage,
+                perf_out,
+                perf_out.elapsed,
+                perf_out.elapsed,
+            );
             perf_data.tracked_stages[stage.to_idx()] = Some(time_report);
             self.active_tracker = None;
         }
@@ -79,11 +85,18 @@ impl ChrnPerf {
             for (i, tracked) in mod_perf_data.tracked_stages.iter().enumerate() {
                 if let Some(out) = tracked {
                     let stage = ChrnPerfStage::from_idx(i).expect("Idx should be aligned");
-                    let mean_report = ChrnPerfTimeReport::new(stage, out.elapsed, out.times);
+                    let mean_report = ChrnPerfTimeReport::new(
+                        stage,
+                        out.elapsed,
+                        out.times,
+                        out.elapsed,
+                        out.elapsed,
+                    );
 
                     if let Some(exists) = &mut stage_means[i] {
                         exists.merge(mean_report);
                     } else {
+                        // Initial placement
                         stage_means[i] = Some(mean_report);
                     }
                 }

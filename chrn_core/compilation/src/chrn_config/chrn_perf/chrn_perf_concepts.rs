@@ -1,4 +1,7 @@
-use std::{path::Path, time::Duration};
+use std::{
+    path::Path,
+    time::{Duration, Instant},
+};
 
 use chrn_utils::{id_types::PathId, utils::trackers::perf_tracker::PerfOutput};
 
@@ -118,8 +121,12 @@ impl<'a> ChrnPerfReport<'a> {
 
             let closure = || {
                 format!(
-                    "stage: {:?}\nmean time = {:?}\ntimes ran = {:?}",
-                    mean_report.stage, mean_report.elapsed, mean_report.times
+                    "stage: {:?}\nmean = {:?} | times ran = {:?}\nmin = {:?} | max = {:?}",
+                    mean_report.stage,
+                    mean_report.elapsed / (mean_report.times as u32),
+                    mean_report.times,
+                    mean_report.min,
+                    mean_report.max
                 )
             };
 
@@ -239,30 +246,60 @@ impl std::default::Default for ChrnPerfReportOptions {
 
 #[derive(Debug, Clone, Copy)]
 pub struct ChrnPerfTimeReport {
+    /// Stage of `self`
     pub stage: ChrnPerfStage,
+    /// Sum of collected stage durations
     pub elapsed: Duration,
+    /// Amount times the stage was ran.
     pub times: u16,
+    /// Max duration found among all collected time
+    pub max: Duration,
+    /// Min duration found among all collected time
+    pub min: Duration,
 }
 
 impl ChrnPerfTimeReport {
-    pub const fn new(stage: ChrnPerfStage, elapsed: Duration, times: u16) -> Self {
+    pub const fn new(
+        stage: ChrnPerfStage,
+        elapsed: Duration,
+        times: u16,
+        max: Duration,
+        min: Duration,
+    ) -> Self {
         Self {
             stage,
             elapsed,
             times,
+            max,
+            min,
         }
     }
 
-    pub const fn with_perf_output(stage: ChrnPerfStage, perf: PerfOutput) -> Self {
+    pub const fn with_perf_output(
+        stage: ChrnPerfStage,
+        perf: PerfOutput,
+        max: Duration,
+        min: Duration,
+    ) -> Self {
         Self {
             stage,
             elapsed: perf.elapsed,
             times: perf.times,
+            max,
+            min,
         }
     }
     pub fn merge(&mut self, other: ChrnPerfTimeReport) {
         debug_assert_eq!(self.stage, other.stage);
         self.elapsed += other.elapsed;
         self.times += other.times;
+
+        if self.max < other.max {
+            self.max = other.max;
+        }
+
+        if self.min > other.min {
+            self.min = other.min;
+        }
     }
 }

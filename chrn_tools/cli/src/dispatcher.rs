@@ -138,7 +138,7 @@ fn exec_check(
             .cfg
             .perf_tracker()
             .form_report(&compiler_store.interner);
-        perf_report.print_all(ChrnPerfReportOptions::new_type_resolver());
+        perf_report.print_all(ChrnPerfReportOptions::all());
     }
 
     msg_res

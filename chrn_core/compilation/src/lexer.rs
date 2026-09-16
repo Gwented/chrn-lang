@@ -35,6 +35,7 @@ const NOTATION_HEX: u8 = 1 << 1;
 const NOTATION_BIN: u8 = 1 << 2;
 const NOTATION_OCTAL: u8 = 1 << 3;
 
+// Boolean for is_utf8? Asking since if this existed we. We would do something.
 pub struct Lexer<'a> {
     // Should be &str
     src_bytes: &'a [u8],
@@ -546,7 +547,6 @@ impl Lexer<'_> {
                     if self.invalid_toks > MAX_INVALID_TOKS {
                         // TODO: Maybe this should be at the end because technically @ is invalid too
                         // Is this still needed?
-                        eprintln!("Maximum invalid tokens found.\nReporting then aborting...");
                         // in_def = false;
 
                         toks.push(SpannedToken {
@@ -565,6 +565,8 @@ impl Lexer<'_> {
                 }
             }
         }
+        //WARN: Slow.
+        dbg!(toks.len());
 
         self.cfg.perf_tracker_mut().stop(ChrnPerfStage::Lexer);
 
@@ -1086,6 +1088,7 @@ impl Lexer<'_> {
         }
     }
 
+    //FIX:
     fn peek_char(&mut self) -> char {
         let b = self.peek();
 
@@ -1095,11 +1098,7 @@ impl Lexer<'_> {
 
         let chunk = &self.src_bytes[self.pos..];
 
-        // Should be a test for this this is suspicious
-        // Lazy evaluation to avoid utf-8 checking entire self.bytes
         //TODO: Handle this please!
-        //No, we silently return null bytes.
-        //Oh ok
         std::str::from_utf8(chunk)
             .ok()
             .and_then(|c| c.chars().next())

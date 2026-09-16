@@ -3,12 +3,12 @@ export let WRITE = 0b1
 
 import "../chrn_core/chrn_tests/other.chrn"
 import "../chrn_core/chrn_tests/def.chrn"
-import "../chrn_core/chrn_tests/examples/def.chrn" as warn
+import "../chrn_core/chrn_tests/examples/def.chrn"
 // import "../chrn_core/chrn_tests/core.chrn"
 // Maybe this shouldn't be seen as a valid import
 // import l
 
-let core = "ch" + "rn"
+export let core = "ch" + "rn"
 let a = b
 let b = c
 let c = 4 + d

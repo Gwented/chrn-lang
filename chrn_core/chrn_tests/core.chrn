@@ -1,7 +1,10 @@
+// Root module being named core doesn't send the core error.
+// It probably should since it still can self reference.
 nest->
-    struct Hi {}
+    struct Hi {
+            k: core::core::core::core::i32
+        }
 complex->
     override RUST=>types {change = rust::u8}
     for Hi {
-        change = hi::i32
     }
