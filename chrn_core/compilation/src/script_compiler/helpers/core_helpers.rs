@@ -20,97 +20,504 @@ use super::instantiation_symbols::InstiationValue;
 
 //BUG: This is all technically a large bug because we have access to u64::MAX but the compiler only
 //allows i64. But keeping it like this because bugs are solved.
-static NAMESPACE_I8: [InstantiationSymbolBase; 2] = [
+static NAMESPACE_I8: [InstantiationSymbolBase; 5] = [
     new_max(InstantiationVariable::new(
-        InstiationType::BuiltinType(BuiltinType::I8),
+        InstiationType::BuiltinType(BuiltinType::I64),
         InstiationValue::I64(i8::MAX as i64),
     )),
     new_min(InstantiationVariable::new(
-        InstiationType::BuiltinType(BuiltinType::I8),
+        InstiationType::BuiltinType(BuiltinType::I64),
         InstiationValue::I64(i8::MIN as i64),
     )),
+    new_bits(8),
+    new_bytes(1),
+    new_radix(2),
 ];
 
-static NAMESPACE_U8: [InstantiationSymbolBase; 2] = [
+static NAMESPACE_U8: [InstantiationSymbolBase; 5] = [
     new_max(InstantiationVariable::new(
-        InstiationType::BuiltinType(BuiltinType::U8),
+        InstiationType::BuiltinType(BuiltinType::I64),
         InstiationValue::I64(u8::MAX as i64),
     )),
     new_min(InstantiationVariable::new(
-        InstiationType::BuiltinType(BuiltinType::U8),
+        InstiationType::BuiltinType(BuiltinType::I64),
         InstiationValue::I64(u8::MIN as i64),
     )),
+    new_bits(8),
+    new_bytes(1),
+    new_radix(2),
 ];
 
-static NAMESPACE_I16: [InstantiationSymbolBase; 2] = [
+static NAMESPACE_I16: [InstantiationSymbolBase; 5] = [
     new_max(InstantiationVariable::new(
-        InstiationType::BuiltinType(BuiltinType::I16),
+        InstiationType::BuiltinType(BuiltinType::I64),
         InstiationValue::I64(i16::MAX as i64),
     )),
     new_min(InstantiationVariable::new(
-        InstiationType::BuiltinType(BuiltinType::I16),
+        InstiationType::BuiltinType(BuiltinType::I64),
         InstiationValue::I64(i16::MIN as i64),
     )),
+    new_bits(16),
+    new_bytes(2),
+    new_radix(2),
 ];
 
-static NAMESPACE_U16: [InstantiationSymbolBase; 2] = [
+static NAMESPACE_U16: [InstantiationSymbolBase; 5] = [
     new_max(InstantiationVariable::new(
-        InstiationType::BuiltinType(BuiltinType::U16),
+        InstiationType::BuiltinType(BuiltinType::I64),
         InstiationValue::I64(u16::MAX as i64),
     )),
     new_min(InstantiationVariable::new(
-        InstiationType::BuiltinType(BuiltinType::U16),
+        InstiationType::BuiltinType(BuiltinType::I64),
         InstiationValue::I64(u16::MIN as i64),
     )),
+    new_bits(16),
+    new_bytes(2),
+    new_radix(2),
 ];
 
 //NOTE: Rust has no stable `f16`, so the IEEE-754 binary16 bounds are spelled out. Both are exact
-//in `f64`.
-static NAMESPACE_F16: [InstantiationSymbolBase; 2] = [
+//in `f64`. The math constants below are the `f64` values rounded to binary16, spelled out as
+//the exact `f64` that holds each rounded value.
+static NAMESPACE_F16: [InstantiationSymbolBase; 34] = [
     new_max(InstantiationVariable::new(
-        InstiationType::BuiltinType(BuiltinType::F16),
+        InstiationType::BuiltinType(BuiltinType::F64),
         InstiationValue::F64(65504.0),
     )),
     new_min(InstantiationVariable::new(
-        InstiationType::BuiltinType(BuiltinType::F16),
+        InstiationType::BuiltinType(BuiltinType::F64),
         InstiationValue::F64(-65504.0),
     )),
+    new_bits(16),
+    new_bytes(2),
+    new_radix(2),
+    new_digits(3),
+    new_mantissa_digits(11),
+    new_const(
+        intern::INTERNED_EPSILON,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(0.0009765625),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_INFINITY,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(f64::INFINITY),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_NEG_INFINITY,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(f64::NEG_INFINITY),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_NAN,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(f64::NAN),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_MIN_POSITIVE,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(0.00006103515625),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_PI_UPPER,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(3.140625),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_E_UPPER,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(2.71875),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_TAU,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(6.28125),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_FRAC_1_PI,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(0.318359375),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_FRAC_1_SQRT_2,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(0.70703125),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_FRAC_2_PI,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(0.63671875),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_FRAC_2_SQRT_PI,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(1.1279296875),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_FRAC_PI_2,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(1.5703125),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_FRAC_PI_3,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(1.046875),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_FRAC_PI_4,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(0.78515625),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_FRAC_PI_6,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(0.5234375),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_FRAC_PI_8,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(0.392578125),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_LN_2,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(0.693359375),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_LN_10,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(2.302734375),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_LOG2_10,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(3.322265625),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_LOG2_E,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(1.4423828125),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_LOG10_2,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(0.301025390625),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_LOG10_E,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(0.434326171875),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_SQRT_2,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(1.4140625),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_SQRT_3,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(1.732421875),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_GOLDEN_RATIO,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(1.6181640625),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_EULER_GAMMA,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(0.5771484375),
+        ),
+    ),
 ];
 
-static NAMESPACE_I32: [InstantiationSymbolBase; 2] = [
+static NAMESPACE_I32: [InstantiationSymbolBase; 5] = [
     new_max(InstantiationVariable::new(
-        InstiationType::BuiltinType(BuiltinType::I32),
+        InstiationType::BuiltinType(BuiltinType::I64),
         InstiationValue::I64(i32::MAX as i64),
     )),
     new_min(InstantiationVariable::new(
-        InstiationType::BuiltinType(BuiltinType::I32),
+        InstiationType::BuiltinType(BuiltinType::I64),
         InstiationValue::I64(i32::MIN as i64),
     )),
+    new_bits(32),
+    new_bytes(4),
+    new_radix(2),
 ];
 
-static NAMESPACE_U32: [InstantiationSymbolBase; 2] = [
+static NAMESPACE_U32: [InstantiationSymbolBase; 5] = [
     new_max(InstantiationVariable::new(
-        InstiationType::BuiltinType(BuiltinType::U32),
+        InstiationType::BuiltinType(BuiltinType::I64),
         InstiationValue::I64(u32::MAX as i64),
     )),
     new_min(InstantiationVariable::new(
-        InstiationType::BuiltinType(BuiltinType::U32),
+        InstiationType::BuiltinType(BuiltinType::I64),
         InstiationValue::I64(u32::MIN as i64),
     )),
+    new_bits(32),
+    new_bytes(4),
+    new_radix(2),
 ];
 
-static NAMESPACE_F32: [InstantiationSymbolBase; 2] = [
+static NAMESPACE_F32: [InstantiationSymbolBase; 34] = [
     new_max(InstantiationVariable::new(
-        InstiationType::BuiltinType(BuiltinType::F32),
+        InstiationType::BuiltinType(BuiltinType::F64),
         InstiationValue::F64(f32::MAX as f64),
     )),
     new_min(InstantiationVariable::new(
-        InstiationType::BuiltinType(BuiltinType::F32),
+        InstiationType::BuiltinType(BuiltinType::F64),
         InstiationValue::F64(f32::MIN as f64),
     )),
+    new_bits(32),
+    new_bytes(4),
+    new_radix(2),
+    new_digits(f32::DIGITS as i64),
+    new_mantissa_digits(f32::MANTISSA_DIGITS as i64),
+    new_const(
+        intern::INTERNED_EPSILON,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(f32::EPSILON as f64),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_INFINITY,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(f32::INFINITY as f64),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_NEG_INFINITY,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(f32::NEG_INFINITY as f64),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_NAN,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(f32::NAN as f64),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_MIN_POSITIVE,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(f32::MIN_POSITIVE as f64),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_PI_UPPER,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(std::f32::consts::PI as f64),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_E_UPPER,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(std::f32::consts::E as f64),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_TAU,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(std::f32::consts::TAU as f64),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_FRAC_1_PI,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(std::f32::consts::FRAC_1_PI as f64),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_FRAC_1_SQRT_2,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(std::f32::consts::FRAC_1_SQRT_2 as f64),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_FRAC_2_PI,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(std::f32::consts::FRAC_2_PI as f64),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_FRAC_2_SQRT_PI,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(std::f32::consts::FRAC_2_SQRT_PI as f64),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_FRAC_PI_2,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(std::f32::consts::FRAC_PI_2 as f64),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_FRAC_PI_3,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(std::f32::consts::FRAC_PI_3 as f64),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_FRAC_PI_4,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(std::f32::consts::FRAC_PI_4 as f64),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_FRAC_PI_6,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(std::f32::consts::FRAC_PI_6 as f64),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_FRAC_PI_8,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(std::f32::consts::FRAC_PI_8 as f64),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_LN_2,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(std::f32::consts::LN_2 as f64),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_LN_10,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(std::f32::consts::LN_10 as f64),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_LOG2_10,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(std::f32::consts::LOG2_10 as f64),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_LOG2_E,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(std::f32::consts::LOG2_E as f64),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_LOG10_2,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(std::f32::consts::LOG10_2 as f64),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_LOG10_E,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(std::f32::consts::LOG10_E as f64),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_SQRT_2,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(std::f32::consts::SQRT_2 as f64),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_SQRT_3,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(1.732050807568877293527446341505872366_f32 as f64),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_GOLDEN_RATIO,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(std::f32::consts::GOLDEN_RATIO as f64),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_EULER_GAMMA,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(std::f32::consts::EULER_GAMMA as f64),
+        ),
+    ),
 ];
 
-static NAMESPACE_I64: [InstantiationSymbolBase; 2] = [
+static NAMESPACE_I64: [InstantiationSymbolBase; 5] = [
     new_max(InstantiationVariable::new(
         InstiationType::BuiltinType(BuiltinType::I64),
         InstiationValue::I64(i64::MAX),
@@ -119,9 +526,14 @@ static NAMESPACE_I64: [InstantiationSymbolBase; 2] = [
         InstiationType::BuiltinType(BuiltinType::I64),
         InstiationValue::I64(i64::MIN),
     )),
+    new_bits(64),
+    new_bytes(8),
+    new_radix(2),
 ];
 
-static NAMESPACE_F64: [InstantiationSymbolBase; 2] = [
+static NAMESPACE_U64: [InstantiationSymbolBase; 3] = [new_bits(64), new_bytes(8), new_radix(2)];
+
+static NAMESPACE_F64: [InstantiationSymbolBase; 34] = [
     new_max(InstantiationVariable::new(
         InstiationType::BuiltinType(BuiltinType::F64),
         InstiationValue::F64(f64::MAX),
@@ -130,11 +542,205 @@ static NAMESPACE_F64: [InstantiationSymbolBase; 2] = [
         InstiationType::BuiltinType(BuiltinType::F64),
         InstiationValue::F64(f64::MIN),
     )),
+    new_bits(64),
+    new_bytes(8),
+    new_radix(2),
+    new_digits(f64::DIGITS as i64),
+    new_mantissa_digits(f64::MANTISSA_DIGITS as i64),
+    new_const(
+        intern::INTERNED_EPSILON,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(f64::EPSILON),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_INFINITY,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(f64::INFINITY),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_NEG_INFINITY,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(f64::NEG_INFINITY),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_NAN,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(f64::NAN),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_MIN_POSITIVE,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(f64::MIN_POSITIVE),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_PI_UPPER,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(std::f64::consts::PI),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_E_UPPER,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(std::f64::consts::E),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_TAU,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(std::f64::consts::TAU),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_FRAC_1_PI,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(std::f64::consts::FRAC_1_PI),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_FRAC_1_SQRT_2,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(std::f64::consts::FRAC_1_SQRT_2),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_FRAC_2_PI,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(std::f64::consts::FRAC_2_PI),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_FRAC_2_SQRT_PI,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(std::f64::consts::FRAC_2_SQRT_PI),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_FRAC_PI_2,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(std::f64::consts::FRAC_PI_2),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_FRAC_PI_3,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(std::f64::consts::FRAC_PI_3),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_FRAC_PI_4,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(std::f64::consts::FRAC_PI_4),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_FRAC_PI_6,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(std::f64::consts::FRAC_PI_6),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_FRAC_PI_8,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(std::f64::consts::FRAC_PI_8),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_LN_2,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(std::f64::consts::LN_2),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_LN_10,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(std::f64::consts::LN_10),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_LOG2_10,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(std::f64::consts::LOG2_10),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_LOG2_E,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(std::f64::consts::LOG2_E),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_LOG10_2,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(std::f64::consts::LOG10_2),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_LOG10_E,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(std::f64::consts::LOG10_E),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_SQRT_2,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(std::f64::consts::SQRT_2),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_SQRT_3,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(1.732050807568877293527446341505872366_f64),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_GOLDEN_RATIO,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(std::f64::consts::GOLDEN_RATIO),
+        ),
+    ),
+    new_const(
+        intern::INTERNED_EULER_GAMMA,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::F64),
+            InstiationValue::F64(std::f64::consts::EULER_GAMMA),
+        ),
+    ),
 ];
 
-//TODO: `u64`, `i128`, `u128` and `f128` bounds do not fit `InstiationValue`, which only carries
+//TODO: `u64::MAX`, `i128`, `u128` and `f128` bounds do not fit `InstiationValue`, which only carries
 //`I64` and `F64`. `sized`/`unsized` are pointer-sized, so their bounds belong to the target rather
-//than the host. All six stay empty until the value system covers them.
+//than the host. The 128-bit types stay empty until the value system covers them.
 
 // Will just be [[]] like the ns entries
 /// Every core builtin type, paired with its interned name and the `TypeId` it must have.
@@ -151,7 +757,7 @@ pub static CORE_BUILTIN_TYPES_DATASET: [(u32, BuiltinType, &'static [Instantiati
     (intern::INTERNED_F32, BuiltinType::F32, &NAMESPACE_F32),
     (intern::INTERNED_I64, BuiltinType::I64, &NAMESPACE_I64),
     // -- Eveneutally faojjkaj --
-    (intern::INTERNED_U64, BuiltinType::U64, &[]),
+    (intern::INTERNED_U64, BuiltinType::U64, &NAMESPACE_U64),
     // -- Eveneutally faojjkaj --
     (intern::INTERNED_F64, BuiltinType::F64, &NAMESPACE_F64),
     // -- Eveneutally faojjkaj --
@@ -256,7 +862,6 @@ pub struct CoreFunc {
     /// Interned index of the function's name
     pub name: u32,
     pub kind: BuiltinFuncKind,
-    //TODO: Enum for clarity
     pub type_constraints: TypeBoundaryFlags,
     pub arg_constraints: &'static [ArgConstraint],
     pub affects_type_constraint: bool,
@@ -354,60 +959,68 @@ pub static CORE_FUNCS_DATASET: [CoreFunc; 7] = [
     ),
 ];
 
-//TEST: This seems a little odd
+const CORE_SYM_ORIGIN: SymbolOrigin = SymbolOrigin::Compiler;
+const CORE_SCOPE_ORIGIN: ScopeType = ScopeType::Core;
+const CORE_IS_PRIV: bool = false;
 
-const MIN_IDENT: InternedId = InternedId::new(intern::INTERNED_MIN_UPPER);
-const MAX_IDENT: InternedId = InternedId::new(intern::INTERNED_MAX_UPPER);
-const NUMERIC_SYM_ORIGIN: SymbolOrigin = SymbolOrigin::Compiler;
-const NUMERIC_SCOPE_ORIGIN: ScopeType = ScopeType::Core;
-const NUMERIC_IS_PRIV: bool = false;
-
-const fn new_max(var: InstantiationVariable) -> InstantiationSymbolBase {
+const fn new_const(id: u32, var: InstantiationVariable) -> InstantiationSymbolBase {
     InstantiationSymbolBase::new(
-        MAX_IDENT,
-        NUMERIC_SYM_ORIGIN,
-        NUMERIC_SCOPE_ORIGIN,
-        NUMERIC_IS_PRIV,
+        InternedId::new(id),
+        // More like core_sym_origin
+        CORE_SYM_ORIGIN,
+        CORE_SCOPE_ORIGIN,
+        CORE_IS_PRIV,
         InstantiationSymbolKind::Variable(var),
     )
+}
+const fn new_max(var: InstantiationVariable) -> InstantiationSymbolBase {
+    new_const(intern::INTERNED_MAX_UPPER, var)
 }
 const fn new_min(var: InstantiationVariable) -> InstantiationSymbolBase {
-    InstantiationSymbolBase::new(
-        MIN_IDENT,
-        NUMERIC_SYM_ORIGIN,
-        NUMERIC_SCOPE_ORIGIN,
-        NUMERIC_IS_PRIV,
-        InstantiationSymbolKind::Variable(var),
+    new_const(intern::INTERNED_MIN_UPPER, var)
+}
+const fn new_bits(bits: i64) -> InstantiationSymbolBase {
+    new_const(
+        intern::INTERNED_BITS_UPPER,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::I64),
+            InstiationValue::I64(bits),
+        ),
     )
 }
-
-//// Contains `Numeric` type expectations of implementers. Strictly compile-time.
-//// The intent is to go to the target index, then insert the `Numeric` constants
-// pub static CORE_NUMERIC_TARGETS: [NumericTarget; 1] = [
-//     NumericTarget::new(
-//         CORE_I8,
-//         new_max(InstantiationVariable::new(
-//             InstiationType::BuiltinType(BuiltinType::I8),
-//             InstiationValue::I64(i8::MAX as i64),
-//         )),
-//         new_min(InstantiationVariable::new(
-//             InstiationType::BuiltinType(BuiltinType::I8),
-//             InstiationValue::I64(i8::MIN as i64),
-//         )),
-//     ),
-// (CORE_U8, BuiltinType::U8),
-// (CORE_I16, BuiltinType::I16),
-// (CORE_U16, BuiltinType::U16),
-// // (intern::INTERNED_F16, BuiltinType::F16),
-// (CORE_I32, BuiltinType::I32),
-// (CORE_U32, BuiltinType::U32),
-// (CORE_F32, BuiltinType::F32),
-// (CORE_I64, BuiltinType::I64),
-// (CORE_U64, BuiltinType::U64),
-// (CORE_F64, BuiltinType::F64),
-// (CORE_I128, BuiltinType::I128),
-// (CORE_U128, BuiltinType::U128),
-// (CORE_F128, BuiltinType::F128),
-// (CORE_SIZED, BuiltinType::Sized),
-// (CORE_UNSIZED, BuiltinType::Unsized),
-// ];
+const fn new_bytes(bytes: i64) -> InstantiationSymbolBase {
+    new_const(
+        intern::INTERNED_BYTES_UPPER,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::I64),
+            InstiationValue::I64(bytes),
+        ),
+    )
+}
+const fn new_radix(radix: i64) -> InstantiationSymbolBase {
+    new_const(
+        intern::INTERNED_RADIX,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::I64),
+            InstiationValue::I64(radix),
+        ),
+    )
+}
+const fn new_digits(digits: i64) -> InstantiationSymbolBase {
+    new_const(
+        intern::INTERNED_DIGITS,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::I64),
+            InstiationValue::I64(digits),
+        ),
+    )
+}
+const fn new_mantissa_digits(mantissa_digits: i64) -> InstantiationSymbolBase {
+    new_const(
+        intern::INTERNED_MANTISSA_DIGITS,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::I64),
+            InstiationValue::I64(mantissa_digits),
+        ),
+    )
+}

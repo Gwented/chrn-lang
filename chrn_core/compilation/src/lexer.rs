@@ -70,7 +70,6 @@ impl Lexer<'_> {
             current_path_id,
             src_bytes: src,
             script_start,
-            // Not even going to acknowledge what was here before
             pos: 0,
             trivia: Vec::with_capacity(speculated_trivia),
             cfg,
@@ -881,7 +880,6 @@ impl Lexer<'_> {
                             char_count += 1;
                         }
                         None => {
-                            dbg!("Hi");
                             return self.recover_invalid(Some(escape_start), interner);
                         }
                     }
@@ -1073,7 +1071,6 @@ impl Lexer<'_> {
         }
         //WARN: Same behavior as read_id
         let end = self.pos;
-        dbg!(start, end, self.src_bytes.len());
         let err_str = String::from_utf8_lossy(&self.src_bytes[start..end]);
 
         let id = interner.intern(&err_str);
@@ -1099,6 +1096,7 @@ impl Lexer<'_> {
         let chunk = &self.src_bytes[self.pos..];
 
         //TODO: Handle this please!
+        //Not that bad since most peek_char consumption is going to be ascii.
         std::str::from_utf8(chunk)
             .ok()
             .and_then(|c| c.chars().next())

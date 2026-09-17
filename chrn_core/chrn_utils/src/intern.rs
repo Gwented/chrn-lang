@@ -98,6 +98,38 @@ pub const INTERNED_USIZE: u32 = 88;
 pub const INTERNED_ISIZE: u32 = 89;
 pub const INTERNED_RUST_UPPER: u32 = 90;
 pub const INTERNED_RUST_LOWER: u32 = 91;
+pub const INTERNED_PI_UPPER: u32 = 92;
+pub const INTERNED_E_UPPER: u32 = 93;
+pub const INTERNED_TAU: u32 = 94;
+pub const INTERNED_FRAC_1_PI: u32 = 95;
+pub const INTERNED_FRAC_1_SQRT_2: u32 = 96;
+pub const INTERNED_FRAC_2_PI: u32 = 97;
+pub const INTERNED_FRAC_2_SQRT_PI: u32 = 98;
+pub const INTERNED_FRAC_PI_2: u32 = 99;
+pub const INTERNED_FRAC_PI_3: u32 = 100;
+pub const INTERNED_FRAC_PI_4: u32 = 101;
+pub const INTERNED_FRAC_PI_6: u32 = 102;
+pub const INTERNED_FRAC_PI_8: u32 = 103;
+pub const INTERNED_LN_2: u32 = 104;
+pub const INTERNED_LN_10: u32 = 105;
+pub const INTERNED_LOG2_10: u32 = 106;
+pub const INTERNED_LOG2_E: u32 = 107;
+pub const INTERNED_LOG10_2: u32 = 108;
+pub const INTERNED_LOG10_E: u32 = 109;
+pub const INTERNED_SQRT_2: u32 = 110;
+pub const INTERNED_GOLDEN_RATIO: u32 = 111;
+pub const INTERNED_EULER_GAMMA: u32 = 112;
+pub const INTERNED_BITS_UPPER: u32 = 113;
+pub const INTERNED_BYTES_UPPER: u32 = 114;
+pub const INTERNED_RADIX: u32 = 115;
+pub const INTERNED_DIGITS: u32 = 116;
+pub const INTERNED_MANTISSA_DIGITS: u32 = 117;
+pub const INTERNED_EPSILON: u32 = 118;
+pub const INTERNED_INFINITY: u32 = 119;
+pub const INTERNED_NEG_INFINITY: u32 = 120;
+pub const INTERNED_NAN: u32 = 121;
+pub const INTERNED_MIN_POSITIVE: u32 = 122;
+pub const INTERNED_SQRT_3: u32 = 123;
 
 // Collection,
 // CharacterMappable,
@@ -209,6 +241,38 @@ pub static PRELOADED_STRINGS: [(&str, u32); INTERNER_PRELOAD_SIZE] = [
     ("isize", INTERNED_ISIZE),
     ("RUST", INTERNED_RUST_UPPER),
     ("rust", INTERNED_RUST_LOWER),
+    ("PI", INTERNED_PI_UPPER),
+    ("E", INTERNED_E_UPPER),
+    ("TAU", INTERNED_TAU),
+    ("FRAC_1_PI", INTERNED_FRAC_1_PI),
+    ("FRAC_1_SQRT_2", INTERNED_FRAC_1_SQRT_2),
+    ("FRAC_2_PI", INTERNED_FRAC_2_PI),
+    ("FRAC_2_SQRT_PI", INTERNED_FRAC_2_SQRT_PI),
+    ("FRAC_PI_2", INTERNED_FRAC_PI_2),
+    ("FRAC_PI_3", INTERNED_FRAC_PI_3),
+    ("FRAC_PI_4", INTERNED_FRAC_PI_4),
+    ("FRAC_PI_6", INTERNED_FRAC_PI_6),
+    ("FRAC_PI_8", INTERNED_FRAC_PI_8),
+    ("LN_2", INTERNED_LN_2),
+    ("LN_10", INTERNED_LN_10),
+    ("LOG2_10", INTERNED_LOG2_10),
+    ("LOG2_E", INTERNED_LOG2_E),
+    ("LOG10_2", INTERNED_LOG10_2),
+    ("LOG10_E", INTERNED_LOG10_E),
+    ("SQRT_2", INTERNED_SQRT_2),
+    ("GOLDEN_RATIO", INTERNED_GOLDEN_RATIO),
+    ("EULER_GAMMA", INTERNED_EULER_GAMMA),
+    ("BITS", INTERNED_BITS_UPPER),
+    ("BYTES", INTERNED_BYTES_UPPER),
+    ("RADIX", INTERNED_RADIX),
+    ("DIGITS", INTERNED_DIGITS),
+    ("MANTISSA_DIGITS", INTERNED_MANTISSA_DIGITS),
+    ("EPSILON", INTERNED_EPSILON),
+    ("INFINITY", INTERNED_INFINITY),
+    ("NEG_INFINITY", INTERNED_NEG_INFINITY),
+    ("NAN", INTERNED_NAN),
+    ("MIN_POSITIVE", INTERNED_MIN_POSITIVE),
+    ("SQRT_3", INTERNED_SQRT_3),
 ];
 
 /// Interner used for the chrn language
@@ -224,7 +288,7 @@ pub struct Intern {
     pos: usize,
 }
 
-pub const INTERNER_PRELOAD_SIZE: usize = (INTERNED_RUST_LOWER + 1) as usize;
+pub const INTERNER_PRELOAD_SIZE: usize = (INTERNED_SQRT_3 + 1) as usize;
 
 impl Intern {
     /// Creates interner that pre-loads itself with all defined interned string literals.

@@ -108,7 +108,6 @@ fn exec_check(
         &mut compiler_store,
         Some(&mut compiler_cache),
     ) {
-        // Yes. All green. Clean, even.
         // Is this redundant? Kinda just want it to say "complete" no "complete:"
         Ok(_) => Ok("No errors".to_string()),
         Err(script_err) => match script_err {
@@ -127,18 +126,17 @@ fn exec_check(
         &render_kind,
     );
 
-    if reporter.diag_summary().has_err() {
+    if reporter.diag_summary().has_err() || reporter.diag_summary().has_warn() {
         eprintln!("{rendered}");
-    } else if reporter.diag_summary().has_warn() {
-        println!("{rendered}");
-    };
+    }
 
+    // Maybe this should get its own cmd.
     if compiler_store.cfg.perf_tracker().can_use() {
         let perf_report = compiler_store
             .cfg
             .perf_tracker()
             .form_report(&compiler_store.interner);
-        perf_report.print_all(ChrnPerfReportOptions::new_module_graph());
+        perf_report.print_all(ChrnPerfReportOptions::all());
     }
 
     msg_res

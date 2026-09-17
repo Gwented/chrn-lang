@@ -113,11 +113,7 @@ fn type_resolver_values_test() {
 
     let find_val = |name: &str| -> &Value {
         let name_id = interner.try_search_str(name).unwrap();
-        let var_def = compiler
-            .vars
-            .iter()
-            .find(|v| v.name_id == name_id)
-            .expect("Variable '{name}' not found");
+        let var_def = find_user_var(&compiler, name_id);
         match &var_def.state {
             VariableState::Known(value_id) => compiler.values[*value_id]
                 .const_val
@@ -254,11 +250,11 @@ fn const_dependency_resolution_test() {
     //    literal is declared last. This exercises the pending-expression propagation loop.
     let (compiler, interner) = compile_and_resolve_single_module(
         "
-            let A = E + 2
+            let A = Q + 2
             let B = A * 3
             let C = B - 1
             let D = C / 2
-            let E = 4
+            let Q = 4
         ",
     );
     assert!(matches!(value_of(&compiler, &interner, "A"), Value::I64(6)));
@@ -271,7 +267,7 @@ fn const_dependency_resolution_test() {
         Value::I64(17)
     ));
     assert!(matches!(value_of(&compiler, &interner, "D"), Value::I64(8)));
-    assert!(matches!(value_of(&compiler, &interner, "E"), Value::I64(4)));
+    assert!(matches!(value_of(&compiler, &interner, "Q"), Value::I64(4)));
 
     // 2) Diamond dependency: one base value feeds two branches that are later combined.
     let (compiler, interner) = compile_and_resolve_single_module(
@@ -333,9 +329,9 @@ fn const_dependency_resolution_test() {
     // 6) Floating-point dependency chain.
     let (compiler, interner) = compile_and_resolve_single_module(
         "
-            let PI = 3.14
+            let PI_VAL = 3.14
             let R = 2.0
-            let AREA = PI * R * R
+            let AREA = PI_VAL * R * R
         ",
     );
     match value_of(&compiler, &interner, "AREA") {
@@ -362,8 +358,8 @@ fn const_dependency_resolution_test() {
             let B = 4
             let C = A > B
             let D = !C
-            let E = (A + B) * 2
-            let F = E > 10
+            let Q = (A + B) * 2
+            let F = Q > 10
         ",
     );
     assert!(matches!(
@@ -389,11 +385,7 @@ fn const_dependency_circular_test() {
             let name_id = interner
                 .try_search_str(name)
                 .unwrap_or_else(|| panic!("Variable '{name}' was not interned"));
-            let var_def = compiler
-                .vars
-                .iter()
-                .find(|v| v.name_id == name_id)
-                .unwrap_or_else(|| panic!("Variable '{name}' not found"));
+            let var_def = find_user_var(&compiler, name_id);
             matches!(var_def.state, VariableState::ReservedTypeSlot(_))
         });
         assert!(
@@ -403,7 +395,7 @@ fn const_dependency_circular_test() {
                 .iter()
                 .map(|name| {
                     let name_id = interner.try_search_str(name).unwrap();
-                    let var_def = compiler.vars.iter().find(|v| v.name_id == name_id).unwrap();
+                    let var_def = find_user_var(&compiler, name_id);
                     (name, &var_def.state)
                 })
                 .collect::<Vec<_>>()
@@ -432,11 +424,11 @@ fn const_dependency_circular_test() {
                 let A = B
                 let B = C
                 let C = D
-                let D = E
-                let E = A
+                let D = Q
+                let Q = A
             ",
         ),
-        &["A", "B", "C", "D", "E"],
+        &["A", "B", "C", "D", "Q"],
     );
 
     // Cycle hidden inside a larger expression.

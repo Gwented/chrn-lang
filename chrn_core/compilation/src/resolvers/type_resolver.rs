@@ -1302,8 +1302,7 @@ impl<'res> TypeResolver<'res> {
 
                     // Really seems like this should have a direct tie to the exact member of symbol
                     // it's affecting.
-                    let self_impl_memb_id =
-                        self.compiler.impl_membs.make_id();
+                    let self_impl_memb_id = self.compiler.impl_membs.make_id();
                     // Should this maybe not be it's own id member holder?
                     let opt = OptionAssignmentMember::new(
                         //TODO:
@@ -2629,7 +2628,6 @@ impl<'res> TypeResolver<'res> {
         let expr = &self.compiler.exprs[expr_id];
         let val = &self.compiler.values[expr.val_id];
 
-        //                      NOT unknown
         let has_resolved_ty = !self.compiler.check_unknown(expr.type_id);
         let has_const_val = val.const_val.is_some();
 
@@ -3139,8 +3137,6 @@ impl<'res> TypeResolver<'res> {
         alias_def.conds = conds;
         alias_def.directives = directives;
     }
-    // These params are getting a little inflated so maybe a ctx struct for this environment could
-    // be @()@$_ something
 
     /// On `Ok`, Creates a HIR expression type and returns the `ExprId` which is either going to be
     /// fully resolved, or marked as pending to be resolved later if possible.

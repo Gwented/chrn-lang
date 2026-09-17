@@ -3,7 +3,7 @@ export let WRITE = 0b1
 
 import "../chrn_core/chrn_tests/other.chrn"
 import "../chrn_core/chrn_tests/def.chrn"
-import "../chrn_core/chrn_tests/examples/def.chrn"
+// import "../chrn_core/chrn_tests/examples/def.chrn"
 // import "../chrn_core/chrn_tests/core.chrn"
 // Maybe this shouldn't be seen as a valid import
 // import l
@@ -14,6 +14,8 @@ let b = c
 let c = 4 + d
 let d = 3 - e
 let e = 5
+// What about 2.as_int()/as_float()
+let z = e.hi()
 
 // if this was something that wanted to be added, that would then mean the compiler store needs to be 
 // mutable, but the environments USE the compiler store, which makes it hard to concat and intern
@@ -26,7 +28,7 @@ var->
 nest->
     export struct Person {
         l: core::bool
-        k: List<i32,>
+        k: List<i32>
         // if is_importer && has_alias then should we still enforce alias only here?
         other: def::State
         // f: nothing::Person,
@@ -59,198 +61,8 @@ complex->
 
 for State {
     // override JAVA {}
-      stating {
-        opt = 3
-        /*override JAVA=>types {
-        // Maybe being able to do:
-        // change self = java::int
-        // could help with avoiding needing to pick the specific type
-        // change i32,u32 = i32
-        }*/
-    }
-    InProgress {}
-
-    // Need to make root a trickler and make the override config members tricklers. Trickler.
-    /*override JAVA {
-        
-    }*/
-
-    // stating {}
-    /*override types {
-        C {
-            // Ok
-            change i32, u32, = c::int32_t
-        }
-    }
-
-    state1 {
-        override types {
-            C {
-
-            }
-        }
-    }*/
-}
-
-@endexport let READ = 0b0
-export let WRITE = 0b1
-
-// import "../chrn_core/chrn_tests/nothing"
-// import "../chrn_core/chrn_tests/other.chrn"
-// import "../chrn_core/chrn_tests/def.chrn"
-// import "../chrn_core/chrn_tests/examples/def.chrn" as warn
-// import "../chrn_core/chrn_tests/core.chrn"
-// Maybe this shouldn't be seen as a valid import
-// import l
-
-let core = "ch" + "rn"
-let a = b
-let b = c
-let c = 4 + d
-let d = 3 - e
-let e = 5
-
-// if this was something that wanted to be added, that would then mean the compiler store needs to be 
-// mutable, but the environments USE the compiler store, which makes it hard to concat and intern
-// these in-line. Making the envs not use direct references is something that is very much so, NOT
-// preferred, but this would need to be a runtime string otherwise, which would be odd since it
-// KNOWS both strings are const, there's no reason to make it runtime.
-let string = "4" + "8"
-
-var->
-nest->
-    export struct Person {
-        l: core::bool
-        k: List<i32,>
-        // if is_importer && has_alias then should we still enforce alias only here?
-        other: def::State
-        // f: nothing::Person,
-        // another: core::erson
-        // state: State
-        // p: str #scient The error emitted by this should be able to place the directive pointers
-                          // directly under #scient. Too greedy. Feed them less.
-        // p: str #scient The
-        // name: str
-        // age: u8
-    }
-
-    export enum State {
-        stating: i32
-        InProgress
-    }
-// What if complex was fused with override?
-// PROPS TEST START
-complex->
-
-/*override JAVA {
-    types {
-        change i32 = java::int
-    }
-}*/
-
-/*override JAVA {
-    types {}
-}*/
-
-for State {
-    // override JAVA {}
-      stating {
-        opt = 3
-        /*override JAVA=>types {
-        // Maybe being able to do:
-        // change self = java::int
-        // could help with avoiding needing to pick the specific type
-        // change i32,u32 = i32
-        }*/
-    }
-    InProgress {}
-
-    // Need to make root a trickler and make the override config members tricklers. Trickler.
-    /*override JAVA {
-        
-    }*/
-
-    // stating {}
-    /*override types {
-        C {
-            // Ok
-            change i32, u32, = c::int32_t
-        }
-    }
-
-    state1 {
-        override types {
-            C {
-
-            }
-        }
-    }*/
-}
-
-@endexport let READ = 0b0
-export let WRITE = 0b1
-
-// import "../chrn_core/chrn_tests/nothing"
-// import "../chrn_core/chrn_tests/other.chrn"
-// import "../chrn_core/chrn_tests/def.chrn"
-// import "../chrn_core/chrn_tests/examples/def.chrn" as warn
-// import "../chrn_core/chrn_tests/core.chrn"
-// Maybe this shouldn't be seen as a valid import
-// import l
-
-let core = "ch" + "rn"
-let a = b
-let b = c
-let c = 4 + d
-let d = 3 - e
-let e = 5
-
-// if this was something that wanted to be added, that would then mean the compiler store needs to be 
-// mutable, but the environments USE the compiler store, which makes it hard to concat and intern
-// these in-line. Making the envs not use direct references is something that is very much so, NOT
-// preferred, but this would need to be a runtime string otherwise, which would be odd since it
-// KNOWS both strings are const, there's no reason to make it runtime.
-let string = "4" + "8"
-
-var->
-nest->
-    export struct Person {
-        l: core::bool
-        k: List<i32,>
-        // if is_importer && has_alias then should we still enforce alias only here?
-        other: def::State
-        // f: nothing::Person,
-        // another: core::erson
-        // state: State
-        // p: str #scient The error emitted by this should be able to place the directive pointers
-                          // directly under #scient. Too greedy. Feed them less.
-        // p: str #scient The
-        // name: str
-        // age: u8
-    }
-
-    export enum State {
-        stating: i32
-        InProgress
-    }
-// What if complex was fused with override?
-// PROPS TEST START
-complex->
-
-/*override JAVA {
-    types {
-        change i32 = java::int
-    }
-}*/
-
-/*override JAVA {
-    types {}
-}*/
-
-for State {
-    // override JAVA {}
-      stating {
-        opt = 3
+    stating {
+        idents = 3
         /*override JAVA=>types {
         // Maybe being able to do:
         // change self = java::int
@@ -283,36 +95,3 @@ for State {
 }
 
 @end
-// PROPS TEST END
-
-/*complex->
-State {
-    stating {
-        idents = "2"
-        // Err msg here is a bit much. Could just say "Index `0` expects `i32` from config member/root,
-        // found `f64`" Still is a little verbose
-        default_val = 4
-    }
-}*/
-// Map<i32, u32> {}
-    /*State {
-        InProgress {}
-        stating {}
-    }*/
-   // nothing::Person {}
-override->
-State {
-    // Behavior where override needs to be applied if inside of a type override, but 
-    override types {
-        
-    }
-    state1 {}
-}
-
-JAVA {
-    override types {
-       change i32, = 3
-    }
-}
-// State=> {stating {k {}}}
-// var State {}

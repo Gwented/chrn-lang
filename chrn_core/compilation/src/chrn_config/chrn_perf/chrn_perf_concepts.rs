@@ -38,6 +38,17 @@ impl ModulePerfData {
             tracked_stages: [None; super::STAGES_COUNT],
         }
     }
+    /// Computes total compilation time
+    pub fn comp_time(&self) -> Duration {
+        let mut total = Duration::new(0, 0);
+        for report_opt in self.tracked_stages {
+            let Some(report) = report_opt else {
+                continue;
+            };
+            total += report.elapsed;
+        }
+        total
+    }
 }
 
 #[derive(Debug)]
@@ -93,11 +104,14 @@ impl<'a> ChrnPerfReport<'a> {
     }
 
     pub fn print_all_mod_reports(&self, given_opts: ChrnPerfReportOptions) {
-        for i in 0..self.mod_reports.len() {
-            let report = &self.mod_reports[i];
-            println!("path: {}\n", report.path.display());
+        let mut separate_total = false;
 
-            for tracked_opt in &report.data.tracked_stages {
+        for i in 0..self.mod_reports.len() {
+            let mod_report = &self.mod_reports[i];
+            println!("path: {}\n", mod_report.path.display());
+
+            for tracked_opt in &mod_report.data.tracked_stages {
+                separate_total = true;
                 let Some(tracked) = tracked_opt else { continue };
                 let stage_opts = chrn_perf_stage_to_opt(tracked.stage);
 
@@ -106,6 +120,12 @@ impl<'a> ChrnPerfReport<'a> {
 
                 self.print_report(closure, given_opts, stage_opts);
             }
+
+            if separate_total {
+                println!();
+            }
+
+            println!("Total comptime = {:?}", mod_report.data.comp_time());
 
             if i + 1 != self.stage_means.len() {
                 Self::print_separators();
@@ -123,7 +143,7 @@ impl<'a> ChrnPerfReport<'a> {
                 format!(
                     "stage: {:?}\nmean = {:?} | times ran = {:?}\nmin = {:?} | max = {:?}",
                     mean_report.stage,
-                    mean_report.elapsed / (mean_report.times as u32),
+                    mean_report.mean(),
                     mean_report.times,
                     mean_report.min,
                     mean_report.max
@@ -302,5 +322,10 @@ impl ChrnPerfTimeReport {
         if self.min > other.min {
             self.min = other.min;
         }
+    }
+
+    /// Returns `self.elapsed` / `self.times`
+    pub fn mean(&self) -> Duration {
+        self.elapsed / self.times as u32
     }
 }

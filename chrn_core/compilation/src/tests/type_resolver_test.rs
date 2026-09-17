@@ -219,11 +219,7 @@ fn type_resolver_string_concat_type_test() {
     let name_id = interner
         .try_search_str("X")
         .expect("'X' should be interned");
-    let var_def = compiler
-        .vars
-        .iter()
-        .find(|v| v.name_id == name_id)
-        .expect("Variable 'X' not found");
+    let var_def = find_user_var(&compiler, name_id);
     let val_id = match &var_def.state {
         VariableState::Known(val_id) => *val_id,
         other => panic!("'X' should be Known, got {:?}", other),

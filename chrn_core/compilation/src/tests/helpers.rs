@@ -6,6 +6,7 @@ pub(super) use crate::{
         resolver_env::{RegistrationEnv, ResolverEnv},
     },
     script_compiler::{ScriptCompiler, reporter::Reporter},
+    semantic::hir::hir_symbols::{VarDef, VariableMetadata, VariableState},
 };
 // -- Helpers --
 /// Creates fake strings for the amounts given
@@ -279,7 +280,7 @@ pub(super) use crate::{
         member_resolver::MemberResolver, name_resolver::NamespaceResolver,
         type_resolver::TypeResolver,
     },
-    semantic::{compilation_unit::CompilationUnit, hir::hir_symbols::VariableState},
+    semantic::compilation_unit::CompilationUnit,
 };
 
 // -- Pipeline driver --
@@ -587,16 +588,23 @@ pub(super) fn type_resolve_single_module_keep_state(
     (result, compiler, interner)
 }
 
+/// Finds a user-declared `let` variable by interned name, skipping compiler-generated
+/// intrinsic constants (e.g. `f32::E`). The vars arena holds generated constants first, so a
+/// plain name scan can return the wrong definition when names collide.
+pub(super) fn find_user_var(compiler: &ScriptCompiler, name_id: InternedId) -> &VarDef {
+    compiler
+        .vars
+        .iter()
+        .find(|v| matches!(v.meta, VariableMetadata::User(_)) && v.name_id == name_id)
+        .unwrap_or_else(|| panic!("User variable '{name_id:?}' not found"))
+}
+
 /// Returns the constant value of a resolved `let` variable by name.
 pub(super) fn value_of(compiler: &ScriptCompiler, interner: &Intern, name: &str) -> Value {
     let name_id = interner
         .try_search_str(name)
         .unwrap_or_else(|| panic!("Variable '{}' was not interned", name));
-    let var_def = compiler
-        .vars
-        .iter()
-        .find(|v| v.name_id == name_id)
-        .unwrap_or_else(|| panic!("Variable '{}' not found", name));
+    let var_def = find_user_var(compiler, name_id);
 
     match &var_def.state {
         VariableState::Known(value_id) => compiler.values[*value_id]

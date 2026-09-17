@@ -285,11 +285,18 @@ fn scope_core_type_namespace_test() {
     let (compiler, _) = ns_resolve("let CONSTANT = 3");
     let max_id = InternedId::new(intern::INTERNED_MAX_UPPER);
     let min_id = InternedId::new(intern::INTERNED_MIN_UPPER);
+    let bits_id = InternedId::new(intern::INTERNED_BITS_UPPER);
+    let bytes_id = InternedId::new(intern::INTERNED_BYTES_UPPER);
 
     for (name, type_id) in namespaced_builtins() {
         let scope_id = ns_scope_of(&compiler, type_id);
+        let bounds_to_check = if name == "u64" {
+            vec![bits_id, bytes_id]
+        } else {
+            vec![max_id, min_id]
+        };
 
-        for bound_id in [max_id, min_id] {
+        for bound_id in bounds_to_check {
             let found = find_sym_id(
                 &compiler,
                 AssociatedScopeKind::Scope(scope_id),
@@ -339,21 +346,22 @@ fn scope_core_type_namespace_unreachable_test() {
         diags.ty
     );
 
-    // `u64`, `i128`, `u128` and `f128` bounds do not fit `InstiationValue`, and `sized`/`unsized`
-    // are pointer-sized, so none of them carry a namespace yet
+    // `u64::MAX`, `i128`, `u128` and `f128` bounds do not fit `InstiationValue`, and `sized`/`unsized`
+    // are pointer-sized, so none of them carry a `MAX` constant
     for (interned, builtin_ty, ns) in &CORE_BUILTIN_TYPES_DATASET {
-        if !ns.is_empty() {
+        let interner = Intern::init();
+        let name = interner.search_idx(*interned as usize);
+
+        if !ns.is_empty() && name != "u64" {
             continue;
         }
 
-        let interner = Intern::init();
-        let name = interner.search_idx(*interned as usize);
         let text = format!("let CONSTANT = {name}::MAX");
         let res = resolve_single_module(&text, Stage::Constraint);
 
         assert!(
             res.err_count() > 0,
-            "`{:?}` declares no namespace, so `{name}::MAX` should not resolve",
+            "`{:?}` declares no MAX bound, so `{name}::MAX` should not resolve",
             builtin_ty.kind()
         );
     }
