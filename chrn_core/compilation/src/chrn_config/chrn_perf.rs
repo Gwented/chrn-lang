@@ -1,6 +1,8 @@
+//TODO: ModuleGraph is a one-time act that is owned by no particular module. Need that to be
+//represented differently.
 pub mod chrn_perf_concepts;
 
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use chrn_utils::{id_types::PathId, intern::Intern, utils::trackers::perf_tracker::PerfTracker};
 
@@ -15,7 +17,7 @@ pub const STAGES_COUNT: usize = ChrnPerfStage::CONSTRAINT_RESOLVER_IDX + 1;
 /// Holds and orchestrates tracking info
 #[derive(Debug, Default)]
 pub struct ChrnPerf {
-    /// Whether or not every all should be a no-op
+    /// Whether or not internal calls should be a no-op
     can_use: bool,
     /// Currently active identifier
     active_tracker: Option<(ModuleIdentity, PerfTracker)>,
@@ -74,7 +76,6 @@ impl ChrnPerf {
         }
     }
 
-    // Why are we trying so hard to keep it const!
     pub fn form_report<'a>(&'a self, interner: &'a Intern) -> ChrnPerfReport<'a> {
         // global means
         let mut stage_means: [Option<ChrnPerfTimeReport>; STAGES_COUNT] = [None; STAGES_COUNT];

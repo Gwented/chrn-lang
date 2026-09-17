@@ -218,7 +218,8 @@ impl ChrnPerfReportOptions {
     pub const TYPE_RESOLVER: u16 = 1 << 5;
     pub const CONSTRAINT_RESOLVER: u16 = 1 << 6;
     /// Does perf check for all stages
-    pub const ALL: u16 = Self::LEXER
+    pub const ALL: u16 = Self::MODULE_GRAPH
+        | Self::LEXER
         | Self::PARSER
         | Self::NAMESPACE_RESOLVER
         | Self::MEMBER_RESOLVER

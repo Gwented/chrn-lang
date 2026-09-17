@@ -44,7 +44,7 @@ impl AstInfo {
     }
 
     pub fn push_item(&mut self, kind: SectionKind, item: Item) {
-        let ast_id = AstId::new(self.items.len() as u32);
+        let ast_id = self.items.make_id();
         self.items.push(item);
 
         let sect = if let Some(sect) = &mut self.sections[kind as usize] {

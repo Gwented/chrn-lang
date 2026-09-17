@@ -58,17 +58,22 @@ impl<T, I: ArenaIndex> Arena<T, I> {
         self.items.swap_remove(idx.into_usize())
     }
 
+    /// Creates `I` at `self.items.len()`
+    pub fn make_id(&self) -> I {
+        I::from_usize(self.items.len())
+    }
+
     /// Wrapper for `len()` call for internal `items`
-    pub fn len(&self) -> usize {
+    pub const fn len(&self) -> usize {
         self.items.len()
     }
 
     /// Wrapper for `len()` call for internal `items`
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.items.is_empty()
     }
 
-    pub fn capacity(&self) -> usize {
+    pub const fn capacity(&self) -> usize {
         self.items.capacity()
     }
 

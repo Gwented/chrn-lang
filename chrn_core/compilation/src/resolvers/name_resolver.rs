@@ -1,8 +1,6 @@
 use chrn_utils::{
     err_codes::ErrorCode,
-    id_types::{
-        AstId, ConfigRootId, ImplId, ScopeId, SymbolId, TypeId, VariableId, id_tags::TaggedId,
-    },
+    id_types::{AstId, ImplId, SymbolId, TypeId, id_tags::TaggedId},
     intern::Intern,
     source_map::source_diagnostic::{
         DiagnosticLevel, SourceDiagnostic, SourceDiagnosticSink, SourceDiagnosticSummary,
@@ -164,9 +162,9 @@ impl NamespaceResolver<'_> {
         // Pushing the scope loads all symbols needed by override
         _ = self.compiler.push_scope(scope_type, env.current_mod);
 
-        let impl_id = ImplId::new(self.compiler.impls.len() as u32);
+        let impl_id = self.compiler.impls.make_id();
         let tagged = impl_id.into_tagged::<ConfigRootTag>();
-        let cfg_root_id = ConfigRootId::new(self.compiler.cfgs.len() as u32);
+        let cfg_root_id = self.compiler.cfgs.make_id();
 
         // If an original exists, get the key so that it can be reported, otherwise insert it. This
         // is to avoid inserting first and overwriting the last symbol since ergonomically, it
@@ -214,7 +212,7 @@ impl NamespaceResolver<'_> {
         // Why was this message put here???
         // This will all likely fail eventually
         let scope_id = self.compiler.push_scope(scope_type, env.current_mod);
-        let sym_id = SymbolId::new(self.compiler.syms.len() as u32);
+        let sym_id = self.compiler.syms.make_id();
         let tagged = sym_id.into_tagged::<TypeDefTag>();
 
         let table = &mut self.compiler.get_scope_mut(scope_id).scope.table;
@@ -234,7 +232,7 @@ impl NamespaceResolver<'_> {
         }
 
         // The actual typedefs position to store inside it's symbol
-        let type_def_type_id = TypeId::new(self.compiler.types.len() as u32);
+        let type_def_type_id = self.compiler.types.make_id();
 
         // The id of the spot where the unknown type is placed, for the typedef
         // May or may not be able to use the reserved Unknown spot
@@ -284,7 +282,7 @@ impl NamespaceResolver<'_> {
         scope_type: ScopeType,
         env: &RegistrationEnv,
     ) -> TaggedId<SymbolId, StructTag> {
-        let sym_id = SymbolId::new(self.compiler.syms.len() as u32);
+        let sym_id = self.compiler.syms.make_id();
         let tagged = sym_id.into_tagged::<StructTag>();
 
         let scope_id = self.compiler.push_scope(scope_type, env.current_mod);
@@ -304,7 +302,7 @@ impl NamespaceResolver<'_> {
             module.exports.push(sym_id);
         }
 
-        let type_id = TypeId::new(self.compiler.types.len() as u32);
+        let type_id = self.compiler.types.make_id();
         let struct_def = StructDef::new(tagged, abs_struct.name_span, Vec::new());
 
         let symbol = Symbol::new(
@@ -341,9 +339,9 @@ impl NamespaceResolver<'_> {
         env: &RegistrationEnv,
     ) -> TaggedId<SymbolId, EnumTag> {
         let scope_id = self.compiler.push_scope(scope_type, env.current_mod);
-        let sym_id = SymbolId::new(self.compiler.syms.len() as u32);
+        let sym_id = self.compiler.syms.make_id();
         let tagged = sym_id.into_tagged::<EnumTag>();
-        let type_id = TypeId::new(self.compiler.types.len() as u32);
+        let type_id = self.compiler.types.make_id();
 
         let table = &mut self.compiler.get_scope_mut(scope_id).scope.table;
 
@@ -398,9 +396,9 @@ impl NamespaceResolver<'_> {
         env: &RegistrationEnv,
     ) -> TaggedId<SymbolId, AliasTag> {
         let scope_id = self.compiler.push_scope(scope_type, env.current_mod);
-        let sym_id = SymbolId::new(self.compiler.syms.len() as u32);
+        let sym_id = self.compiler.syms.make_id();
         let tagged = sym_id.into_tagged::<AliasTag>();
-        let type_id = TypeId::new(self.compiler.types.len() as u32);
+        let type_id = self.compiler.types.make_id();
 
         let table = &mut self.compiler.get_scope_mut(scope_id).scope.table;
 
@@ -419,7 +417,7 @@ impl NamespaceResolver<'_> {
 
         // Making local scopes in this way because sections do not emergently allow for
         // parent hierarchies.
-        let local_scope_id = ScopeId::new(self.compiler.scopes.len() as u16);
+        let local_scope_id = self.compiler.scopes.make_id();
         let local_scope = Scope::new(local_scope_id, ScopeType::Local, false, None);
 
         self.compiler
@@ -471,7 +469,7 @@ impl NamespaceResolver<'_> {
         scope_type: ScopeType,
         env: &RegistrationEnv,
     ) -> TaggedId<SymbolId, VarTag> {
-        let sym_id = SymbolId::new(self.compiler.syms.len() as u32);
+        let sym_id = self.compiler.syms.make_id();
         let tagged = sym_id.into_tagged::<VarTag>();
         let scope_id = self.compiler.push_scope(scope_type, env.current_mod);
         let table = &mut self.compiler.get_scope_mut(scope_id).scope.table;
@@ -489,10 +487,10 @@ impl NamespaceResolver<'_> {
             module.exports.push(sym_id);
         }
 
-        let type_id = TypeId::new(self.compiler.types.len() as u32);
+        let type_id = self.compiler.types.make_id();
         let ty_info = TypeInfo::new(Type::Unknown, env.current_mod);
 
-        let var_id = VariableId::new(self.compiler.vars.len() as u32);
+        let var_id = self.compiler.vars.make_id();
 
         // TypeId is stored here so that the slot is reserved for anything that may need to refer
         // to it's type before it's actually declared

@@ -544,7 +544,7 @@ fn resolve_module(
     };
 
     // Creating region id for the current module on this level in the recursive stacke
-    let sub_region_id = SourceRegionId::new(graph.region_arena.len() as u32);
+    let sub_region_id = graph.region_arena.make_id();
 
     //NOTE: If this were allowed, some odd behavior would exist, which should likely just
     //be omitted entirely. This is the only location where anything "core" in identifier is stopped.

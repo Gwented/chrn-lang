@@ -4,7 +4,7 @@ pub(crate) mod resolution_concepts;
 pub(crate) mod resolution_helpers;
 
 use chrn_utils::{
-    id_types::{InternedId, SymbolId, TypeId},
+    id_types::{InternedId, TypeId},
     intern,
     source_map::source_span::SourceSpan,
     utils::containers::SpannedContainer,
@@ -204,8 +204,8 @@ fn resolve_generic(
                 };
                 //TEST:
 
-                let sym_id = SymbolId::new(compiler.syms.len() as u32);
-                let type_id = TypeId::new(compiler.types.len() as u32);
+                let sym_id = compiler.syms.make_id();
+                let type_id = compiler.types.make_id();
 
                 let (interned_id, ty) = if kind == BuiltinTypeKind::List {
                     let ty = Type::BuiltinTypeInfo(BuiltinTypeInfo::new(
@@ -258,8 +258,8 @@ fn resolve_generic(
                     }
                 }
 
-                let sym_id = SymbolId::new(compiler.syms.len() as u32);
-                let type_id = TypeId::new(compiler.types.len() as u32);
+                let sym_id = compiler.syms.make_id();
+                let type_id = compiler.types.make_id();
 
                 //WARN: Definitely not sure about this setup
                 let sym = Symbol::new(
@@ -318,8 +318,8 @@ fn resolve_generic(
                 };
 
                 //TEST: TEST:
-                let sym_id = SymbolId::new(compiler.syms.len() as u32);
-                let type_id = TypeId::new(compiler.types.len() as u32);
+                let sym_id = compiler.syms.make_id();
+                let type_id = compiler.types.make_id();
 
                 let sym = Symbol::new(
                     InternedId::new(intern::INTERNED_MAP),

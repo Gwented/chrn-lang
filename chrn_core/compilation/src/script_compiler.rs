@@ -110,7 +110,7 @@ impl ScriptCompiler {
     pub fn init(bind: Option<Bind>, mods: Arena<Module, ModuleId>) -> ScriptCompiler {
         // WARN: This is a little dangerous because it is a contract saying, this MUST load core as
         // the next scope. As long as load_core is called first, this remains truthful.
-        let core_mod_id = ModuleId::new(mods.len() as u32);
+        let core_mod_id = mods.make_id();
         let intrinsic_registry = IntrinsicRegistry::new(core_mod_id, None);
 
         // For capacity (em-dash). An alias replaces the import's name rather than adding a second
@@ -200,7 +200,7 @@ impl ScriptCompiler {
 
             // Pushing the module symbol inside of itself. So if we're indexing module `main`, we
             // would be pushing `main` inside of itself, once, as a known symbol.
-            let sym_id = SymbolId::new(self.syms.len() as u32);
+            let sym_id = self.syms.make_id();
             let sym = Symbol::new(
                 current_mod_name_id,
                 sym_id,
@@ -245,7 +245,7 @@ impl ScriptCompiler {
                     .map(|i| i.inner)
                     .unwrap_or(import.name_id);
 
-                let import_sym_id = SymbolId::new(self.syms.len() as u32);
+                let import_sym_id = self.syms.make_id();
                 // Pushing any imports found within the given module
                 let sym = Symbol::new(
                     import_ident_id,
@@ -789,7 +789,7 @@ impl ScriptCompiler {
             | ScopeType::Core => None,
         };
 
-        let scope_id = ScopeId::new(self.scopes.len() as u16);
+        let scope_id = self.scopes.make_id();
         let scope = Scope::new(scope_id, scope_type, false, intrinsic_scope_opt);
         let scope_info = ScopeInfo::new(scope, None, owner_id);
         self.scopes.push(scope_info);
@@ -811,16 +811,15 @@ impl ScriptCompiler {
             _ => false,
         }
     }
-
     // -- STARTUP --
 
     /// Loads the core module
     fn load_core(&mut self) {
         //TODO: If namespace core exists as a module then should error earlier
         let core_name_id = InternedId::new(intern::INTERNED_CORE);
-        let core_mod_id = ModuleId::new(self.mods.len() as u32);
+        let core_mod_id = self.mods.make_id();
 
-        let core_scope_id = ScopeId::new(self.scopes.len() as u16);
+        let core_scope_id = self.scopes.make_id();
         let core_scope = Scope::with_table(
             core_scope_id,
             ScopeType::Core,
@@ -887,7 +886,7 @@ impl ScriptCompiler {
     }
 
     fn register_directive(&mut self, interned_id: InternedId, directive: Directive) {
-        let sym_id = SymbolId::new(self.syms.len() as u32);
+        let sym_id = self.syms.make_id();
         let directive_id = compiler_constants::directive_to_id(&directive);
         debug_assert_eq!(directive_id.id, self.directives.len() as u32);
 
@@ -924,7 +923,7 @@ impl ScriptCompiler {
         //
         // Saying it's not from core for now because !
         let core_mod_id = self.intrinsic_registry.core_mod_id;
-        let scope_id = ScopeId::new(self.scopes.len() as u16);
+        let scope_id = self.scopes.make_id();
 
         // Override intrisic scope's table which holes stuff like "RUST" and "JAVA" namespaces
         let scope = Scope::new(scope_id, ScopeType::Complex, true, None);
@@ -937,7 +936,7 @@ impl ScriptCompiler {
 
         // -- FINAL --
         // Pushing the intrinsic scope
-        // let override_scope_id = ScopeId::new(self.scopes.len() as u16);
+        // let override_scope_id = self.scopes.make_id();
         // let scope = Scope::with_table(override_scope_id, scope_type, None, true, override_table);
         // self.scopes.push(ScopeInfo::new(scope, None, core_mod_id));
 
@@ -974,8 +973,8 @@ impl ScriptCompiler {
             match &base.kind {
                 InstantiationSymbolKind::Namespace(syms) => {
                     // Creating namespace as a symbol with the identifier associated first.
-                    let sym_id = SymbolId::new(self.syms.len() as u32);
-                    let scope_id = ScopeId::new(self.scopes.len() as u16);
+                    let sym_id = self.syms.make_id();
+                    let scope_id = self.scopes.make_id();
                     let sym_kind = SymbolKind::Namespace;
                     let associated_scope = AssociatedScopeKind::Scope(scope_id);
 
@@ -1000,7 +999,7 @@ impl ScriptCompiler {
                     self.register_instantiation_bases(scope_id, syms);
                 }
                 InstantiationSymbolKind::ExternType(plat_kind) => {
-                    let sym_id = SymbolId::new(self.syms.len() as u32);
+                    let sym_id = self.syms.make_id();
                     let sym_kind = SymbolKind::ExternType(*plat_kind);
                     let sym = base.to_sym(sym_id, None, None, sym_kind);
 
@@ -1023,8 +1022,8 @@ impl ScriptCompiler {
         base: &InstantiationSymbolBase,
         var: &InstantiationVariable,
     ) {
-        let sym_id = SymbolId::new(self.syms.len() as u32);
-        let var_id = VariableId::new(self.vars.len() as u32);
+        let sym_id = self.syms.make_id();
+        let var_id = self.vars.make_id();
 
         let sym = Symbol::new(
             base.name_id,
@@ -1043,8 +1042,8 @@ impl ScriptCompiler {
 
         let type_id = self.register_instantiation_type(current_scope_id, base, &var.ty);
 
-        let expr_id = ExprId::new(self.exprs.len() as u32);
-        let val_id = ValueId::new(self.values.len() as u32);
+        let expr_id = self.exprs.make_id();
+        let val_id = self.values.make_id();
 
         let expr = ResolvedExpr::new(
             type_id,
@@ -1096,8 +1095,8 @@ impl ScriptCompiler {
         scope_id: ScopeId,
         core_mod_id: ModuleId,
     ) {
-        let type_id = TypeId::new(self.types.len() as u32);
-        let sym_id = SymbolId::new(self.syms.len() as u32);
+        let type_id = self.types.make_id();
+        let sym_id = self.syms.make_id();
         let name_id = InternedId::new(core_func.name);
 
         let func_def = FuncDef::new(
@@ -1159,8 +1158,8 @@ impl ScriptCompiler {
         core_scope_id: ScopeId,
         core_mod_id: ModuleId,
     ) {
-        let type_id = TypeId::new(self.types.len() as u32);
-        let sym_id = SymbolId::new(self.syms.len() as u32);
+        let type_id = self.types.make_id();
+        let sym_id = self.syms.make_id();
 
         self.types.push(TypeInfo::new(
             Type::BuiltinTypeInfo(BuiltinTypeInfo::new(sym_id, builtin_ty)),
@@ -1172,7 +1171,7 @@ impl ScriptCompiler {
         let ns_scope_id = if ns.is_empty() {
             None
         } else {
-            Some(ScopeId::new(self.scopes.len() as u16))
+            Some(self.scopes.make_id())
         };
 
         let sym = Symbol::new(
@@ -1208,8 +1207,8 @@ impl ScriptCompiler {
         core_scope_id: ScopeId,
         core_mod_id: ModuleId,
     ) {
-        let type_id = TypeId::new(self.types.len() as u32);
-        let sym_id = SymbolId::new(self.syms.len() as u32);
+        let type_id = self.types.make_id();
+        let sym_id = self.syms.make_id();
 
         self.types
             .push(TypeInfo::new(Type::Boundaries(flags), core_mod_id));

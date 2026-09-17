@@ -183,7 +183,7 @@ impl MemberResolver<'_> {
             let sp_name_id = SpannedContainer::new(field_typedef.name_id, field_typedef.name_span);
             ident_tracker.insert_or_store(sp_name_id);
 
-            let memb_id = MemberId::new(self.compiler.sym_members.len() as u32);
+            let memb_id = self.compiler.sym_members.make_id();
 
             // Attempts to get a more accurate parent symbol location, this is not semantically required
             // anywhere. The idea behind this is that say, we had:
@@ -260,7 +260,7 @@ impl MemberResolver<'_> {
             let sp_name_id = SpannedContainer::new(variant.name_id, variant.name_span);
             ident_tracker.insert_or_store(sp_name_id);
 
-            let memb_id = MemberId::new(self.compiler.sym_members.len() as u32);
+            let memb_id = self.compiler.sym_members.make_id();
             let variant_repre = if let Some(sp_ty_expr) = &variant.sp_ty_expr {
                 let type_id = match resolution::resolve_type_expr(
                     self.compiler,
