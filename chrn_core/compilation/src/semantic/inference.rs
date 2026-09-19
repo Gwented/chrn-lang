@@ -1,16 +1,16 @@
 use chrn_utils::id_types::TypeId;
-use lang::values::Value;
 
 use crate::{
     id_tag_decls::FuncTag,
     parser::ast::ast_concepts::BinaryOp,
     script_compiler::{ScriptCompiler, compiler_constants},
+    semantic::values::Value,
 };
 
 pub(crate) fn infer_type_from_val(compiler: &ScriptCompiler, val: &Value) -> Option<TypeId> {
     match val {
-        Value::I64(_) => Some(TypeId::new(compiler_constants::CORE_I64)),
-        Value::F64(_) => Some(TypeId::new(compiler_constants::CORE_F64)),
+        Value::ArbitraryInt(_) => Some(TypeId::new(compiler_constants::CORE_I64)),
+        Value::ArbitraryFloat(_) => Some(TypeId::new(compiler_constants::CORE_F64)),
         Value::Bool(_) => Some(TypeId::new(compiler_constants::CORE_BOOL)),
         Value::Char(_) => Some(TypeId::new(compiler_constants::CORE_CHAR)),
         Value::Func(func_sym) => {

@@ -1,12 +1,13 @@
 use chrn_utils::id_types::{AstId, InternedId, SymbolId};
-use lang::{
-    types::{builtins::BuiltinType, externs::ExternPlatformType},
-    values::Value,
-};
+use lang::types::{builtins::BuiltinType, externs::ExternPlatformType};
 
 use crate::{
     lookup::scopes::scopes_concepts::{AssociatedScopeKind, ScopeType},
-    semantic::hir::hir_symbols::{Symbol, SymbolKind, SymbolOrigin},
+    semantic::{
+        arbitraries::{ArbitraryFloatKind, ArbitraryIntKind},
+        hir::hir_symbols::{Symbol, SymbolKind, SymbolOrigin},
+        values::Value,
+    },
 };
 
 /// Abstraction to allow for `Symbol` to be made procedurally in a composed manner
@@ -90,6 +91,7 @@ pub enum InstiationType {
 #[derive(Debug)]
 pub enum InstiationValue {
     I64(i64),
+    U64(u64),
     F64(f64),
     Bool(bool),
     Char(char),
@@ -104,8 +106,9 @@ impl InstiationValue {
     /// Converts itself to the `Value` type
     pub const fn to_val(&self) -> Value {
         match self {
-            InstiationValue::I64(val) => Value::I64(*val),
-            InstiationValue::F64(val) => Value::F64(*val),
+            InstiationValue::I64(val) => Value::ArbitraryInt(ArbitraryIntKind::I64(*val)),
+            InstiationValue::U64(val) => Value::ArbitraryInt(ArbitraryIntKind::U64(*val)),
+            InstiationValue::F64(val) => Value::ArbitraryFloat(ArbitraryFloatKind::F64(*val)),
             InstiationValue::Bool(b) => Value::Bool(*b),
             InstiationValue::Char(c) => Value::Char(*c),
             InstiationValue::Str(id) => Value::InternedStr(*id),

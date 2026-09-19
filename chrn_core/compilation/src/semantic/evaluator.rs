@@ -1,7 +1,12 @@
 use chrn_utils::{intern::Intern, utils::containers::SpannedContainerRef};
-use lang::values::Value;
 
-use crate::parser::ast::ast_concepts::{BinaryOp, UnaryOp};
+use crate::{
+    parser::ast::ast_concepts::{BinaryOp, UnaryOp},
+    semantic::{
+        arbitraries::{ArbitraryFloatKind, ArbitraryIntKind},
+        values::Value,
+    },
+};
 
 pub enum UnaryOpResult {
     Output(Value),
@@ -12,6 +17,7 @@ pub enum BinaryOpResult {
     Output(Value),
     Invalid,
     DivideByZero,
+    InvalidShift,
 }
 
 // Is this the type checker's?
@@ -20,8 +26,8 @@ pub fn is_compatible_unary(op: UnaryOp, operand: &Value) -> bool {
     match op {
         UnaryOp::Not => match operand {
             Value::Bool(_) => true,
-            Value::I64(_)
-            | Value::F64(_)
+            Value::ArbitraryInt(_)
+            | Value::ArbitraryFloat(_)
             | Value::Char(_)
             | Value::Tuple(_)
             | Value::InternedStr(_)
@@ -31,11 +37,11 @@ pub fn is_compatible_unary(op: UnaryOp, operand: &Value) -> bool {
             | Value::Unknown => false,
         },
         UnaryOp::Negate => match operand {
-            Value::I64(_) | Value::F64(_) => true,
+            Value::ArbitraryInt(_) | Value::ArbitraryFloat(_) => true,
             _ => false,
         },
         UnaryOp::BitNot => match operand {
-            Value::I64(_) => true,
+            Value::ArbitraryInt(_) => true,
             _ => false,
         },
     }
@@ -53,19 +59,20 @@ pub fn is_compatible_binary(lhs: &Value, op: BinaryOp, rhs: &Value) -> bool {
     match op {
         BinaryOp::Add => matches!(
             (lhs, rhs),
-            (Value::I64(_), Value::I64(_))
-                | (Value::F64(_), Value::F64(_))
+            (Value::ArbitraryInt(_), Value::ArbitraryInt(_))
+                | (Value::ArbitraryFloat(_), Value::ArbitraryFloat(_))
                 | (Value::InternedStr(_), Value::InternedStr(_))
         ),
         BinaryOp::Sub | BinaryOp::Mult | BinaryOp::Div | BinaryOp::Mod => matches!(
             (lhs, rhs),
-            (Value::I64(_), Value::I64(_)) | (Value::F64(_), Value::F64(_))
+            (Value::ArbitraryInt(_), Value::ArbitraryInt(_))
+                | (Value::ArbitraryFloat(_), Value::ArbitraryFloat(_))
         ),
         BinaryOp::Greater | BinaryOp::Less | BinaryOp::GreaterOrEq | BinaryOp::LessOrEq => {
             matches!(
                 (lhs, rhs),
-                (Value::I64(_), Value::I64(_))
-                    | (Value::F64(_), Value::F64(_))
+                (Value::ArbitraryInt(_), Value::ArbitraryInt(_))
+                    | (Value::ArbitraryFloat(_), Value::ArbitraryFloat(_))
                     | (Value::Char(_), Value::Char(_))
                     | (Value::InternedStr(_), Value::InternedStr(_))
             )
@@ -73,8 +80,8 @@ pub fn is_compatible_binary(lhs: &Value, op: BinaryOp, rhs: &Value) -> bool {
         BinaryOp::And | BinaryOp::Or => matches!((lhs, rhs), (Value::Bool(_), Value::Bool(_))),
         BinaryOp::EqTo | BinaryOp::NotEq => matches!(
             (lhs, rhs),
-            (Value::I64(_), Value::I64(_))
-                | (Value::F64(_), Value::F64(_))
+            (Value::ArbitraryInt(_), Value::ArbitraryInt(_))
+                | (Value::ArbitraryFloat(_), Value::ArbitraryFloat(_))
                 | (Value::Bool(_), Value::Bool(_))
                 | (Value::Char(_), Value::Char(_))
                 | (Value::InternedStr(_), Value::InternedStr(_))
@@ -83,7 +90,9 @@ pub fn is_compatible_binary(lhs: &Value, op: BinaryOp, rhs: &Value) -> bool {
         | BinaryOp::BitAnd
         | BinaryOp::BitRightShift
         | BinaryOp::BitLeftShift
-        | BinaryOp::BitXor => matches!((lhs, rhs), (Value::I64(_), Value::I64(_))),
+        | BinaryOp::BitXor => {
+            matches!((lhs, rhs), (Value::ArbitraryInt(_), Value::ArbitraryInt(_)))
+        }
     }
 }
 
@@ -96,12 +105,13 @@ pub fn apply_unary_op(op: UnaryOp, sp_operand: SpannedContainerRef<Value>) -> Un
             _ => None,
         },
         UnaryOp::Negate => match operand {
-            Value::I64(v) => Some(Value::I64(-v)),
-            Value::F64(v) => Some(Value::F64(-v)),
+            Value::ArbitraryInt(kind) => Some(Value::ArbitraryInt(-kind)),
+            // WARN: Suspicious
+            Value::ArbitraryFloat(v) => Some(Value::ArbitraryFloat(-v)),
             _ => None,
         },
         UnaryOp::BitNot => match operand {
-            Value::I64(v) => Some(Value::I64(!v)),
+            Value::ArbitraryInt(v) => Some(Value::ArbitraryInt(!v)),
             _ => None,
         },
     };
@@ -123,15 +133,16 @@ pub fn apply_binary_op(
     let lhs = sp_lhs.inner;
     let rhs = sp_rhs.inner;
 
-    //TODO: Avoid overflow/underflow
     let res = match op {
         BinaryOp::Add => match lhs {
-            Value::I64(lhs_inner) => match rhs {
-                Value::I64(rhs_inner) => Some(Value::I64(lhs_inner + rhs_inner)),
+            Value::ArbitraryInt(lhs_inner) => match rhs {
+                Value::ArbitraryInt(rhs_inner) => Some(Value::ArbitraryInt(lhs_inner + rhs_inner)),
                 _ => None,
             },
-            Value::F64(lhs_inner) => match rhs {
-                Value::F64(rhs_inner) => Some(Value::F64(lhs_inner + rhs_inner)),
+            Value::ArbitraryFloat(lhs_inner) => match rhs {
+                Value::ArbitraryFloat(rhs_inner) => {
+                    Some(Value::ArbitraryFloat(lhs_inner + rhs_inner))
+                }
                 _ => None,
             },
             Value::InternedStr(lhs_inner) => match rhs {
@@ -147,57 +158,61 @@ pub fn apply_binary_op(
             _ => None,
         },
         BinaryOp::Sub => match lhs {
-            Value::I64(lhs_inner) => match rhs {
-                Value::I64(rhs_inner) => Some(Value::I64(lhs_inner - rhs_inner)),
+            Value::ArbitraryInt(lhs_inner) => match rhs {
+                Value::ArbitraryInt(rhs_inner) => Some(Value::ArbitraryInt(lhs_inner - rhs_inner)),
                 _ => None,
             },
-            Value::F64(lhs_inner) => match rhs {
-                Value::F64(rhs_inner) => Some(Value::F64(lhs_inner - rhs_inner)),
+            Value::ArbitraryFloat(lhs_inner) => match rhs {
+                Value::ArbitraryFloat(rhs_inner) => {
+                    Some(Value::ArbitraryFloat(lhs_inner - rhs_inner))
+                }
                 _ => None,
             },
             _ => None,
         },
         BinaryOp::Mult => match lhs {
-            Value::I64(lhs_inner) => match rhs {
-                Value::I64(rhs_inner) => Some(Value::I64(lhs_inner * rhs_inner)),
+            Value::ArbitraryInt(lhs_inner) => match rhs {
+                Value::ArbitraryInt(rhs_inner) => Some(Value::ArbitraryInt(lhs_inner * rhs_inner)),
                 _ => None,
             },
-            Value::F64(lhs_inner) => match rhs {
-                Value::F64(rhs_inner) => Some(Value::F64(lhs_inner * rhs_inner)),
+            Value::ArbitraryFloat(lhs_inner) => match rhs {
+                Value::ArbitraryFloat(rhs_inner) => {
+                    Some(Value::ArbitraryFloat(lhs_inner * rhs_inner))
+                }
                 _ => None,
             },
             _ => None,
         },
         BinaryOp::Div => match lhs {
-            Value::I64(lhs_inner) => match rhs {
-                Value::I64(rhs_inner) => {
-                    if *rhs_inner == 0 {
+            Value::ArbitraryInt(lhs_inner) => match rhs {
+                Value::ArbitraryInt(rhs_inner) => {
+                    if rhs_inner.is_zero() {
                         return BinaryOpResult::DivideByZero;
                     }
 
-                    Some(Value::I64(lhs_inner / rhs_inner))
+                    Some(Value::ArbitraryInt(lhs_inner / rhs_inner))
                 }
                 _ => None,
             },
-            Value::F64(lhs_inner) => match rhs {
-                Value::F64(rhs_inner) => {
-                    if *rhs_inner == 0.0 {
+            Value::ArbitraryFloat(lhs_inner) => match rhs {
+                Value::ArbitraryFloat(rhs_inner) => {
+                    if rhs_inner.is_zero() {
                         return BinaryOpResult::DivideByZero;
                     }
 
-                    Some(Value::F64(lhs_inner / rhs_inner))
+                    Some(Value::ArbitraryFloat(lhs_inner / rhs_inner))
                 }
                 _ => None,
             },
             _ => None,
         },
         BinaryOp::Greater => match lhs {
-            Value::I64(lhs_inner) => match rhs {
-                Value::I64(rhs_inner) => Some(Value::Bool(lhs_inner > rhs_inner)),
+            Value::ArbitraryInt(lhs_inner) => match rhs {
+                Value::ArbitraryInt(rhs_inner) => Some(Value::Bool(lhs_inner > rhs_inner)),
                 _ => None,
             },
-            Value::F64(lhs_inner) => match rhs {
-                Value::F64(rhs_inner) => Some(Value::Bool(lhs_inner > rhs_inner)),
+            Value::ArbitraryFloat(lhs_inner) => match rhs {
+                Value::ArbitraryFloat(rhs_inner) => Some(Value::Bool(lhs_inner > rhs_inner)),
                 _ => None,
             },
             Value::Char(lhs_inner) => match rhs {
@@ -215,12 +230,12 @@ pub fn apply_binary_op(
             _ => None,
         },
         BinaryOp::Less => match lhs {
-            Value::I64(lhs_inner) => match rhs {
-                Value::I64(rhs_inner) => Some(Value::Bool(lhs_inner < rhs_inner)),
+            Value::ArbitraryInt(lhs_inner) => match rhs {
+                Value::ArbitraryInt(rhs_inner) => Some(Value::Bool(lhs_inner < rhs_inner)),
                 _ => None,
             },
-            Value::F64(lhs_inner) => match rhs {
-                Value::F64(rhs_inner) => Some(Value::Bool(lhs_inner < rhs_inner)),
+            Value::ArbitraryFloat(lhs_inner) => match rhs {
+                Value::ArbitraryFloat(rhs_inner) => Some(Value::Bool(lhs_inner < rhs_inner)),
                 _ => None,
             },
             Value::Char(lhs_inner) => match rhs {
@@ -238,12 +253,12 @@ pub fn apply_binary_op(
             _ => None,
         },
         BinaryOp::GreaterOrEq => match lhs {
-            Value::I64(lhs_inner) => match rhs {
-                Value::I64(rhs_inner) => Some(Value::Bool(lhs_inner >= rhs_inner)),
+            Value::ArbitraryInt(lhs_inner) => match rhs {
+                Value::ArbitraryInt(rhs_inner) => Some(Value::Bool(lhs_inner >= rhs_inner)),
                 _ => None,
             },
-            Value::F64(lhs_inner) => match rhs {
-                Value::F64(rhs_inner) => Some(Value::Bool(lhs_inner >= rhs_inner)),
+            Value::ArbitraryFloat(lhs_inner) => match rhs {
+                Value::ArbitraryFloat(rhs_inner) => Some(Value::Bool(lhs_inner >= rhs_inner)),
                 _ => None,
             },
             Value::Char(lhs_inner) => match rhs {
@@ -261,12 +276,12 @@ pub fn apply_binary_op(
             _ => None,
         },
         BinaryOp::LessOrEq => match lhs {
-            Value::I64(lhs_inner) => match rhs {
-                Value::I64(rhs_inner) => Some(Value::Bool(lhs_inner <= rhs_inner)),
+            Value::ArbitraryInt(lhs_inner) => match rhs {
+                Value::ArbitraryInt(rhs_inner) => Some(Value::Bool(lhs_inner <= rhs_inner)),
                 _ => None,
             },
-            Value::F64(lhs_inner) => match rhs {
-                Value::F64(rhs_inner) => Some(Value::Bool(lhs_inner <= rhs_inner)),
+            Value::ArbitraryFloat(lhs_inner) => match rhs {
+                Value::ArbitraryFloat(rhs_inner) => Some(Value::Bool(lhs_inner <= rhs_inner)),
                 _ => None,
             },
             Value::Char(lhs_inner) => match rhs {
@@ -284,12 +299,30 @@ pub fn apply_binary_op(
             _ => None,
         },
         BinaryOp::Mod => match lhs {
-            Value::I64(lhs_inner) => match rhs {
-                Value::I64(rhs_inner) => Some(Value::I64(lhs_inner % rhs_inner)),
+            Value::ArbitraryInt(lhs_inner) => match rhs {
+                Value::ArbitraryInt(rhs_inner) => {
+                    if rhs_inner.is_zero() {
+                        return BinaryOpResult::DivideByZero;
+                    }
+
+                    Some(Value::ArbitraryInt(lhs_inner % rhs_inner))
+                }
                 _ => None,
             },
-            Value::F64(lhs_inner) => match rhs {
-                Value::F64(rhs_inner) => Some(Value::F64(lhs_inner % rhs_inner)),
+            Value::ArbitraryFloat(lhs_inner) => match rhs {
+                Value::ArbitraryFloat(rhs_inner) => {
+                    if rhs_inner.is_zero() {
+                        // Preserve IEEE `f64` remainder semantics (`5.5 % 0.0`
+                        // is `NaN`). `DBig` has no NaN representation and
+                        // panics when the result would be NaN, so route
+                        // zero-divisor cases through `f64`.
+                        return BinaryOpResult::Output(Value::ArbitraryFloat(
+                            ArbitraryFloatKind::F64(lhs_inner.to_f64() % rhs_inner.to_f64()),
+                        ));
+                    }
+
+                    Some(Value::ArbitraryFloat(lhs_inner % rhs_inner))
+                }
                 _ => None,
             },
             _ => None,
@@ -309,12 +342,12 @@ pub fn apply_binary_op(
             _ => None,
         },
         BinaryOp::EqTo => match lhs {
-            Value::I64(lhs_inner) => match rhs {
-                Value::I64(rhs_inner) => Some(Value::Bool(lhs_inner == rhs_inner)),
+            Value::ArbitraryInt(lhs_inner) => match rhs {
+                Value::ArbitraryInt(rhs_inner) => Some(Value::Bool(lhs_inner == rhs_inner)),
                 _ => None,
             },
-            Value::F64(lhs_inner) => match rhs {
-                Value::F64(rhs_inner) => Some(Value::Bool(lhs_inner == rhs_inner)),
+            Value::ArbitraryFloat(lhs_inner) => match rhs {
+                Value::ArbitraryFloat(rhs_inner) => Some(Value::Bool(lhs_inner == rhs_inner)),
                 _ => None,
             },
             Value::Bool(lhs_inner) => match rhs {
@@ -332,12 +365,12 @@ pub fn apply_binary_op(
             _ => None,
         },
         BinaryOp::NotEq => match lhs {
-            Value::I64(lhs_inner) => match rhs {
-                Value::I64(rhs_inner) => Some(Value::Bool(lhs_inner != rhs_inner)),
+            Value::ArbitraryInt(lhs_inner) => match rhs {
+                Value::ArbitraryInt(rhs_inner) => Some(Value::Bool(lhs_inner != rhs_inner)),
                 _ => None,
             },
-            Value::F64(lhs_inner) => match rhs {
-                Value::F64(rhs_inner) => Some(Value::Bool(lhs_inner != rhs_inner)),
+            Value::ArbitraryFloat(lhs_inner) => match rhs {
+                Value::ArbitraryFloat(rhs_inner) => Some(Value::Bool(lhs_inner != rhs_inner)),
                 _ => None,
             },
             Value::Bool(lhs_inner) => match rhs {
@@ -355,36 +388,42 @@ pub fn apply_binary_op(
             _ => None,
         },
         BinaryOp::BitOr => match lhs {
-            Value::I64(lhs_inner) => match rhs {
-                Value::I64(rhs_inner) => Some(Value::I64(lhs_inner | rhs_inner)),
+            Value::ArbitraryInt(lhs_inner) => match rhs {
+                Value::ArbitraryInt(rhs_inner) => Some(Value::ArbitraryInt(lhs_inner | rhs_inner)),
                 _ => None,
             },
             _ => None,
         },
         BinaryOp::BitAnd => match lhs {
-            Value::I64(lhs_inner) => match rhs {
-                Value::I64(rhs_inner) => Some(Value::I64(lhs_inner & rhs_inner)),
+            Value::ArbitraryInt(lhs_inner) => match rhs {
+                Value::ArbitraryInt(rhs_inner) => Some(Value::ArbitraryInt(lhs_inner & rhs_inner)),
                 _ => None,
             },
             _ => None,
         },
         BinaryOp::BitRightShift => match lhs {
-            Value::I64(lhs_inner) => match rhs {
-                Value::I64(rhs_inner) => Some(Value::I64(lhs_inner >> rhs_inner)),
+            Value::ArbitraryInt(lhs_inner) => match rhs {
+                Value::ArbitraryInt(rhs_inner) => match lhs_inner.checked_shr(rhs_inner) {
+                    Some(val) => Some(Value::ArbitraryInt(val)),
+                    None => return BinaryOpResult::InvalidShift,
+                },
                 _ => None,
             },
             _ => None,
         },
         BinaryOp::BitLeftShift => match lhs {
-            Value::I64(lhs_inner) => match rhs {
-                Value::I64(rhs_inner) => Some(Value::I64(lhs_inner << rhs_inner)),
+            Value::ArbitraryInt(lhs_inner) => match rhs {
+                Value::ArbitraryInt(rhs_inner) => match lhs_inner.checked_shl(rhs_inner) {
+                    Some(val) => Some(Value::ArbitraryInt(val)),
+                    None => return BinaryOpResult::InvalidShift,
+                },
                 _ => None,
             },
             _ => None,
         },
         BinaryOp::BitXor => match lhs {
-            Value::I64(lhs_inner) => match rhs {
-                Value::I64(rhs_inner) => Some(Value::I64(lhs_inner ^ rhs_inner)),
+            Value::ArbitraryInt(lhs_inner) => match rhs {
+                Value::ArbitraryInt(rhs_inner) => Some(Value::ArbitraryInt(lhs_inner ^ rhs_inner)),
                 _ => None,
             },
             _ => None,

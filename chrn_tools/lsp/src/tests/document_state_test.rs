@@ -29,7 +29,7 @@ async fn test_import_resolution_uses_unsaved_open_dependency_text_during_debounc
         .await
         .expect("the imported symbol hovers");
     assert!(
-        hover_text(&hover).contains("i64"),
+        hover_text(&hover).contains("Arbitrary Integer"),
         "import analysis must use the unsaved open text, got `{}`",
         hover_text(&hover)
     );
@@ -242,7 +242,7 @@ async fn test_hover_reports_the_inferred_type_of_a_binding() {
         .expect("hovering a known binding returns contents");
 
     assert!(
-        hover_text(&hover).contains("value: i64"),
+        hover_text(&hover).contains("value: Arbitrary Integer"),
         "hover reports the binding and its inferred type, got `{}`",
         hover_text(&hover)
     );
@@ -483,11 +483,11 @@ async fn test_cross_module_lookups_reach_an_unopened_exporting_file() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn test_member_reference_uses_identifier_span_after_comment() {
+async fn test_static_access_uses_identifier_span_after_comment() {
     let workspace = TempWorkspace::new("member_comment_span");
     let dep_uri = workspace.write("dep.chrn", "export let READ = 1\n");
     let text = format!(
-        "// header\n@def\nimport \"{}\" as deps\nlet flag = deps. /* READ */ READ\n@end\n",
+        "// header\n@def\nimport \"{}\" as deps\nlet flag = deps:: /* READ */ READ\n@end\n",
         dep_uri.to_file_path().unwrap().display()
     );
     let uri = workspace.write("main.chrn", &text);
@@ -552,7 +552,7 @@ async fn test_aliased_import_does_not_expose_file_name_as_module() {
     let workspace = TempWorkspace::new("alias_scope");
     let dep_uri = workspace.write("dep.chrn", "export let READ = 1\n");
     let text = format!(
-        "import \"{}\" as deps\nlet valid = deps.READ\nlet invalid = dep.READ\n",
+        "import \"{}\" as deps\nlet valid = deps::READ\nlet invalid = dep::READ\n",
         dep_uri.to_file_path().unwrap().display()
     );
     let uri = workspace.write("main.chrn", &text);
@@ -572,7 +572,7 @@ async fn test_aliased_import_does_not_expose_file_name_as_module() {
     );
     for (occurrence, expected) in [(0, vec!["READ".to_string()]), (1, vec![])] {
         let response = session
-            .completion(&uri, position_of(&text, "READ", occurrence), Some("."))
+            .completion(&uri, position_of(&text, "READ", occurrence), Some(":"))
             .await
             .unwrap();
         let tower_lsp::lsp_types::CompletionResponse::Array(items) = response else {

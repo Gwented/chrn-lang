@@ -85,8 +85,11 @@ fn infer_val_maps_scalars_to_core_types() {
     let compiler = core_only_compiler();
 
     let cases = [
-        (Value::I64(7), CORE_I64),
-        (Value::F64(7.5), CORE_F64),
+        (Value::ArbitraryInt(ArbitraryIntKind::I64(7)), CORE_I64),
+        (
+            Value::ArbitraryFloat(ArbitraryFloatKind::F64(7.5)),
+            CORE_F64,
+        ),
         (Value::Bool(true), CORE_BOOL),
         (Value::Char('x'), CORE_CHAR),
         (Value::InternedStr(InternedId::new(0)), CORE_STR),
@@ -110,12 +113,21 @@ fn infer_val_ignores_literal_width() {
     let compiler = core_only_compiler();
 
     assert_eq!(
-        infer_type_from_val(&compiler, &Value::I64(0)),
-        infer_type_from_val(&compiler, &Value::I64(i64::MAX))
+        infer_type_from_val(&compiler, &Value::ArbitraryInt(ArbitraryIntKind::I64(0))),
+        infer_type_from_val(
+            &compiler,
+            &Value::ArbitraryInt(ArbitraryIntKind::I64(i64::MAX))
+        )
     );
     assert_eq!(
-        infer_type_from_val(&compiler, &Value::F64(0.0)),
-        infer_type_from_val(&compiler, &Value::F64(f64::MAX))
+        infer_type_from_val(
+            &compiler,
+            &Value::ArbitraryFloat(ArbitraryFloatKind::F64(0.0))
+        ),
+        infer_type_from_val(
+            &compiler,
+            &Value::ArbitraryFloat(ArbitraryFloatKind::F64(f64::MAX))
+        )
     );
 }
 
@@ -144,7 +156,10 @@ fn infer_val_unknown_is_none() {
 fn infer_val_array_yields_element_type() {
     let compiler = core_only_compiler();
 
-    let ints = Value::Array(vec![Value::I64(1), Value::I64(2)]);
+    let ints = Value::Array(vec![
+        Value::ArbitraryInt(ArbitraryIntKind::I64(1)),
+        Value::ArbitraryInt(ArbitraryIntKind::I64(2)),
+    ]);
     assert_eq!(
         infer_type_from_val(&compiler, &ints),
         Some(TypeId::new(CORE_I64))
@@ -163,7 +178,11 @@ fn infer_val_array_yields_element_type() {
 fn infer_val_array_only_reads_first_element() {
     let compiler = core_only_compiler();
 
-    let mixed = Value::Array(vec![Value::Bool(true), Value::I64(1), Value::Char('c')]);
+    let mixed = Value::Array(vec![
+        Value::Bool(true),
+        Value::ArbitraryInt(ArbitraryIntKind::I64(1)),
+        Value::Char('c'),
+    ]);
     assert_eq!(
         infer_type_from_val(&compiler, &mixed),
         Some(TypeId::new(CORE_BOOL))
@@ -175,9 +194,9 @@ fn infer_val_array_only_reads_first_element() {
 fn infer_val_nested_array_flattens_to_scalar() {
     let compiler = core_only_compiler();
 
-    let nested = Value::Array(vec![Value::Array(vec![Value::Array(vec![Value::F64(
-        1.0,
-    )])])]);
+    let nested = Value::Array(vec![Value::Array(vec![Value::Array(vec![
+        Value::ArbitraryFloat(ArbitraryFloatKind::F64(1.0)),
+    ])])]);
     assert_eq!(
         infer_type_from_val(&compiler, &nested),
         Some(TypeId::new(CORE_F64))
@@ -219,7 +238,10 @@ fn infer_val_func_yields_return_type() {
 fn infer_val_tuple_is_unreachable() {
     let compiler = core_only_compiler();
 
-    infer_type_from_val(&compiler, &Value::Tuple(vec![Value::I64(1)]));
+    infer_type_from_val(
+        &compiler,
+        &Value::Tuple(vec![Value::ArbitraryInt(ArbitraryIntKind::I64(1))]),
+    );
 }
 
 /// There are no runtime values at compile time, so a `RuntimeStr` reaching here is a compiler bug.

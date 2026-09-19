@@ -53,7 +53,6 @@ use tower_lsp::Client;
 use tower_lsp::lsp_types;
 
 use chrn_utils::arena::Arena;
-use compilation::chrn_config::ChrnConfig;
 use chrn_utils::core_error::{self, ConfigLoadError};
 use chrn_utils::err_codes::ErrorCode;
 use chrn_utils::id_types::{InternedId, ModuleId, PathId, SourceRegionId};
@@ -62,6 +61,7 @@ use chrn_utils::source_map::source_diagnostic::SourceDiagnostic;
 use chrn_utils::source_map::source_diagnostic::SourceDiagnosticSummary;
 use chrn_utils::source_map::source_region::SourceRegion;
 use chrn_utils::source_map::source_span::SourceSpan;
+use compilation::chrn_config::ChrnConfig;
 use std::io::Cursor;
 use tower_lsp::lsp_types::Url;
 

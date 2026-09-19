@@ -6,14 +6,37 @@ use lang::keywords::Keyword;
 
 use crate::parser::ast::ast_concepts::BinaryOp;
 
+// /// Notation marker for floating point
+// #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+// pub enum FloatNotation {
+//     Decimal,
+//     Scientific,
+// }
+//
+// impl FloatNotation {
+//     pub const RADIX: u32 = 10;
+// }
+
+/// Notation marker for Integers
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 // This exists so that the interned value can be kept and displayed. It's also so a notation can be
 // read within the lexer and stored without losing accuracy by setting it to something like i64
 pub enum Notation {
-    Bin = 2,
-    Decimal = 10,
-    Octal = 8,
-    Hex = 16,
+    Bin,
+    Decimal,
+    Octal,
+    Hex,
+}
+
+impl Notation {
+    pub const fn radix(self) -> u32 {
+        match self {
+            Notation::Decimal => 10,
+            Notation::Bin => 2,
+            Notation::Octal => 8,
+            Notation::Hex => 16,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

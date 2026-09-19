@@ -54,7 +54,7 @@ pub enum ExternTypeRepresentation {
     String {
         encoding: CharacterEncoding,
     },
-    ArbitraryInteger {
+    ArbitraryInt {
         signedness: Signedness,
     },
     ArbitraryFloat,

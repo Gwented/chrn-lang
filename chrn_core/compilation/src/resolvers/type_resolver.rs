@@ -29,7 +29,6 @@ use chrn_utils::source_map::source_diagnostic::{
 use chrn_utils::source_map::source_span::{self, SourceSpan};
 use chrn_utils::utils::containers::{SpannedContainer, SpannedContainerRef};
 use lang::chrn_classifier::ChrnClassified;
-use lang::values::Value;
 
 use crate::chrn_config::ChrnConfig;
 use crate::chrn_config::chrn_perf::ChrnPerfStage;
@@ -59,6 +58,7 @@ use crate::resolvers::type_resolver::cfg_ctx::{
 use crate::resolvers::typechecker;
 use crate::resolvers::typechecker::typechecker_concepts::ExpectedKindType;
 use crate::script_compiler::{ScriptCompiler, compiler_constants};
+use crate::semantic::arbitraries::{ArbitraryFloatKind, ArbitraryIntKind};
 use crate::semantic::checker_helpers::{DuplicateIdentResult, DuplicateTracker};
 use crate::semantic::compilation_unit::CompilationUnit;
 use crate::semantic::evaluator::UnaryOpResult;
@@ -75,10 +75,10 @@ use crate::semantic::hir::hir_impls::{
 use crate::semantic::hir::hir_symbols::{
     Symbol, SymbolKind, SymbolKindFlat, SymbolOrigin, VarDef, VariableMetadata, VariableState,
 };
-use crate::semantic::hir::value_info::ValueInfo;
 use crate::semantic::preset_reporter::preset_err::{LookupError, MathError, PresetErr};
 use crate::semantic::resolution::resolution_concepts::StaticAccessOption;
 use crate::semantic::resolution::resolution_helpers;
+use crate::semantic::values::{Value, ValueInfo};
 use crate::semantic::{checker_helpers, evaluator, inference, preset_reporter, resolution};
 
 use crate::resolvers::type_resolver::type_context::{
@@ -400,10 +400,10 @@ impl<'res> TypeResolver<'res> {
 
                 if current_resolved_count == last_resolved_count {
                     break;
-                } else {
-                    last_resolved_count = current_resolved_count;
-                    self.ty_ctx.needs_check = true;
                 }
+
+                last_resolved_count = current_resolved_count;
+                self.ty_ctx.needs_check = true;
             }
         }
 
@@ -1624,7 +1624,7 @@ impl<'res> TypeResolver<'res> {
                                 // If the CURRENT config member, is NOT using override semantics, account for
                                 // nesting depth.
                                 //TODO: Maybe make this a method
-                                if depth + 1 == lang::CFG_MAX_COMPLEX_NEST_LEVEL {
+                                if depth + 1 == crate::CFG_MAX_COMPLEX_NEST_LEVEL {
                                     // Is this confusing?
                                     // Maybe from the perspective of ownership this could make more sense?
                                     let core_msg = "Nesting level of 2 is too deep for a `complex` scope config";
@@ -2443,6 +2443,9 @@ impl<'res> TypeResolver<'res> {
                             evaluator::BinaryOpResult::Output(val) => Some(val),
                             evaluator::BinaryOpResult::DivideByZero => {
                                 return Err(MathError::DivideByZero { lhs_span, rhs_span }.into());
+                            }
+                            evaluator::BinaryOpResult::InvalidShift => {
+                                return Err(MathError::InvalidShift { lhs_span, rhs_span }.into());
                             }
                             evaluator::BinaryOpResult::Invalid => {
                                 return Err(MathError::BinaryOpMismatch {
@@ -3416,70 +3419,75 @@ impl<'res> TypeResolver<'res> {
                     Err(PresetErr::General(src_diag))
                 }
             }
-            AstExpr::Integer(name_id, _) => {
-                if let Ok(num) = self.interner.search(*name_id).parse::<i64>() {
-                    // Getting what it's spot would be when it's expression and value parts are
-                    // pushed
-                    let expr_id = self.compiler.exprs.make_id();
-                    let val_id = self.compiler.values.make_id();
+            //NOTE: We could make the arbitraries here
+            AstExpr::Integer(name_id, notation) => {
+                // Getting what it's spot would be when it's expression and value parts are
+                // pushed
+                let expr_id = self.compiler.exprs.make_id();
+                let val_id = self.compiler.values.make_id();
 
-                    // Creating it's default type to the literal value of integer, as well as it's
-                    // expression of just being a singular value type
-                    let expr_hir = ExprHir::Val(val_id);
-                    let type_id = TypeId::new(compiler_constants::CORE_I64);
+                // Creating it's default type to the literal value of integer, as well as it's
+                // expression of just being a singular value type
+                let expr_hir = ExprHir::Val(val_id);
 
-                    let resolved_expr = ResolvedExpr::new(
-                        type_id,
-                        expr_hir,
-                        val_id,
-                        ResolvedExprMetadata::User(spanned_expr.span),
-                        Vec::new(),
-                    );
-
-                    // Creating the actual value portion of the expression
-                    let val = Value::I64(num);
-                    let val_info = ValueInfo::new(type_id, expr_id, Some(val));
-
-                    self.compiler.values.push(val_info);
-                    self.compiler.exprs.push(resolved_expr);
-
-                    Ok(expr_id)
-                } else {
-                    Err(PresetErr::NumericOverflow {
+                let s = self.interner.search(*name_id);
+                let Some(kind) = ArbitraryIntKind::from_str(s, *notation) else {
+                    return Err(PresetErr::NumericOverflow {
                         sp_num: SpannedContainer::new(*name_id, spanned_expr.span),
                         fmtted_ty: ChrnClassified::Integer,
-                    })
-                }
+                    });
+                };
+
+                let type_id = kind.type_id();
+
+                // Creating the actual value portion of the expression
+                let val = Value::ArbitraryInt(kind);
+
+                let resolved_expr = ResolvedExpr::new(
+                    type_id,
+                    expr_hir,
+                    val_id,
+                    ResolvedExprMetadata::User(spanned_expr.span),
+                    Vec::new(),
+                );
+
+                let val_info = ValueInfo::new(type_id, expr_id, Some(val));
+
+                self.compiler.values.push(val_info);
+                self.compiler.exprs.push(resolved_expr);
+
+                Ok(expr_id)
             }
             AstExpr::Float(name_id, _) => {
-                // No BigFloat yet
-                if let Ok(num) = self.interner.search(*name_id).parse::<f64>() {
-                    let expr_id = self.compiler.exprs.make_id();
-                    let val_id = self.compiler.values.make_id();
+                let expr_id = self.compiler.exprs.make_id();
+                let val_id = self.compiler.values.make_id();
 
-                    let expr_hir = ExprHir::Val(val_id);
-                    let type_id = TypeId::new(compiler_constants::CORE_F64);
-                    let expr = ResolvedExpr::new(
-                        type_id,
-                        expr_hir,
-                        val_id,
-                        ResolvedExprMetadata::User(spanned_expr.span),
-                        Vec::new(),
-                    );
+                let expr_hir = ExprHir::Val(val_id);
 
-                    let val = Value::F64(num);
-                    let val_info = ValueInfo::new(type_id, expr_id, Some(val));
-
-                    self.compiler.values.push(val_info);
-                    self.compiler.exprs.push(expr);
-
-                    Ok(expr_id)
-                } else {
-                    Err(PresetErr::NumericOverflow {
+                let s = self.interner.search(*name_id);
+                let Some(kind) = ArbitraryFloatKind::from_str(s) else {
+                    return Err(PresetErr::NumericOverflow {
                         sp_num: SpannedContainer::new(*name_id, spanned_expr.span),
                         fmtted_ty: ChrnClassified::Float,
-                    })
-                }
+                    });
+                };
+
+                let type_id = kind.type_id();
+                let expr = ResolvedExpr::new(
+                    type_id,
+                    expr_hir,
+                    val_id,
+                    ResolvedExprMetadata::User(spanned_expr.span),
+                    Vec::new(),
+                );
+
+                let val = Value::ArbitraryFloat(kind);
+                let val_info = ValueInfo::new(type_id, expr_id, Some(val));
+
+                self.compiler.values.push(val_info);
+                self.compiler.exprs.push(expr);
+
+                Ok(expr_id)
             }
             AstExpr::BinaryExpr { lhs, op, rhs } => {
                 let lhs_id = self.register_expr(
@@ -3534,6 +3542,9 @@ impl<'res> TypeResolver<'res> {
                             evaluator::BinaryOpResult::Output(val) => Some(val),
                             evaluator::BinaryOpResult::DivideByZero => {
                                 return Err(MathError::DivideByZero { lhs_span, rhs_span }.into());
+                            }
+                            evaluator::BinaryOpResult::InvalidShift => {
+                                return Err(MathError::InvalidShift { lhs_span, rhs_span }.into());
                             }
                             // If either are unknown then that would mean it can't confidentally
                             // say the resolution failed since neither have definitive values yet.
@@ -4036,16 +4047,7 @@ impl<'res> TypeResolver<'res> {
     ) -> Result<PossibleMember, PresetErr> {
         let lookup_pref =
             ScopeLookupPreferenceFlags::new(ScopeLookupPreferenceFlags::VARIABLE.into());
-        let res = self.register_expr(
-            sym_parent,
-            member,
-            local_scope,
-            associated_scope,
-            scope_type,
-            env,
-        )?;
-        dbg!(res);
-        panic!();
+        // panic!();
 
         if let Ok(expr_id) = self.register_expr(
             sym_parent,

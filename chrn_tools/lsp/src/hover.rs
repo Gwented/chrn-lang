@@ -42,16 +42,17 @@ use compilation::id_tag_decls::{ConfigMemberTag, EnumTag, StructTag};
 use compilation::lexer::token::Token as ScriptToken;
 use compilation::lookup::scopes::scopes_concepts::AssociatedScopeKind;
 use compilation::script_compiler::ScriptCompiler;
+use compilation::semantic::arbitraries::{ArbitraryFloatKind, ArbitraryIntKind};
 use compilation::semantic::hir::hir_concepts::Type;
 use compilation::semantic::hir::hir_impls::{ConfigMemberMetadataKind, ImplMemberKind};
 use compilation::semantic::hir::hir_symbols::{
     FuncForm, MemberSymbolKind, SymbolKind, SymbolOrigin, VariableState,
 };
+use compilation::semantic::values::Value;
 use lang::types::builtins::{BuiltinType, BuiltinTypeKind};
 use lang::types::externs::{
     CharacterEncoding, ExternPlatformType, ExternTypeRepresentation, Signedness, TypeWidth,
 };
-use lang::values::Value;
 use tower_lsp::lsp_types;
 
 use crate::document::{self, Document};
@@ -272,12 +273,7 @@ fn symbol_hover(
         SymbolKind::Variable(var_id) => match compiler.vars[var_id].state {
             VariableState::Known(val_id) => {
                 let val_info = &compiler.values[val_id];
-                let type_str = format_type(
-                    &compiler.types[val_info.type_id].ty,
-                    compiler,
-                    interner,
-                    TypeDisplay::Reference,
-                );
+                let type_str = variable_type_label(compiler, val_info, interner);
                 let val_str = match &val_info.const_val {
                     Some(v) => format_value(v, interner),
                     None => "unknown".to_string(),
@@ -351,7 +347,7 @@ fn extern_type_hover(interner: &Intern, extern_ty: ExternPlatformType) -> String
         ExternTypeRepresentation::String { encoding } => {
             format!("string ({})", format_encoding(encoding))
         }
-        ExternTypeRepresentation::ArbitraryInteger { signedness } => {
+        ExternTypeRepresentation::ArbitraryInt { signedness } => {
             format!(
                 "arbitrary-precision {} integer",
                 format_signedness(signedness)
@@ -611,6 +607,65 @@ enum TypeDisplay {
 
 /// Render a declaration at the top level and names in nested type positions.
 /// Nested structs, enums and aliases stay compact and do not expand recursively.
+/// Variable type label for hover.
+///
+/// Variables holding numeric literals are arbitrary internally (`i64`/`u64`/`bigint`
+/// and `f64`/`bigfloat` are implementation details of the literal). Hover shows only
+/// the generic `Arbitrary Integer` or `Arbitrary Float` labels, never the concrete
+/// arbitrary kind.
+fn variable_type_label(
+    compiler: &ScriptCompiler,
+    val_info: &compilation::semantic::values::ValueInfo,
+    interner: &Intern,
+) -> String {
+    if let Some(label) = arbitrary_label_for_value(&val_info.const_val) {
+        return label.to_string();
+    }
+    if let Some(label) = arbitrary_label_for_type(compiler, val_info.type_id) {
+        return label.to_string();
+    }
+    format_type(
+        &compiler.types[val_info.type_id].ty,
+        compiler,
+        interner,
+        TypeDisplay::Reference,
+    )
+}
+
+/// Generic label from a known constant value, if it is an arbitrary numeric.
+fn arbitrary_label_for_value(val: &Option<Value>) -> Option<&'static str> {
+    match val {
+        Some(Value::ArbitraryInt(_)) => Some("Arbitrary Integer"),
+        Some(Value::ArbitraryFloat(_)) => Some("Arbitrary Float"),
+        _ => None,
+    }
+}
+
+/// Generic label from a type id that resolves to an arbitrary builtin,
+/// following `Deferred`/`TypeDef` chains. Returns `None` for concrete types.
+fn arbitrary_label_for_type(
+    compiler: &ScriptCompiler,
+    mut type_id: chrn_utils::id_types::TypeId,
+) -> Option<&'static str> {
+    for _ in 0..chrn_utils::MAX_LOOPS {
+        match &compiler.types[type_id].ty {
+            Type::BuiltinTypeInfo(builtin_info) => {
+                return match builtin_info.ty.kind() {
+                    BuiltinTypeKind::I64 | BuiltinTypeKind::U64 | BuiltinTypeKind::BigInt => {
+                        Some("Arbitrary Integer")
+                    }
+                    BuiltinTypeKind::F64 | BuiltinTypeKind::BigFloat => Some("Arbitrary Float"),
+                    _ => None,
+                };
+            }
+            Type::TypeDef(type_def) => type_id = type_def.type_id,
+            Type::Deferred(inner) => type_id = *inner,
+            _ => return None,
+        }
+    }
+    None
+}
+
 fn format_type(
     ty: &Type,
     compiler: &ScriptCompiler,
@@ -767,8 +822,8 @@ fn format_type(
 /// statically known.  Returns `"Unknown"` for runtime / unresolved values.
 fn format_value(v: &Value, interner: &Intern) -> String {
     match v {
-        Value::I64(num) => format!("{}", num),
-        Value::F64(num) => format!("{}", num),
+        Value::ArbitraryInt(num) => num.to_string(),
+        Value::ArbitraryFloat(num) => num.to_string(),
         Value::Bool(boolean) => format!("{}", boolean),
         Value::Char(c) => format!("'{}'", c),
         Value::Tuple(elems) => {

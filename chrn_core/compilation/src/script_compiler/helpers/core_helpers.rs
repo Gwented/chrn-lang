@@ -16,10 +16,7 @@ use crate::{
 };
 
 use super::instantiation_symbols::InstiationValue;
-//TEST:
 
-//BUG: This is all technically a large bug because we have access to u64::MAX but the compiler only
-//allows i64. But keeping it like this because bugs are solved.
 static NAMESPACE_I8: [InstantiationSymbolBase; 5] = [
     new_max(InstantiationVariable::new(
         InstiationType::BuiltinType(BuiltinType::I64),

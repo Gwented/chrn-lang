@@ -1465,7 +1465,6 @@ fn parse_primary(
         }
         Token::Float(name_id, notation) => {
             let span = ctx.advance_span();
-
             Ok(SpannedExpr::new(AstExpr::Float(name_id, notation), span))
         }
         Token::Str(name_id) => {

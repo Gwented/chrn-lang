@@ -8,14 +8,13 @@ import "../chrn_core/chrn_tests/def.chrn"
 // Maybe this shouldn't be seen as a valid import
 // import l
 
-export let core = "ch" + "rn"
 let a = b
 let b = c
 let c = 4 + d
 let d = 3 - e
 let e = 5
 // What about 2.as_int()/as_float()
-let z = e.hi()
+let z = f16::PI + 2.0
 
 // if this was something that wanted to be added, that would then mean the compiler store needs to be 
 // mutable, but the environments USE the compiler store, which makes it hard to concat and intern

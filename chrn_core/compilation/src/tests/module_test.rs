@@ -197,8 +197,8 @@ fn modfinder_single_import() {
 
     let import = &imports[0];
     let sub_path_id = interner.intern_path(&sub_path);
-    // ModuleFinder now returns UnresolvedSource imports (module id is assigned
-    // later in resolve_module). Verify the import kind carries the correct path
+    // ModuleFinder returns UnresolvedSource imports (module id is assigned
+    // during module resolution). Verify the import kind carries the correct path
     // id and span.
     // Source is `import "PATH"\nlet x = 5\n`; module finder's `parse_import` starts
     // at the opening `"` (byte 7), advances past it, so the span covers the path
@@ -1667,8 +1667,8 @@ fn module_graph_initial_state() {
     _ = fs::remove_dir_all(&dir);
 }
 
-/// After `extract_all_modules`, the returned main module's `mod_id` in the
-/// compiler must be 0 (re-assigned during the pipeline).
+/// Proves that after `extract_all_modules`, the returned main module's `mod_id` in the
+/// compiler is 0.
 #[test]
 fn main_module_id_is_zero_in_compiler() {
     let dir = create_temp_dir("main_mod_id_zero");

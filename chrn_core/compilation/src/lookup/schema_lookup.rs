@@ -5,11 +5,13 @@ use chrn_utils::{
 use lang::{
     config_schemas::{self, ConfigSchema, ConfigSchemaKind, OptionSchemaConstraint},
     types::boundaries::TypeBoundaryFlags,
-    values::Value,
 };
 
 use crate::{
-    semantic::hir::hir_concepts::{Type, TypeInfo},
+    semantic::{
+        hir::hir_concepts::{Type, TypeInfo},
+        values::Value,
+    },
     walk_type_id_deferred,
 };
 

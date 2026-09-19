@@ -5,7 +5,6 @@ use chrn_utils::{
 };
 use lang::{
     chrn_classifier::ChrnClassified, directives::Directive, types::boundaries::TypeBoundaryFlags,
-    values::ValueKind,
 };
 
 use crate::{
@@ -13,9 +12,12 @@ use crate::{
     lookup::scopes::scopes_concepts::AssociatedScopeKind,
     parser::ast::ast_concepts::{BinaryOp, UnaryOp},
     resolvers::typechecker::typechecker_concepts::{ExpectedKind, ExpectedKindType},
-    semantic::hir::{
-        hir_concepts::TypeKind,
-        hir_symbols::{BuiltinFuncKind, SymbolKindFlat},
+    semantic::{
+        hir::{
+            hir_concepts::TypeKind,
+            hir_symbols::{BuiltinFuncKind, SymbolKindFlat},
+        },
+        values::ValueKind,
     },
 };
 
@@ -126,6 +128,11 @@ pub enum MathError {
     },
     /// lhs span, rhs span
     DivideByZero {
+        lhs_span: SourceSpan,
+        rhs_span: SourceSpan,
+    },
+    /// Shift amount is negative, exceeds `u32`, or exceeds the compiler shift limit
+    InvalidShift {
         lhs_span: SourceSpan,
         rhs_span: SourceSpan,
     },

@@ -35,7 +35,7 @@ const NOTATION_HEX: u8 = 1 << 1;
 const NOTATION_BIN: u8 = 1 << 2;
 const NOTATION_OCTAL: u8 = 1 << 3;
 
-// Boolean for is_utf8? Asking since if this existed we. We would do something.
+// Boolean for is_utf8? Asking since if this existed we. We would do something. (Lie)
 pub struct Lexer<'a> {
     // Should be &str
     src_bytes: &'a [u8],
@@ -329,6 +329,7 @@ impl Lexer<'_> {
                 '.' => {
                     let start = self.pos as u32;
 
+                    //TODO: Maybe remove this concept
                     // ..=
                     let tok = if self.peek_ahead(1) == b'.' && self.peek_ahead(2) == b'=' {
                         //WARN: EXCLUSIVE SPANNING:
@@ -565,7 +566,7 @@ impl Lexer<'_> {
             }
         }
         //WARN: Slow.
-        dbg!(toks.len());
+        // dbg!(toks.len());
 
         self.cfg.perf_tracker_mut().stop(ChrnPerfStage::Lexer);
 
@@ -673,6 +674,7 @@ impl Lexer<'_> {
             notation |= NOTATION_OCTAL;
             self.skip(2);
         }
+        //TODO: Maybe apply scientific
 
         while self.pos < self.src_bytes.len() {
             match self.peek() {
@@ -685,7 +687,7 @@ impl Lexer<'_> {
                 b'0'..=b'7' if (notation & NOTATION_OCTAL) != 0 => {
                     self.advance();
                 }
-                b'0'..=b'9' => {
+                b'0'..=b'9' if (notation & (NOTATION_BIN | NOTATION_OCTAL)) == 0 => {
                     self.advance();
                 }
                 // May remove '+' being usable
@@ -705,7 +707,7 @@ impl Lexer<'_> {
                 b'.' if (notation & NOTATION_FLOAT) == 0
                     && (notation & (NOTATION_HEX | NOTATION_BIN | NOTATION_OCTAL)) == 0
                     && self.peek_ahead(1) != b'.'
-                    // Maybe this will be possible, but it looks weird.
+                    // Disallows "2." and enforces "2.{digit}"
                     && self.peek_ahead(1).is_ascii_digit() =>
                 {
                     notation |= NOTATION_FLOAT;
@@ -739,6 +741,7 @@ impl Lexer<'_> {
 
         let (id_str, num_notation) =
             if (notation & (NOTATION_HEX | NOTATION_BIN | NOTATION_OCTAL)) != 0 {
+                // Cuts off notation syntax and returns the notation for later
                 let digits = raw_str[2..].replace('_', "");
 
                 if digits.is_empty() {
@@ -752,28 +755,29 @@ impl Lexer<'_> {
                     };
                 }
 
-                let (radix, num_notation) = if (notation & NOTATION_HEX) != 0 {
-                    (16, Notation::Hex)
+                let num_notation = if (notation & NOTATION_HEX) != 0 {
+                    Notation::Hex
                 } else if (notation & NOTATION_BIN) != 0 {
-                    (2, Notation::Bin)
+                    Notation::Bin
                 } else {
-                    (8, Notation::Octal)
+                    Notation::Octal
                 };
 
-                let num = match i64::from_str_radix(&digits, radix) {
-                    Ok(n) => n,
-                    Err(_) => {
-                        self.increment_invalid_tok();
-                        let msg_id = interner.intern("<invalid numeric literal>");
-                        return SpannedToken {
-                            tok: Token::Invalid(msg_id),
-                            span: SourceSpan::new(self.current_region_id, start as u32, end as u32),
-                            leading_trivia_indices: self.trivia_start_idx as u32
-                                ..self.trivia_end_idx as u32,
-                        };
-                    }
-                };
-                (num.to_string(), num_notation)
+                // -- old defaulting to i64 --
+                // let num = match i64::from_str_radix(&digits, num_notation.radix()) {
+                //     Ok(n) => n,
+                //     Err(_) => {
+                //         self.increment_invalid_tok();
+                //         let msg_id = interner.intern("<invalid numeric literal>");
+                //         return SpannedToken {
+                //             tok: Token::Invalid(msg_id),
+                //             span: SourceSpan::new(self.current_region_id, start as u32, end as u32),
+                //             leading_trivia_indices: self.trivia_start_idx as u32
+                //                 ..self.trivia_end_idx as u32,
+                //         };
+                //     }
+                // };
+                (digits.to_string(), num_notation)
             } else {
                 (raw_str.replace('_', ""), Notation::Decimal)
             };

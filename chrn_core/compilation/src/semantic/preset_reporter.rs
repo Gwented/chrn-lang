@@ -444,6 +444,13 @@ pub(crate) fn create_diag_builder_preset(
                     .add_annotation(lhs_span, AnnotationKind::Primary, None)
                     .add_annotation(rhs_span, AnnotationKind::Primary, None)
             }
+            MathError::InvalidShift { lhs_span, rhs_span } => {
+                let core_msg = format!("Shift amount is out of range");
+
+                SourceDiagnostic::builder(None, DiagnosticLevel::Error, core_msg, region.path_id)
+                    .add_annotation(lhs_span, AnnotationKind::Primary, None)
+                    .add_annotation(rhs_span, AnnotationKind::Primary, None)
+            }
         },
         // Maybe a type version too?
         PresetErr::TypeBoundaryMismatch {

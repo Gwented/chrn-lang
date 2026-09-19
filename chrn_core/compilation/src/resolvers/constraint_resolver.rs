@@ -19,7 +19,6 @@ use lang::{
     config_schemas::{self, ConfigSchema, ConfigSchemaKind},
     directives::Directive,
     types::{boundaries::TypeBoundaryFlags, builtins::BuiltinType},
-    values::Value,
 };
 
 use crate::{
@@ -40,6 +39,7 @@ use crate::{
             hir_symbols::MemberSymbolKind,
         },
         preset_reporter::{self, preset_err::PresetErr},
+        values::Value,
     },
 };
 

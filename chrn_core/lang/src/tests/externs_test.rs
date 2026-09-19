@@ -1,7 +1,6 @@
 use crate::types::externs::{
     CharacterEncoding, ExternPlatformType, ExternTypeMetadata, ExternTypeRepresentation,
-    Signedness, TypeWidth, java_types::JavaTypeKind,
-    rust_types::RustTypeKind,
+    Signedness, TypeWidth, java_types::JavaTypeKind, rust_types::RustTypeKind,
 };
 use chrn_utils::intern::Intern;
 

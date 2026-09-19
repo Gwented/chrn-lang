@@ -455,257 +455,399 @@ fn char_literal_test() {
     assert_eq!(toks[1].span.start, 5);
 }
 
+//TODO: Move the semantic check to parser
+/// Hexadecimal numeric literals must consume decimal digits (0..=9).
+///
+/// Proves that hexadecimal numeric literals containing decimal digits (e.g. `0x12`, `0x42ab`)
+/// lex as a single contiguous hexadecimal integer token with matching span and interner
+/// representation, rather than splitting into an invalid prefix and a trailing integer.
 #[test]
-fn lex_notation_test() {
-    // Hex Test (Hex Text (Hex Test))
-    let text = "0xff";
-    let mut interner = mock_interner(1, 1);
+fn lex_hex_literal_consumes_decimal_digits() {
+    let lex = |src: &[u8]| {
+        let mut interner = Intern::init();
+        let mut cfg = ChrnConfig::default();
+        let toks = Lexer::new(SourceRegionId::new(0), PathId::new(0), src, 0, &mut cfg)
+            .tokenize(&mut interner)
+            .toks;
+        (toks, interner)
+    };
 
-    let path_id = PathId::new(0);
-    let region_id = SourceRegionId::new(0);
-
-    let metadata = ConfigLoader::new(region_id, text.as_bytes(), path_id, &ChrnConfig::default())
-        .load_config()
-        .expect_success();
-
-    let toks = Lexer::new(
-        metadata.region_id,
-        metadata.path_id,
-        &metadata.src_bytes,
-        metadata.script_start,
-        &mut ChrnConfig::default(),
-    )
-    .tokenize(&mut interner)
-    .toks;
-
-    assert_eq!(2, toks.len());
-    match toks[0].tok {
-        Token::Integer(id, Notation::Hex) => {
-            assert_eq!("255", interner.search(id));
+    for &(src, expected_digits) in &[
+        (b"0x12".as_slice(), "12"),
+        (b"0x42ab".as_slice(), "42ab"),
+        (b"0x0".as_slice(), "0"),
+    ] {
+        let (toks, interner) = lex(src);
+        let src_str = std::str::from_utf8(src).unwrap();
+        assert_eq!(
+            toks.len(),
+            2,
+            "hex literal {src_str:?} must lex as 1 hex integer token plus EOF, but got {toks:?}"
+        );
+        match &toks[0].tok {
+            Token::Integer(id, Notation::Hex) => {
+                assert_eq!(interner.search(*id), expected_digits);
+            }
+            other => {
+                panic!("expected Hex integer {expected_digits:?} for {src_str:?}, got {other:?}")
+            }
         }
-        _ => panic!("Expected Integer with Hex, found {:?}", toks[0].tok),
+        assert_eq!(toks[0].span.start, 0, "span start mismatch for {src_str:?}");
+        assert_eq!(
+            toks[0].span.end,
+            src.len() as u32,
+            "span end mismatch for {src_str:?}"
+        );
+        assert_eq!(toks[1].tok, Token::EOF);
     }
-    assert_eq!(toks[0].span.start, 0);
-    assert_eq!(toks[0].span.end, 4);
-    assert_eq!(toks[1].tok, Token::EOF);
-    assert_eq!(toks[1].span.start, 3);
-
-    // Binary
-    let text = "0b1010";
-    let metadata = ConfigLoader::new(region_id, text.as_bytes(), path_id, &ChrnConfig::default())
-        .load_config()
-        .expect_success();
-    let toks = Lexer::new(
-        metadata.region_id,
-        metadata.path_id,
-        &metadata.src_bytes,
-        metadata.script_start,
-        &mut ChrnConfig::default(),
-    )
-    .tokenize(&mut interner)
-    .toks;
-
-    assert_eq!(2, toks.len());
-    match toks[0].tok {
-        Token::Integer(id, Notation::Bin) => {
-            assert_eq!("10", interner.search(id));
-        }
-        _ => panic!("Expected Integer with Binary, found {:?}", toks[0].tok),
-    }
-    assert_eq!(toks[0].span.start, 0);
-    assert_eq!(toks[0].span.end, 6);
-    assert_eq!(toks[1].tok, Token::EOF);
-    assert_eq!(toks[1].span.start, 5);
-
-    // Octal
-    let text = "0o77";
-    let metadata = ConfigLoader::new(region_id, text.as_bytes(), path_id, &ChrnConfig::default())
-        .load_config()
-        .expect_success();
-    let toks = Lexer::new(
-        metadata.region_id,
-        metadata.path_id,
-        &metadata.src_bytes,
-        metadata.script_start,
-        &mut ChrnConfig::default(),
-    )
-    .tokenize(&mut interner)
-    .toks;
-
-    assert_eq!(2, toks.len());
-    match toks[0].tok {
-        Token::Integer(id, Notation::Octal) => {
-            assert_eq!("63", interner.search(id));
-        }
-        _ => panic!("Expected Integer with Octal, found {:?}", toks[0].tok),
-    }
-    assert_eq!(toks[0].span.start, 0);
-    assert_eq!(toks[0].span.end, 4);
-    assert_eq!(toks[1].tok, Token::EOF);
-    assert_eq!(toks[1].span.start, 3);
-
-    // Decimal
-    let text = "42";
-    let metadata = ConfigLoader::new(region_id, text.as_bytes(), path_id, &ChrnConfig::default())
-        .load_config()
-        .expect_success();
-    let toks = Lexer::new(
-        metadata.region_id,
-        metadata.path_id,
-        &metadata.src_bytes,
-        metadata.script_start,
-        &mut ChrnConfig::default(),
-    )
-    .tokenize(&mut interner)
-    .toks;
-
-    assert_eq!(2, toks.len());
-    match toks[0].tok {
-        Token::Integer(id, Notation::Decimal) => {
-            assert_eq!("42", interner.search(id));
-        }
-        _ => panic!("Expected Integer of Decimal, found {:?}", toks[0].tok),
-    }
-    assert_eq!(toks[0].span.start, 0);
-    assert_eq!(toks[0].span.end, 2);
-    assert_eq!(toks[1].tok, Token::EOF);
-    assert_eq!(toks[1].span.start, 1);
-
-    // Float with decimal
-    let text = "3.14";
-    let metadata = ConfigLoader::new(region_id, text.as_bytes(), path_id, &ChrnConfig::default())
-        .load_config()
-        .expect_success();
-    let toks = Lexer::new(
-        metadata.region_id,
-        metadata.path_id,
-        &metadata.src_bytes,
-        metadata.script_start,
-        &mut ChrnConfig::default(),
-    )
-    .tokenize(&mut interner)
-    .toks;
-
-    assert_eq!(2, toks.len());
-    match toks[0].tok {
-        Token::Float(id, Notation::Decimal) => {
-            assert_eq!("3.14", interner.search(id));
-        }
-        _ => panic!("Expected Float with Decimal, found {:?}", toks[0].tok),
-    }
-    assert_eq!(toks[0].span.start, 0);
-    assert_eq!(toks[0].span.end, 4);
-    assert_eq!(toks[1].tok, Token::EOF);
-    assert_eq!(toks[1].span.start, 3);
-
-    // Positive Scientific Notation
-    let text = "1e+23";
-    let metadata = ConfigLoader::new(region_id, text.as_bytes(), path_id, &ChrnConfig::default())
-        .load_config()
-        .expect_success();
-    let toks = Lexer::new(
-        metadata.region_id,
-        metadata.path_id,
-        &metadata.src_bytes,
-        metadata.script_start,
-        &mut ChrnConfig::default(),
-    )
-    .tokenize(&mut interner)
-    .toks;
-
-    assert_eq!(2, toks.len());
-    match toks[0].tok {
-        Token::Float(id, Notation::Decimal) => {
-            assert_eq!("1e+23", interner.search(id));
-        }
-        _ => panic!("Expected Float with Decimal, found {:?}", toks[0].tok),
-    }
-    assert_eq!(toks[0].span.start, 0);
-    assert_eq!(toks[0].span.end, 5);
-    assert_eq!(toks[1].tok, Token::EOF);
-    assert_eq!(toks[1].span.start, 4);
-
-    // Negative Scientific Notation
-    let text = "1e-23";
-    let metadata = ConfigLoader::new(region_id, text.as_bytes(), path_id, &ChrnConfig::default())
-        .load_config()
-        .expect_success();
-    let toks = Lexer::new(
-        metadata.region_id,
-        metadata.path_id,
-        &metadata.src_bytes,
-        metadata.script_start,
-        &mut ChrnConfig::default(),
-    )
-    .tokenize(&mut interner)
-    .toks;
-
-    assert_eq!(2, toks.len());
-    match toks[0].tok {
-        Token::Float(id, Notation::Decimal) => {
-            assert_eq!("1e-23", interner.search(id));
-        }
-        _ => panic!("Expected Float with Decimal, found {:?}", toks[0].tok),
-    }
-    assert_eq!(toks[0].span.start, 0);
-    assert_eq!(toks[0].span.end, 5);
-    assert_eq!(toks[1].tok, Token::EOF);
-    assert_eq!(toks[1].span.start, 4);
-
-    // Underscored Numbers
-    let text = "1_000_000";
-    let metadata = ConfigLoader::new(region_id, text.as_bytes(), path_id, &ChrnConfig::default())
-        .load_config()
-        .expect_success();
-    let toks = Lexer::new(
-        metadata.region_id,
-        metadata.path_id,
-        &metadata.src_bytes,
-        metadata.script_start,
-        &mut ChrnConfig::default(),
-    )
-    .tokenize(&mut interner)
-    .toks;
-
-    assert_eq!(2, toks.len());
-    match toks[0].tok {
-        Token::Integer(id, Notation::Decimal) => {
-            assert_eq!("1000000", interner.search(id));
-        }
-        _ => panic!("Expected Integer with Decimal, found {:?}", toks[0].tok),
-    }
-    assert_eq!(toks[0].span.start, 0);
-    assert_eq!(toks[0].span.end, 9);
-    assert_eq!(toks[1].tok, Token::EOF);
-    assert_eq!(toks[1].span.start, 8);
-
-    // Underscored Hex
-    let text = "0x_ff_ff";
-    let metadata = ConfigLoader::new(region_id, text.as_bytes(), path_id, &ChrnConfig::default())
-        .load_config()
-        .expect_success();
-    let toks = Lexer::new(
-        metadata.region_id,
-        metadata.path_id,
-        &metadata.src_bytes,
-        metadata.script_start,
-        &mut ChrnConfig::default(),
-    )
-    .tokenize(&mut interner)
-    .toks;
-
-    assert_eq!(2, toks.len());
-    match toks[0].tok {
-        Token::Integer(id, Notation::Hex) => {
-            assert_eq!("65535", interner.search(id));
-        }
-        _ => panic!("Expected Integer with Hex, found {:?}", toks[0].tok),
-    }
-    assert_eq!(toks[0].span.start, 0);
-    assert_eq!(toks[0].span.end, 8);
-    assert_eq!(toks[1].tok, Token::EOF);
-    assert_eq!(toks[1].span.start, 7);
 }
+
+/// If a radix-prefixed literal has no valid digits (empty), it is malformed (`Invalid`).
+/// Otherwise, it produces a valid integer string that terminates when it encounters
+/// a digit that does not align with its radix, and scanning resumes on the remainder.
+#[test]
+fn lex_radix_literal_terminates_on_invalid_digit_or_empty_malformed() {
+    let lex = |src: &[u8]| {
+        let mut interner = Intern::init();
+        let mut cfg = ChrnConfig::default();
+        let toks = Lexer::new(SourceRegionId::new(0), PathId::new(0), src, 0, &mut cfg)
+            .tokenize(&mut interner)
+            .toks;
+        (toks, interner)
+    };
+
+    // Non-empty: valid radix prefix produces a valid integer token that terminates
+    // at the first non-radix digit; scanning resumes on the trailing decimal digits.
+    for &(src, expected_radix_digits, notation, expected_decimal_digits) in &[
+        (b"0b102".as_slice(), "10", Notation::Bin, "2"),
+        (b"0b1019".as_slice(), "101", Notation::Bin, "9"),
+        (b"0o178".as_slice(), "17", Notation::Octal, "8"),
+        (b"0o779".as_slice(), "77", Notation::Octal, "9"),
+    ] {
+        let (toks, interner) = lex(src);
+        let src_str = std::str::from_utf8(src).unwrap();
+        assert_eq!(
+            toks.len(),
+            3,
+            "expected radix integer + decimal integer + EOF for {src_str:?}, but got {toks:?}"
+        );
+        match &toks[0].tok {
+            Token::Integer(id, not) => {
+                assert_eq!(*not, notation, "notation mismatch for {src_str:?}");
+                assert_eq!(
+                    interner.search(*id),
+                    expected_radix_digits,
+                    "radix digits mismatch for {src_str:?}"
+                );
+            }
+            other => panic!(
+                "expected {notation:?} integer {expected_radix_digits:?} for {src_str:?}, got {other:?}"
+            ),
+        }
+        match &toks[1].tok {
+            Token::Integer(id, Notation::Decimal) => {
+                assert_eq!(
+                    interner.search(*id),
+                    expected_decimal_digits,
+                    "decimal digits mismatch for {src_str:?}"
+                );
+            }
+            other => panic!(
+                "expected Decimal integer {expected_decimal_digits:?} for {src_str:?}, got {other:?}"
+            ),
+        }
+        assert_eq!(toks[2].tok, Token::EOF);
+    }
+
+    // Empty: prefix immediately followed by non-radix digit has 0 digits for that radix,
+    // so it emits an Invalid token for the prefix and resumes scanning on the decimal digits.
+    for &(src, expected_decimal_digits) in &[
+        (b"0b2".as_slice(), "2"),
+        (b"0o8".as_slice(), "8"),
+        (b"0o89".as_slice(), "89"),
+    ] {
+        let (toks, interner) = lex(src);
+        let src_str = std::str::from_utf8(src).unwrap();
+        assert_eq!(
+            toks.len(),
+            3,
+            "expected Invalid + decimal integer + EOF for {src_str:?}, but got {toks:?}"
+        );
+        assert!(
+            matches!(toks[0].tok, Token::Invalid(_)),
+            "expected Invalid token for empty prefix in {src_str:?}, got {:?}",
+            toks[0].tok
+        );
+        assert_eq!(toks[0].span.start, 0, "span start mismatch for {src_str:?}");
+        assert_eq!(toks[0].span.end, 2, "span end mismatch for {src_str:?}");
+        match &toks[1].tok {
+            Token::Integer(id, Notation::Decimal) => {
+                assert_eq!(
+                    interner.search(*id),
+                    expected_decimal_digits,
+                    "decimal digits mismatch for {src_str:?}"
+                );
+            }
+            other => panic!(
+                "expected Decimal integer {expected_decimal_digits:?} for {src_str:?}, got {other:?}"
+            ),
+        }
+        assert_eq!(toks[2].tok, Token::EOF);
+    }
+}
+
+// This should specifically test that the cuts are done correctly preparation for notation parse later
+// #[test]
+// fn lex_notation_test() {
+//     // Hex Test (Hex Text (Hex Test))
+//     let text = "0xff";
+//     let mut interner = mock_interner(1, 1);
+//
+//     let path_id = PathId::new(0);
+//     let region_id = SourceRegionId::new(0);
+//
+//     let metadata = ConfigLoader::new(region_id, text.as_bytes(), path_id, &ChrnConfig::default())
+//         .load_config()
+//         .expect_success();
+//
+//     let toks = Lexer::new(
+//         metadata.region_id,
+//         metadata.path_id,
+//         &metadata.src_bytes,
+//         metadata.script_start,
+//         &mut ChrnConfig::default(),
+//     )
+//     .tokenize(&mut interner)
+//     .toks;
+//
+//     assert_eq!(2, toks.len());
+//     match toks[0].tok {
+//         Token::Integer(id, Notation::Hex) => {
+//             assert_eq!("255", interner.search(id));
+//         }
+//         _ => panic!("Expected Integer with Hex, found {:?}", toks[0].tok),
+//     }
+//     assert_eq!(toks[0].span.start, 0);
+//     assert_eq!(toks[0].span.end, 4);
+//     assert_eq!(toks[1].tok, Token::EOF);
+//     assert_eq!(toks[1].span.start, 3);
+//
+//     // Binary
+//     let text = "0b1010";
+//     let metadata = ConfigLoader::new(region_id, text.as_bytes(), path_id, &ChrnConfig::default())
+//         .load_config()
+//         .expect_success();
+//     let toks = Lexer::new(
+//         metadata.region_id,
+//         metadata.path_id,
+//         &metadata.src_bytes,
+//         metadata.script_start,
+//         &mut ChrnConfig::default(),
+//     )
+//     .tokenize(&mut interner)
+//     .toks;
+//
+//     assert_eq!(2, toks.len());
+//     match toks[0].tok {
+//         Token::Integer(id, Notation::Bin) => {
+//             assert_eq!("10", interner.search(id));
+//         }
+//         _ => panic!("Expected Integer with Binary, found {:?}", toks[0].tok),
+//     }
+//     assert_eq!(toks[0].span.start, 0);
+//     assert_eq!(toks[0].span.end, 6);
+//     assert_eq!(toks[1].tok, Token::EOF);
+//     assert_eq!(toks[1].span.start, 5);
+//
+//     // Octal
+//     let text = "0o77";
+//     let metadata = ConfigLoader::new(region_id, text.as_bytes(), path_id, &ChrnConfig::default())
+//         .load_config()
+//         .expect_success();
+//     let toks = Lexer::new(
+//         metadata.region_id,
+//         metadata.path_id,
+//         &metadata.src_bytes,
+//         metadata.script_start,
+//         &mut ChrnConfig::default(),
+//     )
+//     .tokenize(&mut interner)
+//     .toks;
+//
+//     assert_eq!(2, toks.len());
+//     match toks[0].tok {
+//         Token::Integer(id, Notation::Octal) => {
+//             assert_eq!("63", interner.search(id));
+//         }
+//         _ => panic!("Expected Integer with Octal, found {:?}", toks[0].tok),
+//     }
+//     assert_eq!(toks[0].span.start, 0);
+//     assert_eq!(toks[0].span.end, 4);
+//     assert_eq!(toks[1].tok, Token::EOF);
+//     assert_eq!(toks[1].span.start, 3);
+//
+//     // Decimal
+//     let text = "42";
+//     let metadata = ConfigLoader::new(region_id, text.as_bytes(), path_id, &ChrnConfig::default())
+//         .load_config()
+//         .expect_success();
+//     let toks = Lexer::new(
+//         metadata.region_id,
+//         metadata.path_id,
+//         &metadata.src_bytes,
+//         metadata.script_start,
+//         &mut ChrnConfig::default(),
+//     )
+//     .tokenize(&mut interner)
+//     .toks;
+//
+//     assert_eq!(2, toks.len());
+//     match toks[0].tok {
+//         Token::Integer(id, Notation::Decimal) => {
+//             assert_eq!("42", interner.search(id));
+//         }
+//         _ => panic!("Expected Integer of Decimal, found {:?}", toks[0].tok),
+//     }
+//     assert_eq!(toks[0].span.start, 0);
+//     assert_eq!(toks[0].span.end, 2);
+//     assert_eq!(toks[1].tok, Token::EOF);
+//     assert_eq!(toks[1].span.start, 1);
+//
+//     // Float with decimal
+//     let text = "3.14";
+//     let metadata = ConfigLoader::new(region_id, text.as_bytes(), path_id, &ChrnConfig::default())
+//         .load_config()
+//         .expect_success();
+//     let toks = Lexer::new(
+//         metadata.region_id,
+//         metadata.path_id,
+//         &metadata.src_bytes,
+//         metadata.script_start,
+//         &mut ChrnConfig::default(),
+//     )
+//     .tokenize(&mut interner)
+//     .toks;
+//
+//     assert_eq!(2, toks.len());
+//     match toks[0].tok {
+//         Token::Float(id, Notation::Decimal) => {
+//             assert_eq!("3.14", interner.search(id));
+//         }
+//         _ => panic!("Expected Float with Decimal, found {:?}", toks[0].tok),
+//     }
+//     assert_eq!(toks[0].span.start, 0);
+//     assert_eq!(toks[0].span.end, 4);
+//     assert_eq!(toks[1].tok, Token::EOF);
+//     assert_eq!(toks[1].span.start, 3);
+//
+//     // Positive Scientific Notation
+//     let text = "1e+23";
+//     let metadata = ConfigLoader::new(region_id, text.as_bytes(), path_id, &ChrnConfig::default())
+//         .load_config()
+//         .expect_success();
+//     let toks = Lexer::new(
+//         metadata.region_id,
+//         metadata.path_id,
+//         &metadata.src_bytes,
+//         metadata.script_start,
+//         &mut ChrnConfig::default(),
+//     )
+//     .tokenize(&mut interner)
+//     .toks;
+//
+//     assert_eq!(2, toks.len());
+//     match toks[0].tok {
+//         Token::Float(id, Notation::Decimal) => {
+//             assert_eq!("1e+23", interner.search(id));
+//         }
+//         _ => panic!("Expected Float with Decimal, found {:?}", toks[0].tok),
+//     }
+//     assert_eq!(toks[0].span.start, 0);
+//     assert_eq!(toks[0].span.end, 5);
+//     assert_eq!(toks[1].tok, Token::EOF);
+//     assert_eq!(toks[1].span.start, 4);
+//
+//     // Negative Scientific Notation
+//     let text = "1e-23";
+//     let metadata = ConfigLoader::new(region_id, text.as_bytes(), path_id, &ChrnConfig::default())
+//         .load_config()
+//         .expect_success();
+//     let toks = Lexer::new(
+//         metadata.region_id,
+//         metadata.path_id,
+//         &metadata.src_bytes,
+//         metadata.script_start,
+//         &mut ChrnConfig::default(),
+//     )
+//     .tokenize(&mut interner)
+//     .toks;
+//
+//     assert_eq!(2, toks.len());
+//     match toks[0].tok {
+//         Token::Float(id, Notation::Decimal) => {
+//             assert_eq!("1e-23", interner.search(id));
+//         }
+//         _ => panic!("Expected Float with Decimal, found {:?}", toks[0].tok),
+//     }
+//     assert_eq!(toks[0].span.start, 0);
+//     assert_eq!(toks[0].span.end, 5);
+//     assert_eq!(toks[1].tok, Token::EOF);
+//     assert_eq!(toks[1].span.start, 4);
+//
+//     // Underscored Numbers
+//     let text = "1_000_000";
+//     let metadata = ConfigLoader::new(region_id, text.as_bytes(), path_id, &ChrnConfig::default())
+//         .load_config()
+//         .expect_success();
+//     let toks = Lexer::new(
+//         metadata.region_id,
+//         metadata.path_id,
+//         &metadata.src_bytes,
+//         metadata.script_start,
+//         &mut ChrnConfig::default(),
+//     )
+//     .tokenize(&mut interner)
+//     .toks;
+//
+//     assert_eq!(2, toks.len());
+//     match toks[0].tok {
+//         Token::Integer(id, Notation::Decimal) => {
+//             assert_eq!("1000000", interner.search(id));
+//         }
+//         _ => panic!("Expected Integer with Decimal, found {:?}", toks[0].tok),
+//     }
+//     assert_eq!(toks[0].span.start, 0);
+//     assert_eq!(toks[0].span.end, 9);
+//     assert_eq!(toks[1].tok, Token::EOF);
+//     assert_eq!(toks[1].span.start, 8);
+//
+//     // Underscored Hex
+//     let text = "0x_ff_ff";
+//     let metadata = ConfigLoader::new(region_id, text.as_bytes(), path_id, &ChrnConfig::default())
+//         .load_config()
+//         .expect_success();
+//     let toks = Lexer::new(
+//         metadata.region_id,
+//         metadata.path_id,
+//         &metadata.src_bytes,
+//         metadata.script_start,
+//         &mut ChrnConfig::default(),
+//     )
+//     .tokenize(&mut interner)
+//     .toks;
+//
+//     assert_eq!(2, toks.len());
+//     match toks[0].tok {
+//         Token::Integer(id, Notation::Hex) => {
+//             assert_eq!("65535", interner.search(id));
+//         }
+//         _ => panic!("Expected Integer with Hex, found {:?}", toks[0].tok),
+//     }
+//     assert_eq!(toks[0].span.start, 0);
+//     assert_eq!(toks[0].span.end, 8);
+//     assert_eq!(toks[1].tok, Token::EOF);
+//     assert_eq!(toks[1].span.start, 7);
+// }
 
 #[test]
 fn read_ident_includes_trailing_underscore() {
@@ -818,7 +960,8 @@ fn invalid_control_whitespace_recovery_makes_progress() {
     let src: &[u8] = b"\x0bvalid";
     let mut interner = Intern::init();
     let mut cfg = ChrnConfig::default();
-    let output = Lexer::new(SourceRegionId::new(0), PathId::new(0), src, 0, &mut cfg).tokenize(&mut interner);
+    let output = Lexer::new(SourceRegionId::new(0), PathId::new(0), src, 0, &mut cfg)
+        .tokenize(&mut interner);
 
     assert_eq!(
         output
@@ -858,10 +1001,8 @@ fn invalid_control_whitespace_recovery_makes_progress() {
 //     assert_eq!(output.toks[1].span.end, 15);
 // }
 
-// Test all invalid tok locations to ensure it doesn't regress.
-// Each case targets a distinct `increment_invalid_tok` / `recover_invalid` route in
-// `lexer.rs`, first in isolation (exactly one `Invalid` + `EOF`) and then combined
-// (emitted `Invalid` count must match `found_invalid_toks`).
+/// Proves that each invalid-token recovery route accurately increments the
+/// invalid-token count and matches the emitted `Invalid` tokens, both in isolation and combined.
 #[test]
 fn invalid_token_count_matches_emitted_invalid_tokens() {
     // Each entry: (bytes, label identifying the lexer.rs route).
@@ -881,8 +1022,6 @@ fn invalid_token_count_matches_emitted_invalid_tokens() {
         (b"0x".to_vec(), "read_num empty hex"),
         (b"0b".to_vec(), "read_num empty bin"),
         (b"0o".to_vec(), "read_num empty octal"),
-        // read_num radix parse failure (i64 overflow) -> Invalid.
-        (b"0xFFFFFFFFFFFFFFFFFF".to_vec(), "read_num radix overflow"),
         // read_quotes invalid UTF-8 -> Invalid.
         (vec![b'"', 0xFF, b'"'], "read_quotes invalid utf-8"),
         // read_char empty literal -> Invalid.
@@ -895,7 +1034,8 @@ fn invalid_token_count_matches_emitted_invalid_tokens() {
     for (src, label) in &cases {
         let mut interner = Intern::init();
         let mut cfg = ChrnConfig::default();
-        let output = Lexer::new(SourceRegionId::new(0), PathId::new(0), src, 0, &mut cfg).tokenize(&mut interner);
+        let output = Lexer::new(SourceRegionId::new(0), PathId::new(0), src, 0, &mut cfg)
+            .tokenize(&mut interner);
 
         let invalid_count = output
             .toks
@@ -934,7 +1074,14 @@ fn invalid_token_count_matches_emitted_invalid_tokens() {
 
     let mut interner = Intern::init();
     let mut cfg = ChrnConfig::default();
-    let output = Lexer::new(SourceRegionId::new(0), PathId::new(0), &combined, 0, &mut cfg).tokenize(&mut interner);
+    let output = Lexer::new(
+        SourceRegionId::new(0),
+        PathId::new(0),
+        &combined,
+        0,
+        &mut cfg,
+    )
+    .tokenize(&mut interner);
 
     let invalid_count = output
         .toks
@@ -961,7 +1108,8 @@ fn invalid_escape_tokens_obey_invalid_token_cap_without_overflow() {
     src.extend_from_slice(b"valid");
     let mut interner = Intern::init();
     let mut cfg = ChrnConfig::default();
-    let output = Lexer::new(SourceRegionId::new(0), PathId::new(0), &src, 0, &mut cfg).tokenize(&mut interner);
+    let output = Lexer::new(SourceRegionId::new(0), PathId::new(0), &src, 0, &mut cfg)
+        .tokenize(&mut interner);
 
     assert_eq!(
         output
@@ -1014,7 +1162,8 @@ fn trivia_whitespace_coalesces_spaces_and_unicode_whitespace() {
     let src: &[u8] = b" x";
     let mut interner = Intern::init();
     let mut cfg = ChrnConfig::default();
-    let output = Lexer::new(SourceRegionId::new(0), PathId::new(0), src, 0, &mut cfg).tokenize(&mut interner);
+    let output = Lexer::new(SourceRegionId::new(0), PathId::new(0), src, 0, &mut cfg)
+        .tokenize(&mut interner);
 
     assert_eq!(output.trivia.len(), 1);
     assert_eq!(output.trivia[0].kind, TriviaKind::Whitespace);
@@ -1028,7 +1177,8 @@ fn trivia_whitespace_coalesces_spaces_and_unicode_whitespace() {
 
     // Consecutive spaces coalesce into a single TriviaKind::Whitespace
     let src: &[u8] = b"    x";
-    let output = Lexer::new(SourceRegionId::new(0), PathId::new(0), src, 0, &mut cfg).tokenize(&mut interner);
+    let output = Lexer::new(SourceRegionId::new(0), PathId::new(0), src, 0, &mut cfg)
+        .tokenize(&mut interner);
 
     assert_eq!(output.trivia.len(), 1);
     assert_eq!(output.trivia[0].kind, TriviaKind::Whitespace);
@@ -1043,7 +1193,8 @@ fn trivia_whitespace_coalesces_spaces_and_unicode_whitespace() {
     // Unicode whitespace: NO-BREAK SPACE (\u{00A0}, 2 bytes in UTF-8)
     let src_str = "\u{00A0}x";
     let src = src_str.as_bytes();
-    let output = Lexer::new(SourceRegionId::new(0), PathId::new(0), src, 0, &mut cfg).tokenize(&mut interner);
+    let output = Lexer::new(SourceRegionId::new(0), PathId::new(0), src, 0, &mut cfg)
+        .tokenize(&mut interner);
 
     assert_eq!(output.trivia.len(), 1);
     assert_eq!(output.trivia[0].kind, TriviaKind::Whitespace);
@@ -1055,7 +1206,8 @@ fn trivia_whitespace_coalesces_spaces_and_unicode_whitespace() {
     // ' ' (1 byte) + '\u{00A0}' (2 bytes) + ' ' (1 byte) = 4 bytes
     let src_str = " \u{00A0} x";
     let src = src_str.as_bytes();
-    let output = Lexer::new(SourceRegionId::new(0), PathId::new(0), src, 0, &mut cfg).tokenize(&mut interner);
+    let output = Lexer::new(SourceRegionId::new(0), PathId::new(0), src, 0, &mut cfg)
+        .tokenize(&mut interner);
 
     assert_eq!(output.trivia.len(), 1);
     assert_eq!(output.trivia[0].kind, TriviaKind::Whitespace);
@@ -1070,7 +1222,8 @@ fn trivia_tabs_are_emitted_individually() {
     let src: &[u8] = b"\t\t\tx";
     let mut interner = Intern::init();
     let mut cfg = ChrnConfig::default();
-    let output = Lexer::new(SourceRegionId::new(0), PathId::new(0), src, 0, &mut cfg).tokenize(&mut interner);
+    let output = Lexer::new(SourceRegionId::new(0), PathId::new(0), src, 0, &mut cfg)
+        .tokenize(&mut interner);
 
     assert_eq!(output.trivia.len(), 3);
     for (i, trivia) in output.trivia.iter().enumerate() {
@@ -1082,7 +1235,8 @@ fn trivia_tabs_are_emitted_individually() {
 
     // Mixed spaces and tabs alternate
     let src: &[u8] = b" \t  \tx";
-    let output = Lexer::new(SourceRegionId::new(0), PathId::new(0), src, 0, &mut cfg).tokenize(&mut interner);
+    let output = Lexer::new(SourceRegionId::new(0), PathId::new(0), src, 0, &mut cfg)
+        .tokenize(&mut interner);
 
     assert_eq!(output.trivia.len(), 4);
     assert_eq!(output.trivia[0].kind, TriviaKind::Whitespace);
@@ -1111,7 +1265,8 @@ fn trivia_newlines_lf_and_crlf() {
 
     // Single LF (\n)
     let src: &[u8] = b"\nx";
-    let output = Lexer::new(SourceRegionId::new(0), PathId::new(0), src, 0, &mut cfg).tokenize(&mut interner);
+    let output = Lexer::new(SourceRegionId::new(0), PathId::new(0), src, 0, &mut cfg)
+        .tokenize(&mut interner);
     assert_eq!(output.trivia.len(), 1);
     assert_eq!(output.trivia[0].kind, TriviaKind::Newline);
     assert_eq!(output.trivia[0].span.start, 0);
@@ -1120,7 +1275,8 @@ fn trivia_newlines_lf_and_crlf() {
 
     // Single CRLF (\r\n) -> 2-byte span
     let src: &[u8] = b"\r\nx";
-    let output = Lexer::new(SourceRegionId::new(0), PathId::new(0), src, 0, &mut cfg).tokenize(&mut interner);
+    let output = Lexer::new(SourceRegionId::new(0), PathId::new(0), src, 0, &mut cfg)
+        .tokenize(&mut interner);
     assert_eq!(output.trivia.len(), 1);
     assert_eq!(output.trivia[0].kind, TriviaKind::Newline);
     assert_eq!(output.trivia[0].span.start, 0);
@@ -1130,7 +1286,8 @@ fn trivia_newlines_lf_and_crlf() {
 
     // Mixed consecutive newlines
     let src: &[u8] = b"\r\n\n\r\nx";
-    let output = Lexer::new(SourceRegionId::new(0), PathId::new(0), src, 0, &mut cfg).tokenize(&mut interner);
+    let output = Lexer::new(SourceRegionId::new(0), PathId::new(0), src, 0, &mut cfg)
+        .tokenize(&mut interner);
     assert_eq!(output.trivia.len(), 3);
 
     assert_eq!(output.trivia[0].kind, TriviaKind::Newline);
@@ -1155,7 +1312,8 @@ fn trivia_single_line_comments_basic() {
 
     // Standard comment followed by newline
     let src: &[u8] = b"// a single line comment\nfoo";
-    let output = Lexer::new(SourceRegionId::new(0), PathId::new(0), src, 0, &mut cfg).tokenize(&mut interner);
+    let output = Lexer::new(SourceRegionId::new(0), PathId::new(0), src, 0, &mut cfg)
+        .tokenize(&mut interner);
 
     assert_eq!(output.trivia.len(), 2);
     assert_eq!(output.trivia[0].kind, TriviaKind::SingleComment);
@@ -1174,7 +1332,8 @@ fn trivia_single_line_comments_basic() {
 
     // Empty single comment: `//\n`
     let src: &[u8] = b"//\nfoo";
-    let output = Lexer::new(SourceRegionId::new(0), PathId::new(0), src, 0, &mut cfg).tokenize(&mut interner);
+    let output = Lexer::new(SourceRegionId::new(0), PathId::new(0), src, 0, &mut cfg)
+        .tokenize(&mut interner);
     assert_eq!(output.trivia.len(), 2);
     assert_eq!(output.trivia[0].kind, TriviaKind::SingleComment);
     assert_eq!(output.trivia[0].span.start, 0);
@@ -1185,7 +1344,8 @@ fn trivia_single_line_comments_basic() {
 
     // Single comment at EOF without trailing newline
     let src: &[u8] = b"foo // trailing at eof";
-    let output = Lexer::new(SourceRegionId::new(0), PathId::new(0), src, 0, &mut cfg).tokenize(&mut interner);
+    let output = Lexer::new(SourceRegionId::new(0), PathId::new(0), src, 0, &mut cfg)
+        .tokenize(&mut interner);
 
     assert_eq!(output.toks.len(), 2); // Id("foo"), EOF
     assert_eq!(output.toks[0].leading_trivia_indices, 0..0);
@@ -1207,7 +1367,8 @@ fn trivia_single_line_comments_basic() {
     // Single comment with Unicode text
     let src_str = "// 🦀 Ferris\nfoo";
     let src = src_str.as_bytes();
-    let output = Lexer::new(SourceRegionId::new(0), PathId::new(0), src, 0, &mut cfg).tokenize(&mut interner);
+    let output = Lexer::new(SourceRegionId::new(0), PathId::new(0), src, 0, &mut cfg)
+        .tokenize(&mut interner);
     assert_eq!(output.trivia[0].kind, TriviaKind::SingleComment);
     assert_eq!(
         &src[output.trivia[0].span.start as usize..output.trivia[0].span.end as usize],
@@ -1222,7 +1383,8 @@ fn trivia_multi_line_comments_basic() {
 
     // Standard block comment
     let src: &[u8] = b"/* hello block */ foo";
-    let output = Lexer::new(SourceRegionId::new(0), PathId::new(0), src, 0, &mut cfg).tokenize(&mut interner);
+    let output = Lexer::new(SourceRegionId::new(0), PathId::new(0), src, 0, &mut cfg)
+        .tokenize(&mut interner);
 
     assert_eq!(output.trivia.len(), 2);
     assert_eq!(output.trivia[0].kind, TriviaKind::MultiComment);
@@ -1241,7 +1403,8 @@ fn trivia_multi_line_comments_basic() {
 
     // Empty block comment: `/**/`
     let src: &[u8] = b"/**/foo";
-    let output = Lexer::new(SourceRegionId::new(0), PathId::new(0), src, 0, &mut cfg).tokenize(&mut interner);
+    let output = Lexer::new(SourceRegionId::new(0), PathId::new(0), src, 0, &mut cfg)
+        .tokenize(&mut interner);
     assert_eq!(output.trivia.len(), 1);
     assert_eq!(output.trivia[0].kind, TriviaKind::MultiComment);
     assert_eq!(output.trivia[0].span.start, 0);
@@ -1250,7 +1413,8 @@ fn trivia_multi_line_comments_basic() {
 
     // Block comment spanning multiple lines (newlines inside are not separate trivia)
     let src: &[u8] = b"/* line 1\nline 2\r\nline 3 */foo";
-    let output = Lexer::new(SourceRegionId::new(0), PathId::new(0), src, 0, &mut cfg).tokenize(&mut interner);
+    let output = Lexer::new(SourceRegionId::new(0), PathId::new(0), src, 0, &mut cfg)
+        .tokenize(&mut interner);
     assert_eq!(output.trivia.len(), 1);
     assert_eq!(output.trivia[0].kind, TriviaKind::MultiComment);
     assert_eq!(output.trivia[0].span.start, 0);
@@ -1259,7 +1423,8 @@ fn trivia_multi_line_comments_basic() {
 
     // Block comment containing extra asterisks and slashes
     let src: &[u8] = b"/*** not close / nor * ***/foo";
-    let output = Lexer::new(SourceRegionId::new(0), PathId::new(0), src, 0, &mut cfg).tokenize(&mut interner);
+    let output = Lexer::new(SourceRegionId::new(0), PathId::new(0), src, 0, &mut cfg)
+        .tokenize(&mut interner);
     assert_eq!(output.trivia.len(), 1);
     assert_eq!(output.trivia[0].kind, TriviaKind::MultiComment);
     assert_eq!(output.trivia[0].span.start, 0);
@@ -1274,7 +1439,8 @@ fn trivia_nested_multi_line_comments() {
 
     // Nested multi-line comment: `/* outer /* inner */ outer */`
     let src: &[u8] = b"/* outer /* inner */ outer */foo";
-    let output = Lexer::new(SourceRegionId::new(0), PathId::new(0), src, 0, &mut cfg).tokenize(&mut interner);
+    let output = Lexer::new(SourceRegionId::new(0), PathId::new(0), src, 0, &mut cfg)
+        .tokenize(&mut interner);
 
     assert_eq!(output.trivia.len(), 1);
     assert_eq!(output.trivia[0].kind, TriviaKind::MultiComment);
@@ -1294,7 +1460,8 @@ fn trivia_empty_source_and_trivia_only_source() {
 
     // Empty source
     let src: &[u8] = b"";
-    let output = Lexer::new(SourceRegionId::new(0), PathId::new(0), src, 0, &mut cfg).tokenize(&mut interner);
+    let output = Lexer::new(SourceRegionId::new(0), PathId::new(0), src, 0, &mut cfg)
+        .tokenize(&mut interner);
     assert_eq!(output.toks.len(), 1);
     assert_eq!(output.toks[0].tok, Token::EOF);
     assert_eq!(output.toks[0].leading_trivia_indices, 0..0);
@@ -1302,7 +1469,8 @@ fn trivia_empty_source_and_trivia_only_source() {
 
     // Source with only trivia (no semantic tokens)
     let src: &[u8] = b"  // comment\n/* block */\n\t ";
-    let output = Lexer::new(SourceRegionId::new(0), PathId::new(0), src, 0, &mut cfg).tokenize(&mut interner);
+    let output = Lexer::new(SourceRegionId::new(0), PathId::new(0), src, 0, &mut cfg)
+        .tokenize(&mut interner);
 
     assert_eq!(output.toks.len(), 1);
     assert_eq!(output.toks[0].tok, Token::EOF);
@@ -1326,7 +1494,8 @@ fn trivia_single_line_comment_crlf_handling() {
     // In a CRLF-terminated file, `// comment\r\n` ends with a 2-byte CRLF newline.
     // The comment content is `// comment` (bytes 0..10), and the newline is `\r\n` (bytes 10..12).
     let src: &[u8] = b"// comment\r\nfoo";
-    let output = Lexer::new(SourceRegionId::new(0), PathId::new(0), src, 0, &mut cfg).tokenize(&mut interner);
+    let output = Lexer::new(SourceRegionId::new(0), PathId::new(0), src, 0, &mut cfg)
+        .tokenize(&mut interner);
 
     assert_eq!(output.trivia.len(), 2);
     assert_eq!(output.trivia[0].kind, TriviaKind::SingleComment);
@@ -1357,7 +1526,8 @@ fn trivia_nested_multi_line_comment_delimiter_tracking() {
     // Since there are two `/*` openings and only one `*/` closing, depth should be 1 at `*/` and
     // remain unclosed through `foo` up to EOF.
     let src: &[u8] = b"/* a /*/ b */ foo";
-    let output = Lexer::new(SourceRegionId::new(0), PathId::new(0), src, 0, &mut cfg).tokenize(&mut interner);
+    let output = Lexer::new(SourceRegionId::new(0), PathId::new(0), src, 0, &mut cfg)
+        .tokenize(&mut interner);
 
     // If depth tracking skipped only 1 byte for `/*`, the `*` and `/` in `/*/` are matched as
     // both opening and immediately closing the nested comment, causing the single `*/` to close
@@ -1381,7 +1551,8 @@ fn trivia_interleaved_mixed_sequence() {
     let mut cfg = ChrnConfig::default();
 
     let src: &[u8] = b"  /* block */ \t // line\n\r\n\tbar";
-    let output = Lexer::new(SourceRegionId::new(0), PathId::new(0), src, 0, &mut cfg).tokenize(&mut interner);
+    let output = Lexer::new(SourceRegionId::new(0), PathId::new(0), src, 0, &mut cfg)
+        .tokenize(&mut interner);
 
     // Expected sequence:
     // 0: Whitespace "  " (0..2)
@@ -1431,7 +1602,8 @@ fn trivia_token_stream_contiguity_and_association() {
     let mut cfg = ChrnConfig::default();
 
     let src: &[u8] = b"let x: int = 42 // assign\n/* next */ struct Point { x: int }";
-    let output = Lexer::new(SourceRegionId::new(0), PathId::new(0), src, 0, &mut cfg).tokenize(&mut interner);
+    let output = Lexer::new(SourceRegionId::new(0), PathId::new(0), src, 0, &mut cfg)
+        .tokenize(&mut interner);
 
     // Verify contiguity across all tokens:
     // Every token's leading_trivia_indices.start must equal the previous token's leading_trivia_indices.end.
@@ -1501,7 +1673,8 @@ fn trivia_with_embedding_def_and_end() {
     let mut cfg = ChrnConfig::default();
 
     let src: &[u8] = b"@def\n  var x = 1\n@end";
-    let output = Lexer::new(SourceRegionId::new(0), PathId::new(0), src, 0, &mut cfg).tokenize(&mut interner);
+    let output = Lexer::new(SourceRegionId::new(0), PathId::new(0), src, 0, &mut cfg)
+        .tokenize(&mut interner);
 
     // Tokens: Def, var, x, =, 1, End
     assert_eq!(output.toks[0].tok, Token::Def);
@@ -1524,7 +1697,8 @@ fn trivia_associated_with_invalid_tokens() {
     let mut cfg = ChrnConfig::default();
 
     let src: &[u8] = b"  $  valid";
-    let output = Lexer::new(SourceRegionId::new(0), PathId::new(0), src, 0, &mut cfg).tokenize(&mut interner);
+    let output = Lexer::new(SourceRegionId::new(0), PathId::new(0), src, 0, &mut cfg)
+        .tokenize(&mut interner);
 
     assert_eq!(output.toks.len(), 3); // Invalid, Id("valid"), EOF
     assert!(matches!(output.toks[0].tok, Token::Invalid(_)));
@@ -1549,7 +1723,8 @@ fn trivia_unclosed_multi_line_comment_at_eof() {
     let mut cfg = ChrnConfig::default();
 
     let src: &[u8] = b"/* unclosed comment at eof";
-    let output = Lexer::new(SourceRegionId::new(0), PathId::new(0), src, 0, &mut cfg).tokenize(&mut interner);
+    let output = Lexer::new(SourceRegionId::new(0), PathId::new(0), src, 0, &mut cfg)
+        .tokenize(&mut interner);
 
     assert_eq!(output.toks.len(), 1);
     assert_eq!(output.toks[0].tok, Token::EOF);
@@ -1568,7 +1743,8 @@ fn trivia_token_variety_leading_trivia_association() {
     // Exercise diverse token types each preceded by a unique whitespace span:
     // Id, Integer, Float, Str, Char, Bool, and compound symbols
     let src: &[u8] = b"  ident  100  3.14  \"hello\"  'c'  true  ::  :=  ->  =>  ..=";
-    let output = Lexer::new(SourceRegionId::new(0), PathId::new(0), src, 0, &mut cfg).tokenize(&mut interner);
+    let output = Lexer::new(SourceRegionId::new(0), PathId::new(0), src, 0, &mut cfg)
+        .tokenize(&mut interner);
 
     // 11 semantic tokens + 1 EOF = 12 tokens
     // Each of the 11 semantic tokens has exactly 1 leading whitespace trivia

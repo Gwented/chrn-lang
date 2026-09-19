@@ -14,7 +14,12 @@ use chrn_utils::{
 use lang::chrn_classifier::ChrnClassified;
 
 use crate::{
-    chrn_config::{ChrnConfig, chrn_perf::ChrnPerfStage}, id_tag_decls::{EnumTag, FieldTag, StructTag, VariantTag}, lookup::scopes::scopes_concepts::{AssociatedScopeKind, ScopeLookupPattern, ScopeType}, resolvers::{resolver_env::ResolverEnv, resolver_state::ResolverState, typechecker}, script_compiler::{ScriptCompiler, compiler_constants}, semantic::{
+    chrn_config::{ChrnConfig, chrn_perf::ChrnPerfStage},
+    id_tag_decls::{EnumTag, FieldTag, StructTag, VariantTag},
+    lookup::scopes::scopes_concepts::{AssociatedScopeKind, ScopeLookupPattern, ScopeType},
+    resolvers::{resolver_env::ResolverEnv, resolver_state::ResolverState, typechecker},
+    script_compiler::{ScriptCompiler, compiler_constants},
+    semantic::{
         checker_helpers::DuplicateTracker,
         compilation_unit::CompilationUnit,
         hir::{

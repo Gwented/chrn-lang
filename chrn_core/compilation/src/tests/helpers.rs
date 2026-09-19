@@ -270,7 +270,7 @@ pub(super) use chrn_utils::{
         source_span::SourceSpan,
     },
 };
-pub(super) use lang::{keywords::Keyword, values::Value};
+pub(super) use lang::keywords::Keyword;
 
 pub(super) use crate::{
     lexer::Lexer,
@@ -280,7 +280,11 @@ pub(super) use crate::{
         member_resolver::MemberResolver, name_resolver::NamespaceResolver,
         type_resolver::TypeResolver,
     },
-    semantic::compilation_unit::CompilationUnit,
+    semantic::{
+        arbitraries::{ArbitraryFloatKind, ArbitraryIntKind},
+        compilation_unit::CompilationUnit,
+        values::Value,
+    },
 };
 
 // -- Pipeline driver --
@@ -347,7 +351,7 @@ impl Resolution {
 ///
 /// Every module's env is resolved by one resolver instance per stage, because the resolvers
 /// are order-locked: constructing the same one twice trips the `ResolverState` assert.
-fn run_stages(
+pub(super) fn run_stages(
     upto: Stage,
     cfg: &mut ChrnConfig,
     interner: &mut Intern,
@@ -621,8 +625,8 @@ pub(super) fn value_of(compiler: &ScriptCompiler, interner: &Intern, name: &str)
 /// floats compare by bits so a value that lost precision fails rather than rounding into place.
 pub(super) fn values_eq(left: &Value, right: &Value) -> bool {
     match (left, right) {
-        (Value::I64(l), Value::I64(r)) => l == r,
-        (Value::F64(l), Value::F64(r)) => l.to_bits() == r.to_bits(),
+        (Value::ArbitraryInt(l), Value::ArbitraryInt(r)) => l == r,
+        (Value::ArbitraryFloat(l), Value::ArbitraryFloat(r)) => l.to_bits() == r.to_bits(),
         (Value::Bool(l), Value::Bool(r)) => l == r,
         (Value::Char(l), Value::Char(r)) => l == r,
         (Value::InternedStr(l), Value::InternedStr(r)) => l == r,

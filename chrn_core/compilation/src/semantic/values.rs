@@ -1,19 +1,39 @@
 // The value system of script would be simple but the serial does need this too so maybe re-use
 // it?
 
-use chrn_utils::id_types::{InternedId, SymbolId};
-
-use crate::{
+use chrn_utils::id_types::{ExprId, InternedId, SymbolId, TypeId};
+use lang::{
     chrn_classifier::{ChrnClassifiable, ChrnClassified},
     types::boundaries::TypeBoundaryFlags,
 };
 
+use crate::semantic::arbitraries::{ArbitraryFloatKind, ArbitraryIntKind};
+
+// This is supposed to represent something like, let x = 4, where 4 may or may not have a constant
+// value, 4 is the expression, and it's type is whatever is inferred
+/// Metadata over `Value`
+#[derive(Debug, Clone)]
+pub struct ValueInfo {
+    pub type_id: TypeId,
+    pub expr_id: ExprId,
+    pub const_val: Option<Value>,
+}
+
+impl ValueInfo {
+    pub fn new(type_id: TypeId, expr_id: ExprId, const_val: Option<Value>) -> ValueInfo {
+        ValueInfo {
+            type_id,
+            expr_id,
+            const_val,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum Value {
     // For > i128
-    // BigInt(NameId),
-    I64(i64),
-    F64(f64),
+    ArbitraryInt(ArbitraryIntKind),
+    ArbitraryFloat(ArbitraryFloatKind),
     Bool(bool),
     Char(char),
     Func(SymbolId),
@@ -27,8 +47,8 @@ pub enum Value {
 impl Value {
     pub fn kind(&self) -> ValueKind {
         match self {
-            Value::I64(_) => ValueKind::I64,
-            Value::F64(_) => ValueKind::F64,
+            Value::ArbitraryInt(_) => ValueKind::I64,
+            Value::ArbitraryFloat(_) => ValueKind::F64,
             Value::Bool(_) => ValueKind::Bool,
             Value::Char(_) => ValueKind::Char,
             Value::Tuple(_) => ValueKind::Tuple,
@@ -51,8 +71,10 @@ impl Value {
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum ValueKind {
-    // BigInt,
+    BigInt,
+    BigFloat,
     I64,
+    U64,
     F64,
     Char,
     Func,
@@ -73,8 +95,9 @@ impl ValueKind {
     /// handled accordingly externally.
     pub fn boundaries(self) -> Option<TypeBoundaryFlags> {
         match self {
-            ValueKind::I64 => Some(TypeBoundaryFlags::SIGNED_INTEGER),
-            ValueKind::F64 => Some(TypeBoundaryFlags::FLOAT),
+            ValueKind::U64 => Some(TypeBoundaryFlags::UNSIGNED_INTEGER),
+            ValueKind::I64 | ValueKind::BigInt => Some(TypeBoundaryFlags::SIGNED_INTEGER),
+            ValueKind::F64 | ValueKind::BigFloat => Some(TypeBoundaryFlags::FLOAT),
             ValueKind::Char => Some(TypeBoundaryFlags::CHAR),
             // Not sure if values themselves are a good interface for getting the boundary of a flag
             // Maybe this should stay an Option
@@ -90,6 +113,9 @@ impl ValueKind {
 impl ChrnClassifiable for ValueKind {
     fn to_classified(&self) -> ChrnClassified {
         match self {
+            ValueKind::BigInt => ChrnClassified::BigInt,
+            ValueKind::BigFloat => ChrnClassified::BigFloat,
+            ValueKind::U64 => ChrnClassified::U64,
             ValueKind::I64 => ChrnClassified::I64,
             ValueKind::F64 => ChrnClassified::F64,
             ValueKind::Char => ChrnClassified::Char,

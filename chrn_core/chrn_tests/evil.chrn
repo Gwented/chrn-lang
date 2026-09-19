@@ -44,6 +44,14 @@ for varthing1 {}
 // Makes it sound like it didn't search the namespace
 // let x = i32::e#3
 
+let decimal = i64::MAX + 16
+@end
+let float = 179769313486231570000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000.0
+let bin = 0b0011
+let octal = 0o2
+let hex = 0x003
+// let decimal_overflow = 9223372036854775808
+
 var->
 varthing1: str
 varthing2: u64
@@ -70,7 +78,7 @@ for Structure {
         // Assuming `self` is going to exist
         //
         override JAVA=>types{change = java::char}
-        override RUST=>types{change i32 = rust::i32}
+        override RUST=>types{change = rust::i32}
         // Says is a variable and not a type, but should point to the source where it saw the
         // variable over type. Also should this be public facing where it says it works off preference
         // not separation?
@@ -89,7 +97,7 @@ for Structure {
 }
 
 for nest Block=>k {
-    override JAVA=>types{change = java::char}
+    override JAVA=>types{change u32 = java::char}
 }
 
 for var varthing1 { override RUST=>types{change = rust::i32} }

@@ -1,6 +1,5 @@
 use crate::types::externs::{
-    CharacterEncoding, ExternTypeMetadata, ExternTypeRepresentation,
-    Signedness, TypeWidth,
+    CharacterEncoding, ExternTypeMetadata, ExternTypeRepresentation, Signedness, TypeWidth,
 };
 use chrn_utils::{id_types::InternedId, intern};
 

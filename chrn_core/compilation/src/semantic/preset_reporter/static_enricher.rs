@@ -7,9 +7,11 @@
 //! rather than emit a basic error that says it can't be applied.
 
 use chrn_utils::source_map::source_diagnostic::SourceDiagnosticBuilder;
-use lang::values::ValueKind;
 
-use crate::parser::ast::ast_concepts::{BinaryOp, UnaryOp};
+use crate::{
+    parser::ast::ast_concepts::{BinaryOp, UnaryOp},
+    semantic::values::ValueKind,
+};
 
 // These seem a bit intrunsive..
 // Agent or not one could easily infer that not being applied is only usable for bool, along with

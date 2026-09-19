@@ -1,12 +1,18 @@
 use super::helpers::*;
-use crate::script_compiler::compiler_constants::{CORE_I64, CORE_STR, CORE_UNKNOWN};
+use crate::parser::ast::ast_concepts::{AbstractDecl, AbstractVar, Item, SectionKind};
+use crate::parser::ast::ast_exprs::{AstExpr, SpannedExpr};
+use crate::script_compiler::compiler_constants::{
+    CORE_BIGFLOAT, CORE_BIGINT, CORE_F64, CORE_I64, CORE_STR, CORE_U64, CORE_UNKNOWN,
+};
+use crate::semantic::arbitraries::{ArbitraryIntKind, int_from_i64};
 use crate::semantic::hir::hir_concepts::Type;
 use crate::semantic::hir::hir_exprs::ResolvedExpr;
 use crate::semantic::hir::hir_impls::ImplMemberKind;
 use crate::semantic::hir::hir_symbols::SymbolKind;
-use crate::semantic::hir::value_info::ValueInfo;
+use crate::semantic::values::ValueInfo;
 use crate::walk_type_id_deferred;
 use chrn_utils::id_types::TypeId;
+use chrn_utils::source_map::source_span::SourceSpan;
 
 #[test]
 fn type_resolver_simple_test() {
@@ -189,7 +195,10 @@ fn type_resolver_complex_test() {
         "CONSTANT should have i64 type"
     );
     assert!(
-        matches!(val_info.const_val, Some(Value::I64(4))),
+        matches!(
+            val_info.const_val,
+            Some(Value::ArbitraryInt(ArbitraryIntKind::I64(4)))
+        ),
         "CONSTANT should have const value Some(I64(4)), got {:?}",
         val_info.const_val
     );
@@ -233,6 +242,170 @@ fn type_resolver_string_concat_type_test() {
     );
 }
 
+/// Proves that non-decimal integer literals (hexadecimal, binary, octal) resolve to
+/// their corresponding integer values and types.
+#[test]
+fn type_resolver_non_decimal_integers_parse_to_values() {
+    let (compiler, interner) = compile_and_resolve_single_module(
+        "
+        let HEX = 0xff
+        let HEX_UPPER = 0xFF
+        let HEX_SEP = 0xff_ff
+        let BIN = 0b1010
+        let OCT = 0o77
+        ",
+    );
+
+    let hex = value_of(&compiler, &interner, "HEX");
+    assert!(
+        matches!(hex, Value::ArbitraryInt(ArbitraryIntKind::I64(255))),
+        "HEX should be I64(255), got {hex:?}"
+    );
+
+    let hex_upper = value_of(&compiler, &interner, "HEX_UPPER");
+    assert!(
+        matches!(hex_upper, Value::ArbitraryInt(ArbitraryIntKind::I64(255))),
+        "HEX_UPPER should be I64(255), got {hex_upper:?}"
+    );
+
+    let hex_sep = value_of(&compiler, &interner, "HEX_SEP");
+    assert!(
+        matches!(hex_sep, Value::ArbitraryInt(ArbitraryIntKind::I64(65_535))),
+        "HEX_SEP should be I64(65535), got {hex_sep:?}"
+    );
+
+    let bin = value_of(&compiler, &interner, "BIN");
+    assert!(
+        matches!(bin, Value::ArbitraryInt(ArbitraryIntKind::I64(10))),
+        "BIN should be I64(10), got {bin:?}"
+    );
+
+    let oct = value_of(&compiler, &interner, "OCT");
+    assert!(
+        matches!(oct, Value::ArbitraryInt(ArbitraryIntKind::I64(63))),
+        "OCT should be I64(63), got {oct:?}"
+    );
+}
+
+/// Invalid radix digits must never panic the type resolver.
+///
+/// Proves that scripts containing radix literals with invalid digits (such as `0b102`,
+/// `0b2`, `0o89`, `0o8`) complete through type resolution cleanly without panicking,
+/// regardless of diagnostic emission.
+#[test]
+fn type_resolver_invalid_radix_digits_do_not_panic() {
+    for text in [
+        "let X = 0b102",
+        "let X = 0b2",
+        "let X = 0o89",
+        "let X = 0o8",
+    ] {
+        // Completing the pipeline without panicking proves resilience against malformed radix inputs.
+        let _ = resolve_single_module(text, Stage::Type);
+    }
+}
+
+#[test]
+fn arbitrary_int_kind_from_str_invalid_radix_digits_return_none() {
+    assert!(ArbitraryIntKind::from_str("102", Notation::Bin).is_none());
+    assert!(ArbitraryIntKind::from_str("89", Notation::Octal).is_none());
+    assert!(ArbitraryIntKind::from_str("1a", Notation::Decimal).is_none());
+}
+
+/// Proves that unparseable integer literals reaching the type resolver report
+/// `NumericOverflow` as a diagnostic rather than panicking.
+#[test]
+fn type_resolver_unparseable_integer_yields_numeric_overflow_diagnostic() {
+    let (arena, mut interner, mut cfg, mut compiler) = mock_single_module_compiler("");
+
+    let mut ast_info = AstInfo::new();
+    let name_id = interner.intern("X");
+    let val_id = interner.intern("102");
+    let expr = SpannedExpr::new(
+        AstExpr::Integer(val_id, Notation::Bin),
+        SourceSpan::default(),
+    );
+    let var = AbstractVar::new(name_id, SourceSpan::default(), expr, false);
+    ast_info.push_item(SectionKind::Neutral, Item::Decl(AbstractDecl::Var(var)));
+
+    let asts = vec![Some(ast_info)];
+    let reg_envs = build_registration_envs(&compiler, &arena, &asts);
+
+    let (_ns, _member, ty, _cn) = run_stages(
+        Stage::Type,
+        &mut cfg,
+        &mut interner,
+        &mut compiler,
+        &reg_envs,
+        &arena,
+        &asts,
+    );
+
+    assert_eq!(ty.err_count(), 1);
+    assert!(ty.diags[0].core_msg.contains("had an overflow"));
+    assert!(ty.diags[0].core_msg.contains("102"));
+}
+
+/// Float literals overflowing `f64` keep their magnitude as `BigFloat`
+/// instead of collapsing to `inf`.
+///
+/// Proves that float literals exceeding `f64` representation range (such as `1e1000`)
+/// resolve to finite `ArbitraryFloatKind::BigFloat` values preserving their full
+/// magnitude and precision.
+#[test]
+fn type_resolver_overflowing_float_literal_becomes_bigfloat() {
+    let res = resolve_single_module("let X = 1e1000", Stage::Type).expect_ok();
+    match res.value_of("X") {
+        Value::ArbitraryFloat(ArbitraryFloatKind::BigFloat(v)) => {
+            assert!(
+                !v.repr().is_infinite(),
+                "overflowing literal must stay finite, got {v}"
+            );
+            let rendered = format!("{v}");
+            assert_eq!(
+                rendered.len(),
+                1001,
+                "expected `1` followed by 1000 zeros, got {rendered}"
+            );
+            assert!(
+                rendered.starts_with('1'),
+                "expected magnitude 1e1000, got {rendered}"
+            );
+        }
+        other => panic!("expected BigFloat for `1e1000`, got {other:?}"),
+    }
+}
+
+#[test]
+fn type_resolver_literal_types_match_arbitrary_type_id() {
+    let res = resolve_single_module(
+        "
+        let A = 42
+        let B = 9223372036854775808
+        let C = 18446744073709551616
+        let D = 3.14
+        let E = 1e1000
+        ",
+        Stage::Type,
+    )
+    .expect_ok();
+
+    let get_type = |name: &str| -> TypeId {
+        let name_id = res.interner.try_search_str(name).unwrap();
+        let var_def = find_user_var(&res.compiler, name_id);
+        match &var_def.state {
+            VariableState::Known(value_id) => res.compiler.values[*value_id].type_id,
+            _ => panic!("unexpected var state"),
+        }
+    };
+
+    assert_eq!(get_type("A"), TypeId::new(CORE_I64));
+    assert_eq!(get_type("B"), TypeId::new(CORE_U64));
+    assert_eq!(get_type("C"), TypeId::new(CORE_BIGINT));
+    assert_eq!(get_type("D"), TypeId::new(CORE_F64));
+    assert_eq!(get_type("E"), TypeId::new(CORE_BIGFLOAT));
+}
+
 fn root_option_expr_and_value<'a>(
     resolution: &'a Resolution,
     option_name: &str,
@@ -264,7 +437,7 @@ fn assert_i64_array(option_name: &str, value: &ValueInfo, expected: &[i64]) {
     assert_eq!(values.len(), expected.len());
     for (value, expected) in values.iter().zip(expected) {
         assert!(
-            matches!(value, Value::I64(found) if found == expected),
+            matches!(value, Value::ArbitraryInt(found) if *found == int_from_i64(*expected)),
             "expected i64 value {expected}, got {value:?}"
         );
     }

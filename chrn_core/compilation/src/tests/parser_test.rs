@@ -1433,7 +1433,9 @@ fn parse_let_hex_integer() {
     let var = ast.get_var(section_items(&ast, SectionKind::Neutral)[0]);
     match &var.spanned_expr.expr {
         AstExpr::Integer(id, Notation::Hex) => {
-            assert_eq!(interner.search(*id), "255");
+            // The lexer keeps the raw digits and the notation; parsing the
+            // digits into a value happens later in the type resolver.
+            assert_eq!(interner.search(*id), "ff");
         }
         other => panic!("expected Integer(Hex), got {other:?}"),
     }
@@ -1447,7 +1449,9 @@ fn parse_let_binary_integer() {
     let var = ast.get_var(section_items(&ast, SectionKind::Neutral)[0]);
     match &var.spanned_expr.expr {
         AstExpr::Integer(id, Notation::Bin) => {
-            assert_eq!(interner.search(*id), "10");
+            // The lexer keeps the raw digits and the notation; parsing the
+            // digits into a value happens later in the type resolver.
+            assert_eq!(interner.search(*id), "1010");
         }
         other => panic!("expected Integer(Bin), got {other:?}"),
     }
@@ -1461,9 +1465,27 @@ fn parse_let_octal_integer() {
     let var = ast.get_var(section_items(&ast, SectionKind::Neutral)[0]);
     match &var.spanned_expr.expr {
         AstExpr::Integer(id, Notation::Octal) => {
-            assert_eq!(interner.search(*id), "63");
+            // The lexer keeps the raw digits and the notation; parsing the
+            // digits into a value happens later in the type resolver.
+            assert_eq!(interner.search(*id), "77");
         }
         other => panic!("expected Integer(Octal), got {other:?}"),
+    }
+}
+
+#[test]
+fn parse_let_underscored_hex_integer() {
+    let text = "let x = 0xff_ff";
+    let (ast, interner) = parse_text(text);
+
+    let var = ast.get_var(section_items(&ast, SectionKind::Neutral)[0]);
+    match &var.spanned_expr.expr {
+        AstExpr::Integer(id, Notation::Hex) => {
+            // Separators are stripped like in decimal literals, but the
+            // remaining digits stay raw for the type resolver to parse.
+            assert_eq!(interner.search(*id), "ffff");
+        }
+        other => panic!("expected Integer(Hex), got {other:?}"),
     }
 }
 

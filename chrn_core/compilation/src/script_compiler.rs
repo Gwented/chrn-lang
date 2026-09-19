@@ -41,19 +41,21 @@ use crate::{
             InstantiationSymbolBase, InstantiationSymbolKind, InstantiationVariable, InstiationType,
         },
     },
-    semantic::hir::{
-        hir_concepts::{BuiltinTypeInfo, Table, Type, TypeInfo},
-        hir_exprs::{ExprHir, ResolvedExpr, ResolvedExprMetadata},
-        hir_impls::{
-            ConfigMember, ConfigRoot, ImplHir, ImplHirKind, ImplMemberKind, MultiTypeAssignment,
-            OptionAssignmentMember, OptionAssignmentRoot,
+    semantic::{
+        hir::{
+            hir_concepts::{BuiltinTypeInfo, Table, Type, TypeInfo},
+            hir_exprs::{ExprHir, ResolvedExpr, ResolvedExprMetadata},
+            hir_impls::{
+                ConfigMember, ConfigRoot, ImplHir, ImplHirKind, ImplMemberKind,
+                MultiTypeAssignment, OptionAssignmentMember, OptionAssignmentRoot,
+            },
+            hir_symbols::{
+                AliasDef, EnumDef, FieldRepre, FuncDef, MemberSymbolKind, StructDef, Symbol,
+                SymbolKind, SymbolOrigin, TypeDef, VarDef, VariableMetadata, VariableState,
+                VariantRepre,
+            },
         },
-        hir_symbols::{
-            AliasDef, EnumDef, FieldRepre, FuncDef, MemberSymbolKind, StructDef, Symbol,
-            SymbolKind, SymbolOrigin, TypeDef, VarDef, VariableMetadata, VariableState,
-            VariantRepre,
-        },
-        value_info::ValueInfo,
+        values::ValueInfo,
     },
     walk_type_id_deferred,
 };

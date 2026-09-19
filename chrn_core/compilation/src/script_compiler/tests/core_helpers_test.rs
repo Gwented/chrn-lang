@@ -5,12 +5,9 @@ use chrn_utils::{
     source_map::source_span::SourceSpan,
     utils::containers::SpannedContainer,
 };
-use lang::{
-    types::{
-        builtins::{BuiltinType, BuiltinTypeKind},
-        externs::{ExternPlatformType, java_types::JavaTypeKind, rust_types::RustTypeKind},
-    },
-    values::Value,
+use lang::types::{
+    builtins::{BuiltinType, BuiltinTypeKind},
+    externs::{ExternPlatformType, java_types::JavaTypeKind, rust_types::RustTypeKind},
 };
 
 use crate::{
@@ -31,12 +28,13 @@ use crate::{
             },
         },
     },
+    semantic::arbitraries::{ArbitraryFloatKind, ArbitraryIntKind},
     semantic::hir::{
         hir_concepts::{Type, TypeInfo},
         hir_exprs::{ExprHir, ResolvedExpr, ResolvedExprMetadata},
         hir_symbols::{Symbol, SymbolKind, SymbolOrigin, VarDef, VariableMetadata, VariableState},
-        value_info::ValueInfo,
     },
+    semantic::values::{Value, ValueInfo},
 };
 
 /// Builds the core module the same way `ScriptCompiler::init` does, with no user modules
@@ -621,9 +619,9 @@ fn bound_name(name_id: InternedId) -> &'static str {
 /// `Value` has no `PartialEq`, and only the variants `InstiationValue` can produce are compared.
 fn same_value(left: &Value, right: &Value) -> bool {
     match (left, right) {
-        (Value::I64(l), Value::I64(r)) => l == r,
+        (Value::ArbitraryInt(l), Value::ArbitraryInt(r)) => l == r,
         // Bit equality rather than `==` so a bound that lost precision on the way in fails
-        (Value::F64(l), Value::F64(r)) => l.to_bits() == r.to_bits(),
+        (Value::ArbitraryFloat(l), Value::ArbitraryFloat(r)) => l.to_bits() == r.to_bits(),
         (Value::Bool(l), Value::Bool(r)) => l == r,
         (Value::Char(l), Value::Char(r)) => l == r,
         (Value::InternedStr(l), Value::InternedStr(r)) => l == r,
@@ -636,16 +634,46 @@ fn same_value(left: &Value, right: &Value) -> bool {
 /// with itself.
 fn expected_bounds(kind: BuiltinTypeKind) -> Option<(Value, Value)> {
     let pair = match kind {
-        BuiltinTypeKind::I8 => (Value::I64(127), Value::I64(-128)),
-        BuiltinTypeKind::U8 => (Value::I64(255), Value::I64(0)),
-        BuiltinTypeKind::I16 => (Value::I64(32_767), Value::I64(-32_768)),
-        BuiltinTypeKind::U16 => (Value::I64(65_535), Value::I64(0)),
-        BuiltinTypeKind::F16 => (Value::F64(65_504.0), Value::F64(-65_504.0)),
-        BuiltinTypeKind::I32 => (Value::I64(2_147_483_647), Value::I64(-2_147_483_648)),
-        BuiltinTypeKind::U32 => (Value::I64(4_294_967_295), Value::I64(0)),
-        BuiltinTypeKind::F32 => (Value::F64(f32::MAX as f64), Value::F64(f32::MIN as f64)),
-        BuiltinTypeKind::I64 => (Value::I64(i64::MAX), Value::I64(i64::MIN)),
-        BuiltinTypeKind::F64 => (Value::F64(f64::MAX), Value::F64(f64::MIN)),
+        BuiltinTypeKind::I8 => (
+            Value::ArbitraryInt(ArbitraryIntKind::I64(127)),
+            Value::ArbitraryInt(ArbitraryIntKind::I64(-128)),
+        ),
+        BuiltinTypeKind::U8 => (
+            Value::ArbitraryInt(ArbitraryIntKind::I64(255)),
+            Value::ArbitraryInt(ArbitraryIntKind::I64(0)),
+        ),
+        BuiltinTypeKind::I16 => (
+            Value::ArbitraryInt(ArbitraryIntKind::I64(32_767)),
+            Value::ArbitraryInt(ArbitraryIntKind::I64(-32_768)),
+        ),
+        BuiltinTypeKind::U16 => (
+            Value::ArbitraryInt(ArbitraryIntKind::I64(65_535)),
+            Value::ArbitraryInt(ArbitraryIntKind::I64(0)),
+        ),
+        BuiltinTypeKind::F16 => (
+            Value::ArbitraryFloat(ArbitraryFloatKind::F64(65_504.0)),
+            Value::ArbitraryFloat(ArbitraryFloatKind::F64(-65_504.0)),
+        ),
+        BuiltinTypeKind::I32 => (
+            Value::ArbitraryInt(ArbitraryIntKind::I64(2_147_483_647)),
+            Value::ArbitraryInt(ArbitraryIntKind::I64(-2_147_483_648)),
+        ),
+        BuiltinTypeKind::U32 => (
+            Value::ArbitraryInt(ArbitraryIntKind::I64(4_294_967_295)),
+            Value::ArbitraryInt(ArbitraryIntKind::I64(0)),
+        ),
+        BuiltinTypeKind::F32 => (
+            Value::ArbitraryFloat(ArbitraryFloatKind::F64(f32::MAX as f64)),
+            Value::ArbitraryFloat(ArbitraryFloatKind::F64(f32::MIN as f64)),
+        ),
+        BuiltinTypeKind::I64 => (
+            Value::ArbitraryInt(ArbitraryIntKind::I64(i64::MAX)),
+            Value::ArbitraryInt(ArbitraryIntKind::I64(i64::MIN)),
+        ),
+        BuiltinTypeKind::F64 => (
+            Value::ArbitraryFloat(ArbitraryFloatKind::F64(f64::MAX)),
+            Value::ArbitraryFloat(ArbitraryFloatKind::F64(f64::MIN)),
+        ),
         // `u64`, `i128`, `u128` and `f128` do not fit `InstiationValue`, and `sized`/`unsized`
         // are pointer-sized, so their bounds belong to the target rather than the host
         _ => return None,
@@ -1175,7 +1203,7 @@ fn core_namespaces_f16_f32_and_f64_declare_math_constants() {
         );
         assert!(same_value(
             rc.val.const_val.as_ref().unwrap(),
-            &Value::F64(expected_val)
+            &Value::ArbitraryFloat(ArbitraryFloatKind::F64(expected_val))
         ));
     }
 
@@ -1198,7 +1226,7 @@ fn core_namespaces_f16_f32_and_f64_declare_math_constants() {
         );
         assert!(same_value(
             rc.val.const_val.as_ref().unwrap(),
-            &Value::F64(expected_val)
+            &Value::ArbitraryFloat(ArbitraryFloatKind::F64(expected_val))
         ));
     }
 
@@ -1221,7 +1249,7 @@ fn core_namespaces_f16_f32_and_f64_declare_math_constants() {
         );
         assert!(same_value(
             rc.val.const_val.as_ref().unwrap(),
-            &Value::F64(expected_val)
+            &Value::ArbitraryFloat(ArbitraryFloatKind::F64(expected_val))
         ));
     }
 }
@@ -1262,7 +1290,7 @@ fn core_namespaces_declare_bits_and_bytes() {
         assert_eq!(bits_rc.val.type_id, i64_type_id);
         assert!(same_value(
             bits_rc.val.const_val.as_ref().unwrap(),
-            &Value::I64(expected_bits)
+            &Value::ArbitraryInt(ArbitraryIntKind::I64(expected_bits))
         ));
 
         let bytes_rc = registered_constant(
@@ -1273,7 +1301,7 @@ fn core_namespaces_declare_bits_and_bytes() {
         assert_eq!(bytes_rc.val.type_id, i64_type_id);
         assert!(same_value(
             bytes_rc.val.const_val.as_ref().unwrap(),
-            &Value::I64(expected_bytes)
+            &Value::ArbitraryInt(ArbitraryIntKind::I64(expected_bytes))
         ));
     }
 }
@@ -1294,7 +1322,7 @@ fn core_namespaces_declare_radix() {
         assert_eq!(radix_rc.val.type_id, i64_type_id);
         assert!(same_value(
             radix_rc.val.const_val.as_ref().unwrap(),
-            &Value::I64(2)
+            &Value::ArbitraryInt(ArbitraryIntKind::I64(2))
         ));
     }
 }
@@ -1317,7 +1345,7 @@ fn core_namespaces_f32_and_f64_declare_float_attributes() {
         assert_eq!(rc.val.type_id, i64_type_id);
         assert!(same_value(
             rc.val.const_val.as_ref().unwrap(),
-            &Value::I64(expected)
+            &Value::ArbitraryInt(ArbitraryIntKind::I64(expected))
         ));
     };
     let check_f16_f64 = |name_id: u32, expected: f64| {
@@ -1325,7 +1353,7 @@ fn core_namespaces_f32_and_f64_declare_float_attributes() {
         assert_eq!(rc.val.type_id, f64_type_id);
         assert!(same_value(
             rc.val.const_val.as_ref().unwrap(),
-            &Value::F64(expected)
+            &Value::ArbitraryFloat(ArbitraryFloatKind::F64(expected))
         ));
     };
 
@@ -1349,7 +1377,7 @@ fn core_namespaces_f32_and_f64_declare_float_attributes() {
         assert_eq!(rc.val.type_id, i64_type_id);
         assert!(same_value(
             rc.val.const_val.as_ref().unwrap(),
-            &Value::I64(expected)
+            &Value::ArbitraryInt(ArbitraryIntKind::I64(expected))
         ));
     };
     let check_f32_f64 = |name_id: u32, expected: f64| {
@@ -1357,7 +1385,7 @@ fn core_namespaces_f32_and_f64_declare_float_attributes() {
         assert_eq!(rc.val.type_id, f64_type_id);
         assert!(same_value(
             rc.val.const_val.as_ref().unwrap(),
-            &Value::F64(expected)
+            &Value::ArbitraryFloat(ArbitraryFloatKind::F64(expected))
         ));
     };
 
@@ -1383,7 +1411,7 @@ fn core_namespaces_f32_and_f64_declare_float_attributes() {
         assert_eq!(rc.val.type_id, i64_type_id);
         assert!(same_value(
             rc.val.const_val.as_ref().unwrap(),
-            &Value::I64(expected)
+            &Value::ArbitraryInt(ArbitraryIntKind::I64(expected))
         ));
     };
     let check_f64_f64 = |name_id: u32, expected: f64| {
@@ -1391,7 +1419,7 @@ fn core_namespaces_f32_and_f64_declare_float_attributes() {
         assert_eq!(rc.val.type_id, f64_type_id);
         assert!(same_value(
             rc.val.const_val.as_ref().unwrap(),
-            &Value::F64(expected)
+            &Value::ArbitraryFloat(ArbitraryFloatKind::F64(expected))
         ));
     };
 
