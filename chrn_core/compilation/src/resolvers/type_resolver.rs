@@ -3488,7 +3488,7 @@ impl<'res> TypeResolver<'res> {
                             });
                         }
                         NumericIntParseError::Invalid => {
-                            return Err(PresetErr::NumericOverflow {
+                            return Err(PresetErr::NumericParseError {
                                 sp_num: SpannedContainer::new(*name_id, spanned_expr.span),
                                 fmtted_ty: ChrnClassified::Integer,
                             });
@@ -3534,7 +3534,7 @@ impl<'res> TypeResolver<'res> {
                             });
                         }
                         NumericFloatParseError::Invalid => {
-                            return Err(PresetErr::NumericOverflow {
+                            return Err(PresetErr::NumericParseError {
                                 sp_num: SpannedContainer::new(*name_id, spanned_expr.span),
                                 fmtted_ty: ChrnClassified::Float,
                             });

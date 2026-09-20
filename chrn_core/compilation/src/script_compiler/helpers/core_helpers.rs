@@ -20,7 +20,8 @@ use super::instantiation_symbols::InstiationValue;
 
 //NOTE: BuiltinTypes assigned must align with possible arbitrary values, rather than the actual
 //value present. There is also no consistency in regards to something being i64 or u64 by default,
-//maybe will deal with that when it poses an issue. Bug are solved though.
+//maybe will deal with that when it poses an issue.
+//BUGS ARE SOLVED
 
 static NAMESPACE_I8: [InstantiationSymbolBase; 4] = [
     new_max(InstantiationVariable::new(
@@ -68,8 +69,7 @@ static NAMESPACE_U16: [InstantiationSymbolBase; 4] = [
     new_bytes(2),
 ];
 
-//NOTE: Rust has no stable `f16`, so the IEEE-754 binary16 bounds are spelled out. Both are exact
-//in `f64`. The math constants below are the `f64` values rounded to binary16.
+//NOTE: Rust has no stable `f16`, so the IEEE-754 binary16 bounds are spelled out. The math constants below are the `f64` values rounded to binary16.
 static NAMESPACE_F16: [InstantiationSymbolBase; 42] = [
     new_max(InstantiationVariable::new(
         InstiationType::BuiltinType(BuiltinType::F64),

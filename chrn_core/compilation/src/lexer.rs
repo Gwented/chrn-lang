@@ -34,6 +34,8 @@ const NOTATION_FLOAT: u8 = 1 << 0;
 const NOTATION_HEX: u8 = 1 << 1;
 const NOTATION_BIN: u8 = 1 << 2;
 const NOTATION_OCTAL: u8 = 1 << 3;
+// More so just to note the notation
+const NOTATION_SCIENTIFIC: u8 = 1 << 4;
 
 // Boolean for is_utf8? Asking since if this existed we. We would do something. (Lie)
 pub struct Lexer<'a> {
@@ -652,9 +654,6 @@ impl Lexer<'_> {
         }
     }
 
-    //TODO: This defaults to i64 as of right now, but should stay interned in the future.
-    // This could also be more readable by building up the string, but it's fine as is.
-    // Unicode
     /// Reads a string of characters and attempts to interpret it as a numeric value
     /// based off of language expected heuristics.
     ///
@@ -674,51 +673,96 @@ impl Lexer<'_> {
             notation |= NOTATION_OCTAL;
             self.skip(2);
         }
-        //TODO: Maybe apply scientific
 
         while self.pos < self.src_bytes.len() {
-            match self.peek() {
-                b'a'..=b'f' | b'A'..=b'F' if (notation & NOTATION_HEX) != 0 => {
-                    self.advance();
-                }
-                b'0' | b'1' if (notation & NOTATION_BIN) != 0 => {
-                    self.advance();
-                }
-                b'0'..=b'7' if (notation & NOTATION_OCTAL) != 0 => {
-                    self.advance();
-                }
-                b'0'..=b'9' if (notation & (NOTATION_BIN | NOTATION_OCTAL)) == 0 => {
-                    self.advance();
-                }
-                // May remove '+' being usable
-                b'e' if (notation & (NOTATION_HEX | NOTATION_BIN | NOTATION_OCTAL)) == 0 => {
-                    let next = self.peek_ahead(1);
+            let b = self.peek();
 
-                    if (next == b'+' || next == b'-') && self.peek_ahead(2).is_ascii_digit() {
-                        notation |= NOTATION_FLOAT;
-                        self.skip(2);
-                    } else if next.is_ascii_digit() {
-                        notation |= NOTATION_FLOAT;
+            if b == b'_' {
+                self.advance();
+                continue;
+            }
+
+            match notation {
+                NOTATION_FLOAT => match b {
+                    b'0'..=b'9' => {
+                        self.advance();
+                    }
+                    b'e' => {
+                        let next = self.peek_ahead(1);
+
+                        // Making sure of "1.2e+{num}" to avoid "1.2e+h"
+                        if (next == b'+' || next == b'-') && self.peek_ahead(2).is_ascii_digit() {
+                            notation |= NOTATION_SCIENTIFIC;
+                            self.skip(2);
+                        } else if next.is_ascii_digit() {
+                            notation |= NOTATION_SCIENTIFIC;
+                            self.advance();
+                        } else {
+                            break;
+                        }
+                    }
+                    _ => break,
+                },
+                n if n == (NOTATION_FLOAT | NOTATION_SCIENTIFIC) => {
+                    if matches!(b, b'0'..=b'9') {
                         self.advance();
                     } else {
                         break;
                     }
                 }
-                b'.' if (notation & NOTATION_FLOAT) == 0
-                    && (notation & (NOTATION_HEX | NOTATION_BIN | NOTATION_OCTAL)) == 0
-                    && self.peek_ahead(1) != b'.'
-                    // Disallows "2." and enforces "2.{digit}"
-                    && self.peek_ahead(1).is_ascii_digit() =>
-                {
-                    notation |= NOTATION_FLOAT;
-                    self.advance();
+                NOTATION_BIN => {
+                    if matches!(b, b'0' | b'1') {
+                        self.advance();
+                    } else {
+                        break;
+                    }
                 }
-                //NOTE: Checking if next could be "..=" to avoid collision. Could be better. Maybe.
-                b'.' if (notation & NOTATION_FLOAT) == 0 && self.peek_ahead(1) == b'.' => break,
-                b'_' => {
-                    self.advance();
+                NOTATION_HEX => match b {
+                    b'0'..=b'9' => {
+                        self.advance();
+                    }
+                    b'a'..=b'f' | b'A'..=b'F' => {
+                        self.advance();
+                    }
+                    _ => break,
+                },
+                NOTATION_OCTAL => {
+                    if matches!(b, b'0'..=b'7') {
+                        self.advance();
+                    } else {
+                        break;
+                    }
                 }
-                _ => break,
+                // Base10
+                _ => {
+                    debug_assert_eq!(notation, 0);
+                    match b {
+                        b'0'..=b'9' => {
+                            self.advance();
+                        }
+                        // I HAVE AN AGENDA. WE DO NOT ALLOW 2. IT NEEDS 2.0
+                        b'.' if self.peek_ahead(1).is_ascii_digit() => {
+                            notation |= NOTATION_FLOAT;
+                            self.skip(2);
+                        }
+                        b'e' => {
+                            let next = self.peek_ahead(1);
+
+                            // Making sure of "1e+{num}" to avoid "1e+h"
+                            if (next == b'+' || next == b'-') && self.peek_ahead(2).is_ascii_digit()
+                            {
+                                notation |= NOTATION_FLOAT | NOTATION_SCIENTIFIC;
+                                self.skip(2);
+                            } else if next.is_ascii_digit() {
+                                notation |= NOTATION_FLOAT | NOTATION_SCIENTIFIC;
+                                self.advance();
+                            } else {
+                                break;
+                            }
+                        }
+                        _ => break,
+                    }
+                }
             }
         }
 
@@ -739,6 +783,7 @@ impl Lexer<'_> {
             }
         };
 
+        //TODO: Notation scientific preservation
         let (id_str, num_notation) =
             if (notation & (NOTATION_HEX | NOTATION_BIN | NOTATION_OCTAL)) != 0 {
                 // Cuts off notation syntax and returns the notation for later
@@ -763,20 +808,6 @@ impl Lexer<'_> {
                     Notation::Octal
                 };
 
-                // -- old defaulting to i64 --
-                // let num = match i64::from_str_radix(&digits, num_notation.radix()) {
-                //     Ok(n) => n,
-                //     Err(_) => {
-                //         self.increment_invalid_tok();
-                //         let msg_id = interner.intern("<invalid numeric literal>");
-                //         return SpannedToken {
-                //             tok: Token::Invalid(msg_id),
-                //             span: SourceSpan::new(self.current_region_id, start as u32, end as u32),
-                //             leading_trivia_indices: self.trivia_start_idx as u32
-                //                 ..self.trivia_end_idx as u32,
-                //         };
-                //     }
-                // };
                 (digits.to_string(), num_notation)
             } else {
                 (raw_str.replace('_', ""), Notation::Decimal)

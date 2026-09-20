@@ -1,4 +1,6 @@
+let z = 2.43e+2
 export let READ = 0b0
+// let z = 1e+10e10
 export let WRITE = 0b1
 
 // export let decimal = i128::MAX + (i128::MAX * i128::MAX * i128::MAX * i128::MAX)
@@ -17,7 +19,6 @@ let e = 5
 // If bit range were 63, even though the range wasn't exceeded floats internally are just 64-bit
 // as opposed to the integers which do max - used = remaining, which is more accurate.
 // Or we could just, disallow < 64, which sounds better.
-let z = f128::RADIX + 2.0
 
 // if this was something that wanted to be added, that would then mean the compiler store needs to be 
 // mutable, but the environments USE the compiler store, which makes it hard to concat and intern

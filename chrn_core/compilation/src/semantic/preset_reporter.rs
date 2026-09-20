@@ -214,13 +214,10 @@ pub(crate) fn create_diag_builder_preset(
             // .add_help(format!("Either `#{}` needs to be removed or `{}` needs to get rid of it's recursive field"))
         }
         // Should have the data type's cap shown as well
-        //TODO: This shouldn't exist since it should use big int/float internally
-        PresetErr::NumericOverflow { sp_num, fmtted_ty } => {
-            let overflown_num = interner.search(sp_num.inner);
-            let core_msg = format!(
-                "The type `{fmtted_ty}` had an overflow with the value \"{}\" ",
-                overflown_num
-            );
+        //TODO: May be set for removal.
+        PresetErr::NumericParseError { sp_num, fmtted_ty } => {
+            let invalid = interner.search(sp_num.inner);
+            let core_msg = format!("Failed to parse {fmtted_ty} \"{}\"", invalid);
 
             SourceDiagnostic::builder(None, DiagnosticLevel::Error, core_msg, region.path_id)
                 .add_annotation(sp_num.span, AnnotationKind::Primary, None)

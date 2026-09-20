@@ -12,6 +12,9 @@ mod renderer;
 /// Max diagnostics that can be held by the reporter
 const MAX_DIAGNOSTICS: usize = 80;
 
+/// Max value `max-numeric-bits` can be given
+const MAX_NUMERIC_BITS: i64 = 1_000_000_000;
+
 #[cfg(test)]
 mod tests {
     use crate::detect;

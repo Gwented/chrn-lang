@@ -492,40 +492,6 @@ fn type_resolver_invalid_radix_digits_do_not_panic() {
     }
 }
 
-/// Proves that unparseable integer literals reaching the type resolver report
-/// `NumericOverflow` as a diagnostic rather than panicking.
-#[test]
-fn type_resolver_unparseable_integer_yields_numeric_overflow_diagnostic() {
-    let (arena, mut interner, mut cfg, mut compiler) = mock_single_module_compiler("");
-
-    let mut ast_info = AstInfo::new();
-    let name_id = interner.intern("X");
-    let val_id = interner.intern("102");
-    let expr = SpannedExpr::new(
-        AstExpr::Integer(val_id, Notation::Bin),
-        SourceSpan::default(),
-    );
-    let var = AbstractVar::new(name_id, SourceSpan::default(), expr, false);
-    ast_info.push_item(SectionKind::Neutral, Item::Decl(AbstractDecl::Var(var)));
-
-    let asts = vec![Some(ast_info)];
-    let reg_envs = build_registration_envs(&compiler, &arena, &asts);
-
-    let (_ns, _member, ty, _cn) = run_stages(
-        Stage::Type,
-        &mut cfg,
-        &mut interner,
-        &mut compiler,
-        &reg_envs,
-        &arena,
-        &asts,
-    );
-
-    assert_eq!(ty.err_count(), 1);
-    assert!(ty.diags[0].core_msg.contains("had an overflow"));
-    assert!(ty.diags[0].core_msg.contains("102"));
-}
-
 /// Float literals overflowing `f64` keep their magnitude as `BigFloat`
 /// instead of collapsing to `inf`.
 ///

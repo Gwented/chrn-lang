@@ -94,8 +94,8 @@ pub enum PresetErr {
         err_ty_span: SourceSpan,
     },
     /// SpannedInterned number, type overflown
-    //WARN: This technically shouldn't exist since BigInt/BigFloat would exist
-    NumericOverflow {
+    //WARN: Should rename this to something else.
+    NumericParseError {
         sp_num: SpannedContainer<InternedId>,
         fmtted_ty: ChrnClassified,
     },

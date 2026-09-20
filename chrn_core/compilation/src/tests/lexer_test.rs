@@ -596,6 +596,269 @@ fn lex_radix_literal_terminates_on_invalid_digit_or_empty_malformed() {
     }
 }
 
+/// Floating-point literals (with or without scientific notation) must lex as a single
+/// contiguous `Token::Float` with `Notation::Decimal`.
+///
+/// Proves that fractional floats (`3.14`), integer-base scientific floats (`1e10`, `1e+23`, `1e-23`),
+/// fractional scientific floats (`1.2e3`, `3.14e+2`, `0.5e-10`), and underscored floats
+/// (`1_000.5_0`, `1_e2`) lex correctly into a single Float token with matching interned text
+/// and full span coverage.
+#[test]
+fn lex_float_literal_fraction_and_scientific_notation() {
+    let lex = |src: &[u8]| {
+        let mut interner = Intern::init();
+        let mut cfg = ChrnConfig::default();
+        let toks = Lexer::new(SourceRegionId::new(0), PathId::new(0), src, 0, &mut cfg)
+            .tokenize(&mut interner)
+            .toks;
+        (toks, interner)
+    };
+
+    for &(src, expected_str) in &[
+        (b"3.14".as_slice(), "3.14"),
+        (b"0.0".as_slice(), "0.0"),
+        (b"1.2e3".as_slice(), "1.2e3"),
+        (b"3.14e+2".as_slice(), "3.14e+2"),
+        (b"0.5e-10".as_slice(), "0.5e-10"),
+        (b"1e10".as_slice(), "1e10"),
+        (b"1e+23".as_slice(), "1e+23"),
+        (b"1e-23".as_slice(), "1e-23"),
+        (b"1_000.5_0".as_slice(), "1000.50"),
+        (b"1_e2".as_slice(), "1e2"),
+    ] {
+        let (toks, interner) = lex(src);
+        let src_str = std::str::from_utf8(src).unwrap();
+        assert_eq!(
+            toks.len(),
+            2,
+            "float literal {src_str:?} must lex as 1 Float token plus EOF, but got {toks:?}"
+        );
+        match &toks[0].tok {
+            Token::Float(id, Notation::Decimal) => {
+                assert_eq!(
+                    interner.search(*id),
+                    expected_str,
+                    "interned string mismatch for {src_str:?}"
+                );
+            }
+            other => panic!("expected Float(Decimal) for {src_str:?}, got {other:?}"),
+        }
+        assert_eq!(toks[0].span.start, 0, "span start mismatch for {src_str:?}");
+        assert_eq!(
+            toks[0].span.end,
+            src.len() as u32,
+            "span end mismatch for {src_str:?}"
+        );
+        assert_eq!(toks[1].tok, Token::EOF);
+    }
+}
+
+/// A trailing dot without following decimal digits must NOT be lexed as a float.
+///
+/// Proves that `2.` lexes as an integer `2` followed by a separate `.` token, ensuring
+/// the lexer never produces a malformed float literal for `2.` and preserves language
+/// syntax like field/method access or ranges.
+#[test]
+fn lex_trailing_dot_numeric_literal_is_integer_and_dot() {
+    let lex = |src: &[u8]| {
+        let mut interner = Intern::init();
+        let mut cfg = ChrnConfig::default();
+        let toks = Lexer::new(SourceRegionId::new(0), PathId::new(0), src, 0, &mut cfg)
+            .tokenize(&mut interner)
+            .toks;
+        (toks, interner)
+    };
+
+    // `2.` -> Integer("2") + Dot + EOF
+    {
+        let (toks, interner) = lex(b"2.");
+        assert_eq!(toks.len(), 3, "expected Integer + Dot + EOF for `2.`, got {toks:?}");
+        match &toks[0].tok {
+            Token::Integer(id, Notation::Decimal) => {
+                assert_eq!(interner.search(*id), "2");
+            }
+            other => panic!("expected Integer(Decimal) for `2.`, got {other:?}"),
+        }
+        assert_eq!(toks[0].span.start, 0);
+        assert_eq!(toks[0].span.end, 1);
+        assert_eq!(toks[1].tok, Token::Dot);
+        assert_eq!(toks[1].span.start, 1);
+        assert_eq!(toks[1].span.end, 2);
+        assert_eq!(toks[2].tok, Token::EOF);
+    }
+
+    // `2.foo` -> Integer("2") + Dot + Id("foo") + EOF
+    {
+        let (toks, interner) = lex(b"2.foo");
+        assert_eq!(toks.len(), 4, "expected Integer + Dot + Id + EOF for `2.foo`, got {toks:?}");
+        match &toks[0].tok {
+            Token::Integer(id, Notation::Decimal) => assert_eq!(interner.search(*id), "2"),
+            other => panic!("expected Integer for `2.foo`, got {other:?}"),
+        }
+        assert_eq!(toks[1].tok, Token::Dot);
+        match &toks[2].tok {
+            Token::Id(id) => assert_eq!(interner.search(*id), "foo"),
+            other => panic!("expected Id for `foo`, got {other:?}"),
+        }
+        assert_eq!(toks[3].tok, Token::EOF);
+    }
+
+    // `2..5` -> Integer("2") + Dot + Dot + Integer("5") + EOF
+    {
+        let (toks, interner) = lex(b"2..5");
+        assert_eq!(toks.len(), 5, "expected Integer + Dot + Dot + Integer + EOF for `2..5`, got {toks:?}");
+        match &toks[0].tok {
+            Token::Integer(id, Notation::Decimal) => assert_eq!(interner.search(*id), "2"),
+            other => panic!("expected Integer for `2`, got {other:?}"),
+        }
+        assert_eq!(toks[1].tok, Token::Dot);
+        assert_eq!(toks[2].tok, Token::Dot);
+        match &toks[3].tok {
+            Token::Integer(id, Notation::Decimal) => assert_eq!(interner.search(*id), "5"),
+            other => panic!("expected Integer for `5`, got {other:?}"),
+        }
+        assert_eq!(toks[4].tok, Token::EOF);
+    }
+}
+
+/// Incomplete scientific notation (e.g. `1e`, `1e+`, `1.2e`) must terminate scanning
+/// before the exponent character, leaving trailing characters for separate tokens.
+///
+/// Proves that numeric literals with an exponent not followed by digits never produce
+/// malformed float tokens containing trailing `e`, `e+`, or `e-`.
+#[test]
+fn lex_incomplete_scientific_notation_terminates_before_exponent() {
+    let lex = |src: &[u8]| {
+        let mut interner = Intern::init();
+        let mut cfg = ChrnConfig::default();
+        let toks = Lexer::new(SourceRegionId::new(0), PathId::new(0), src, 0, &mut cfg)
+            .tokenize(&mut interner)
+            .toks;
+        (toks, interner)
+    };
+
+    // `1e` -> Integer("1") + Id("e") + EOF
+    {
+        let (toks, interner) = lex(b"1e");
+        assert_eq!(toks.len(), 3, "expected Integer + Id + EOF for `1e`, got {toks:?}");
+        match &toks[0].tok {
+            Token::Integer(id, Notation::Decimal) => assert_eq!(interner.search(*id), "1"),
+            other => panic!("expected Integer for `1e`, got {other:?}"),
+        }
+        assert_eq!(toks[0].span.start, 0);
+        assert_eq!(toks[0].span.end, 1);
+        match &toks[1].tok {
+            Token::Id(id) => assert_eq!(interner.search(*id), "e"),
+            other => panic!("expected Id(e) for `1e`, got {other:?}"),
+        }
+        assert_eq!(toks[2].tok, Token::EOF);
+    }
+
+    // `1e+` -> Integer("1") + Id("e") + Plus + EOF
+    {
+        let (toks, interner) = lex(b"1e+");
+        assert_eq!(toks.len(), 4, "expected Integer + Id + Plus + EOF for `1e+`, got {toks:?}");
+        match &toks[0].tok {
+            Token::Integer(id, Notation::Decimal) => assert_eq!(interner.search(*id), "1"),
+            other => panic!("expected Integer for `1e+`, got {other:?}"),
+        }
+        match &toks[1].tok {
+            Token::Id(id) => assert_eq!(interner.search(*id), "e"),
+            other => panic!("expected Id(e) for `1e+`, got {other:?}"),
+        }
+        assert_eq!(toks[2].tok, Token::Plus);
+        assert_eq!(toks[3].tok, Token::EOF);
+    }
+
+    // `1.2e` -> Float("1.2") + Id("e") + EOF
+    {
+        let (toks, interner) = lex(b"1.2e");
+        assert_eq!(toks.len(), 3, "expected Float + Id + EOF for `1.2e`, got {toks:?}");
+        match &toks[0].tok {
+            Token::Float(id, Notation::Decimal) => assert_eq!(interner.search(*id), "1.2"),
+            other => panic!("expected Float for `1.2e`, got {other:?}"),
+        }
+        assert_eq!(toks[0].span.start, 0);
+        assert_eq!(toks[0].span.end, 3);
+        match &toks[1].tok {
+            Token::Id(id) => assert_eq!(interner.search(*id), "e"),
+            other => panic!("expected Id(e) for `1.2e`, got {other:?}"),
+        }
+        assert_eq!(toks[2].tok, Token::EOF);
+    }
+
+    // `1.2e+` -> Float("1.2") + Id("e") + Plus + EOF
+    {
+        let (toks, interner) = lex(b"1.2e+");
+        assert_eq!(toks.len(), 4, "expected Float + Id + Plus + EOF for `1.2e+`, got {toks:?}");
+        match &toks[0].tok {
+            Token::Float(id, Notation::Decimal) => assert_eq!(interner.search(*id), "1.2"),
+            other => panic!("expected Float for `1.2e+`, got {other:?}"),
+        }
+        match &toks[1].tok {
+            Token::Id(id) => assert_eq!(interner.search(*id), "e"),
+            other => panic!("expected Id(e) for `1.2e+`, got {other:?}"),
+        }
+        assert_eq!(toks[2].tok, Token::Plus);
+        assert_eq!(toks[3].tok, Token::EOF);
+    }
+}
+
+/// Hexadecimal literals with non-hex trailing characters or empty body must terminate
+/// or produce an `Invalid` token appropriately.
+#[test]
+fn lex_hex_literal_terminates_on_invalid_digit_or_empty_malformed() {
+    let lex = |src: &[u8]| {
+        let mut interner = Intern::init();
+        let mut cfg = ChrnConfig::default();
+        let toks = Lexer::new(SourceRegionId::new(0), PathId::new(0), src, 0, &mut cfg)
+            .tokenize(&mut interner)
+            .toks;
+        (toks, interner)
+    };
+
+    // `0x1g` -> Integer("1", Hex) + Id("g") + EOF
+    {
+        let (toks, interner) = lex(b"0x1g");
+        assert_eq!(toks.len(), 3, "expected Hex Integer + Id + EOF for `0x1g`, got {toks:?}");
+        match &toks[0].tok {
+            Token::Integer(id, Notation::Hex) => assert_eq!(interner.search(*id), "1"),
+            other => panic!("expected Hex integer for `0x1g`, got {other:?}"),
+        }
+        assert_eq!(toks[0].span.start, 0);
+        assert_eq!(toks[0].span.end, 3);
+        match &toks[1].tok {
+            Token::Id(id) => assert_eq!(interner.search(*id), "g"),
+            other => panic!("expected Id(g) for `0x1g`, got {other:?}"),
+        }
+        assert_eq!(toks[2].tok, Token::EOF);
+    }
+
+    // `0xg` -> Invalid + Id("g") + EOF
+    {
+        let (toks, interner) = lex(b"0xg");
+        assert_eq!(toks.len(), 3, "expected Invalid + Id + EOF for `0xg`, got {toks:?}");
+        assert!(matches!(toks[0].tok, Token::Invalid(_)));
+        assert_eq!(toks[0].span.start, 0);
+        assert_eq!(toks[0].span.end, 2);
+        match &toks[1].tok {
+            Token::Id(id) => assert_eq!(interner.search(*id), "g"),
+            other => panic!("expected Id(g) for `0xg`, got {other:?}"),
+        }
+        assert_eq!(toks[2].tok, Token::EOF);
+    }
+
+    // `0x` alone -> Invalid + EOF
+    {
+        let (toks, _) = lex(b"0x");
+        assert_eq!(toks.len(), 2, "expected Invalid + EOF for `0x`, got {toks:?}");
+        assert!(matches!(toks[0].tok, Token::Invalid(_)));
+        assert_eq!(toks[0].span.start, 0);
+        assert_eq!(toks[0].span.end, 2);
+        assert_eq!(toks[1].tok, Token::EOF);
+    }
+}
+
 // This should specifically test that the cuts are done correctly preparation for notation parse later
 // #[test]
 // fn lex_notation_test() {
