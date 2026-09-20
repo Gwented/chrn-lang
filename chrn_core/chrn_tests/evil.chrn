@@ -48,27 +48,19 @@ for varthing1 {}
 // #chrn[MAX_NUM_BITS = 256]
 
 // rm msg for let always inferred
-// Memory errors.
-// Maybe big float/int isn't the best abstraction for a language.
-// Something like a value that's just 256 or a bit higher is maybe better.
-// OR could just add a limit for it in the base wrapper that existed before.
 //
-// We will do a required CLI flag like --allow-arbitrary where it will refuse
-// to run the rest of compilation if a > i128(Or just memory budgeted)/f64 value is found.
-// OR probably best to have max bits configured as the flag rather than large umbrella.
-//
-// Both are valid ^^^ you have 18hrs to choose
-//
-// So bit limit flag and src max limit. Goes to min, maybe warns that the flag given was larger than src
-// limit.
-//
-// Correction: Bit estimation is expensive. Src needs explicit directive to compute them, which THEN forces
-// the estimations. By default rejects > i128 & rejects > f64
-//
+// Thinking about removing the big int usage and just making caps or integers.
+// So, we can pick "--max-int-bits=" where the eq value must be a known bit range like 256, 512, etc.
+// Floats may stay the same, but the integer part can definitely be less complication, we don't need
+// big int for that. Float also needs "--max-float-bits". Or we can keep the numeric version which dictates
+// both, while still keeping the specific int/float.
 // let float = 2e-1000000000000
 import "../chrn_core/chrn_tests/def.chrn"
 // let x = def::decimal
-let bin = 0b0111
+// Namespaces like i128::MAX bypass the max bits because they don't check cfg
+
+// Remember me
+// let bin = f32::NAN + f32::INF
 let octal = 0o2
 let hex = 0x003
 @end

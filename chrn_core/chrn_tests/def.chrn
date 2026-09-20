@@ -3,7 +3,7 @@ export let WRITE = 0b1
 
 // export let decimal = i128::MAX + (i128::MAX * i128::MAX * i128::MAX * i128::MAX)
 import "../chrn_core/chrn_tests/other.chrn"
-import "../chrn_core/chrn_tests/def.chrn"
+// import "../chrn_core/chrn_tests/def.chrn"
 // import "../chrn_core/chrn_tests/examples/def.chrn"
 // import "../chrn_core/chrn_tests/core.chrn"
 // Maybe this shouldn't be seen as a valid import
@@ -14,8 +14,10 @@ let b = c
 let c = 4 + d
 let d = 3 - e
 let e = 5
-// What about 2.as_int()/as_float()
-let z = f16::PI + 2.0
+// If bit range were 63, even though the range wasn't exceeded floats internally are just 64-bit
+// as opposed to the integers which do max - used = remaining, which is more accurate.
+// Or we could just, disallow < 64, which sounds better.
+let z = f128::RADIX + 2.0
 
 // if this was something that wanted to be added, that would then mean the compiler store needs to be 
 // mutable, but the environments USE the compiler store, which makes it hard to concat and intern

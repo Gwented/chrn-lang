@@ -22,7 +22,7 @@ use super::instantiation_symbols::InstiationValue;
 //value present. There is also no consistency in regards to something being i64 or u64 by default,
 //maybe will deal with that when it poses an issue. Bug are solved though.
 
-static NAMESPACE_I8: [InstantiationSymbolBase; 5] = [
+static NAMESPACE_I8: [InstantiationSymbolBase; 4] = [
     new_max(InstantiationVariable::new(
         InstiationType::BuiltinType(BuiltinType::I64),
         InstiationValue::I64(i8::MAX as i64),
@@ -33,10 +33,9 @@ static NAMESPACE_I8: [InstantiationSymbolBase; 5] = [
     )),
     new_bits(8),
     new_bytes(1),
-    new_radix(2),
 ];
 
-static NAMESPACE_U8: [InstantiationSymbolBase; 5] = [
+static NAMESPACE_U8: [InstantiationSymbolBase; 4] = [
     new_max(InstantiationVariable::new(
         InstiationType::BuiltinType(BuiltinType::I64),
         InstiationValue::I64(u8::MAX as i64),
@@ -44,10 +43,9 @@ static NAMESPACE_U8: [InstantiationSymbolBase; 5] = [
     new_min_unsigned(),
     new_bits(8),
     new_bytes(1),
-    new_radix(2),
 ];
 
-static NAMESPACE_I16: [InstantiationSymbolBase; 5] = [
+static NAMESPACE_I16: [InstantiationSymbolBase; 4] = [
     new_max(InstantiationVariable::new(
         InstiationType::BuiltinType(BuiltinType::I64),
         InstiationValue::I64(i16::MAX as i64),
@@ -58,10 +56,9 @@ static NAMESPACE_I16: [InstantiationSymbolBase; 5] = [
     )),
     new_bits(16),
     new_bytes(2),
-    new_radix(2),
 ];
 
-static NAMESPACE_U16: [InstantiationSymbolBase; 5] = [
+static NAMESPACE_U16: [InstantiationSymbolBase; 4] = [
     new_max(InstantiationVariable::new(
         InstiationType::BuiltinType(BuiltinType::I64),
         InstiationValue::I64(u16::MAX as i64),
@@ -69,13 +66,11 @@ static NAMESPACE_U16: [InstantiationSymbolBase; 5] = [
     new_min_unsigned(),
     new_bits(16),
     new_bytes(2),
-    new_radix(2),
 ];
 
 //NOTE: Rust has no stable `f16`, so the IEEE-754 binary16 bounds are spelled out. Both are exact
-//in `f64`. The math constants below are the `f64` values rounded to binary16, spelled out as
-//the exact `f64` that holds each rounded value.
-static NAMESPACE_F16: [InstantiationSymbolBase; 34] = [
+//in `f64`. The math constants below are the `f64` values rounded to binary16.
+static NAMESPACE_F16: [InstantiationSymbolBase; 42] = [
     new_max(InstantiationVariable::new(
         InstiationType::BuiltinType(BuiltinType::F64),
         InstiationValue::F64(65504.0),
@@ -97,14 +92,14 @@ static NAMESPACE_F16: [InstantiationSymbolBase; 34] = [
         ),
     ),
     new_const(
-        intern::INTERNED_INFINITY,
+        intern::INTERNED_INF,
         InstantiationVariable::new(
             InstiationType::BuiltinType(BuiltinType::F64),
             InstiationValue::F64(f64::INFINITY),
         ),
     ),
     new_const(
-        intern::INTERNED_NEG_INFINITY,
+        intern::INTERNED_NEG_INF,
         InstantiationVariable::new(
             InstiationType::BuiltinType(BuiltinType::F64),
             InstiationValue::F64(f64::NEG_INFINITY),
@@ -278,9 +273,17 @@ static NAMESPACE_F16: [InstantiationSymbolBase; 34] = [
             InstiationValue::F64(0.5771484375),
         ),
     ),
+    new_i64_metadata(intern::INTERNED_SIGN_BITS, 1),
+    new_i64_metadata(intern::INTERNED_EXPONENT_BITS, 5),
+    new_i64_metadata(intern::INTERNED_SIGNIFICAND_BITS, 11),
+    new_i64_metadata(intern::INTERNED_STORED_SIGNIFICAND_BITS, 10),
+    new_i64_metadata(intern::INTERNED_EXPONENT_BIAS, 15),
+    new_i64_metadata(intern::INTERNED_MIN_NORMAL_EXPONENT, -14),
+    new_i64_metadata(intern::INTERNED_MAX_NORMAL_EXPONENT, 15),
+    new_i64_metadata(intern::INTERNED_MIN_SUBNORMAL_EXPONENT, -24),
 ];
 
-static NAMESPACE_I32: [InstantiationSymbolBase; 5] = [
+static NAMESPACE_I32: [InstantiationSymbolBase; 4] = [
     new_max(InstantiationVariable::new(
         InstiationType::BuiltinType(BuiltinType::I64),
         InstiationValue::I64(i32::MAX as i64),
@@ -291,10 +294,9 @@ static NAMESPACE_I32: [InstantiationSymbolBase; 5] = [
     )),
     new_bits(32),
     new_bytes(4),
-    new_radix(2),
 ];
 
-static NAMESPACE_U32: [InstantiationSymbolBase; 5] = [
+static NAMESPACE_U32: [InstantiationSymbolBase; 4] = [
     new_max(InstantiationVariable::new(
         InstiationType::BuiltinType(BuiltinType::I64),
         InstiationValue::I64(u32::MAX as i64),
@@ -302,10 +304,9 @@ static NAMESPACE_U32: [InstantiationSymbolBase; 5] = [
     new_min_unsigned(),
     new_bits(32),
     new_bytes(4),
-    new_radix(2),
 ];
 
-static NAMESPACE_F32: [InstantiationSymbolBase; 34] = [
+static NAMESPACE_F32: [InstantiationSymbolBase; 42] = [
     new_max(InstantiationVariable::new(
         InstiationType::BuiltinType(BuiltinType::F64),
         InstiationValue::F64(f32::MAX as f64),
@@ -327,14 +328,14 @@ static NAMESPACE_F32: [InstantiationSymbolBase; 34] = [
         ),
     ),
     new_const(
-        intern::INTERNED_INFINITY,
+        intern::INTERNED_INF,
         InstantiationVariable::new(
             InstiationType::BuiltinType(BuiltinType::F64),
             InstiationValue::F64(f32::INFINITY as f64),
         ),
     ),
     new_const(
-        intern::INTERNED_NEG_INFINITY,
+        intern::INTERNED_NEG_INF,
         InstantiationVariable::new(
             InstiationType::BuiltinType(BuiltinType::F64),
             InstiationValue::F64(f32::NEG_INFINITY as f64),
@@ -508,9 +509,17 @@ static NAMESPACE_F32: [InstantiationSymbolBase; 34] = [
             InstiationValue::F64(std::f32::consts::EULER_GAMMA as f64),
         ),
     ),
+    new_i64_metadata(intern::INTERNED_SIGN_BITS, 1),
+    new_i64_metadata(intern::INTERNED_EXPONENT_BITS, 8),
+    new_i64_metadata(intern::INTERNED_SIGNIFICAND_BITS, 24),
+    new_i64_metadata(intern::INTERNED_STORED_SIGNIFICAND_BITS, 23),
+    new_i64_metadata(intern::INTERNED_EXPONENT_BIAS, 127),
+    new_i64_metadata(intern::INTERNED_MIN_NORMAL_EXPONENT, -126),
+    new_i64_metadata(intern::INTERNED_MAX_NORMAL_EXPONENT, 127),
+    new_i64_metadata(intern::INTERNED_MIN_SUBNORMAL_EXPONENT, -149),
 ];
 
-static NAMESPACE_I64: [InstantiationSymbolBase; 5] = [
+static NAMESPACE_I64: [InstantiationSymbolBase; 4] = [
     new_max(InstantiationVariable::new(
         InstiationType::BuiltinType(BuiltinType::I64),
         InstiationValue::I64(i64::MAX),
@@ -521,10 +530,9 @@ static NAMESPACE_I64: [InstantiationSymbolBase; 5] = [
     )),
     new_bits(64),
     new_bytes(8),
-    new_radix(2),
 ];
 
-static NAMESPACE_U64: [InstantiationSymbolBase; 5] = [
+static NAMESPACE_U64: [InstantiationSymbolBase; 4] = [
     new_max(InstantiationVariable::new(
         InstiationType::BuiltinType(BuiltinType::U64),
         InstiationValue::U64(u64::MAX),
@@ -532,10 +540,9 @@ static NAMESPACE_U64: [InstantiationSymbolBase; 5] = [
     new_min_unsigned(),
     new_bits(64),
     new_bytes(8),
-    new_radix(2),
 ];
 
-static NAMESPACE_F64: [InstantiationSymbolBase; 34] = [
+static NAMESPACE_F64: [InstantiationSymbolBase; 42] = [
     new_max(InstantiationVariable::new(
         InstiationType::BuiltinType(BuiltinType::F64),
         InstiationValue::F64(f64::MAX),
@@ -557,14 +564,14 @@ static NAMESPACE_F64: [InstantiationSymbolBase; 34] = [
         ),
     ),
     new_const(
-        intern::INTERNED_INFINITY,
+        intern::INTERNED_INF,
         InstantiationVariable::new(
             InstiationType::BuiltinType(BuiltinType::F64),
             InstiationValue::F64(f64::INFINITY),
         ),
     ),
     new_const(
-        intern::INTERNED_NEG_INFINITY,
+        intern::INTERNED_NEG_INF,
         InstantiationVariable::new(
             InstiationType::BuiltinType(BuiltinType::F64),
             InstiationValue::F64(f64::NEG_INFINITY),
@@ -738,13 +745,21 @@ static NAMESPACE_F64: [InstantiationSymbolBase; 34] = [
             InstiationValue::F64(std::f64::consts::EULER_GAMMA),
         ),
     ),
+    new_i64_metadata(intern::INTERNED_SIGN_BITS, 1),
+    new_i64_metadata(intern::INTERNED_EXPONENT_BITS, 11),
+    new_i64_metadata(intern::INTERNED_SIGNIFICAND_BITS, 53),
+    new_i64_metadata(intern::INTERNED_STORED_SIGNIFICAND_BITS, 52),
+    new_i64_metadata(intern::INTERNED_EXPONENT_BIAS, 1023),
+    new_i64_metadata(intern::INTERNED_MIN_NORMAL_EXPONENT, -1022),
+    new_i64_metadata(intern::INTERNED_MAX_NORMAL_EXPONENT, 1023),
+    new_i64_metadata(intern::INTERNED_MIN_SUBNORMAL_EXPONENT, -1074),
 ];
 
 //TODO: `f128` bounds do not fit `InstiationValue`, which only carries `F64` and `DBig` (decimal).
 //`sized`/`unsized` are pointer-sized, so their bounds belong to the target rather than the host.
 //The 128-bit float stays empty until float values cover 128-bit IEEE floats.
 
-static NAMESPACE_I128: [InstantiationSymbolBase; 5] = [
+static NAMESPACE_I128: [InstantiationSymbolBase; 4] = [
     new_max(InstantiationVariable::new(
         InstiationType::BuiltinType(BuiltinType::BigInt),
         InstiationValue::BigInt(IBig::from_parts_const(
@@ -761,10 +776,9 @@ static NAMESPACE_I128: [InstantiationSymbolBase; 5] = [
     )),
     new_bits(128),
     new_bytes(16),
-    new_radix(2),
 ];
 
-static NAMESPACE_U128: [InstantiationSymbolBase; 5] = [
+static NAMESPACE_U128: [InstantiationSymbolBase; 4] = [
     new_max(InstantiationVariable::new(
         InstiationType::BuiltinType(BuiltinType::BigInt),
         InstiationValue::BigInt(IBig::from_parts_const(dashu_int::Sign::Positive, u128::MAX)),
@@ -772,17 +786,78 @@ static NAMESPACE_U128: [InstantiationSymbolBase; 5] = [
     new_min_unsigned(),
     new_bits(128),
     new_bytes(16),
-    new_radix(2),
 ];
 
 //NOTE: `f128` bounds (MAX/MIN) do not fit `InstiationValue`, which only carries `F64` and `DBig` (decimal).
 //`f128` acts as a metadata namespace providing representable bit-range and precision attributes.
-static NAMESPACE_F128: [InstantiationSymbolBase; 5] = [
+static NAMESPACE_F128: [InstantiationSymbolBase; 13] = [
     new_bits(128),
     new_bytes(16),
     new_radix(2),
     new_digits(33),
     new_mantissa_digits(113),
+    new_i64_metadata(intern::INTERNED_SIGN_BITS, 1),
+    new_i64_metadata(intern::INTERNED_EXPONENT_BITS, 15),
+    new_i64_metadata(intern::INTERNED_SIGNIFICAND_BITS, 113),
+    new_i64_metadata(intern::INTERNED_STORED_SIGNIFICAND_BITS, 112),
+    new_i64_metadata(intern::INTERNED_EXPONENT_BIAS, 16383),
+    new_i64_metadata(intern::INTERNED_MIN_NORMAL_EXPONENT, -16382),
+    new_i64_metadata(intern::INTERNED_MAX_NORMAL_EXPONENT, 16383),
+    new_i64_metadata(intern::INTERNED_MIN_SUBNORMAL_EXPONENT, -16494),
+];
+
+static NAMESPACE_BOOL: [InstantiationSymbolBase; 2] = [new_bits(1), new_bytes(1)];
+
+static NAMESPACE_CHAR: [InstantiationSymbolBase; 22] = [
+    new_max(InstantiationVariable::new(
+        InstiationType::BuiltinType(BuiltinType::Char),
+        InstiationValue::Char(char::MAX),
+    )),
+    new_min(InstantiationVariable::new(
+        InstiationType::BuiltinType(BuiltinType::Char),
+        InstiationValue::Char(char::MIN),
+    )),
+    new_bits(32),
+    new_bytes(4),
+    new_char_const(intern::INTERNED_NUL, '\0'),
+    new_char_const(intern::INTERNED_SPACE_UPPER, ' '),
+    new_char_const(intern::INTERNED_TAB_UPPER, '\t'),
+    new_char_const(intern::INTERNED_NEWLINE_UPPER, '\n'),
+    new_char_const(intern::INTERNED_CARRIAGE_RETURN_UPPER, '\r'),
+    new_char_const(
+        intern::INTERNED_REPLACEMENT_CHARACTER_UPPER,
+        char::REPLACEMENT_CHARACTER,
+    ),
+    new_i64_metadata(intern::INTERNED_UTF8_MAX_BYTES, 4),
+    new_i64_metadata(intern::INTERNED_UTF8_MIN_BYTES, 1),
+    new_i64_metadata(intern::INTERNED_UTF8_MAX_BITS, 32),
+    new_i64_metadata(intern::INTERNED_UTF8_MIN_BITS, 8),
+    new_i64_metadata(intern::INTERNED_UTF16_MAX_BYTES, 4),
+    new_i64_metadata(intern::INTERNED_UTF16_MIN_BYTES, 2),
+    new_i64_metadata(intern::INTERNED_UTF16_MAX_BITS, 32),
+    new_i64_metadata(intern::INTERNED_UTF16_MIN_BITS, 16),
+    new_i64_metadata(intern::INTERNED_UTF16_MAX_CODE_UNITS, 2),
+    new_i64_metadata(intern::INTERNED_UTF16_MIN_CODE_UNITS, 1),
+    new_i64_metadata(intern::INTERNED_UTF32_BYTES, 4),
+    new_i64_metadata(intern::INTERNED_UTF32_BITS, 32),
+];
+
+// `str` is an unbounded UTF-8 string, so it carries shared whitespace/control interpolation
+// constants followed by standard-defined UTF-8 code point length attributes.
+static NAMESPACE_STR: [InstantiationSymbolBase; 7] = [
+    new_str_const(intern::INTERNED_TAB_UPPER, intern::INTERNED_TAB_VALUE),
+    new_str_const(
+        intern::INTERNED_NEWLINE_UPPER,
+        intern::INTERNED_NEWLINE_VALUE,
+    ),
+    new_str_const(
+        intern::INTERNED_CARRIAGE_RETURN_UPPER,
+        intern::INTERNED_CARRIAGE_RETURN_VALUE,
+    ),
+    new_i64_metadata(intern::INTERNED_UTF8_MAX_BYTES, 4),
+    new_i64_metadata(intern::INTERNED_UTF8_MIN_BYTES, 1),
+    new_i64_metadata(intern::INTERNED_UTF8_MAX_BITS, 32),
+    new_i64_metadata(intern::INTERNED_UTF8_MIN_BITS, 8),
 ];
 
 // Will just be [[]] like the ns entries
@@ -811,10 +886,10 @@ pub static CORE_BUILTIN_TYPES_DATASET: [(u32, BuiltinType, &'static [Instantiati
     (intern::INTERNED_UNSIZED, BuiltinType::Unsized, &[]),
     // -- Eveneutally faojjkaj --
     // Unrelated but this should have .len() later
-    (intern::INTERNED_STR, BuiltinType::Str, &[]),
-    (intern::INTERNED_CHAR, BuiltinType::Char, &[]),
+    (intern::INTERNED_STR, BuiltinType::Str, &NAMESPACE_STR),
+    (intern::INTERNED_CHAR, BuiltinType::Char, &NAMESPACE_CHAR),
     (intern::INTERNED_NIL, BuiltinType::Nil, &[]),
-    (intern::INTERNED_BOOL, BuiltinType::Bool, &[]),
+    (intern::INTERNED_BOOL, BuiltinType::Bool, &NAMESPACE_BOOL),
     (intern::INTERNED_BIGINT, BuiltinType::BigInt, &[]),
     (intern::INTERNED_BIGFLOAT, BuiltinType::BigFloat, &[]),
     (intern::INTERNED_RUNTIME, BuiltinType::Runtime, &[]),
@@ -1070,6 +1145,34 @@ const fn new_mantissa_digits(mantissa_digits: i64) -> InstantiationSymbolBase {
         InstantiationVariable::new(
             InstiationType::BuiltinType(BuiltinType::I64),
             InstiationValue::I64(mantissa_digits),
+        ),
+    )
+}
+
+const fn new_char_const(name: u32, value: char) -> InstantiationSymbolBase {
+    new_const(
+        name,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::Char),
+            InstiationValue::Char(value),
+        ),
+    )
+}
+const fn new_str_const(name: u32, value: u32) -> InstantiationSymbolBase {
+    new_const(
+        name,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::Str),
+            InstiationValue::Str(InternedId::new(value)),
+        ),
+    )
+}
+const fn new_i64_metadata(name: u32, value: i64) -> InstantiationSymbolBase {
+    new_const(
+        name,
+        InstantiationVariable::new(
+            InstiationType::BuiltinType(BuiltinType::I64),
+            InstiationValue::I64(value),
         ),
     )
 }

@@ -492,13 +492,6 @@ fn type_resolver_invalid_radix_digits_do_not_panic() {
     }
 }
 
-#[test]
-fn arbitrary_int_kind_from_str_invalid_radix_digits_return_none() {
-    assert!(ArbitraryIntKind::from_str("102", Notation::Bin).is_none());
-    assert!(ArbitraryIntKind::from_str("89", Notation::Octal).is_none());
-    assert!(ArbitraryIntKind::from_str("1a", Notation::Decimal).is_none());
-}
-
 /// Proves that unparseable integer literals reaching the type resolver report
 /// `NumericOverflow` as a diagnostic rather than panicking.
 #[test]

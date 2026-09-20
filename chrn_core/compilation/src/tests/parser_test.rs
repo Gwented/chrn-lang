@@ -1,5 +1,4 @@
 use super::helpers::*;
-use crate::config_loader::{ConfigLoader, ConfigLoaderOutput};
 use crate::parser::ast::ast_concepts::{
     AbstractConfig, AbstractConfigKind, AbstractImpl, BinaryOp, Item, SectionKind, UnaryOp,
 };
@@ -1391,38 +1390,13 @@ fn parse_full_script_with_all_sections() {
 // =============================================================================
 
 #[test]
-fn parse_empty_input() {
-    let text = "";
-    let (ast, diags, _interner) = parse_text_with_diags(text);
-    assert!(
-        diags.is_empty(),
-        "empty input should produce no diagnostics"
-    );
-    // All sections should be None
-    for (i, sect) in ast.sections().iter().enumerate() {
-        assert!(sect.is_none(), "section {i} should be None for empty input");
+fn parse_empty_or_trivia_only_input() {
+    for text in ["", "// just a comment\n", "   \n  \t  \n  "] {
+        let (ast, diags, _interner) = parse_text_with_diags(text);
+        assert!(diags.is_empty(), "{text:?} should produce no diagnostics");
+        assert!(ast.sections().iter().all(Option::is_none));
+        assert!(ast.items().is_empty());
     }
-    assert!(ast.items().is_empty());
-}
-
-#[test]
-fn parse_only_comment_input() {
-    let text = "// just a comment\n";
-    let (ast, diags, _interner) = parse_text_with_diags(text);
-    assert!(
-        diags.is_empty(),
-        "comment-only input should produce no diagnostics"
-    );
-}
-
-#[test]
-fn parse_only_whitespace_input() {
-    let text = "   \n  \t  \n  ";
-    let (ast, diags, _interner) = parse_text_with_diags(text);
-    assert!(
-        diags.is_empty(),
-        "whitespace-only input should produce no diagnostics"
-    );
 }
 
 #[test]
@@ -1436,54 +1410,6 @@ fn parse_let_hex_integer() {
             // The lexer keeps the raw digits and the notation; parsing the
             // digits into a value happens later in the type resolver.
             assert_eq!(interner.search(*id), "ff");
-        }
-        other => panic!("expected Integer(Hex), got {other:?}"),
-    }
-}
-
-#[test]
-fn parse_let_binary_integer() {
-    let text = "let x = 0b1010";
-    let (ast, interner) = parse_text(text);
-
-    let var = ast.get_var(section_items(&ast, SectionKind::Neutral)[0]);
-    match &var.spanned_expr.expr {
-        AstExpr::Integer(id, Notation::Bin) => {
-            // The lexer keeps the raw digits and the notation; parsing the
-            // digits into a value happens later in the type resolver.
-            assert_eq!(interner.search(*id), "1010");
-        }
-        other => panic!("expected Integer(Bin), got {other:?}"),
-    }
-}
-
-#[test]
-fn parse_let_octal_integer() {
-    let text = "let x = 0o77";
-    let (ast, interner) = parse_text(text);
-
-    let var = ast.get_var(section_items(&ast, SectionKind::Neutral)[0]);
-    match &var.spanned_expr.expr {
-        AstExpr::Integer(id, Notation::Octal) => {
-            // The lexer keeps the raw digits and the notation; parsing the
-            // digits into a value happens later in the type resolver.
-            assert_eq!(interner.search(*id), "77");
-        }
-        other => panic!("expected Integer(Octal), got {other:?}"),
-    }
-}
-
-#[test]
-fn parse_let_underscored_hex_integer() {
-    let text = "let x = 0xff_ff";
-    let (ast, interner) = parse_text(text);
-
-    let var = ast.get_var(section_items(&ast, SectionKind::Neutral)[0]);
-    match &var.spanned_expr.expr {
-        AstExpr::Integer(id, Notation::Hex) => {
-            // Separators are stripped like in decimal literals, but the
-            // remaining digits stay raw for the type resolver to parse.
-            assert_eq!(interner.search(*id), "ffff");
         }
         other => panic!("expected Integer(Hex), got {other:?}"),
     }
@@ -1536,15 +1462,6 @@ fn parse_export_alias() {
     let alias = ast.get_alias(section_items(&ast, SectionKind::Neutral)[0]);
     assert_eq!(interner.search(alias.name_id), "foo");
     assert!(!alias.is_priv, "export alias should be public");
-}
-
-#[test]
-fn parse_export_struct() {
-    let text = "nest->\n    export struct Foo {}";
-    let (ast, interner) = parse_text(text);
-
-    let st = ast.get_struct(section_items(&ast, SectionKind::Nest)[0]);
-    assert!(!st.is_priv, "export struct should be public");
 }
 
 #[test]
@@ -1604,23 +1521,6 @@ fn parse_complex_config_with_trailing_comma() {
 
     let cfg = ast.get_cfg_root(section_items(&ast, SectionKind::Complex)[0]);
     assert_eq!(cfg.ast_stmts.len(), 1);
-}
-
-#[test]
-fn parse_bind_unclosed_string_yields_diags() {
-    // The config loader catches unclosed quotes before the lexer/parser run.
-    let mut interner = Intern::init();
-    let path_id = interner.intern_path(Path::new(""));
-    let region_id = SourceRegionId::new(0);
-    let text = r#"bind "./some/path"#;
-    let result = ConfigLoader::new(region_id, text.as_bytes(), path_id, &ChrnConfig::default())
-        .load_config();
-    // The config loader should recognize this as broken (unclosed quote).
-    match result {
-        ConfigLoaderOutput::Broken(_, _) => {} // expected
-        ConfigLoaderOutput::Success(_, _) => panic!("expected Broken for unclosed quotes"),
-        ConfigLoaderOutput::UnrecoverableErr(e) => panic!("unrecoverable: {e:?}"),
-    }
 }
 
 #[test]

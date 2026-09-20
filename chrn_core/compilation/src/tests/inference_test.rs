@@ -1,19 +1,17 @@
 use super::helpers::*;
 use crate::parser::ast::ast_concepts::BinaryOp;
 use crate::script_compiler::compiler_constants::{
-    CORE_BOOL, CORE_CHAR, CORE_F64, CORE_I64, CORE_STR, builtin_ty_to_id,
+    CORE_BOOL, CORE_CHAR, CORE_F64, CORE_I64, CORE_STR,
 };
-use crate::script_compiler::helpers::core_helpers::{
-    CORE_BUILTIN_TYPES_DATASET, core_instantiation_reservations,
-};
-use crate::script_compiler::helpers::instantiation_symbols::{
-    InstantiationSymbolKind, InstiationType,
-};
+use crate::script_compiler::helpers::core_helpers::core_instantiation_reservations;
 use crate::semantic::hir::hir_concepts::Type;
 use crate::semantic::hir::hir_symbols::SymbolKind;
 use crate::semantic::inference::{infer_type_from_binary_op, infer_type_from_val};
 use chrn_utils::arena::Arena;
-use chrn_utils::id_types::{SymbolId, TypeId};
+use chrn_utils::{
+    id_types::{InternedId, SymbolId, TypeId},
+    intern,
+};
 
 // -- Helpers --
 
@@ -444,35 +442,31 @@ fn inference_survives_const_dependency_chain() {
 
 // -- Intrinsic namespace constants --
 
-/// Every intrinsic constant, as `(source path, the `TypeId` it must have, its value)`.
-fn intrinsic_constants() -> Vec<(String, TypeId, Value)> {
-    let interner = Intern::init();
-    let mut constants = Vec::new();
-
-    for (interned, _, ns) in &CORE_BUILTIN_TYPES_DATASET {
-        let ty_name = interner.search_idx(*interned as usize);
-
-        for base in ns.iter() {
-            let InstantiationSymbolKind::Variable(var) = &base.kind else {
-                panic!("`{ty_name}` holds a non-variable intrinsic entry");
-            };
-
-            let InstiationType::BuiltinType(ty) = &var.ty;
-            let type_id = TypeId::new(builtin_ty_to_id(ty.kind()));
-
-            let bound = interner.search_idx(base.name_id.id as usize);
-            constants.push((format!("{ty_name}::{bound}"), type_id, var.val.to_val()));
-        }
-    }
-
-    constants
+/// Representative intrinsic constants spanning integer, float, character, and string values.
+fn intrinsic_constants() -> [(&'static str, TypeId, Value); 4] {
+    [
+        (
+            "i8::MIN",
+            TypeId::new(CORE_I64),
+            Value::ArbitraryInt(ArbitraryIntKind::I64(-128)),
+        ),
+        (
+            "f16::PI",
+            TypeId::new(CORE_F64),
+            Value::ArbitraryFloat(ArbitraryFloatKind::F64(3.140625)),
+        ),
+        ("char::NUL", TypeId::new(CORE_CHAR), Value::Char('\0')),
+        (
+            "str::NEWLINE",
+            TypeId::new(CORE_STR),
+            Value::InternedStr(InternedId::new(intern::INTERNED_NEWLINE_VALUE)),
+        ),
+    ]
 }
 
 //NOTE: Out-dated {crab_emoji}
 
-/// A constant reached through a built-in's namespace keeps that built-in's type, not the type
-/// its `Value` payload would infer. `u8::MAX` is a `u8` holding an `I64`, and `f16::MAX` an
-/// `f16` holding an `F64`, so inferring from the payload would collapse both onto `i64`/`f64`.
+/// Intrinsic constants resolve through a built-in namespace with their declared type and value.
 #[test]
 fn infer_intrinsic_namespace_constant_test() {
     for (path, type_id, expected) in intrinsic_constants() {

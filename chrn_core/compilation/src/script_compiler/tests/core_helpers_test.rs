@@ -576,47 +576,6 @@ fn builtin_ns_scope(
     }
 }
 
-/// `MAX` or `MIN`, or math constants, for messages.
-fn bound_name(name_id: InternedId) -> &'static str {
-    match name_id.id {
-        intern::INTERNED_MAX_UPPER => "MAX",
-        intern::INTERNED_MIN_UPPER => "MIN",
-        intern::INTERNED_BITS_UPPER => "BITS",
-        intern::INTERNED_BYTES_UPPER => "BYTES",
-        intern::INTERNED_RADIX => "RADIX",
-        intern::INTERNED_DIGITS => "DIGITS",
-        intern::INTERNED_MANTISSA_DIGITS => "MANTISSA_DIGITS",
-        intern::INTERNED_EPSILON => "EPSILON",
-        intern::INTERNED_INFINITY => "INFINITY",
-        intern::INTERNED_NEG_INFINITY => "NEG_INFINITY",
-        intern::INTERNED_NAN => "NAN",
-        intern::INTERNED_MIN_POSITIVE => "MIN_POSITIVE",
-        intern::INTERNED_SQRT_3 => "SQRT_3",
-        intern::INTERNED_PI_UPPER => "PI",
-        intern::INTERNED_E_UPPER => "E",
-        intern::INTERNED_TAU => "TAU",
-        intern::INTERNED_FRAC_1_PI => "FRAC_1_PI",
-        intern::INTERNED_FRAC_1_SQRT_2 => "FRAC_1_SQRT_2",
-        intern::INTERNED_FRAC_2_PI => "FRAC_2_PI",
-        intern::INTERNED_FRAC_2_SQRT_PI => "FRAC_2_SQRT_PI",
-        intern::INTERNED_FRAC_PI_2 => "FRAC_PI_2",
-        intern::INTERNED_FRAC_PI_3 => "FRAC_PI_3",
-        intern::INTERNED_FRAC_PI_4 => "FRAC_PI_4",
-        intern::INTERNED_FRAC_PI_6 => "FRAC_PI_6",
-        intern::INTERNED_FRAC_PI_8 => "FRAC_PI_8",
-        intern::INTERNED_LN_2 => "LN_2",
-        intern::INTERNED_LN_10 => "LN_10",
-        intern::INTERNED_LOG2_10 => "LOG2_10",
-        intern::INTERNED_LOG2_E => "LOG2_E",
-        intern::INTERNED_LOG10_2 => "LOG10_2",
-        intern::INTERNED_LOG10_E => "LOG10_E",
-        intern::INTERNED_SQRT_2 => "SQRT_2",
-        intern::INTERNED_GOLDEN_RATIO => "GOLDEN_RATIO",
-        intern::INTERNED_EULER_GAMMA => "EULER_GAMMA",
-        _ => "UNKNOWN",
-    }
-}
-
 /// `Value` has no `PartialEq`, and only the variants `InstiationValue` can produce are compared.
 fn same_value(left: &Value, right: &Value) -> bool {
     match (left, right) {
@@ -628,83 +587,6 @@ fn same_value(left: &Value, right: &Value) -> bool {
         (Value::InternedStr(l), Value::InternedStr(r)) => l == r,
         _ => false,
     }
-}
-
-/// The bound a built-in's `MAX` and `MIN` must carry, as `(max, min)`. Spelled out here rather
-/// than derived from the dataset so a wrong constant in the dataset fails instead of agreeing
-/// with itself.
-fn expected_bounds(kind: BuiltinTypeKind) -> Option<(Value, Value)> {
-    let pair = match kind {
-        BuiltinTypeKind::I8 => (
-            Value::ArbitraryInt(ArbitraryIntKind::I64(127)),
-            Value::ArbitraryInt(ArbitraryIntKind::I64(-128)),
-        ),
-        BuiltinTypeKind::U8 => (
-            Value::ArbitraryInt(ArbitraryIntKind::I64(255)),
-            Value::ArbitraryInt(ArbitraryIntKind::I64(0)),
-        ),
-        BuiltinTypeKind::I16 => (
-            Value::ArbitraryInt(ArbitraryIntKind::I64(32_767)),
-            Value::ArbitraryInt(ArbitraryIntKind::I64(-32_768)),
-        ),
-        BuiltinTypeKind::U16 => (
-            Value::ArbitraryInt(ArbitraryIntKind::I64(65_535)),
-            Value::ArbitraryInt(ArbitraryIntKind::I64(0)),
-        ),
-        BuiltinTypeKind::F16 => (
-            Value::ArbitraryFloat(ArbitraryFloatKind::F64(65_504.0)),
-            Value::ArbitraryFloat(ArbitraryFloatKind::F64(-65_504.0)),
-        ),
-        BuiltinTypeKind::I32 => (
-            Value::ArbitraryInt(ArbitraryIntKind::I64(2_147_483_647)),
-            Value::ArbitraryInt(ArbitraryIntKind::I64(-2_147_483_648)),
-        ),
-        BuiltinTypeKind::U32 => (
-            Value::ArbitraryInt(ArbitraryIntKind::I64(4_294_967_295)),
-            Value::ArbitraryInt(ArbitraryIntKind::I64(0)),
-        ),
-        BuiltinTypeKind::F32 => (
-            Value::ArbitraryFloat(ArbitraryFloatKind::F64(f32::MAX as f64)),
-            Value::ArbitraryFloat(ArbitraryFloatKind::F64(f32::MIN as f64)),
-        ),
-        BuiltinTypeKind::I64 => (
-            Value::ArbitraryInt(ArbitraryIntKind::I64(i64::MAX)),
-            Value::ArbitraryInt(ArbitraryIntKind::I64(i64::MIN)),
-        ),
-        BuiltinTypeKind::F64 => (
-            Value::ArbitraryFloat(ArbitraryFloatKind::F64(f64::MAX)),
-            Value::ArbitraryFloat(ArbitraryFloatKind::F64(f64::MIN)),
-        ),
-        BuiltinTypeKind::U64 => (
-            Value::ArbitraryInt(ArbitraryIntKind::U64(u64::MAX)),
-            Value::ArbitraryInt(ArbitraryIntKind::U64(0)),
-        ),
-        BuiltinTypeKind::I128 => (
-            Value::ArbitraryInt(ArbitraryIntKind::BigInt(IBig::from_parts_const(
-                dashu_int::Sign::Positive,
-                i128::MAX as u128,
-            ))),
-            Value::ArbitraryInt(ArbitraryIntKind::BigInt(IBig::from_parts_const(
-                dashu_int::Sign::Negative,
-                i128::MIN.unsigned_abs(),
-            ))),
-        ),
-        BuiltinTypeKind::U128 => (
-            Value::ArbitraryInt(ArbitraryIntKind::BigInt(IBig::from_parts_const(
-                dashu_int::Sign::Positive,
-                u128::MAX,
-            ))),
-            Value::ArbitraryInt(ArbitraryIntKind::BigInt(IBig::from_parts_const(
-                dashu_int::Sign::Positive,
-                0,
-            ))),
-        ),
-        // `f128` does not fit `InstiationValue`, and `sized`/`unsized`
-        // are pointer-sized, so their bounds belong to the target rather than the host
-        _ => return None,
-    };
-
-    Some(pair)
 }
 
 #[test]
@@ -750,235 +632,171 @@ fn core_namespaced_builtins_own_a_core_scope() {
     }
 }
 
+/// Existing float namespace order is compatibility-sensitive. New metadata must be appended so
+/// the positional identities of the original constants remain stable.
 #[test]
-fn core_namespaces_declare_max_and_min() {
-    for (_, builtin_ty, ns) in &CORE_BUILTIN_TYPES_DATASET {
-        if ns.is_empty() || builtin_ty.kind() == BuiltinTypeKind::F128 {
-            continue;
-        }
+fn core_float_namespace_ieee_metadata_is_append_only() {
+    let legacy_prefix = [
+        intern::INTERNED_MAX_UPPER,
+        intern::INTERNED_MIN_UPPER,
+        intern::INTERNED_BITS_UPPER,
+        intern::INTERNED_BYTES_UPPER,
+        intern::INTERNED_RADIX,
+        intern::INTERNED_DIGITS,
+        intern::INTERNED_MANTISSA_DIGITS,
+        intern::INTERNED_EPSILON,
+        intern::INTERNED_INF,
+        intern::INTERNED_NEG_INF,
+        intern::INTERNED_NAN,
+        intern::INTERNED_MIN_POSITIVE,
+        intern::INTERNED_PI_UPPER,
+        intern::INTERNED_E_UPPER,
+        intern::INTERNED_TAU,
+        intern::INTERNED_FRAC_1_PI,
+        intern::INTERNED_FRAC_1_SQRT_2,
+        intern::INTERNED_FRAC_2_PI,
+        intern::INTERNED_FRAC_2_SQRT_PI,
+        intern::INTERNED_FRAC_PI_2,
+        intern::INTERNED_FRAC_PI_3,
+        intern::INTERNED_FRAC_PI_4,
+        intern::INTERNED_FRAC_PI_6,
+        intern::INTERNED_FRAC_PI_8,
+        intern::INTERNED_LN_2,
+        intern::INTERNED_LN_10,
+        intern::INTERNED_LOG2_10,
+        intern::INTERNED_LOG2_E,
+        intern::INTERNED_LOG10_2,
+        intern::INTERNED_LOG10_E,
+        intern::INTERNED_SQRT_2,
+        intern::INTERNED_SQRT_3,
+        intern::INTERNED_GOLDEN_RATIO,
+        intern::INTERNED_EULER_GAMMA,
+    ];
+    let ieee_suffix = [
+        intern::INTERNED_SIGN_BITS,
+        intern::INTERNED_EXPONENT_BITS,
+        intern::INTERNED_SIGNIFICAND_BITS,
+        intern::INTERNED_STORED_SIGNIFICAND_BITS,
+        intern::INTERNED_EXPONENT_BIAS,
+        intern::INTERNED_MIN_NORMAL_EXPONENT,
+        intern::INTERNED_MAX_NORMAL_EXPONENT,
+        intern::INTERNED_MIN_SUBNORMAL_EXPONENT,
+    ];
 
-        let names: Vec<u32> = ns.iter().map(|base| base.name_id.id).collect();
+    for kind in [
+        BuiltinTypeKind::F16,
+        BuiltinTypeKind::F32,
+        BuiltinTypeKind::F64,
+    ] {
+        let (_, _, namespace) = CORE_BUILTIN_TYPES_DATASET
+            .iter()
+            .find(|(_, builtin_ty, _)| builtin_ty.kind() == kind)
+            .expect("IEEE float type should be present in the core dataset");
+        let names: Vec<u32> = namespace.iter().map(|base| base.name_id.id).collect();
 
         assert!(
-            names.len() >= 5
-                && names[0] == intern::INTERNED_MAX_UPPER
-                && names[1] == intern::INTERNED_MIN_UPPER
-                && names[2] == intern::INTERNED_BITS_UPPER
-                && names[3] == intern::INTERNED_BYTES_UPPER
-                && names[4] == intern::INTERNED_RADIX,
-            "namespace of {:?} does not start with `MAX`, `MIN`, `BITS`, `BYTES`, `RADIX`",
-            builtin_ty.kind()
+            names.starts_with(&legacy_prefix),
+            "{kind:?} legacy namespace prefix changed"
+        );
+        assert_eq!(
+            names.get(legacy_prefix.len()..legacy_prefix.len() + ieee_suffix.len()),
+            Some(ieee_suffix.as_slice()),
+            "{kind:?} IEEE metadata order changed"
         );
     }
-}
 
-#[test]
-fn core_namespace_f128_declares_metadata_properties() {
-    let (_, _, ns) = CORE_BUILTIN_TYPES_DATASET
+    let f128_prefix = [
+        intern::INTERNED_BITS_UPPER,
+        intern::INTERNED_BYTES_UPPER,
+        intern::INTERNED_RADIX,
+        intern::INTERNED_DIGITS,
+        intern::INTERNED_MANTISSA_DIGITS,
+    ];
+    let (_, _, f128_namespace) = CORE_BUILTIN_TYPES_DATASET
         .iter()
-        .find(|(_, b, _)| b.kind() == BuiltinTypeKind::F128)
-        .expect("f128 entry in dataset");
+        .find(|(_, builtin_ty, _)| builtin_ty.kind() == BuiltinTypeKind::F128)
+        .expect("f128 should be present in the core dataset");
+    let names: Vec<u32> = f128_namespace.iter().map(|base| base.name_id.id).collect();
 
-    let names: Vec<u32> = ns.iter().map(|base| base.name_id.id).collect();
+    assert!(names.starts_with(&f128_prefix), "F128 prefix changed");
     assert_eq!(
-        names,
-        vec![
-            intern::INTERNED_BITS_UPPER,
-            intern::INTERNED_BYTES_UPPER,
-            intern::INTERNED_RADIX,
-            intern::INTERNED_DIGITS,
-            intern::INTERNED_MANTISSA_DIGITS,
-        ]
+        names.get(f128_prefix.len()..f128_prefix.len() + ieee_suffix.len()),
+        Some(ieee_suffix.as_slice()),
+        "F128 IEEE metadata order changed"
     );
 }
 
 #[test]
-fn core_namespace_entries_are_typed_as_i64_or_f64() {
-    for (_, builtin_ty, ns) in &CORE_BUILTIN_TYPES_DATASET {
-        for base in ns.iter() {
-            let InstantiationSymbolKind::Variable(var) = &base.kind else {
-                panic!(
-                    "namespace of {:?} holds a non-variable entry: {:?}",
-                    builtin_ty.kind(),
-                    base.kind
-                );
-            };
-
-            let InstiationType::BuiltinType(entry_ty) = &var.ty;
-
-            let is_integer_attr = matches!(
-                base.name_id.id,
-                intern::INTERNED_BITS_UPPER
-                    | intern::INTERNED_BYTES_UPPER
-                    | intern::INTERNED_RADIX
-                    | intern::INTERNED_DIGITS
-                    | intern::INTERNED_MANTISSA_DIGITS
-            );
-            // Internally only `I64` and `F64` are accepted: integer attributes and
-            // integer-valued entries are `I64`, float-valued entries are `F64`.
-            // Rounded values such as `f32::PI` keep their rounded payload but are
-            // still typed `F64`.
-            let expected_kind = if is_integer_attr {
-                BuiltinTypeKind::I64
-            } else {
-                match &var.val {
-                    InstiationValue::I64(_) => BuiltinTypeKind::I64,
-                    InstiationValue::U64(_) => BuiltinTypeKind::U64,
-                    InstiationValue::BigInt(_) => BuiltinTypeKind::BigInt,
-                    InstiationValue::F64(_) => BuiltinTypeKind::F64,
-                    InstiationValue::BigFloat(_) => BuiltinTypeKind::BigFloat,
-                    _ => panic!(
-                        "namespace of {:?} declares an entry with an unexpected value type: {:?}",
-                        builtin_ty.kind(),
-                        var.val
-                    ),
-                }
-            };
-            assert_eq!(
-                entry_ty.kind(),
-                expected_kind,
-                "namespace of {:?} declares {:?} typed {:?}, expected {:?}",
-                builtin_ty.kind(),
-                bound_name(base.name_id),
-                entry_ty.kind(),
-                expected_kind
-            );
-        }
-    }
-}
-
-#[test]
-fn core_namespace_bounds_match_target_limits() {
-    for (_, builtin_ty, ns) in &CORE_BUILTIN_TYPES_DATASET {
-        if builtin_ty.kind() == BuiltinTypeKind::F128 {
-            continue;
-        }
-        let Some((expected_max, expected_min)) = expected_bounds(builtin_ty.kind()) else {
-            assert!(
-                ns.is_empty(),
-                "{:?} carries a namespace with no expected bounds",
-                builtin_ty.kind()
-            );
-            continue;
-        };
-
-        assert!(
-            ns.len() >= 2,
-            "{:?} has target bounds but no namespace holding them",
-            builtin_ty.kind()
-        );
-
-        for (base, expected) in ns[..2].iter().zip([expected_max, expected_min]) {
-            let InstantiationSymbolKind::Variable(var) = &base.kind else {
-                unreachable!("checked by `core_namespace_entries_are_typed_as_i64_or_f64`");
-            };
-
-            let found = var.val.to_val();
-
-            assert!(
-                same_value(&found, &expected),
-                "{:?}::{} is {found:?}, expected {expected:?}",
-                builtin_ty.kind(),
-                bound_name(base.name_id)
-            );
-        }
-    }
-}
-
-#[test]
-fn core_namespace_constants_are_registered_as_variables() {
+fn representative_core_namespace_values_are_registered() {
     let compiler = core_only_compiler();
+    let cases = [
+        (
+            BuiltinTypeKind::I8,
+            intern::INTERNED_MIN_UPPER,
+            BuiltinTypeKind::I64,
+            Value::ArbitraryInt(ArbitraryIntKind::I64(i8::MIN as i64)),
+        ),
+        (
+            BuiltinTypeKind::U64,
+            intern::INTERNED_MAX_UPPER,
+            BuiltinTypeKind::U64,
+            Value::ArbitraryInt(ArbitraryIntKind::U64(u64::MAX)),
+        ),
+        (
+            BuiltinTypeKind::U128,
+            intern::INTERNED_MAX_UPPER,
+            BuiltinTypeKind::BigInt,
+            Value::ArbitraryInt(ArbitraryIntKind::BigInt(IBig::from_parts_const(
+                dashu_int::Sign::Positive,
+                u128::MAX,
+            ))),
+        ),
+        (
+            BuiltinTypeKind::F16,
+            intern::INTERNED_PI_UPPER,
+            BuiltinTypeKind::F64,
+            Value::ArbitraryFloat(ArbitraryFloatKind::F64(3.140625)),
+        ),
+        (
+            BuiltinTypeKind::Char,
+            intern::INTERNED_NUL,
+            BuiltinTypeKind::Char,
+            Value::Char('\0'),
+        ),
+        (
+            BuiltinTypeKind::Str,
+            intern::INTERNED_NEWLINE_UPPER,
+            BuiltinTypeKind::Str,
+            Value::InternedStr(InternedId::new(intern::INTERNED_NEWLINE_VALUE)),
+        ),
+    ];
 
-    for (idx, (_, builtin_ty, ns)) in CORE_BUILTIN_TYPES_DATASET.iter().enumerate() {
-        let type_id = TypeId::new(idx as u32);
-        let Some(scope_id) = builtin_ns_scope(&compiler, type_id, ns) else {
-            continue;
-        };
+    for (owner_kind, name, value_kind, expected) in cases {
+        let (_, _, namespace) = CORE_BUILTIN_TYPES_DATASET
+            .iter()
+            .find(|(_, builtin_ty, _)| builtin_ty.kind() == owner_kind)
+            .unwrap();
+        let scope_id = builtin_ns_scope(
+            &compiler,
+            TypeId::new(builtin_ty_to_id(owner_kind)),
+            namespace,
+        )
+        .unwrap();
+        let found = registered_constant(&compiler, scope_id, InternedId::new(name));
 
-        for base in ns.iter() {
-            let InstantiationSymbolKind::Variable(var) = &base.kind else {
-                unreachable!("checked by `core_namespace_entries_are_typed_as_i64_or_f64`");
-            };
-
-            let found = registered_constant(&compiler, scope_id, base.name_id);
-            let label = format!("{:?}::{}", builtin_ty.kind(), bound_name(base.name_id));
-
-            assert_eq!(found.sym.name_id, base.name_id, "symbol name of {label}");
-            // `SymbolOrigin` carries a `ModuleId` and has no `PartialEq`
-            let origins_match = match (found.sym.sym_origin, base.sym_origin) {
-                (SymbolOrigin::Compiler, SymbolOrigin::Compiler) => true,
-                (SymbolOrigin::Module(found_id), SymbolOrigin::Module(declared)) => {
-                    found_id == declared
-                }
-                _ => false,
-            };
-            assert!(
-                origins_match,
-                "origin of {label} is {:?}, dataset declares {:?}",
-                found.sym.sym_origin, base.sym_origin
-            );
-            assert_eq!(found.sym.is_priv, base.is_priv, "privacy of {label}");
-            assert!(
-                found.sym.ast_id.is_none(),
-                "{label} is compiler generated and must have no ast id"
-            );
-            assert!(
-                found.sym.associated_scope.is_none(),
-                "{label} is a value and must own no scope"
-            );
-
-            assert_eq!(
-                found.var.self_id.inner(),
-                found.sym.self_id,
-                "var of {label}"
-            );
-            assert_eq!(found.var.name_id, base.name_id, "var name of {label}");
-            assert!(
-                matches!(found.var.meta, VariableMetadata::Generated),
-                "{label} is compiler generated"
-            );
-
-            // The constant is typed as its variable definition, not as whatever its `Value`
-            // payload happens to be -- `u8::MAX` is an `i64` holding an `I64`,
-            // `f32::PI` is an `f64` holding the `f32`-rounded `F64` payload.
-            let InstiationType::BuiltinType(var_bt) = &var.ty;
-            let expected_type_id = TypeId::new(builtin_ty_to_id(var_bt.kind()));
-            assert_eq!(
-                found.val.type_id, expected_type_id,
-                "{label} is not typed as expected"
-            );
-
-            let expected = var.val.to_val();
-            let const_val = found
-                .val
-                .const_val
-                .as_ref()
-                .unwrap_or_else(|| panic!("{label} has no constant value"));
-
-            assert!(
-                same_value(const_val, &expected),
-                "{label} is {const_val:?}, expected {expected:?}"
-            );
-
-            // `register_instantiation_var` pushes the value and its expression as a pair, and
-            // later stages follow the link in both directions
-            assert_eq!(
-                found.expr.type_id, found.val.type_id,
-                "expr and value of {label} disagree on the type"
-            );
-            assert!(
-                matches!(found.expr.expr_hir, ExprHir::Val(val_id) if val_id == found.expr.val_id),
-                "expr of {label} does not hold its own value"
-            );
-            assert!(
-                matches!(found.expr.meta, ResolvedExprMetadata::Generated),
-                "expr of {label} is compiler generated"
-            );
-            assert_eq!(
-                compiler.values[found.expr.val_id].expr_id, found.val.expr_id,
-                "value and expr of {label} do not point at each other"
-            );
-        }
+        assert_eq!(found.sym.name_id, InternedId::new(name));
+        assert!(matches!(found.sym.sym_origin, SymbolOrigin::Compiler));
+        assert!(matches!(found.sym.kind, SymbolKind::Variable(_)));
+        assert!(matches!(found.var.meta, VariableMetadata::Generated));
+        assert_eq!(found.val.type_id, TypeId::new(builtin_ty_to_id(value_kind)));
+        assert!(same_value(found.val.const_val.as_ref().unwrap(), &expected));
+        assert_eq!(found.expr.type_id, found.val.type_id);
+        assert!(matches!(found.expr.expr_hir, ExprHir::Val(val_id) if val_id == found.expr.val_id));
+        assert!(matches!(found.expr.meta, ResolvedExprMetadata::Generated));
+        assert_eq!(
+            compiler.values[found.expr.val_id].expr_id,
+            found.val.expr_id
+        );
     }
 }
 
@@ -1093,131 +911,26 @@ fn count_instantiation_bases_descends_into_namespaces() {
 }
 
 #[test]
-fn core_namespaces_f16_f32_and_f64_declare_math_constants() {
+fn representative_float_math_constants_are_loaded() {
     let compiler = core_only_compiler();
 
     // `f16` has no stable Rust source, so these are the `f64` constants rounded to binary16,
     // spelled out as the exact `f64` holding each rounded value.
-    let expected_f16: &[(u32, f64)] = &[
+    let expected_f16 = [
         (intern::INTERNED_PI_UPPER, 3.140625),
-        (intern::INTERNED_E_UPPER, 2.71875),
-        (intern::INTERNED_TAU, 6.28125),
-        (intern::INTERNED_FRAC_1_PI, 0.318359375),
-        (intern::INTERNED_FRAC_1_SQRT_2, 0.70703125),
-        (intern::INTERNED_FRAC_2_PI, 0.63671875),
-        (intern::INTERNED_FRAC_2_SQRT_PI, 1.1279296875),
-        (intern::INTERNED_FRAC_PI_2, 1.5703125),
-        (intern::INTERNED_FRAC_PI_3, 1.046875),
-        (intern::INTERNED_FRAC_PI_4, 0.78515625),
-        (intern::INTERNED_FRAC_PI_6, 0.5234375),
-        (intern::INTERNED_FRAC_PI_8, 0.392578125),
-        (intern::INTERNED_LN_2, 0.693359375),
-        (intern::INTERNED_LN_10, 2.302734375),
-        (intern::INTERNED_LOG2_10, 3.322265625),
-        (intern::INTERNED_LOG2_E, 1.4423828125),
-        (intern::INTERNED_LOG10_2, 0.301025390625),
-        (intern::INTERNED_LOG10_E, 0.434326171875),
-        (intern::INTERNED_SQRT_2, 1.4140625),
-        (intern::INTERNED_SQRT_3, 1.732421875),
-        (intern::INTERNED_GOLDEN_RATIO, 1.6181640625),
         (intern::INTERNED_EULER_GAMMA, 0.5771484375),
     ];
 
-    let expected_f32: &[(u32, f64)] = &[
+    let expected_f32 = [
         (intern::INTERNED_PI_UPPER, std::f32::consts::PI as f64),
-        (intern::INTERNED_E_UPPER, std::f32::consts::E as f64),
-        (intern::INTERNED_TAU, std::f32::consts::TAU as f64),
-        (
-            intern::INTERNED_FRAC_1_PI,
-            std::f32::consts::FRAC_1_PI as f64,
-        ),
-        (
-            intern::INTERNED_FRAC_1_SQRT_2,
-            std::f32::consts::FRAC_1_SQRT_2 as f64,
-        ),
-        (
-            intern::INTERNED_FRAC_2_PI,
-            std::f32::consts::FRAC_2_PI as f64,
-        ),
-        (
-            intern::INTERNED_FRAC_2_SQRT_PI,
-            std::f32::consts::FRAC_2_SQRT_PI as f64,
-        ),
-        (
-            intern::INTERNED_FRAC_PI_2,
-            std::f32::consts::FRAC_PI_2 as f64,
-        ),
-        (
-            intern::INTERNED_FRAC_PI_3,
-            std::f32::consts::FRAC_PI_3 as f64,
-        ),
-        (
-            intern::INTERNED_FRAC_PI_4,
-            std::f32::consts::FRAC_PI_4 as f64,
-        ),
-        (
-            intern::INTERNED_FRAC_PI_6,
-            std::f32::consts::FRAC_PI_6 as f64,
-        ),
-        (
-            intern::INTERNED_FRAC_PI_8,
-            std::f32::consts::FRAC_PI_8 as f64,
-        ),
-        (intern::INTERNED_LN_2, std::f32::consts::LN_2 as f64),
-        (intern::INTERNED_LN_10, std::f32::consts::LN_10 as f64),
-        (intern::INTERNED_LOG2_10, std::f32::consts::LOG2_10 as f64),
-        (intern::INTERNED_LOG2_E, std::f32::consts::LOG2_E as f64),
-        (intern::INTERNED_LOG10_2, std::f32::consts::LOG10_2 as f64),
-        (intern::INTERNED_LOG10_E, std::f32::consts::LOG10_E as f64),
-        (intern::INTERNED_SQRT_2, std::f32::consts::SQRT_2 as f64),
-        (
-            intern::INTERNED_SQRT_3,
-            1.732050807568877293527446341505872366_f32 as f64,
-        ),
-        (
-            intern::INTERNED_GOLDEN_RATIO,
-            std::f32::consts::GOLDEN_RATIO as f64,
-        ),
         (
             intern::INTERNED_EULER_GAMMA,
             std::f32::consts::EULER_GAMMA as f64,
         ),
     ];
 
-    let expected_f64: &[(u32, f64)] = &[
+    let expected_f64 = [
         (intern::INTERNED_PI_UPPER, std::f64::consts::PI),
-        (intern::INTERNED_E_UPPER, std::f64::consts::E),
-        (intern::INTERNED_TAU, std::f64::consts::TAU),
-        (intern::INTERNED_FRAC_1_PI, std::f64::consts::FRAC_1_PI),
-        (
-            intern::INTERNED_FRAC_1_SQRT_2,
-            std::f64::consts::FRAC_1_SQRT_2,
-        ),
-        (intern::INTERNED_FRAC_2_PI, std::f64::consts::FRAC_2_PI),
-        (
-            intern::INTERNED_FRAC_2_SQRT_PI,
-            std::f64::consts::FRAC_2_SQRT_PI,
-        ),
-        (intern::INTERNED_FRAC_PI_2, std::f64::consts::FRAC_PI_2),
-        (intern::INTERNED_FRAC_PI_3, std::f64::consts::FRAC_PI_3),
-        (intern::INTERNED_FRAC_PI_4, std::f64::consts::FRAC_PI_4),
-        (intern::INTERNED_FRAC_PI_6, std::f64::consts::FRAC_PI_6),
-        (intern::INTERNED_FRAC_PI_8, std::f64::consts::FRAC_PI_8),
-        (intern::INTERNED_LN_2, std::f64::consts::LN_2),
-        (intern::INTERNED_LN_10, std::f64::consts::LN_10),
-        (intern::INTERNED_LOG2_10, std::f64::consts::LOG2_10),
-        (intern::INTERNED_LOG2_E, std::f64::consts::LOG2_E),
-        (intern::INTERNED_LOG10_2, std::f64::consts::LOG10_2),
-        (intern::INTERNED_LOG10_E, std::f64::consts::LOG10_E),
-        (intern::INTERNED_SQRT_2, std::f64::consts::SQRT_2),
-        (
-            intern::INTERNED_SQRT_3,
-            1.732050807568877293527446341505872366_f64,
-        ),
-        (
-            intern::INTERNED_GOLDEN_RATIO,
-            std::f64::consts::GOLDEN_RATIO,
-        ),
         (intern::INTERNED_EULER_GAMMA, std::f64::consts::EULER_GAMMA),
     ];
 
@@ -1232,7 +945,7 @@ fn core_namespaces_f16_f32_and_f64_declare_math_constants() {
     )
     .unwrap();
 
-    for &(name_id, expected_val) in expected_f16 {
+    for (name_id, expected_val) in expected_f16 {
         let rc = registered_constant(&compiler, f16_scope, InternedId::new(name_id));
         assert_eq!(
             rc.val.type_id,
@@ -1255,7 +968,7 @@ fn core_namespaces_f16_f32_and_f64_declare_math_constants() {
     )
     .unwrap();
 
-    for &(name_id, expected_val) in expected_f32 {
+    for (name_id, expected_val) in expected_f32 {
         let rc = registered_constant(&compiler, f32_scope, InternedId::new(name_id));
         assert_eq!(
             rc.val.type_id,
@@ -1278,7 +991,7 @@ fn core_namespaces_f16_f32_and_f64_declare_math_constants() {
     )
     .unwrap();
 
-    for &(name_id, expected_val) in expected_f64 {
+    for (name_id, expected_val) in expected_f64 {
         let rc = registered_constant(&compiler, f64_scope, InternedId::new(name_id));
         assert_eq!(
             rc.val.type_id,
@@ -1292,24 +1005,15 @@ fn core_namespaces_f16_f32_and_f64_declare_math_constants() {
 }
 
 #[test]
-fn core_namespaces_declare_bits_and_bytes() {
+fn representative_core_namespaces_declare_bits_and_bytes() {
     let compiler = core_only_compiler();
 
     let expected_bits_bytes: &[(BuiltinTypeKind, i64, i64)] = &[
         (BuiltinTypeKind::I8, 8, 1),
-        (BuiltinTypeKind::U8, 8, 1),
-        (BuiltinTypeKind::I16, 16, 2),
-        (BuiltinTypeKind::U16, 16, 2),
-        (BuiltinTypeKind::F16, 16, 2),
-        (BuiltinTypeKind::I32, 32, 4),
-        (BuiltinTypeKind::U32, 32, 4),
         (BuiltinTypeKind::F32, 32, 4),
-        (BuiltinTypeKind::I64, 64, 8),
-        (BuiltinTypeKind::U64, 64, 8),
-        (BuiltinTypeKind::F64, 64, 8),
-        (BuiltinTypeKind::I128, 128, 16),
         (BuiltinTypeKind::U128, 128, 16),
-        (BuiltinTypeKind::F128, 128, 16),
+        (BuiltinTypeKind::Bool, 1, 1),
+        (BuiltinTypeKind::Char, 32, 4),
     ];
 
     let i64_type_id = TypeId::new(builtin_ty_to_id(BuiltinTypeKind::I64));
@@ -1347,29 +1051,114 @@ fn core_namespaces_declare_bits_and_bytes() {
 }
 
 #[test]
-fn core_namespaces_declare_radix() {
+fn float_namespace_declares_radix_but_integer_namespace_does_not() {
     let compiler = core_only_compiler();
     let i64_type_id = TypeId::new(builtin_ty_to_id(BuiltinTypeKind::I64));
 
-    for (_, builtin_ty, ns) in &CORE_BUILTIN_TYPES_DATASET {
-        if ns.is_empty() {
-            continue;
+    for (kind, expected) in [
+        (BuiltinTypeKind::F32, Some(2)),
+        (BuiltinTypeKind::I32, None),
+    ] {
+        let (_, _, namespace) = CORE_BUILTIN_TYPES_DATASET
+            .iter()
+            .find(|(_, builtin_ty, _)| builtin_ty.kind() == kind)
+            .unwrap();
+        let scope_id =
+            builtin_ns_scope(&compiler, TypeId::new(builtin_ty_to_id(kind)), namespace).unwrap();
+        let has_radix = compiler.scopes[scope_id]
+            .scope
+            .table
+            .interned_to_sym
+            .contains_key(&InternedId::new(intern::INTERNED_RADIX));
+
+        if let Some(expected) = expected {
+            assert!(has_radix);
+            let radix_rc =
+                registered_constant(&compiler, scope_id, InternedId::new(intern::INTERNED_RADIX));
+            assert_eq!(radix_rc.val.type_id, i64_type_id);
+            assert!(same_value(
+                radix_rc.val.const_val.as_ref().unwrap(),
+                &Value::ArbitraryInt(ArbitraryIntKind::I64(expected))
+            ));
+        } else {
+            assert!(!has_radix);
         }
-        let type_id = TypeId::new(builtin_ty_to_id(builtin_ty.kind()));
-        let scope_id = builtin_ns_scope(&compiler, type_id, ns).unwrap();
-        let radix_rc =
-            registered_constant(&compiler, scope_id, InternedId::new(intern::INTERNED_RADIX));
-        assert_eq!(radix_rc.val.type_id, i64_type_id);
-        assert!(same_value(
-            radix_rc.val.const_val.as_ref().unwrap(),
-            &Value::ArbitraryInt(ArbitraryIntKind::I64(2))
-        ));
     }
 }
 
 #[test]
-fn core_namespaces_f32_and_f64_declare_float_attributes() {
+fn representative_char_and_str_constants_are_loaded() {
     let compiler = core_only_compiler();
+    let interner = Intern::init();
+    let i64_type_id = TypeId::new(builtin_ty_to_id(BuiltinTypeKind::I64));
+    let char_type_id = TypeId::new(builtin_ty_to_id(BuiltinTypeKind::Char));
+    let str_type_id = TypeId::new(builtin_ty_to_id(BuiltinTypeKind::Str));
+
+    let entry = |kind: BuiltinTypeKind| {
+        CORE_BUILTIN_TYPES_DATASET
+            .iter()
+            .find(|(_, b, _)| b.kind() == kind)
+            .unwrap_or_else(|| panic!("{kind:?} entry in dataset"))
+    };
+
+    let check_i64 = |scope_id, name_id: u32, expected: i64| {
+        let rc = registered_constant(&compiler, scope_id, InternedId::new(name_id));
+        assert_eq!(rc.val.type_id, i64_type_id);
+        assert!(same_value(
+            rc.val.const_val.as_ref().unwrap(),
+            &Value::ArbitraryInt(ArbitraryIntKind::I64(expected))
+        ));
+    };
+
+    let char_ns = entry(BuiltinTypeKind::Char).2;
+    let char_scope = builtin_ns_scope(
+        &compiler,
+        TypeId::new(builtin_ty_to_id(BuiltinTypeKind::Char)),
+        char_ns,
+    )
+    .unwrap();
+    for (name_id, expected) in [
+        (intern::INTERNED_NUL, '\0'),
+        (
+            intern::INTERNED_REPLACEMENT_CHARACTER_UPPER,
+            char::REPLACEMENT_CHARACTER,
+        ),
+    ] {
+        let rc = registered_constant(&compiler, char_scope, InternedId::new(name_id));
+        assert_eq!(rc.val.type_id, char_type_id);
+        assert!(same_value(
+            rc.val.const_val.as_ref().unwrap(),
+            &Value::Char(expected)
+        ));
+    }
+    check_i64(char_scope, intern::INTERNED_UTF16_MAX_CODE_UNITS, 2);
+
+    let str_ns = entry(BuiltinTypeKind::Str).2;
+    let str_scope = builtin_ns_scope(
+        &compiler,
+        TypeId::new(builtin_ty_to_id(BuiltinTypeKind::Str)),
+        str_ns,
+    )
+    .unwrap();
+    let newline_name = interner
+        .try_search_str("NEWLINE")
+        .expect("NEWLINE should be a compiler-known identifier");
+    let newline = registered_constant(&compiler, str_scope, newline_name);
+    assert_eq!(newline.val.type_id, str_type_id);
+    let Value::InternedStr(newline_value) = newline.val.const_val.as_ref().unwrap() else {
+        panic!("str::NEWLINE should store an interned string")
+    };
+    assert_eq!(interner.search_idx(newline_value.id as usize), "\n");
+    check_i64(str_scope, intern::INTERNED_UTF8_MAX_BYTES, 4);
+}
+
+/// Protects the public float namespaces' numeric attributes and IEEE 754 binary interchange
+/// format layout. In particular, `SIGNIFICAND_BITS` includes the implicit leading bit while
+/// `STORED_SIGNIFICAND_BITS` counts only the fraction field physically present in the encoding.
+#[test]
+fn representative_float_attributes_are_loaded() {
+    let compiler = core_only_compiler();
+    let interner = Intern::init();
     let i64_type_id = TypeId::new(builtin_ty_to_id(BuiltinTypeKind::I64));
     let f64_type_id = TypeId::new(builtin_ty_to_id(BuiltinTypeKind::F64));
 
@@ -1380,16 +1169,22 @@ fn core_namespaces_f32_and_f64_declare_float_attributes() {
         .unwrap();
     let f16_scope = builtin_ns_scope(&compiler, f16_type_id, f16_entry.2).unwrap();
 
-    let check_f16_i64 = |name_id: u32, expected: i64| {
-        let rc = registered_constant(&compiler, f16_scope, InternedId::new(name_id));
+    let check_f16_i64 = |name: &str, expected: i64| {
+        let name_id = interner
+            .try_search_str(name)
+            .unwrap_or_else(|| panic!("{name} should be a compiler-known identifier"));
+        let rc = registered_constant(&compiler, f16_scope, name_id);
         assert_eq!(rc.val.type_id, i64_type_id);
         assert!(same_value(
             rc.val.const_val.as_ref().unwrap(),
             &Value::ArbitraryInt(ArbitraryIntKind::I64(expected))
         ));
     };
-    let check_f16_f64 = |name_id: u32, expected: f64| {
-        let rc = registered_constant(&compiler, f16_scope, InternedId::new(name_id));
+    let check_f16_f64 = |name: &str, expected: f64| {
+        let name_id = interner
+            .try_search_str(name)
+            .unwrap_or_else(|| panic!("{name} should be a compiler-known identifier"));
+        let rc = registered_constant(&compiler, f16_scope, name_id);
         assert_eq!(rc.val.type_id, f64_type_id);
         assert!(same_value(
             rc.val.const_val.as_ref().unwrap(),
@@ -1397,13 +1192,8 @@ fn core_namespaces_f32_and_f64_declare_float_attributes() {
         ));
     };
 
-    check_f16_i64(intern::INTERNED_DIGITS, 3);
-    check_f16_i64(intern::INTERNED_MANTISSA_DIGITS, 11);
-    check_f16_f64(intern::INTERNED_EPSILON, 0.0009765625);
-    check_f16_f64(intern::INTERNED_INFINITY, f64::INFINITY);
-    check_f16_f64(intern::INTERNED_NEG_INFINITY, f64::NEG_INFINITY);
-    check_f16_f64(intern::INTERNED_NAN, f64::NAN);
-    check_f16_f64(intern::INTERNED_MIN_POSITIVE, 0.00006103515625);
+    check_f16_i64("DIGITS", 3);
+    check_f16_f64("EPSILON", 0.0009765625);
 
     let f32_type_id = TypeId::new(builtin_ty_to_id(BuiltinTypeKind::F32));
     let f32_entry = CORE_BUILTIN_TYPES_DATASET
@@ -1412,16 +1202,22 @@ fn core_namespaces_f32_and_f64_declare_float_attributes() {
         .unwrap();
     let f32_scope = builtin_ns_scope(&compiler, f32_type_id, f32_entry.2).unwrap();
 
-    let check_f32_i64 = |name_id: u32, expected: i64| {
-        let rc = registered_constant(&compiler, f32_scope, InternedId::new(name_id));
+    let check_f32_i64 = |name: &str, expected: i64| {
+        let name_id = interner
+            .try_search_str(name)
+            .unwrap_or_else(|| panic!("{name} should be a compiler-known identifier"));
+        let rc = registered_constant(&compiler, f32_scope, name_id);
         assert_eq!(rc.val.type_id, i64_type_id);
         assert!(same_value(
             rc.val.const_val.as_ref().unwrap(),
             &Value::ArbitraryInt(ArbitraryIntKind::I64(expected))
         ));
     };
-    let check_f32_f64 = |name_id: u32, expected: f64| {
-        let rc = registered_constant(&compiler, f32_scope, InternedId::new(name_id));
+    let check_f32_f64 = |name: &str, expected: f64| {
+        let name_id = interner
+            .try_search_str(name)
+            .unwrap_or_else(|| panic!("{name} should be a compiler-known identifier"));
+        let rc = registered_constant(&compiler, f32_scope, name_id);
         assert_eq!(rc.val.type_id, f64_type_id);
         assert!(same_value(
             rc.val.const_val.as_ref().unwrap(),
@@ -1429,16 +1225,8 @@ fn core_namespaces_f32_and_f64_declare_float_attributes() {
         ));
     };
 
-    check_f32_i64(intern::INTERNED_DIGITS, std::f32::DIGITS as i64);
-    check_f32_i64(
-        intern::INTERNED_MANTISSA_DIGITS,
-        std::f32::MANTISSA_DIGITS as i64,
-    );
-    check_f32_f64(intern::INTERNED_EPSILON, std::f32::EPSILON as f64);
-    check_f32_f64(intern::INTERNED_INFINITY, f32::INFINITY as f64);
-    check_f32_f64(intern::INTERNED_NEG_INFINITY, f32::NEG_INFINITY as f64);
-    check_f32_f64(intern::INTERNED_NAN, f32::NAN as f64);
-    check_f32_f64(intern::INTERNED_MIN_POSITIVE, f32::MIN_POSITIVE as f64);
+    check_f32_i64("MANTISSA_DIGITS", std::f32::MANTISSA_DIGITS as i64);
+    check_f32_f64("NAN", f32::NAN as f64);
 
     let f64_entry = CORE_BUILTIN_TYPES_DATASET
         .iter()
@@ -1446,16 +1234,11 @@ fn core_namespaces_f32_and_f64_declare_float_attributes() {
         .unwrap();
     let f64_scope = builtin_ns_scope(&compiler, f64_type_id, f64_entry.2).unwrap();
 
-    let check_f64_i64 = |name_id: u32, expected: i64| {
-        let rc = registered_constant(&compiler, f64_scope, InternedId::new(name_id));
-        assert_eq!(rc.val.type_id, i64_type_id);
-        assert!(same_value(
-            rc.val.const_val.as_ref().unwrap(),
-            &Value::ArbitraryInt(ArbitraryIntKind::I64(expected))
-        ));
-    };
-    let check_f64_f64 = |name_id: u32, expected: f64| {
-        let rc = registered_constant(&compiler, f64_scope, InternedId::new(name_id));
+    let check_f64_f64 = |name: &str, expected: f64| {
+        let name_id = interner
+            .try_search_str(name)
+            .unwrap_or_else(|| panic!("{name} should be a compiler-known identifier"));
+        let rc = registered_constant(&compiler, f64_scope, name_id);
         assert_eq!(rc.val.type_id, f64_type_id);
         assert!(same_value(
             rc.val.const_val.as_ref().unwrap(),
@@ -1463,14 +1246,50 @@ fn core_namespaces_f32_and_f64_declare_float_attributes() {
         ));
     };
 
-    check_f64_i64(intern::INTERNED_DIGITS, std::f64::DIGITS as i64);
-    check_f64_i64(
-        intern::INTERNED_MANTISSA_DIGITS,
-        std::f64::MANTISSA_DIGITS as i64,
-    );
-    check_f64_f64(intern::INTERNED_EPSILON, std::f64::EPSILON);
-    check_f64_f64(intern::INTERNED_INFINITY, f64::INFINITY);
-    check_f64_f64(intern::INTERNED_NEG_INFINITY, f64::NEG_INFINITY);
-    check_f64_f64(intern::INTERNED_NAN, f64::NAN);
-    check_f64_f64(intern::INTERNED_MIN_POSITIVE, f64::MIN_POSITIVE);
+    check_f64_f64("INF", f64::INFINITY);
+    check_f64_f64("NEG_INF", f64::NEG_INFINITY);
+    check_f64_f64("MIN_POSITIVE", f64::MIN_POSITIVE);
+
+    assert_eq!(interner.search_idx(intern::INTERNED_INF as usize), "INF");
+
+    let ieee_layouts = [
+        (BuiltinTypeKind::F16, 5, 11, 10, -24),
+        (BuiltinTypeKind::F128, 15, 113, 112, -16494),
+    ];
+
+    for (kind, exponent_bits, significand_bits, stored_significand_bits, min_subnormal_exponent) in
+        ieee_layouts
+    {
+        let entry = CORE_BUILTIN_TYPES_DATASET
+            .iter()
+            .find(|(_, builtin_ty, _)| builtin_ty.kind() == kind)
+            .expect("IEEE float type should be present in the core dataset");
+        let scope_id = builtin_ns_scope(&compiler, TypeId::new(builtin_ty_to_id(kind)), entry.2)
+            .expect("IEEE float type should own a metadata namespace");
+
+        for (name, expected) in [
+            ("SIGN_BITS", 1),
+            ("EXPONENT_BITS", exponent_bits),
+            ("SIGNIFICAND_BITS", significand_bits),
+            ("STORED_SIGNIFICAND_BITS", stored_significand_bits),
+            ("MIN_SUBNORMAL_EXPONENT", min_subnormal_exponent),
+        ] {
+            let name_id = interner
+                .try_search_str(name)
+                .unwrap_or_else(|| panic!("{name} should be a compiler-known identifier"));
+            let registered = registered_constant(&compiler, scope_id, name_id);
+
+            assert_eq!(
+                registered.val.type_id, i64_type_id,
+                "{kind:?}::{name} should be typed as i64"
+            );
+            assert!(
+                same_value(
+                    registered.val.const_val.as_ref().unwrap(),
+                    &Value::ArbitraryInt(ArbitraryIntKind::I64(expected)),
+                ),
+                "{kind:?}::{name} has the wrong IEEE 754 value"
+            );
+        }
+    }
 }

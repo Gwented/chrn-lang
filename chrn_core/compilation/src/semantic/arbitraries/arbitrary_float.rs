@@ -99,7 +99,7 @@ impl ArbitraryFloatKind {
         }
     }
 
-    /// Binary work size for this value, including scale and precision.
+    /// Bit size work for `Self`, including scale and precision.
     pub fn numeric_bits(&self) -> u64 {
         match self {
             Self::F64(v) if !v.is_finite() => u64::MAX,
@@ -188,6 +188,7 @@ impl ArbitraryFloatKind {
         self.to_f64().to_bits()
     }
 
+    /// `Self` == 0
     pub fn is_zero(&self) -> bool {
         match self {
             Self::F64(v) => *v == 0.0,

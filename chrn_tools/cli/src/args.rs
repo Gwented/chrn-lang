@@ -151,7 +151,7 @@ pub struct CheckCmd {
     #[arg(
         long = "max-numeric-bits",
         default_value_t = compilation::DEFAULT_MAX_NUMERIC_BITS,
-        value_parser = clap::value_parser!(u32).range(1..=1_000_000)
+        value_parser = clap::value_parser!(u32).range(1..=2048)
     )]
     pub(crate) numeric_bits: u32,
     /// Emits diagnostics as a JSON document in stderr

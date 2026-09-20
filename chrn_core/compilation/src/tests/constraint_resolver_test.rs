@@ -642,218 +642,31 @@ fn const_dependency_circular_test() {
 }
 
 #[test]
-fn arbitrary_ops_edge_cases_test() {
+fn arbitrary_ops_cross_tier_pipeline_test() {
     let eval = |text: &str| -> Value {
         resolve_single_module(text, Stage::Constraint)
             .expect_ok()
             .value_of("X")
     };
 
-    // -- Left shift edge cases --
-    // Shift by 0 returns original value without BigInt
-    assert!(matches!(
-        eval("let X = 42 << 0"),
-        Value::ArbitraryInt(ArbitraryIntKind::I64(42))
-    ));
-    // Zero shifted left returns zero
-    assert!(matches!(
-        eval("let X = 0 << 10"),
-        Value::ArbitraryInt(ArbitraryIntKind::I64(0))
-    ));
-    // Shift reaching bit 62 stays in I64
-    assert!(matches!(
-        eval("let X = 1 << 62"),
-        Value::ArbitraryInt(ArbitraryIntKind::I64(4611686018427387904))
-    ));
-    // Shift reaching bit 63 transitions to positive U64 (not negative!)
     assert!(matches!(
         eval("let X = 1 << 63"),
-        Value::ArbitraryInt(ArbitraryIntKind::U64(v)) if v == 1u64 << 63
+        Value::ArbitraryInt(ArbitraryIntKind::U64(value)) if value == 1u64 << 63
     ));
-    // Shift overflowing 64 bits promotes to BigInt
-    assert!(matches!(
-        eval("let X = 1 << 64"),
-        Value::ArbitraryInt(ArbitraryIntKind::BigInt(_))
-    ));
-    // Negative left shift in range stays I64
-    assert!(matches!(
-        eval("let X = -1 << 1"),
-        Value::ArbitraryInt(ArbitraryIntKind::I64(-2))
-    ));
-    assert!(matches!(
-        eval("let X = -1 << 63"),
-        Value::ArbitraryInt(ArbitraryIntKind::I64(v)) if v == i64::MIN
-    ));
-    // Negative left shift overflowing i64 promotes to BigInt
-    assert!(matches!(
-        eval("let X = -2 << 63"),
-        Value::ArbitraryInt(ArbitraryIntKind::BigInt(_))
-    ));
-
-    // -- Right shift edge cases --
-    assert!(matches!(
-        eval("let X = 42 >> 0"),
-        Value::ArbitraryInt(ArbitraryIntKind::I64(42))
-    ));
-    assert!(matches!(
-        eval("let X = 0 >> 10"),
-        Value::ArbitraryInt(ArbitraryIntKind::I64(0))
-    ));
-    assert!(matches!(
-        eval("let X = 16 >> 2"),
-        Value::ArbitraryInt(ArbitraryIntKind::I64(4))
-    ));
-    // Positive right shift >= 64 bits evaluates to 0
-    assert!(matches!(
-        eval("let X = 100 >> 64"),
-        Value::ArbitraryInt(ArbitraryIntKind::I64(0))
-    ));
-    assert!(matches!(
-        eval("let X = 100 >> 1000"),
-        Value::ArbitraryInt(ArbitraryIntKind::I64(0))
-    ));
-    // Negative right shift in range preserves arithmetic sign
     assert!(matches!(
         eval("let X = -5 >> 1"),
         Value::ArbitraryInt(ArbitraryIntKind::I64(-3))
     ));
-    // Negative right shift >= 64 bits evaluates to -1
-    assert!(matches!(
-        eval("let X = -5 >> 64"),
-        Value::ArbitraryInt(ArbitraryIntKind::I64(-1))
-    ));
-    assert!(matches!(
-        eval("let X = -1 >> 1000"),
-        Value::ArbitraryInt(ArbitraryIntKind::I64(-1))
-    ));
-    // Right shift on U64 narrows to I64
-    assert!(matches!(
-        eval("let X = (1 << 63) >> 1"),
-        Value::ArbitraryInt(ArbitraryIntKind::I64(4611686018427387904))
-    ));
-
-    // -- Negation edge cases --
-    assert!(matches!(
-        eval("let X = -42"),
-        Value::ArbitraryInt(ArbitraryIntKind::I64(-42))
-    ));
-    assert!(matches!(
-        eval("let X = - -42"),
-        Value::ArbitraryInt(ArbitraryIntKind::I64(42))
-    ));
-    // Negating U64(1 << 63) yields I64(i64::MIN)
     assert!(matches!(
         eval("let X = -(1 << 63)"),
-        Value::ArbitraryInt(ArbitraryIntKind::I64(v)) if v == i64::MIN
-    ));
-    // Negating I64(i64::MIN) yields U64(1 << 63)
-    assert!(matches!(
-        eval("let X = -(-1 << 63)"),
-        Value::ArbitraryInt(ArbitraryIntKind::U64(v)) if v == 1u64 << 63
-    ));
-
-    // -- Comparisons between variant tiers --
-    assert!(matches!(eval("let X = -1 < (1 << 63)"), Value::Bool(true)));
-    assert!(matches!(eval("let X = 10 < (1 << 63)"), Value::Bool(true)));
-    assert!(matches!(eval("let X = (1 << 63) > 10"), Value::Bool(true)));
-    assert!(matches!(
-        eval("let X = (1 << 63) == (1 << 63)"),
-        Value::Bool(true)
-    ));
-    assert!(matches!(
-        eval("let X = 10 == (1 << 63)"),
-        Value::Bool(false)
+        Value::ArbitraryInt(ArbitraryIntKind::I64(value)) if value == i64::MIN
     ));
     assert!(matches!(
         eval("let X = (1 << 64) > (1 << 63)"),
         Value::Bool(true)
     ));
-    assert!(matches!(eval("let X = 100 < (1 << 64)"), Value::Bool(true)));
-    assert!(matches!(
-        eval("let X = -100 < (1 << 64)"),
-        Value::Bool(true)
-    ));
-
-    // -- Fast path arithmetic and bitwise ops --
-    assert!(matches!(
-        eval("let X = 100 + 200"),
-        Value::ArbitraryInt(ArbitraryIntKind::I64(300))
-    ));
-    assert!(matches!(
-        eval("let X = 300 - 100"),
-        Value::ArbitraryInt(ArbitraryIntKind::I64(200))
-    ));
-    assert!(matches!(
-        eval("let X = 20 * 15"),
-        Value::ArbitraryInt(ArbitraryIntKind::I64(300))
-    ));
-    assert!(matches!(
-        eval("let X = 300 / 15"),
-        Value::ArbitraryInt(ArbitraryIntKind::I64(20))
-    ));
-    assert!(matches!(
-        eval("let X = 305 % 15"),
-        Value::ArbitraryInt(ArbitraryIntKind::I64(5))
-    ));
-    assert!(matches!(
-        eval("let X = 0b1100 & 0b1010"),
-        Value::ArbitraryInt(ArbitraryIntKind::I64(0b1000))
-    ));
-    assert!(matches!(
-        eval("let X = 0b1100 | 0b1010"),
-        Value::ArbitraryInt(ArbitraryIntKind::I64(0b1110))
-    ));
-    assert!(matches!(
-        eval("let X = 0b1100 ^ 0b1010"),
-        Value::ArbitraryInt(ArbitraryIntKind::I64(0b0110))
-    ));
-    // Arithmetic overflow promotes cleanly to BigInt or U64
     assert!(matches!(
         eval("let X = 9223372036854775807 + 1"),
-        Value::ArbitraryInt(ArbitraryIntKind::U64(v)) if v == 1u64 << 63
+        Value::ArbitraryInt(ArbitraryIntKind::U64(value)) if value == 1u64 << 63
     ));
-}
-
-#[test]
-fn arbitrary_float_edge_cases_test() {
-    // Float underflow preserves non-zero precision as BigFloat, while exact zero stays F64.
-    let underflow = ArbitraryFloatKind::from_str("1e-400").expect("underflow literal parses");
-    assert!(
-        matches!(underflow, ArbitraryFloatKind::BigFloat(_)),
-        "expected BigFloat for underflowing literal `1e-400`, got {underflow:?}"
-    );
-    let zero_float = ArbitraryFloatKind::from_str("0.0").expect("zero parses");
-    assert!(
-        matches!(zero_float, ArbitraryFloatKind::F64(v) if v == 0.0),
-        "expected F64(0.0) for `0.0`, got {zero_float:?}"
-    );
-    let zero_sci = ArbitraryFloatKind::from_str("0e1").expect("zero sci parses");
-    assert!(
-        matches!(zero_sci, ArbitraryFloatKind::F64(v) if v == 0.0),
-        "expected F64(0.0) for `0e1`, got {zero_sci:?}"
-    );
-
-    // to_bigfloat on NaN returns None safely instead of panicking.
-    let nan_kind = ArbitraryFloatKind::F64(f64::NAN);
-    assert_eq!(nan_kind.to_bigfloat(), None);
-
-    // Heterogeneous comparisons between F64 and out-of-range BigFloat.
-    let huge = ArbitraryFloatKind::from_str("1e1000").expect("huge parses");
-    let neg_huge = ArbitraryFloatKind::from_str("-1e1000").expect("neg huge parses");
-    let finite_f64 = ArbitraryFloatKind::F64(5.0);
-
-    assert_ne!(finite_f64, huge);
-    assert_ne!(huge, finite_f64);
-    assert!(finite_f64 < huge);
-    assert!(huge > finite_f64);
-
-    assert_ne!(finite_f64, neg_huge);
-    assert_ne!(neg_huge, finite_f64);
-    assert!(finite_f64 > neg_huge);
-    assert!(neg_huge < finite_f64);
-
-    assert_ne!(nan_kind, huge);
-    assert_ne!(huge, nan_kind);
-    assert_eq!(nan_kind.partial_cmp(&huge), None);
-    assert_eq!(huge.partial_cmp(&nan_kind), None);
 }

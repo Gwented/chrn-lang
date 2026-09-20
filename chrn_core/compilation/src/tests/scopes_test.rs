@@ -279,7 +279,7 @@ fn ns_scope_of(compiler: &ScriptCompiler, type_id: TypeId) -> ScopeId {
 
 /// Intrinsic constants such as `i8::MAX` live in a scope hanging off the built-in's symbol, so
 /// they are reachable through that scope and through nothing else. A section scope must not see
-/// them, otherwise a bare `MAX` would resolve and the ten namespaces would collide on one name.
+/// them, otherwise a bare `MAX` would resolve and the namespaces would collide on one name.
 #[test]
 fn scope_core_type_namespace_test() {
     let (compiler, _) = ns_resolve("let CONSTANT = 3");
@@ -287,11 +287,16 @@ fn scope_core_type_namespace_test() {
     let min_id = InternedId::new(intern::INTERNED_MIN_UPPER);
     let bits_id = InternedId::new(intern::INTERNED_BITS_UPPER);
     let bytes_id = InternedId::new(intern::INTERNED_BYTES_UPPER);
+    let tab_id = InternedId::new(intern::INTERNED_TAB_UPPER);
 
     for (name, type_id) in namespaced_builtins() {
         let scope_id = ns_scope_of(&compiler, type_id);
-        let bounds_to_check = if name == "f128" {
+        // `f128` carries metadata attributes but no MAX bound, `bool` carries only
+        // width metadata, and `str` carries shared constants rather than bounds.
+        let bounds_to_check = if name == "f128" || name == "bool" {
             vec![bits_id, bytes_id]
+        } else if name == "str" {
+            vec![tab_id]
         } else {
             vec![max_id, min_id]
         };
