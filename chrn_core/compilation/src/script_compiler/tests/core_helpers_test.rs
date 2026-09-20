@@ -5,6 +5,7 @@ use chrn_utils::{
     source_map::source_span::SourceSpan,
     utils::containers::SpannedContainer,
 };
+use dashu_int::IBig;
 use lang::types::{
     builtins::{BuiltinType, BuiltinTypeKind},
     externs::{ExternPlatformType, java_types::JavaTypeKind, rust_types::RustTypeKind},
@@ -674,7 +675,31 @@ fn expected_bounds(kind: BuiltinTypeKind) -> Option<(Value, Value)> {
             Value::ArbitraryFloat(ArbitraryFloatKind::F64(f64::MAX)),
             Value::ArbitraryFloat(ArbitraryFloatKind::F64(f64::MIN)),
         ),
-        // `u64`, `i128`, `u128` and `f128` do not fit `InstiationValue`, and `sized`/`unsized`
+        BuiltinTypeKind::U64 => (
+            Value::ArbitraryInt(ArbitraryIntKind::U64(u64::MAX)),
+            Value::ArbitraryInt(ArbitraryIntKind::U64(0)),
+        ),
+        BuiltinTypeKind::I128 => (
+            Value::ArbitraryInt(ArbitraryIntKind::BigInt(IBig::from_parts_const(
+                dashu_int::Sign::Positive,
+                i128::MAX as u128,
+            ))),
+            Value::ArbitraryInt(ArbitraryIntKind::BigInt(IBig::from_parts_const(
+                dashu_int::Sign::Negative,
+                i128::MIN.unsigned_abs(),
+            ))),
+        ),
+        BuiltinTypeKind::U128 => (
+            Value::ArbitraryInt(ArbitraryIntKind::BigInt(IBig::from_parts_const(
+                dashu_int::Sign::Positive,
+                u128::MAX,
+            ))),
+            Value::ArbitraryInt(ArbitraryIntKind::BigInt(IBig::from_parts_const(
+                dashu_int::Sign::Positive,
+                0,
+            ))),
+        ),
+        // `f128` does not fit `InstiationValue`, and `sized`/`unsized`
         // are pointer-sized, so their bounds belong to the target rather than the host
         _ => return None,
     };
@@ -728,19 +753,7 @@ fn core_namespaced_builtins_own_a_core_scope() {
 #[test]
 fn core_namespaces_declare_max_and_min() {
     for (_, builtin_ty, ns) in &CORE_BUILTIN_TYPES_DATASET {
-        if ns.is_empty() {
-            continue;
-        }
-
-        if builtin_ty.kind() == BuiltinTypeKind::U64 {
-            let names: Vec<u32> = ns.iter().map(|base| base.name_id.id).collect();
-            assert!(
-                names.len() == 3
-                    && names[0] == intern::INTERNED_BITS_UPPER
-                    && names[1] == intern::INTERNED_BYTES_UPPER
-                    && names[2] == intern::INTERNED_RADIX,
-                "namespace of u64 must declare BITS, BYTES, RADIX"
-            );
+        if ns.is_empty() || builtin_ty.kind() == BuiltinTypeKind::F128 {
             continue;
         }
 
@@ -757,6 +770,26 @@ fn core_namespaces_declare_max_and_min() {
             builtin_ty.kind()
         );
     }
+}
+
+#[test]
+fn core_namespace_f128_declares_metadata_properties() {
+    let (_, _, ns) = CORE_BUILTIN_TYPES_DATASET
+        .iter()
+        .find(|(_, b, _)| b.kind() == BuiltinTypeKind::F128)
+        .expect("f128 entry in dataset");
+
+    let names: Vec<u32> = ns.iter().map(|base| base.name_id.id).collect();
+    assert_eq!(
+        names,
+        vec![
+            intern::INTERNED_BITS_UPPER,
+            intern::INTERNED_BYTES_UPPER,
+            intern::INTERNED_RADIX,
+            intern::INTERNED_DIGITS,
+            intern::INTERNED_MANTISSA_DIGITS,
+        ]
+    );
 }
 
 #[test]
@@ -790,7 +823,10 @@ fn core_namespace_entries_are_typed_as_i64_or_f64() {
             } else {
                 match &var.val {
                     InstiationValue::I64(_) => BuiltinTypeKind::I64,
+                    InstiationValue::U64(_) => BuiltinTypeKind::U64,
+                    InstiationValue::BigInt(_) => BuiltinTypeKind::BigInt,
                     InstiationValue::F64(_) => BuiltinTypeKind::F64,
+                    InstiationValue::BigFloat(_) => BuiltinTypeKind::BigFloat,
                     _ => panic!(
                         "namespace of {:?} declares an entry with an unexpected value type: {:?}",
                         builtin_ty.kind(),
@@ -814,14 +850,15 @@ fn core_namespace_entries_are_typed_as_i64_or_f64() {
 #[test]
 fn core_namespace_bounds_match_target_limits() {
     for (_, builtin_ty, ns) in &CORE_BUILTIN_TYPES_DATASET {
+        if builtin_ty.kind() == BuiltinTypeKind::F128 {
+            continue;
+        }
         let Some((expected_max, expected_min)) = expected_bounds(builtin_ty.kind()) else {
-            if builtin_ty.kind() != BuiltinTypeKind::U64 {
-                assert!(
-                    ns.is_empty(),
-                    "{:?} carries a namespace with no expected bounds",
-                    builtin_ty.kind()
-                );
-            }
+            assert!(
+                ns.is_empty(),
+                "{:?} carries a namespace with no expected bounds",
+                builtin_ty.kind()
+            );
             continue;
         };
 
@@ -1270,6 +1307,9 @@ fn core_namespaces_declare_bits_and_bytes() {
         (BuiltinTypeKind::I64, 64, 8),
         (BuiltinTypeKind::U64, 64, 8),
         (BuiltinTypeKind::F64, 64, 8),
+        (BuiltinTypeKind::I128, 128, 16),
+        (BuiltinTypeKind::U128, 128, 16),
+        (BuiltinTypeKind::F128, 128, 16),
     ];
 
     let i64_type_id = TypeId::new(builtin_ty_to_id(BuiltinTypeKind::I64));

@@ -99,6 +99,11 @@ pub enum PresetErr {
         sp_num: SpannedContainer<InternedId>,
         fmtted_ty: ChrnClassified,
     },
+    /// A literal or constant computation exceeded the configured numeric limit.
+    NumericLimitExceeded {
+        spans: Vec<SourceSpan>,
+        max_bits: u32,
+    },
     //TODO: Maybe option name id?
     UndefinedMember(SourceSpan),
     Math(MathError),

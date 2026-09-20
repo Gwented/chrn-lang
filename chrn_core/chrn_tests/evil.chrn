@@ -44,12 +44,34 @@ for varthing1 {}
 // Makes it sound like it didn't search the namespace
 // let x = i32::e#3
 
-let decimal = i64::MAX + 16
-@end
-let float = 179769313486231570000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000.0
-let bin = 0b0011
+// {} <- for multiple maybe
+// #chrn[MAX_NUM_BITS = 256]
+
+// rm msg for let always inferred
+// Memory errors.
+// Maybe big float/int isn't the best abstraction for a language.
+// Something like a value that's just 256 or a bit higher is maybe better.
+// OR could just add a limit for it in the base wrapper that existed before.
+//
+// We will do a required CLI flag like --allow-arbitrary where it will refuse
+// to run the rest of compilation if a > i128(Or just memory budgeted)/f64 value is found.
+// OR probably best to have max bits configured as the flag rather than large umbrella.
+//
+// Both are valid ^^^ you have 18hrs to choose
+//
+// So bit limit flag and src max limit. Goes to min, maybe warns that the flag given was larger than src
+// limit.
+//
+// Correction: Bit estimation is expensive. Src needs explicit directive to compute them, which THEN forces
+// the estimations. By default rejects > i128 & rejects > f64
+//
+// let float = 2e-1000000000000
+import "../chrn_core/chrn_tests/def.chrn"
+// let x = def::decimal
+let bin = 0b0111
 let octal = 0o2
 let hex = 0x003
+@end
 // let decimal_overflow = 9223372036854775808
 
 var->

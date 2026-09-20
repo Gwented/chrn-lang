@@ -66,7 +66,7 @@ const A_BRANCH_FUNC_SET: u64 = A_BASE_EXIT_SET | token::C_BRACKET;
 pub(super) struct ParserContext<'a> {
     cfg: &'a ChrnConfig,
     pub(super) region: &'a SourceRegion,
-    toks: &'a [SpannedToken],
+    pub(super) toks: &'a [SpannedToken],
     pos: usize,
     //TODO: Maybe a budget too
     pub(super) summary: SourceDiagnosticSummary,
@@ -370,11 +370,8 @@ impl<'a> ParserContext<'a> {
     /// Takes builder, and returns it with a boolean representing if it was altered or not.
     /// If `true` then it was altered, `false` means nothing was changed
     ///
-    /// The intention of semantic assistance is to infer intent in how to alter the builder based
+    /// Intention is to infer intent in how to alter the builder based
     /// off of mostly semantic, and some tree-related information, rather than just tree information.
-    /// This is to lower instances like, name binding when a keyword was used, which isn't bespoke
-    /// in any form but the tree is so explicit that this can't be done without semantic
-    /// understanding.
     fn try_semantic_assistance(
         &self,
         mut builder: SourceDiagnosticBuilder,

@@ -12,7 +12,7 @@ use crate::chrn_config::{chrn_logger::ChrnConfigLogger, chrn_perf::ChrnPerf};
 //TEST: No longer has use but is useful to keep in case of any future use
 /// Config given before running a chrn language instance, which allows for external tooling
 /// capabilities, such as cli args.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct ChrnConfig {
     // This is purposefully nested so that it owns the specific methods for logging as to not convolute
     // `ChrnConfig`
@@ -21,13 +21,19 @@ pub struct ChrnConfig {
     logger: ChrnConfigLogger,
     // Box?
     perf_tracker: ChrnPerf,
+    max_numeric_bits: u32,
 }
 
 impl ChrnConfig {
-    pub const fn new(logger: ChrnConfigLogger, perf_tracker: ChrnPerf) -> ChrnConfig {
+    pub const fn new(
+        logger: ChrnConfigLogger,
+        perf_tracker: ChrnPerf,
+        max_numeric_bits: u32,
+    ) -> ChrnConfig {
         ChrnConfig {
             logger,
             perf_tracker,
+            max_numeric_bits,
         }
     }
 
@@ -43,11 +49,22 @@ impl ChrnConfig {
         &mut self.perf_tracker
     }
 
+    pub const fn max_numeric_bits(&self) -> u32 {
+        self.max_numeric_bits
+    }
+
     pub const fn builder() -> ChrnConfigBuilder {
         ChrnConfigBuilder {
             logger: None,
             perf_tracker: None,
+            max_numeric_bits: None,
         }
+    }
+}
+
+impl Default for ChrnConfig {
+    fn default() -> Self {
+        Self::builder().build()
     }
 }
 
@@ -55,6 +72,7 @@ impl ChrnConfig {
 pub struct ChrnConfigBuilder {
     logger: Option<ChrnConfigLogger>,
     perf_tracker: Option<ChrnPerf>,
+    max_numeric_bits: Option<u32>,
 }
 
 impl ChrnConfigBuilder {
@@ -71,9 +89,16 @@ impl ChrnConfigBuilder {
             ChrnPerf::new(false)
         };
 
+        let max_numeric_bits = if let Some(bits) = self.max_numeric_bits {
+            bits
+        } else {
+            crate::DEFAULT_MAX_NUMERIC_BITS
+        };
+
         ChrnConfig {
             logger,
             perf_tracker,
+            max_numeric_bits,
         }
     }
 
@@ -84,6 +109,11 @@ impl ChrnConfigBuilder {
 
     pub fn add_perf_tracker(mut self) -> Self {
         self.perf_tracker = Some(ChrnPerf::new(true));
+        self
+    }
+
+    pub fn add_max_numeric_bits(mut self, max_numeric_bits: u32) -> Self {
+        self.max_numeric_bits = Some(max_numeric_bits);
         self
     }
 }

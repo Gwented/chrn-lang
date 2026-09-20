@@ -2,26 +2,12 @@ use std::borrow::Cow;
 
 use chrn_utils::id_types::TypeId;
 use dashu_int::IBig;
+use dashu_int::ops::BitTest;
 
 use crate::lexer::token::Notation;
 use crate::script_compiler::compiler_constants;
 
-// /// Arbitrarily sized integer
-// #[derive(Debug, Clone)]
-// pub struct BigIntBase {
-//     pub inner: BigInt,
-//     // pub notation: Notation,
-// }
-//
-// impl BigIntBase {
-//     pub const fn new(inner: BigInt) -> Self {
-//         Self { inner }
-//     }
-// }
-
-/// Representable `chrn` integers
-///
-/// This goes to `u64` as to avoid using string arithmetic just from a common unsigned bit size.
+/// Representable `chrn` integers.
 #[derive(Debug, Clone)]
 pub enum ArbitraryIntKind {
     I64(i64),
@@ -30,7 +16,7 @@ pub enum ArbitraryIntKind {
 }
 
 impl ArbitraryIntKind {
-    /// Returns compile-time known `TypeId` for `Self`
+    /// Returns compile-time `TypeId` for `Self`.
     pub const fn type_id(&self) -> TypeId {
         match self {
             Self::I64(_) => TypeId::new(compiler_constants::CORE_I64),
@@ -39,21 +25,96 @@ impl ArbitraryIntKind {
         }
     }
     //WARN: Is this retrying ok?
-    /// Given a string and target notation, outputs `Self` with the appropriate variant.
+    /// Parses an integer string under the specified notation.
     pub fn from_str(s: &str, notation: Notation) -> Option<Self> {
+        Self::from_str_with_limit(s, notation, u64::MAX).ok()
+    }
+
+    /// Parses an integer literal respecting `max_bits`.
+    pub fn from_str_with_limit(
+        s: &str,
+        notation: Notation,
+        max_bits: u64,
+    ) -> Result<Self, NumericIntParseError> {
         if let Ok(num) = i64::from_str_radix(s, notation.radix()) {
-            Self::I64(num).into()
+            let kind = Self::I64(num);
+            return if kind.fits_numeric_bits(max_bits) {
+                Ok(kind)
+            } else {
+                Err(NumericIntParseError::LimitExceeded)
+            };
         } else if let Ok(num) = u64::from_str_radix(s, notation.radix()) {
-            Self::U64(num).into()
-        } else {
-            match IBig::from_str_radix(s, notation.radix()) {
-                Ok(v) => Self::from_bigint(v).into(),
-                Err(_) => None,
+            let kind = Self::U64(num);
+            return if kind.fits_numeric_bits(max_bits) {
+                Ok(kind)
+            } else {
+                Err(NumericIntParseError::LimitExceeded)
+            };
+        }
+
+        if Self::literal_exceeds_numeric_bits(s, notation, max_bits) {
+            return Err(NumericIntParseError::LimitExceeded);
+        }
+
+        match IBig::from_str_radix(s, notation.radix()) {
+            Ok(v) => {
+                let kind = Self::from_bigint(v);
+                if kind.fits_numeric_bits(max_bits) {
+                    Ok(kind)
+                } else {
+                    Err(NumericIntParseError::LimitExceeded)
+                }
             }
+            Err(_) => Err(NumericIntParseError::Invalid),
         }
     }
 
-    /// Converts to `IBig`, cloning on the `BigInt` variant.
+    /// Returns true when literal spelling proves its magnitude exceeds `max_bits`.
+    pub fn literal_exceeds_numeric_bits(s: &str, notation: Notation, max_bits: u64) -> bool {
+        let s = s.strip_prefix(['+', '-']).unwrap_or(s);
+        let digits = s.trim_start_matches('0');
+        if digits.is_empty() {
+            return false;
+        }
+
+        let radix = notation.radix();
+        let mut digit_count = 0u64;
+        let mut first = 0u32;
+        for (i, c) in digits.chars().enumerate() {
+            // Defer invalid spellings to the exact `IBig` parse so they report
+            // `Invalid` instead of `LimitExceeded`.
+            let Some(digit) = c.to_digit(radix) else {
+                return false;
+            };
+            if i == 0 {
+                first = digit;
+            }
+            digit_count += 1;
+        }
+        let trailing_digits = digit_count - 1;
+        let minimum_bits = match notation {
+            Notation::Decimal => trailing_digits * 3321 / 1000 + 1,
+            Notation::Bin | Notation::Octal | Notation::Hex => {
+                trailing_digits * (notation.radix().ilog2() as u64) + (first.ilog2() as u64) + 1
+            }
+        };
+        minimum_bits > max_bits
+    }
+
+    /// Magnitude bit length, excluding sign.
+    pub fn numeric_bits(&self) -> u64 {
+        match self {
+            Self::I64(v) => (u64::BITS - v.unsigned_abs().leading_zeros()) as u64,
+            Self::U64(v) => (u64::BITS - v.leading_zeros()) as u64,
+            Self::BigInt(v) => v.bit_len() as u64,
+        }
+    }
+
+    pub fn fits_numeric_bits(&self, max_bits: u64) -> bool {
+        self.numeric_bits() <= max_bits
+    }
+
+    /// Converts to `IBig`.
     pub fn to_bigint(&self) -> IBig {
         match self {
             Self::I64(v) => IBig::from(*v),
@@ -62,7 +123,7 @@ impl ArbitraryIntKind {
         }
     }
 
-    /// Borrows the `BigInt` variant or creates an owned `IBig` from primitive variants.
+    /// Borrows `BigInt` or converts primitive variants to an owned `IBig`.
     pub fn to_bigint_cow(&self) -> Cow<'_, IBig> {
         match self {
             Self::I64(v) => Cow::Owned(IBig::from(*v)),
@@ -71,7 +132,7 @@ impl ArbitraryIntKind {
         }
     }
 
-    /// Converts to `IBig`, moving on the `BigInt` variant.
+    /// Converts into `IBig`.
     pub fn into_bigint(self) -> IBig {
         match self {
             Self::I64(v) => IBig::from(v),
@@ -80,10 +141,7 @@ impl ArbitraryIntKind {
         }
     }
 
-    /// Narrows an `IBig` back to the smallest fitting variant.
-    ///
-    /// This keeps small results small while letting arithmetic overflow into arbitrary precision
-    /// instead of panicking like fixed-width ops would.
+    /// Narrows an `IBig` to the smallest fitting variant.
     pub fn from_bigint(value: IBig) -> Self {
         if let Ok(v) = i64::try_from(&value) {
             Self::I64(v)
@@ -94,7 +152,7 @@ impl ArbitraryIntKind {
         }
     }
 
-    /// Returns `true` when `Self` == 0, `false` otherwise
+    /// Returns true if zero.
     pub fn is_zero(&self) -> bool {
         match self {
             Self::I64(v) => *v == 0,
@@ -103,38 +161,48 @@ impl ArbitraryIntKind {
         }
     }
 
-    /// Maximum shift amount accepted for `<<` / `>>` const-evaluation.
-    ///
-    /// Bounds the resulting `IBig` allocation (`shift` bits need roughly
-    /// `shift / 8` bytes) so a crafted literal such as `1 << 2000000000`
-    /// is rejected with a diagnostic instead of hanging or OOMing the compiler.
+    /// Maximum shift amount ceiling.
     pub const MAX_SHIFT_BITS: u32 = 1_000_000;
 
-    /// Validates a shift amount without panicking.
-    ///
-    /// Returns `None` for negative amounts, amounts exceeding `u32`, and
-    /// amounts above `MAX_SHIFT_BITS`.
+    /// Validates shift amount against `MAX_SHIFT_BITS`.
     pub fn checked_shift_amount(&self) -> Option<u32> {
-        let amount = match self {
+        let amount = self.shift_amount()?;
+        (amount <= Self::MAX_SHIFT_BITS).then_some(amount)
+    }
+
+    fn shift_amount(&self) -> Option<u32> {
+        Some(match self {
             Self::I64(v) => u32::try_from(*v).ok()?,
             Self::U64(v) => u32::try_from(*v).ok()?,
             Self::BigInt(v) => u32::try_from(v).ok()?,
-        };
-        if amount > Self::MAX_SHIFT_BITS {
-            return None;
-        }
-        Some(amount)
+        })
     }
 
-    /// Checked `<<`. Returns `None` when the shift amount
-    /// is negative, exceeds `u32`, or exceeds `MAX_SHIFT_BITS`.
-    pub fn checked_shl(&self, rhs: &Self) -> Option<Self> {
-        let shift = rhs.checked_shift_amount()?;
+    /// Checked `<<` bounded by `max_bits`.
+    pub fn checked_shl_with_limit(
+        &self,
+        rhs: &Self,
+        max_bits: u64,
+    ) -> Result<Self, NumericIntError> {
+        let shift = rhs
+            .checked_shift_amount()
+            .ok_or(NumericIntError::InvalidShift)?;
+        self.shl_amount_with_limit(shift, max_bits)
+    }
+
+    fn shl_amount_with_limit(&self, shift: u32, max_bits: u64) -> Result<Self, NumericIntError> {
         if shift == 0 {
-            return Some(self.clone());
+            return self
+                .fits_numeric_bits(max_bits)
+                .then(|| self.clone())
+                .ok_or(NumericIntError::LimitExceeded);
         }
         if self.is_zero() {
-            return Some(Self::I64(0));
+            return Ok(Self::I64(0));
+        }
+        let shift_bits = (shift) as u64;
+        if shift_bits > max_bits || self.numeric_bits() > max_bits - shift_bits {
+            return Err(NumericIntError::LimitExceeded);
         }
         if shift < 64 {
             match self {
@@ -142,14 +210,14 @@ impl ArbitraryIntKind {
                     if *v > 0 {
                         let lz = (*v as u64).leading_zeros();
                         if lz > shift {
-                            return Some(Self::I64(v << shift));
+                            return Ok(Self::I64(v << shift));
                         } else if lz == shift {
-                            return Some(Self::U64((*v as u64) << shift));
+                            return Ok(Self::U64((*v as u64) << shift));
                         }
                     } else {
                         let res = v.wrapping_shl(shift);
                         if res >> shift == *v {
-                            return Some(Self::I64(res));
+                            return Ok(Self::I64(res));
                         }
                     }
                 }
@@ -158,56 +226,86 @@ impl ArbitraryIntKind {
                     if lz > shift {
                         let res = v << shift;
                         if res <= i64::MAX as u64 {
-                            return Some(Self::I64(res as i64));
+                            return Ok(Self::I64(res as i64));
                         } else {
-                            return Some(Self::U64(res));
+                            return Ok(Self::U64(res));
                         }
                     } else if lz == shift {
-                        return Some(Self::U64(v << shift));
+                        return Ok(Self::U64(v << shift));
                     }
                 }
                 Self::BigInt(_) => {}
             }
         }
         match self {
-            Self::BigInt(v) => Some(Self::from_bigint(v << (shift as usize))),
-            _ => Some(Self::from_bigint(self.to_bigint() << (shift as usize))),
+            Self::BigInt(v) => Ok(Self::from_bigint(v << (shift as usize))),
+            _ => Ok(Self::from_bigint(self.to_bigint() << (shift as usize))),
         }
     }
 
-    /// Checked `>>`. Returns `None` when the shift amount
-    /// is negative, exceeds `u32`, or exceeds `MAX_SHIFT_BITS`.
+    /// Checked `<<`.
+    pub fn checked_shl(&self, rhs: &Self) -> Option<Self> {
+        let shift = rhs.checked_shift_amount()?;
+        self.shl_amount_with_limit(shift, u64::MAX).ok()
+    }
+
+    /// Checked `>>`.
     pub fn checked_shr(&self, rhs: &Self) -> Option<Self> {
         let shift = rhs.checked_shift_amount()?;
+        Some(self.shr_amount(shift))
+    }
+
+    /// Checked `>>` bounded by `max_bits`.
+    pub fn checked_shr_with_limit(
+        &self,
+        rhs: &Self,
+        max_bits: u64,
+    ) -> Result<Self, NumericIntError> {
+        let shift = rhs.shift_amount().ok_or(NumericIntError::InvalidShift)?;
+        let res = self.shr_amount(shift);
+        if res.fits_numeric_bits(max_bits) {
+            Ok(res)
+        } else {
+            Err(NumericIntError::LimitExceeded)
+        }
+    }
+
+    fn shr_amount(&self, shift: u32) -> Self {
         if shift == 0 {
-            return Some(self.clone());
+            return self.clone();
         }
         if self.is_zero() {
-            return Some(Self::I64(0));
+            return Self::I64(0);
         }
         match self {
             Self::I64(v) => {
                 if shift >= 64 {
                     if *v < 0 {
-                        return Some(Self::I64(-1));
+                        return Self::I64(-1);
                     } else {
-                        return Some(Self::I64(0));
+                        return Self::I64(0);
                     }
                 }
-                Some(Self::I64(v >> shift))
+                Self::I64(v >> shift)
             }
             Self::U64(v) => {
                 if shift >= 64 {
-                    return Some(Self::I64(0));
+                    return Self::I64(0);
                 }
                 let res = v >> shift;
                 if res <= i64::MAX as u64 {
-                    Some(Self::I64(res as i64))
+                    Self::I64(res as i64)
                 } else {
-                    Some(Self::U64(res))
+                    Self::U64(res)
                 }
             }
-            Self::BigInt(v) => Some(Self::from_bigint(v >> (shift as usize))),
+            Self::BigInt(v) => {
+                if shift as usize >= v.bit_len() {
+                    Self::I64(if v < &IBig::ZERO { -1 } else { 0 })
+                } else {
+                    Self::from_bigint(v >> (shift as usize))
+                }
+            }
         }
     }
 
@@ -239,6 +337,19 @@ impl ArbitraryIntKind {
     }
 }
 
+/// Numeric integer operation errors.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NumericIntError {
+    InvalidShift,
+    LimitExceeded,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NumericIntParseError {
+    Invalid,
+    LimitExceeded,
+}
+
 impl std::fmt::Display for ArbitraryIntKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -246,15 +357,6 @@ impl std::fmt::Display for ArbitraryIntKind {
             ArbitraryIntKind::U64(num) => write!(f, "{num}"),
             ArbitraryIntKind::BigInt(ibig) => write!(f, "{ibig}"),
         }
-    }
-}
-
-// May remove
-const fn int_from_u64_narrow(v: u64) -> ArbitraryIntKind {
-    if v <= i64::MAX as u64 {
-        ArbitraryIntKind::I64(v as i64)
-    } else {
-        ArbitraryIntKind::U64(v)
     }
 }
 
@@ -280,36 +382,35 @@ impl Eq for ArbitraryIntKind {}
 
 impl PartialOrd for ArbitraryIntKind {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        match (self, other) {
-            (Self::I64(a), Self::I64(b)) => a.partial_cmp(b),
-            (Self::U64(a), Self::U64(b)) => a.partial_cmp(b),
-            (Self::BigInt(a), Self::BigInt(b)) => a.partial_cmp(b),
-            (Self::I64(a), Self::U64(b)) => {
-                if *a < 0 {
-                    Some(std::cmp::Ordering::Less)
-                } else {
-                    (*a as u64).partial_cmp(b)
-                }
-            }
-            (Self::U64(a), Self::I64(b)) => {
-                if *b < 0 {
-                    Some(std::cmp::Ordering::Greater)
-                } else {
-                    a.partial_cmp(&(*b as u64))
-                }
-            }
-            (Self::BigInt(a), Self::I64(b)) => a.partial_cmp(&IBig::from(*b)),
-            (Self::I64(a), Self::BigInt(b)) => IBig::from(*a).partial_cmp(b),
-            (Self::BigInt(a), Self::U64(b)) => a.partial_cmp(&IBig::from(*b)),
-            (Self::U64(a), Self::BigInt(b)) => IBig::from(*a).partial_cmp(b),
-        }
+        Some(self.cmp(other))
     }
 }
 
 impl Ord for ArbitraryIntKind {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.partial_cmp(other)
-            .expect("total ordering across all integer variants")
+        match (self, other) {
+            (Self::I64(a), Self::I64(b)) => a.cmp(b),
+            (Self::U64(a), Self::U64(b)) => a.cmp(b),
+            (Self::BigInt(a), Self::BigInt(b)) => a.cmp(b),
+            (Self::I64(a), Self::U64(b)) => {
+                if *a < 0 {
+                    std::cmp::Ordering::Less
+                } else {
+                    (*a as u64).cmp(b)
+                }
+            }
+            (Self::U64(a), Self::I64(b)) => {
+                if *b < 0 {
+                    std::cmp::Ordering::Greater
+                } else {
+                    a.cmp(&(*b as u64))
+                }
+            }
+            (Self::BigInt(a), Self::I64(b)) => a.cmp(&IBig::from(*b)),
+            (Self::I64(a), Self::BigInt(b)) => IBig::from(*a).cmp(b),
+            (Self::BigInt(a), Self::U64(b)) => a.cmp(&IBig::from(*b)),
+            (Self::U64(a), Self::BigInt(b)) => IBig::from(*a).cmp(b),
+        }
     }
 }
 
@@ -318,9 +419,13 @@ pub const fn int_from_i64(v: i64) -> ArbitraryIntKind {
     ArbitraryIntKind::I64(v)
 }
 
-/// Converts `u64` to `ArbitraryIntKind`
+/// Converts `u64` to `ArbitraryIntKind`, narrowing to `I64` when the value fits.
 pub const fn int_from_u64(v: u64) -> ArbitraryIntKind {
-    ArbitraryIntKind::U64(v)
+    if v <= i64::MAX as u64 {
+        ArbitraryIntKind::I64(v as i64)
+    } else {
+        ArbitraryIntKind::U64(v)
+    }
 }
 
 /// Converts `i32` to `ArbitraryIntKind`
@@ -328,9 +433,9 @@ pub const fn int_from_i32(v: i32) -> ArbitraryIntKind {
     ArbitraryIntKind::I64(v as i64)
 }
 
-/// Converts `u32` to `ArbitraryIntKind`
+/// Converts `u32` to `ArbitraryIntKind`.
 pub const fn int_from_u32(v: u32) -> ArbitraryIntKind {
-    ArbitraryIntKind::U64(v as u64)
+    ArbitraryIntKind::I64(v as i64)
 }
 
 impl From<IBig> for ArbitraryIntKind {
@@ -343,7 +448,13 @@ impl std::ops::Neg for ArbitraryIntKind {
     type Output = Self;
 
     fn neg(self) -> Self::Output {
-        (&self).neg()
+        match self {
+            Self::I64(v) if v == i64::MIN => Self::U64(1u64 << 63),
+            Self::I64(v) => Self::I64(-v),
+            Self::U64(v) if v == 1u64 << 63 => Self::I64(i64::MIN),
+            Self::U64(v) => Self::from_bigint(-IBig::from(v)),
+            Self::BigInt(v) => Self::from_bigint(-v),
+        }
     }
 }
 
@@ -375,7 +486,12 @@ impl std::ops::Not for ArbitraryIntKind {
     type Output = Self;
 
     fn not(self) -> Self::Output {
-        (&self).not()
+        match self {
+            Self::I64(v) => Self::I64(!v),
+            Self::U64(v) if v <= i64::MAX as u64 => Self::I64(!(v as i64)),
+            Self::U64(v) => Self::from_bigint(!IBig::from(v)),
+            Self::BigInt(v) => Self::from_bigint(!v),
+        }
     }
 }
 
@@ -441,19 +557,19 @@ impl_int_binop!(
     Add,
     add,
     |a, b| a.checked_add(b).map(ArbitraryIntKind::I64),
-    |a, b| a.checked_add(b).map(int_from_u64_narrow)
+    |a, b| a.checked_add(b).map(int_from_u64)
 );
 impl_int_binop!(
     Sub,
     sub,
     |a, b| a.checked_sub(b).map(ArbitraryIntKind::I64),
-    |a, b| a.checked_sub(b).map(int_from_u64_narrow)
+    |a, b| a.checked_sub(b).map(int_from_u64)
 );
 impl_int_binop!(
     Mul,
     mul,
     |a, b| a.checked_mul(b).map(ArbitraryIntKind::I64),
-    |a, b| a.checked_mul(b).map(int_from_u64_narrow)
+    |a, b| a.checked_mul(b).map(int_from_u64)
 );
 impl_int_binop!(
     Div,
@@ -464,7 +580,7 @@ impl_int_binop!(
         None
     },
     |a, b| if b != 0 {
-        Some(int_from_u64_narrow(a / b))
+        Some(int_from_u64(a / b))
     } else {
         None
     }
@@ -478,7 +594,7 @@ impl_int_binop!(
         None
     },
     |a, b| if b != 0 {
-        Some(int_from_u64_narrow(a % b))
+        Some(int_from_u64(a % b))
     } else {
         None
     }
@@ -487,19 +603,19 @@ impl_int_binop!(
     BitAnd,
     bitand,
     |a, b| Some(ArbitraryIntKind::I64(a & b)),
-    |a, b| Some(int_from_u64_narrow(a & b))
+    |a, b| Some(int_from_u64(a & b))
 );
 impl_int_binop!(
     BitOr,
     bitor,
     |a, b| Some(ArbitraryIntKind::I64(a | b)),
-    |a, b| Some(int_from_u64_narrow(a | b))
+    |a, b| Some(int_from_u64(a | b))
 );
 impl_int_binop!(
     BitXor,
     bitxor,
     |a, b| Some(ArbitraryIntKind::I64(a ^ b)),
-    |a, b| Some(int_from_u64_narrow(a ^ b))
+    |a, b| Some(int_from_u64(a ^ b))
 );
 
 impl std::ops::Shl<ArbitraryIntKind> for ArbitraryIntKind {

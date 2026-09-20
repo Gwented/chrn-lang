@@ -432,7 +432,7 @@ impl<R: Read> ConfigLoader<'_, R> {
         // NOTE: Needs direct indexing because peek already reached it's limit
         if self.handle.buffer().get(self.cursor).is_some() {
             // Sole reason this is here
-            let core_msg = "Amount of bytes in file exceeds max of 32KiB";
+            let core_msg = "Amount of bytes in range exceeds max of 32KiB";
             let diag = SourceDiagnostic::builder(
                 ErrorCode::CompilerInternals.into(),
                 DiagnosticLevel::Warn,

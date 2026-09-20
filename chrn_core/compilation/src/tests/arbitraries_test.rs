@@ -8,8 +8,9 @@ use dashu_int::IBig;
 use crate::lexer::token::Notation;
 use crate::script_compiler::compiler_constants;
 use crate::semantic::arbitraries::{
-    ArbitraryFloatKind, ArbitraryIntKind, float_from_f32, float_from_f64, int_from_i32,
-    int_from_i64, int_from_u32, int_from_u64,
+    ArbitraryFloatKind, ArbitraryIntKind, NumericFloatParseError, NumericIntError,
+    NumericIntParseError, float_from_f32, float_from_f64, int_from_i32, int_from_i64, int_from_u32,
+    int_from_u64,
 };
 
 #[test]
@@ -696,6 +697,36 @@ fn arbitrary_int_checked_shr_semantics() {
 }
 
 #[test]
+fn arbitrary_int_checked_shr_with_limit_enforces_max_bits() {
+    let big = ArbitraryIntKind::BigInt(IBig::from(1) << 100);
+    // Shrinking by one still leaves 100 bits, over a 64-bit limit.
+    assert_eq!(
+        big.checked_shr_with_limit(&ArbitraryIntKind::I64(1), 64),
+        Err(NumericIntError::LimitExceeded)
+    );
+    // A zero shift on an over-limit value reports `LimitExceeded`, mirroring `shl`.
+    assert_eq!(
+        big.checked_shr_with_limit(&ArbitraryIntKind::I64(0), 64),
+        Err(NumericIntError::LimitExceeded)
+    );
+    // In-limit shifts still succeed.
+    assert_eq!(
+        ArbitraryIntKind::I64(16).checked_shr_with_limit(&ArbitraryIntKind::I64(2), 64),
+        Ok(ArbitraryIntKind::I64(4))
+    );
+    // Collapsing a large valid shift stays `Ok` since the result fits.
+    assert_eq!(
+        big.checked_shr_with_limit(&ArbitraryIntKind::I64(1000), 64),
+        Ok(ArbitraryIntKind::I64(0))
+    );
+    // Negative amounts still report `InvalidShift`, not `LimitExceeded`.
+    assert_eq!(
+        ArbitraryIntKind::I64(16).checked_shr_with_limit(&ArbitraryIntKind::I64(-1), 64),
+        Err(NumericIntError::InvalidShift)
+    );
+}
+
+#[test]
 fn arbitrary_int_negation_and_inversion() {
     // -I64(i64::MIN) cleanly yields U64(1 << 63) without overflow panic
     assert!(matches!(
@@ -867,6 +898,12 @@ fn arbitrary_int_equality_and_ordering() {
     assert_eq!(ten_i64, ten_u64);
     assert_eq!(ten_u64, ten_big);
     assert_eq!(ten_i64, ten_big);
+    assert_eq!(ten_i64.cmp(&ten_u64), std::cmp::Ordering::Equal);
+    assert_eq!(ten_u64.cmp(&ten_i64), std::cmp::Ordering::Equal);
+    assert_eq!(ten_u64.cmp(&ten_big), std::cmp::Ordering::Equal);
+    assert_eq!(ten_big.cmp(&ten_u64), std::cmp::Ordering::Equal);
+    assert_eq!(ten_big.cmp(&ten_i64), std::cmp::Ordering::Equal);
+    assert_eq!(ten_i64.cmp(&ten_big), std::cmp::Ordering::Equal);
 }
 
 #[test]
@@ -1072,9 +1109,14 @@ fn arbitrary_int_bitwise_operators() {
 fn arbitrary_int_helper_constructors_and_conversions() {
     assert!(matches!(int_from_i64(42), ArbitraryIntKind::I64(42)));
     assert!(matches!(int_from_i64(-42), ArbitraryIntKind::I64(-42)));
-    assert!(matches!(int_from_u64(42), ArbitraryIntKind::U64(42)));
+    // Unsigned constructors narrow to `I64` when the value fits.
+    assert!(matches!(int_from_u64(42), ArbitraryIntKind::I64(42)));
+    assert!(matches!(
+        int_from_u64(1u64 << 63),
+        ArbitraryIntKind::U64(v) if v == 1u64 << 63
+    ));
     assert!(matches!(int_from_i32(42), ArbitraryIntKind::I64(42)));
-    assert!(matches!(int_from_u32(42), ArbitraryIntKind::U64(42)));
+    assert!(matches!(int_from_u32(42), ArbitraryIntKind::I64(42)));
 
     // is_zero
     assert!(ArbitraryIntKind::I64(0).is_zero());
@@ -1443,6 +1485,58 @@ fn arbitrary_float_binary_arithmetic() {
 }
 
 #[test]
+fn arbitrary_float_bigfloat_arithmetic_rounds_ties_to_even() {
+    // Both operands have one decimal digit of precision. Their exact sum is 2.5e1000,
+    // halfway between 2e1000 and 3e1000; IEEE's default mode selects the even 2.
+    let even = ArbitraryFloatKind::from_str("2e1000").unwrap();
+    let half = ArbitraryFloatKind::from_str("5e999").unwrap();
+
+    assert_eq!(even.clone() + half.clone(), even);
+    assert_eq!(even.clone() + &half, even);
+    assert_eq!(&even + half.clone(), even);
+    assert_eq!(&even + &half, even);
+}
+
+#[test]
+fn arbitrary_float_bigfloat_remainder_truncates_quotient_toward_zero() {
+    for (lhs_text, rhs_text, expected_text) in [
+        ("7", "4", "3"),
+        ("7", "-4", "3"),
+        ("-7", "4", "-3"),
+        ("-7", "-4", "-3"),
+    ] {
+        let lhs = ArbitraryFloatKind::BigFloat(DBig::from_str(lhs_text).unwrap());
+        let rhs = ArbitraryFloatKind::BigFloat(DBig::from_str(rhs_text).unwrap());
+        let expected = DBig::from_str(expected_text).unwrap();
+
+        for result in [
+            lhs.clone() % rhs.clone(),
+            lhs.clone() % &rhs,
+            &lhs % rhs.clone(),
+            &lhs % &rhs,
+        ] {
+            assert!(
+                matches!(result, ArbitraryFloatKind::BigFloat(ref actual) if actual == &expected),
+                "expected {lhs_text} % {rhs_text} to be BigFloat({expected_text}), got {result:?}"
+            );
+        }
+    }
+
+    let mixed_rhs =
+        ArbitraryFloatKind::F64(7.0) % ArbitraryFloatKind::BigFloat(DBig::from_str("4").unwrap());
+    assert!(
+        matches!(mixed_rhs, ArbitraryFloatKind::BigFloat(ref actual) if actual == &DBig::from_str("3").unwrap()),
+        "mixed F64/BigFloat remainder must use truncating BigFloat semantics, got {mixed_rhs:?}"
+    );
+    let mixed_lhs =
+        ArbitraryFloatKind::BigFloat(DBig::from_str("-7").unwrap()) % ArbitraryFloatKind::F64(-4.0);
+    assert!(
+        matches!(mixed_lhs, ArbitraryFloatKind::BigFloat(ref actual) if actual == &DBig::from_str("-3").unwrap()),
+        "mixed BigFloat/F64 remainder must keep the dividend sign, got {mixed_lhs:?}"
+    );
+}
+
+#[test]
 fn arbitrary_float_helper_constructors_and_conversions() {
     assert_eq!(float_from_f64(3.14), ArbitraryFloatKind::F64(3.14));
     assert_eq!(
@@ -1506,6 +1600,63 @@ fn arbitrary_float_helper_constructors_and_conversions() {
     assert!(ArbitraryFloatKind::BigFloat(DBig::from_str("1e1000").unwrap()).is_finite());
     assert!(!ArbitraryFloatKind::BigFloat(DBig::INFINITY).is_finite());
     assert!(!ArbitraryFloatKind::BigFloat(DBig::NEG_INFINITY).is_finite());
+}
+
+#[test]
+fn arbitrary_float_conversions_use_ieee_rounding_and_exact_binary_values() {
+    let midpoint = ArbitraryFloatKind::BigFloat(
+        DBig::from_str("1.00000000000000011102230246251565404236316680908203125").unwrap(),
+    );
+    assert_eq!(midpoint.to_bits(), 1.0f64.to_bits());
+
+    // This adjacent tie has an odd lower significand, so ties-to-even must round upward.
+    let next_midpoint = ArbitraryFloatKind::BigFloat(
+        DBig::from_str("1.00000000000000033306690738754696212708950042724609375").unwrap(),
+    );
+    assert_eq!(
+        next_midpoint.to_bits(),
+        (1.0f64.to_bits() + 2),
+        "the even upper significand must win the adjacent tie"
+    );
+
+    // 2^-1075 is exactly halfway between zero and the smallest binary64 subnormal.
+    // 3 * 2^-1075 is halfway between the first (odd) and second (even) subnormals.
+    let half_min_subnormal = DBig::from_parts(IBig::from(5_u8).pow(1075), -1075);
+    let three_halves_min_subnormal =
+        DBig::from_parts(IBig::from(3_u8) * IBig::from(5_u8).pow(1075), -1075);
+    assert_eq!(
+        ArbitraryFloatKind::BigFloat(half_min_subnormal.clone()).to_bits(),
+        0.0f64.to_bits()
+    );
+    assert_eq!(
+        ArbitraryFloatKind::BigFloat(-half_min_subnormal).to_bits(),
+        (-0.0f64).to_bits(),
+        "underflow rounding must preserve the sign of zero"
+    );
+    assert_eq!(
+        ArbitraryFloatKind::BigFloat(three_halves_min_subnormal).to_bits(),
+        2,
+        "the even second subnormal must win the tie"
+    );
+
+    let exact_binary_tenth =
+        DBig::from_str("0.1000000000000000055511151231257827021181583404541015625").unwrap();
+    let binary_tenth = ArbitraryFloatKind::F64(0.1);
+    assert_eq!(binary_tenth.to_bigfloat(), Some(exact_binary_tenth.clone()));
+    assert_eq!(
+        binary_tenth,
+        ArbitraryFloatKind::BigFloat(exact_binary_tenth)
+    );
+    assert_ne!(
+        binary_tenth,
+        ArbitraryFloatKind::BigFloat(DBig::from_str("0.1").unwrap())
+    );
+
+    let exact_min_subnormal = DBig::from_parts(IBig::from(5_u8).pow(1074), -1074);
+    assert_eq!(
+        ArbitraryFloatKind::F64(f64::from_bits(1)).to_bigfloat(),
+        Some(exact_min_subnormal)
+    );
 }
 
 #[test]
@@ -1653,6 +1804,93 @@ fn arbitrary_float_signed_zero_parsing() {
 }
 
 #[test]
+fn arbitrary_float_explicit_ieee_special_values_remain_f64() {
+    let nan = ArbitraryFloatKind::from_str("NaN").expect("NaN parses");
+    assert!(matches!(nan, ArbitraryFloatKind::F64(value) if value.is_nan()));
+
+    assert_eq!(
+        ArbitraryFloatKind::from_str("inf"),
+        Some(ArbitraryFloatKind::F64(f64::INFINITY))
+    );
+    assert_eq!(
+        ArbitraryFloatKind::from_str("-inf"),
+        Some(ArbitraryFloatKind::F64(f64::NEG_INFINITY))
+    );
+}
+
+#[test]
+fn arbitrary_float_signed_zero_arithmetic_follows_ieee_754() {
+    let positive = ArbitraryFloatKind::BigFloat(DBig::from_str("3.0").unwrap());
+    let negative = ArbitraryFloatKind::BigFloat(DBig::from_str("-3.0").unwrap());
+    let positive_zero = ArbitraryFloatKind::F64(0.0);
+    let negative_zero = ArbitraryFloatKind::F64(-0.0);
+
+    assert_eq!(
+        [
+            (&positive * &negative_zero).to_bits(),
+            (&negative * &negative_zero).to_bits(),
+            (&negative_zero / &positive).to_bits(),
+            (&negative_zero / &negative).to_bits(),
+            (&negative_zero % &positive).to_bits(),
+        ],
+        [
+            (-0.0f64).to_bits(),
+            0.0f64.to_bits(),
+            (-0.0f64).to_bits(),
+            0.0f64.to_bits(),
+            (-0.0f64).to_bits(),
+        ]
+    );
+
+    assert_eq!(
+        (&negative_zero + &negative_zero).to_bits(),
+        (-0.0f64).to_bits()
+    );
+    assert_eq!(
+        (&negative_zero + &positive_zero).to_bits(),
+        0.0f64.to_bits()
+    );
+}
+
+#[test]
+fn arbitrary_float_bigfloat_zero_negation_produces_negative_zero() {
+    let positive_zero = ArbitraryFloatKind::BigFloat(DBig::from_str("0").unwrap());
+
+    assert_eq!(
+        (-positive_zero.clone()).to_bits(),
+        (-0.0f64).to_bits(),
+        "owned negation must flip the sign of BigFloat zero"
+    );
+    assert_eq!(
+        (-&positive_zero).to_bits(),
+        (-0.0f64).to_bits(),
+        "borrowed negation must flip the sign of BigFloat zero"
+    );
+}
+
+#[test]
+fn arbitrary_float_indeterminate_operations_produce_nan() {
+    let positive_infinity = ArbitraryFloatKind::BigFloat(DBig::INFINITY);
+    let negative_infinity = ArbitraryFloatKind::BigFloat(DBig::NEG_INFINITY);
+    let zero = ArbitraryFloatKind::F64(0.0);
+    let finite = ArbitraryFloatKind::BigFloat(DBig::from_str("3.0").unwrap());
+
+    for result in [
+        &positive_infinity + &negative_infinity,
+        &positive_infinity - &positive_infinity,
+        &zero * &positive_infinity,
+        &positive_infinity * &zero,
+        &positive_infinity / &positive_infinity,
+        &positive_infinity % &finite,
+    ] {
+        assert!(
+            matches!(result, ArbitraryFloatKind::F64(value) if value.is_nan()),
+            "expected an f64 NaN, got {result:?}"
+        );
+    }
+}
+
+#[test]
 fn arbitrary_int_ord_and_sorting() {
     let mut values = vec![
         ArbitraryIntKind::I64(10),
@@ -1744,4 +1982,194 @@ fn arbitrary_type_id_is_const_evaluable() {
     assert_eq!(I64_TY, TypeId::new(compiler_constants::CORE_I64));
     assert_eq!(U64_TY, TypeId::new(compiler_constants::CORE_U64));
     assert_eq!(F64_TY, TypeId::new(compiler_constants::CORE_F64));
+}
+
+#[test]
+fn arbitrary_int_from_str_with_limit_boundaries() {
+    const BIN_POW64: &str = "10000000000000000000000000000000000000000000000000000000000000000";
+    const OCTAL_POW64: &str = "2000000000000000000000";
+    const HEX_POW64: &str = "10000000000000000";
+
+    let pow64 = IBig::from(1u8) << 64;
+
+    assert_eq!(
+        ArbitraryIntKind::from_str_with_limit("255", Notation::Decimal, 8),
+        Ok(ArbitraryIntKind::I64(255))
+    );
+    assert_eq!(
+        ArbitraryIntKind::from_str_with_limit("256", Notation::Decimal, 8),
+        Err(NumericIntParseError::LimitExceeded)
+    );
+    assert_eq!(
+        ArbitraryIntKind::from_str_with_limit(BIN_POW64, Notation::Bin, 64),
+        Err(NumericIntParseError::LimitExceeded)
+    );
+    assert_eq!(
+        ArbitraryIntKind::from_str_with_limit(BIN_POW64, Notation::Bin, 65),
+        Ok(ArbitraryIntKind::BigInt(pow64.clone()))
+    );
+    assert!(ArbitraryIntKind::literal_exceeds_numeric_bits(
+        BIN_POW64,
+        Notation::Bin,
+        64
+    ));
+    assert!(!ArbitraryIntKind::literal_exceeds_numeric_bits(
+        BIN_POW64,
+        Notation::Bin,
+        65
+    ));
+    assert_eq!(
+        ArbitraryIntKind::from_str_with_limit(OCTAL_POW64, Notation::Octal, 64),
+        Err(NumericIntParseError::LimitExceeded)
+    );
+    assert_eq!(
+        ArbitraryIntKind::from_str_with_limit(OCTAL_POW64, Notation::Octal, 65),
+        Ok(ArbitraryIntKind::BigInt(pow64.clone()))
+    );
+    assert!(ArbitraryIntKind::literal_exceeds_numeric_bits(
+        OCTAL_POW64,
+        Notation::Octal,
+        64
+    ));
+    assert!(!ArbitraryIntKind::literal_exceeds_numeric_bits(
+        OCTAL_POW64,
+        Notation::Octal,
+        65
+    ));
+    assert_eq!(
+        ArbitraryIntKind::from_str_with_limit(HEX_POW64, Notation::Hex, 64),
+        Err(NumericIntParseError::LimitExceeded)
+    );
+    assert_eq!(
+        ArbitraryIntKind::from_str_with_limit(HEX_POW64, Notation::Hex, 65),
+        Ok(ArbitraryIntKind::BigInt(pow64.clone()))
+    );
+    assert!(ArbitraryIntKind::literal_exceeds_numeric_bits(
+        HEX_POW64,
+        Notation::Hex,
+        64
+    ));
+    assert!(!ArbitraryIntKind::literal_exceeds_numeric_bits(
+        HEX_POW64,
+        Notation::Hex,
+        65
+    ));
+    assert_eq!(
+        ArbitraryIntKind::from_str_with_limit("-255", Notation::Decimal, 8),
+        Ok(ArbitraryIntKind::I64(-255))
+    );
+    assert_eq!(
+        ArbitraryIntKind::from_str_with_limit("-256", Notation::Decimal, 8),
+        Err(NumericIntParseError::LimitExceeded)
+    );
+    assert_eq!(
+        ArbitraryIntKind::from_str_with_limit("9223372036854775808", Notation::Decimal, 64),
+        Ok(ArbitraryIntKind::U64(1u64 << 63))
+    );
+    assert_eq!(
+        ArbitraryIntKind::from_str_with_limit("9223372036854775808", Notation::Decimal, 63),
+        Err(NumericIntParseError::LimitExceeded)
+    );
+    assert_eq!(
+        ArbitraryIntKind::from_str_with_limit("18446744073709551616", Notation::Decimal, 64),
+        Err(NumericIntParseError::LimitExceeded)
+    );
+    assert_eq!(
+        ArbitraryIntKind::from_str_with_limit("18446744073709551616", Notation::Decimal, 65),
+        Ok(ArbitraryIntKind::BigInt(pow64))
+    );
+    assert_eq!(
+        ArbitraryIntKind::from_str_with_limit("not_a_number", Notation::Decimal, 64),
+        Err(NumericIntParseError::Invalid)
+    );
+    // Invalid spellings report `Invalid` even when the digit-length estimate
+    // alone exceeds a small limit.
+    assert_eq!(
+        ArbitraryIntKind::from_str_with_limit("12a3", Notation::Decimal, 8),
+        Err(NumericIntParseError::Invalid)
+    );
+    assert!(!ArbitraryIntKind::literal_exceeds_numeric_bits(
+        "12a3",
+        Notation::Decimal,
+        8
+    ));
+    assert_eq!(
+        ArbitraryIntKind::from_str_with_limit("1x", Notation::Hex, 4),
+        Err(NumericIntParseError::Invalid)
+    );
+    assert!(!ArbitraryIntKind::literal_exceeds_numeric_bits(
+        "1x",
+        Notation::Hex,
+        4
+    ));
+}
+
+#[test]
+fn arbitrary_float_from_str_with_limit_evaluates_f64_first() {
+    assert_eq!(
+        ArbitraryFloatKind::from_str_with_limit("1.5", 64),
+        Ok(ArbitraryFloatKind::F64(1.5))
+    );
+    assert_eq!(
+        ArbitraryFloatKind::from_str_with_limit("1.5", 63),
+        Err(NumericFloatParseError::LimitExceeded)
+    );
+    assert_eq!(
+        ArbitraryFloatKind::from_str_with_limit("1e1000", 64),
+        Err(NumericFloatParseError::LimitExceeded)
+    );
+    assert!(matches!(
+        ArbitraryFloatKind::from_str_with_limit("1e1000", 4096),
+        Ok(ArbitraryFloatKind::BigFloat(_))
+    ));
+    assert_eq!(
+        ArbitraryFloatKind::from_str_with_limit("not_a_float", 64),
+        Err(NumericFloatParseError::Invalid)
+    );
+}
+
+#[test]
+fn arbitrary_float_infinite_numeric_bits_is_max() {
+    let inf = ArbitraryFloatKind::BigFloat(dashu_float::DBig::INFINITY);
+    assert_eq!(inf.numeric_bits(), u64::MAX);
+    assert!(!inf.fits_numeric_bits(4096));
+    assert!(!inf.fits_numeric_bits(u64::MAX - 1));
+    assert!(inf.fits_numeric_bits(u64::MAX));
+
+    let neg_inf = ArbitraryFloatKind::BigFloat(dashu_float::DBig::NEG_INFINITY);
+    assert_eq!(neg_inf.numeric_bits(), u64::MAX);
+    assert!(!neg_inf.fits_numeric_bits(4096));
+
+    let f64_inf = ArbitraryFloatKind::F64(f64::INFINITY);
+    assert_eq!(f64_inf.numeric_bits(), u64::MAX);
+    assert!(!f64_inf.fits_numeric_bits(4096));
+    assert!(!f64_inf.fits_numeric_bits(u64::MAX - 1));
+    assert!(f64_inf.fits_numeric_bits(u64::MAX));
+
+    let f64_neg_inf = ArbitraryFloatKind::F64(f64::NEG_INFINITY);
+    assert_eq!(f64_neg_inf.numeric_bits(), u64::MAX);
+    assert!(!f64_neg_inf.fits_numeric_bits(4096));
+
+    let f64_nan = ArbitraryFloatKind::F64(f64::NAN);
+    assert_eq!(f64_nan.numeric_bits(), u64::MAX);
+    assert!(!f64_nan.fits_numeric_bits(4096));
+}
+
+#[test]
+fn arbitrary_float_f64_overflow_follows_ieee_754() {
+    let mul = ArbitraryFloatKind::F64(1e308) * ArbitraryFloatKind::F64(2.0);
+    assert_eq!(mul, ArbitraryFloatKind::F64(f64::INFINITY));
+
+    let add = ArbitraryFloatKind::F64(1e308) + ArbitraryFloatKind::F64(1e308);
+    assert_eq!(add, ArbitraryFloatKind::F64(f64::INFINITY));
+
+    let sub = ArbitraryFloatKind::F64(-1e308) - ArbitraryFloatKind::F64(1e308);
+    assert_eq!(sub, ArbitraryFloatKind::F64(f64::NEG_INFINITY));
+
+    let div = ArbitraryFloatKind::F64(1e308) / ArbitraryFloatKind::F64(0.1);
+    assert_eq!(div, ArbitraryFloatKind::F64(f64::INFINITY));
+
+    let div_zero = ArbitraryFloatKind::F64(1.0) / ArbitraryFloatKind::F64(0.0);
+    assert_eq!(div_zero, ArbitraryFloatKind::F64(f64::INFINITY));
+    assert_eq!(div_zero.numeric_bits(), u64::MAX);
 }

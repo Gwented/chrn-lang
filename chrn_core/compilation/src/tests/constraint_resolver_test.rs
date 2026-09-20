@@ -297,7 +297,7 @@ fn all_operators_test() {
 #[test]
 fn arithmetic_error_test() {
     use crate::parser::ast::ast_concepts::BinaryOp;
-    use crate::semantic::evaluator::{BinaryOpResult, apply_binary_op};
+    use crate::semantic::evaluator::{BinaryOpResult, apply_binary_op, apply_binary_op_with_limit};
     use chrn_utils::{source_map::source_span::SourceSpan, utils::containers::SpannedContainerRef};
 
     // Arithmetic errors originate in `TypeResolver::register_expr`, so `Stage::Type`
@@ -337,18 +337,6 @@ fn arithmetic_error_test() {
     // `!int_from_u32(0)` evaluates to `I64(-1)` rather than variant-dependent `U64(u64::MAX)`.
     assert_eq!(!int_from_u32(0), ArbitraryIntKind::I64(-1));
 
-    // Float remainder by zero follows IEEE semantics (`NaN`), matching
-    // pre-arbitrary-precision behavior where `5.5 % 0.0` evaluated to `NaN`.
-    // `DBig` cannot represent NaN and panics when the result would be NaN, so
-    // the evaluator routes zero-divisor float remainders through `f64`.
-    let nan = resolve_single_module("let X = 5.5 % 0.0", Stage::Constraint)
-        .expect_ok()
-        .value_of("X");
-    match nan {
-        Value::ArbitraryFloat(v) if v.to_f64().is_nan() => (),
-        other => panic!("expected NaN for `5.5 % 0.0`, got {other:?}"),
-    }
-
     // Direct guard contracts on the evaluator, independent of resolution plumbing.
     {
         let mut interner = mock_interner(0, 1);
@@ -363,36 +351,41 @@ fn arithmetic_error_test() {
             &mut interner,
         ) {
             BinaryOpResult::DivideByZero => (),
-            BinaryOpResult::Output(_) | BinaryOpResult::Invalid | BinaryOpResult::InvalidShift => {
+            BinaryOpResult::Output(_)
+            | BinaryOpResult::Invalid
+            | BinaryOpResult::InvalidShift
+            | BinaryOpResult::NumericLimitExceeded => {
                 panic!("expected DivideByZero for `10 % 0`")
             }
         }
 
-        // Float remainder by zero yields `NaN`, not an error: without the
+        // The raw evaluator can preserve IEEE `NaN` when given an unbounded limit. Without the
         // `f64` fallback the `DBig` path panics on the NaN result.
         let lhs = Value::ArbitraryFloat(float_from_f64(5.5));
         let rhs = Value::ArbitraryFloat(float_from_f64(0.0));
-        match apply_binary_op(
+        match apply_binary_op_with_limit(
             SpannedContainerRef::new(&lhs, span),
             BinaryOp::Mod,
             SpannedContainerRef::new(&rhs, span),
             &mut interner,
+            u64::MAX,
         ) {
             BinaryOpResult::Output(Value::ArbitraryFloat(v)) if v.to_f64().is_nan() => (),
             _ => panic!("expected NaN output for `5.5 % 0.0`"),
         }
 
-        // Same contract with a `BigFloat` dividend, which must not reach
+        // Same raw-evaluator contract with a `BigFloat` dividend, which must not reach
         // `DBig::rem` with a zero divisor.
         let lhs = Value::ArbitraryFloat(
             ArbitraryFloatKind::from_str("1e1000").expect("overflowing literal is BigFloat"),
         );
         let rhs = Value::ArbitraryFloat(float_from_f64(0.0));
-        match apply_binary_op(
+        match apply_binary_op_with_limit(
             SpannedContainerRef::new(&lhs, span),
             BinaryOp::Mod,
             SpannedContainerRef::new(&rhs, span),
             &mut interner,
+            u64::MAX,
         ) {
             BinaryOpResult::Output(Value::ArbitraryFloat(v)) if v.to_f64().is_nan() => (),
             _ => panic!("expected NaN output for `BigFloat % 0.0`"),
@@ -407,7 +400,10 @@ fn arithmetic_error_test() {
             &mut interner,
         ) {
             BinaryOpResult::InvalidShift => (),
-            BinaryOpResult::Output(_) | BinaryOpResult::Invalid | BinaryOpResult::DivideByZero => {
+            BinaryOpResult::Output(_)
+            | BinaryOpResult::Invalid
+            | BinaryOpResult::DivideByZero
+            | BinaryOpResult::NumericLimitExceeded => {
                 panic!("expected InvalidShift for `1 << -1`")
             }
         }

@@ -1,7 +1,7 @@
 use std::cell::Cell;
 
 use chrn_utils::{
-    budget::mem_budget::{BudgetResult, MemoryBudget},
+    budget::mem_budget::{BudgetResult, MemoryBudgetUsize},
     utils::trackers::recursion_tracker::{RecursionTrackerU16, RecursiveGuard},
 };
 
@@ -11,14 +11,14 @@ pub(super) struct ParserBudget {
     // Is cell so that this structure can be borrowed and internally mutated without borrow checker
     // issues since this is just a counter.
     pub(super) recursion_tracker: RecursionTrackerU16,
-    node_budget: MemoryBudget,
+    node_budget: MemoryBudgetUsize,
 }
 
 impl ParserBudget {
     pub(super) fn new(recursion_limit: u16, node_limit: usize) -> ParserBudget {
         ParserBudget {
             recursion_tracker: RecursionTrackerU16::new(recursion_limit),
-            node_budget: MemoryBudget::new(node_limit),
+            node_budget: MemoryBudgetUsize::new(node_limit),
         }
     }
 

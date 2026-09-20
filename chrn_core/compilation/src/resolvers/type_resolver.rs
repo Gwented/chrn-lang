@@ -58,10 +58,12 @@ use crate::resolvers::type_resolver::cfg_ctx::{
 use crate::resolvers::typechecker;
 use crate::resolvers::typechecker::typechecker_concepts::ExpectedKindType;
 use crate::script_compiler::{ScriptCompiler, compiler_constants};
-use crate::semantic::arbitraries::{ArbitraryFloatKind, ArbitraryIntKind};
+use crate::semantic::arbitraries::{
+    ArbitraryFloatKind, ArbitraryIntKind, NumericFloatParseError, NumericIntParseError,
+};
 use crate::semantic::checker_helpers::{DuplicateIdentResult, DuplicateTracker};
 use crate::semantic::compilation_unit::CompilationUnit;
-use crate::semantic::evaluator::UnaryOpResult;
+use crate::semantic::evaluator::{BinaryOpResult, UnaryOpResult};
 use crate::semantic::hir::hir_concepts::{Type, TypeInfo};
 use crate::semantic::hir::hir_exprs::{
     ExprHir, Param, PossibleMember, ResolvedExpr, ResolvedExprMetadata,
@@ -2235,8 +2237,6 @@ impl<'res> TypeResolver<'res> {
                             }
                         };
                     }
-                    // WARN: This case is not hit yet
-                    // Reports the error and continues
                     Err(preset_err) => {
                         // Extracting module of origin from the pending expression by using the symbol
                         // attached to the expression upon it's creation
@@ -2368,8 +2368,18 @@ impl<'res> TypeResolver<'res> {
                     let operand_span = operand_expr.meta.expect_user();
                     let sp_const =
                         SpannedContainerRef::new(const_val, operand_expr.meta.expect_user());
-                    match evaluator::apply_unary_op(*op, sp_const) {
+                    match evaluator::apply_unary_op_with_limit(
+                        *op,
+                        sp_const,
+                        (self.cfg.max_numeric_bits()) as u64,
+                    ) {
                         UnaryOpResult::Output(val) => Some(val),
+                        UnaryOpResult::NumericLimitExceeded => {
+                            return Err(PresetErr::NumericLimitExceeded {
+                                spans: vec![operand_span],
+                                max_bits: self.cfg.max_numeric_bits(),
+                            });
+                        }
                         UnaryOpResult::Invalid => {
                             return Err(MathError::UnaryOpMismatch {
                                 sp_operand: SpannedContainer::new(const_val.kind(), operand_span),
@@ -2434,20 +2444,27 @@ impl<'res> TypeResolver<'res> {
 
                         let sp_lhs_const = SpannedContainerRef::new(lhs_const, lhs_span);
                         let sp_rhs_const = SpannedContainerRef::new(rhs_const, rhs_span);
-                        match evaluator::apply_binary_op(
+                        match evaluator::apply_binary_op_with_limit(
                             sp_lhs_const,
                             *op,
                             sp_rhs_const,
                             self.interner,
+                            (self.cfg.max_numeric_bits()) as u64,
                         ) {
-                            evaluator::BinaryOpResult::Output(val) => Some(val),
-                            evaluator::BinaryOpResult::DivideByZero => {
+                            BinaryOpResult::Output(val) => Some(val),
+                            BinaryOpResult::DivideByZero => {
                                 return Err(MathError::DivideByZero { lhs_span, rhs_span }.into());
                             }
-                            evaluator::BinaryOpResult::InvalidShift => {
+                            BinaryOpResult::InvalidShift => {
                                 return Err(MathError::InvalidShift { lhs_span, rhs_span }.into());
                             }
-                            evaluator::BinaryOpResult::Invalid => {
+                            BinaryOpResult::NumericLimitExceeded => {
+                                return Err(PresetErr::NumericLimitExceeded {
+                                    spans: vec![lhs_span, rhs_span],
+                                    max_bits: self.cfg.max_numeric_bits(),
+                                });
+                            }
+                            BinaryOpResult::Invalid => {
                                 return Err(MathError::BinaryOpMismatch {
                                     sp_lhs: SpannedContainer::new(lhs_const.kind(), lhs_span),
                                     sp_rhs: SpannedContainer::new(rhs_const.kind(), rhs_span),
@@ -2601,6 +2618,35 @@ impl<'res> TypeResolver<'res> {
         let associated_scope = AssociatedScopeKind::Module(env.current_mod);
 
         let abs_var = env.ast_info.get_var(ast_id);
+
+        // This can either be a check done during the type expr resolution itself to make sure
+        // annotation matches the actual type, or just checked after resoution.
+        // let type_id_opt = if let Some(ty_ann) = &abs_var.ty_ann {
+        //     match resolution_helpers::resolve_type_expr_ret_preset(
+        //         self.compiler,
+        //         associated_scope,
+        //         ty_ann,
+        //         scope_type,
+        //         ScopeLookupPattern::NoRestrictions,
+        //         self.interner,
+        //         env,
+        //     ) {
+        //         Ok(id) => id.into(),
+        //         Err(preset_err) => {
+        //             preset_reporter::report_preset(
+        //                 &self.compiler,
+        //                 &mut self.summary,
+        //                 preset_err,
+        //                 env.region,
+        //                 self.cfg,
+        //                 self.interner,
+        //             );
+        //             None
+        //         }
+        //     }
+        // } else {
+        //     None
+        // };
 
         //NOTE: Pipeline where expressions are always returned, just that some may have
         //unresolved parts, which are put into the queue, not the variable itself.
@@ -3431,11 +3477,23 @@ impl<'res> TypeResolver<'res> {
                 let expr_hir = ExprHir::Val(val_id);
 
                 let s = self.interner.search(*name_id);
-                let Some(kind) = ArbitraryIntKind::from_str(s, *notation) else {
-                    return Err(PresetErr::NumericOverflow {
-                        sp_num: SpannedContainer::new(*name_id, spanned_expr.span),
-                        fmtted_ty: ChrnClassified::Integer,
-                    });
+                let max_bits = self.cfg.max_numeric_bits() as u64;
+                let kind = match ArbitraryIntKind::from_str_with_limit(s, *notation, max_bits) {
+                    Ok(kind) => kind,
+                    Err(err) => match err {
+                        NumericIntParseError::LimitExceeded => {
+                            return Err(PresetErr::NumericLimitExceeded {
+                                spans: vec![spanned_expr.span],
+                                max_bits: self.cfg.max_numeric_bits(),
+                            });
+                        }
+                        NumericIntParseError::Invalid => {
+                            return Err(PresetErr::NumericOverflow {
+                                sp_num: SpannedContainer::new(*name_id, spanned_expr.span),
+                                fmtted_ty: ChrnClassified::Integer,
+                            });
+                        }
+                    },
                 };
 
                 let type_id = kind.type_id();
@@ -3465,11 +3523,23 @@ impl<'res> TypeResolver<'res> {
                 let expr_hir = ExprHir::Val(val_id);
 
                 let s = self.interner.search(*name_id);
-                let Some(kind) = ArbitraryFloatKind::from_str(s) else {
-                    return Err(PresetErr::NumericOverflow {
-                        sp_num: SpannedContainer::new(*name_id, spanned_expr.span),
-                        fmtted_ty: ChrnClassified::Float,
-                    });
+                let max_bits = self.cfg.max_numeric_bits() as u64;
+                let kind = match ArbitraryFloatKind::from_str_with_limit(s, max_bits) {
+                    Ok(kind) => kind,
+                    Err(err) => match err {
+                        NumericFloatParseError::LimitExceeded => {
+                            return Err(PresetErr::NumericLimitExceeded {
+                                spans: vec![spanned_expr.span],
+                                max_bits: self.cfg.max_numeric_bits(),
+                            });
+                        }
+                        NumericFloatParseError::Invalid => {
+                            return Err(PresetErr::NumericOverflow {
+                                sp_num: SpannedContainer::new(*name_id, spanned_expr.span),
+                                fmtted_ty: ChrnClassified::Float,
+                            });
+                        }
+                    },
                 };
 
                 let type_id = kind.type_id();
@@ -3533,24 +3603,29 @@ impl<'res> TypeResolver<'res> {
 
                         let sp_lhs_const = SpannedContainerRef::new(lhs_const, lhs_span);
                         let sp_rhs_const = SpannedContainerRef::new(rhs_const, rhs_span);
-                        match evaluator::apply_binary_op(
+                        match evaluator::apply_binary_op_with_limit(
                             sp_lhs_const,
                             *op,
                             sp_rhs_const,
                             self.interner,
+                            (self.cfg.max_numeric_bits()) as u64,
                         ) {
-                            evaluator::BinaryOpResult::Output(val) => Some(val),
-                            evaluator::BinaryOpResult::DivideByZero => {
+                            BinaryOpResult::Output(val) => Some(val),
+                            BinaryOpResult::DivideByZero => {
                                 return Err(MathError::DivideByZero { lhs_span, rhs_span }.into());
                             }
-                            evaluator::BinaryOpResult::InvalidShift => {
+                            BinaryOpResult::InvalidShift => {
                                 return Err(MathError::InvalidShift { lhs_span, rhs_span }.into());
+                            }
+                            BinaryOpResult::NumericLimitExceeded => {
+                                return Err(PresetErr::NumericLimitExceeded {
+                                    spans: vec![lhs_span, rhs_span],
+                                    max_bits: self.cfg.max_numeric_bits(),
+                                });
                             }
                             // If either are unknown then that would mean it can't confidentally
                             // say the resolution failed since neither have definitive values yet.
-                            evaluator::BinaryOpResult::Invalid
-                                if !lhs_is_unknown && !rhs_is_unknown =>
-                            {
+                            BinaryOpResult::Invalid if !lhs_is_unknown && !rhs_is_unknown => {
                                 return Err(MathError::BinaryOpMismatch {
                                     sp_lhs: SpannedContainer::new(lhs_const.kind(), lhs_span),
                                     sp_rhs: SpannedContainer::new(rhs_const.kind(), rhs_span),
@@ -3739,8 +3814,18 @@ impl<'res> TypeResolver<'res> {
                     let operand_span = operand_expr.meta.expect_user();
 
                     let sp_const = SpannedContainerRef::new(const_val, operand_span);
-                    match evaluator::apply_unary_op(unary.op, sp_const) {
+                    match evaluator::apply_unary_op_with_limit(
+                        unary.op,
+                        sp_const,
+                        self.cfg.max_numeric_bits() as u64,
+                    ) {
                         UnaryOpResult::Output(val) => Some(val),
+                        UnaryOpResult::NumericLimitExceeded => {
+                            return Err(PresetErr::NumericLimitExceeded {
+                                spans: vec![operand_span],
+                                max_bits: self.cfg.max_numeric_bits(),
+                            });
+                        }
                         UnaryOpResult::Invalid if !is_unknown => {
                             return Err(MathError::UnaryOpMismatch {
                                 sp_operand: SpannedContainer::new(const_val.kind(), operand_span),

@@ -1,4 +1,6 @@
 use chrn_utils::id_types::{AstId, InternedId, SymbolId};
+use dashu_float::DBig;
+use dashu_int::IBig;
 use lang::types::{builtins::BuiltinType, externs::ExternPlatformType};
 
 use crate::{
@@ -88,8 +90,10 @@ pub enum InstiationType {
 }
 
 /// Abstraction to allow for `Value` to be made procedurally in a composed manner
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum InstiationValue {
+    BigInt(IBig),
+    BigFloat(DBig),
     I64(i64),
     U64(u64),
     F64(f64),
@@ -104,17 +108,22 @@ pub enum InstiationValue {
 
 impl InstiationValue {
     /// Converts itself to the `Value` type
-    pub const fn to_val(&self) -> Value {
+    pub fn to_val(&self) -> Value {
         match self {
+            InstiationValue::BigInt(val) => {
+                Value::ArbitraryInt(ArbitraryIntKind::BigInt(val.clone()))
+            }
+            //NOTE: Not. Not. BitNot.
+            InstiationValue::BigFloat(val) => {
+                Value::ArbitraryFloat(ArbitraryFloatKind::BigFloat(val.clone()))
+            }
             InstiationValue::I64(val) => Value::ArbitraryInt(ArbitraryIntKind::I64(*val)),
             InstiationValue::U64(val) => Value::ArbitraryInt(ArbitraryIntKind::U64(*val)),
             InstiationValue::F64(val) => Value::ArbitraryFloat(ArbitraryFloatKind::F64(*val)),
             InstiationValue::Bool(b) => Value::Bool(*b),
             InstiationValue::Char(c) => Value::Char(*c),
             InstiationValue::Str(id) => Value::InternedStr(*id),
-            _ => unreachable!(),
-            // InstiationValue::Tuple(instiation_values) => todo!(),
-            // InstiationValue::Array(instiation_values) => todo!(),
+            InstiationValue::Tuple(_) | InstiationValue::Array(_) => unreachable!(),
         }
     }
 }

@@ -3,9 +3,9 @@
 // A trait bound will be used which innately knows how to control itself, like, this budget requires
 // a type so that it can automatically consume based off the time, but this budget consumes based
 // off of the given data at face value.
-/// Generic struct for holding a given budget and ensuring it doesnt go over the limit
+/// For holding a given budget and ensuring it doesnt go over the limit
 #[derive(Debug)]
-pub struct MemoryBudget {
+pub struct MemoryBudgetUsize {
     // u32?
     /// Amount that the usage cannot be greater than
     limit: usize,
@@ -25,14 +25,13 @@ pub struct MemoryBudget {
 
 //TODO: Add Consume up to, then tests so that we know we aren't hallucinating at alarming rates.
 
-impl MemoryBudget {
-    pub const fn new(limit: usize) -> MemoryBudget {
-        MemoryBudget {
+impl MemoryBudgetUsize {
+    pub const fn new(limit: usize) -> MemoryBudgetUsize {
+        MemoryBudgetUsize {
             limit,
             usage: 0,
             times_exceeded: 0,
             amt_exceeded: 0,
-            // times_overflown: None,
         }
     }
 
@@ -203,7 +202,7 @@ impl MemoryBudget {
 
     /// Sets `self.usage` to `self.limit`
     ///
-    /// A use case would be an overage occuring, since `MemoryBudget` does not make any assumptions and keeps
+    /// A use case would be an overage occuring, since `MemoryBudgetUsize` does not make any assumptions and keeps
     /// it's usage as what it was before the overage, only returning the overage. If the data being
     /// tracked can be externally used to perhaps use the amount right until it reaches the overage,
     /// this would be useful to just set it to the limit manually.
@@ -211,7 +210,7 @@ impl MemoryBudget {
         self.usage = self.limit;
     }
 
-    /// The exact amount of `self.usage` needed to fill the defined `self.limit`
+    /// Amount of `self.usage` needed to fill the defined `self.limit`
     pub const fn remaining(&self) -> usize {
         self.limit - self.usage
     }
@@ -249,7 +248,7 @@ impl MemoryBudget {
 /// 4 KB
 const DEFAULT_LIMIT: usize = 1024 * 4;
 
-impl Default for MemoryBudget {
+impl Default for MemoryBudgetUsize {
     fn default() -> Self {
         Self {
             limit: DEFAULT_LIMIT,
@@ -289,13 +288,13 @@ pub enum BudgetResult {
 //     fn checked_remove(&mut self, given: usize) -> Result<(), usize>;
 // }
 
-// pub struct TypedMemoryBudget<T> {
-//     memory_budget: MemoryBudget,
+// pub struct TypedMemoryBudgetUsize<T> {
+//     memory_budget: MemoryBudgetUsize,
 //     /// For keeping the type internally
 //     phantom_data: PhantomData<T>,
 // }
-// impl Budgetable for TypedMemoryBudget {}
+// impl Budgetable for TypedMemoryBudgetUsize {}
 //
 // But what if this was just a function where the caller specifies a generic and it just wraps
 // around the existing memory budget?
-// pub fn typed_add<T>(mem_budget: MemoryBudget) {}
+// pub fn typed_add<T>(mem_budget: MemoryBudgetUsize) {}

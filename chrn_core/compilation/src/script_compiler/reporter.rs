@@ -1,6 +1,6 @@
 // REPORTER IS BACK 🦅🦅🦅🦅🦅𐔌
 use chrn_utils::{
-    budget::mem_budget::{BudgetResult, MemoryBudget},
+    budget::mem_budget::{BudgetResult, MemoryBudgetUsize},
     source_map::source_diagnostic::{
         SourceDiagnostic, SourceDiagnosticSink, SourceDiagnosticSummary,
     },
@@ -15,7 +15,7 @@ pub struct Reporter {
     /// Stored diagnostics
     pub(crate) diag_summary: SourceDiagnosticSummary,
     // The suppressed diagnostic count is the "exceeded_amt" in budget
-    pub(crate) diag_budget: MemoryBudget,
+    pub(crate) diag_budget: MemoryBudgetUsize,
     // Today?
     // Yuppy
     /// Summary of what the compiler did today
@@ -28,7 +28,7 @@ impl Reporter {
         Reporter {
             diag_summary: SourceDiagnosticSummary::default(),
             summary: ScriptCompilerSummary::new(),
-            diag_budget: MemoryBudget::new(max_diags),
+            diag_budget: MemoryBudgetUsize::new(max_diags),
         }
     }
 

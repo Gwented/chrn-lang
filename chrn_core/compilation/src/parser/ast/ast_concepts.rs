@@ -351,6 +351,8 @@ impl ChrnClassifiable for BinaryOp {
 pub struct AbstractVar {
     pub name_id: InternedId,
     pub name_span: SourceSpan,
+    //// Type annotatoin
+    // pub ty_ann: Option<SpannedContainer<TypeExpr>>,
     pub spanned_expr: SpannedExpr,
     pub is_priv: bool,
 }
@@ -359,6 +361,7 @@ impl AbstractVar {
     pub fn new(
         name_id: InternedId,
         name_span: SourceSpan,
+        // ty_ann: Option<SpannedContainer<TypeExpr>>,
         spanned_expr: SpannedExpr,
         is_priv: bool,
     ) -> AbstractVar {
@@ -366,6 +369,7 @@ impl AbstractVar {
             name_id,
             name_span,
             spanned_expr,
+            // ty_ann,
             is_priv,
         }
     }

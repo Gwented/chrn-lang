@@ -89,7 +89,7 @@ This can be applied to [`struct`](#structural-types), [`enum`](#structural-types
 
 `enum`: Declares [enumeration type](#structural-types).
 
-`change`: Allows for type assignment exprs which look like "change Type, Type, Type = Type"
+`change`: Allows for type assignment exprs which look like "change Type, Type, Type = Type". Also infers when just "change = Type" is used.
 
 `var`, `nest`, `complex`, `override`: Section keywords (more later)
 
@@ -507,6 +507,10 @@ for Person {
     age {
         // This would ONLY apply to the field `Person` in a Rust context.
         override RUST=>types { change u8 = rust::u32 }
+
+        // `change` can also infer the type it's altering. Since `age` is the current config member,
+        // this will infer tha it should bind `age` to `rust::u32` from whatever it currently is.
+        override RUST=>types { change = rust::u32 }
 
         // Having SOME sort of "self = u32" like syntax is probably best to avoid the rigid nature
         // of manually typing the type, that we already know, and that is the only type that can actually

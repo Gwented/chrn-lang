@@ -1199,6 +1199,13 @@ fn parse_let(
         interner,
     )?;
 
+    // let ty_ann = if ctx.peek_tok() == Token::Colon {
+    //     ctx.advance_tok();
+    //     Some(parse_type_expr(ctx, budget, interner)?)
+    // } else {
+    //     None
+    // };
+
     ctx.expect_verbose(
         TokenKind::Assign,
         "Expected '=' to declare value, found ",
@@ -1219,7 +1226,7 @@ fn parse_let(
     Ok(abs_var)
 }
 
-/// Pratt Parser for all expression kinds except type expressions
+/// Pratt Parser for all expr kinds except type expressions
 fn parse_expr(
     ctx: &mut ParserContext,
     min_bp: u8,
@@ -1790,7 +1797,15 @@ fn parse_static_path(
     budget: &ParserBudget,
     interner: &Intern,
 ) -> Result<Vec<SpannedContainer<PathSegment>>, Token> {
-    let mut static_path: Vec<SpannedContainer<PathSegment>> = Vec::new();
+    let speculated = ctx
+        .toks
+        .iter()
+        .skip(1)
+        .take(5)
+        .filter(|t| t.tok == Token::StaticAccess)
+        .count();
+    // + 1 for guaranteed first tok
+    let mut static_path: Vec<SpannedContainer<PathSegment>> = Vec::with_capacity(speculated + 1);
 
     loop {
         let is_generic = ctx.peek_ahead(1).tok == Token::OAngleBracket;
@@ -2087,6 +2102,7 @@ fn handle_directives(
     Ok(args)
 }
 
+//TODO: Directive "#{directive}[{Identifier} = {Expr/TypeExpr}, {Expr/TypeExpr}, ..]" parsing
 fn parse_directive(ctx: &mut ParserContext, interner: &Intern) -> Result<AbstractDirective, Token> {
     let name_span = ctx.peek_span();
     let name_id = ctx.expect_id_verbose(

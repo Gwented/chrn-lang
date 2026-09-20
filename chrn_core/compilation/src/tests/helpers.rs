@@ -58,8 +58,19 @@ pub(super) fn mock_single_module_compiler(
     ChrnConfig,
     ScriptCompiler,
 ) {
+    mock_single_module_compiler_with_config(text, ChrnConfig::default())
+}
+
+pub(super) fn mock_single_module_compiler_with_config(
+    text: &str,
+    settings: ChrnConfig,
+) -> (
+    Arena<SourceRegion, SourceRegionId>,
+    Intern,
+    ChrnConfig,
+    ScriptCompiler,
+) {
     let interner = mock_interner(0, 1);
-    let settings = ChrnConfig::default();
     let path_id = PathId::new(0);
     let region_id = SourceRegionId::new(0);
 
@@ -260,7 +271,7 @@ pub(super) use crate::{
 use chrn_utils::utils::containers::SpannedContainer;
 pub(super) use chrn_utils::{
     arena::Arena,
-    budget::mem_budget::{BudgetResult, MemoryBudget},
+    budget::mem_budget::{BudgetResult, MemoryBudgetUsize},
     core_error::ConfigLoadError,
     id_types::{InternedId, ModuleId, PathId, SourceRegionId, SymbolId, ValueId},
     intern::Intern,
@@ -427,7 +438,16 @@ pub(super) fn run_stages(
 /// Lexes, parses, and resolves a single-module script up to `upto`, collecting diagnostics
 /// instead of asserting on them.
 pub(super) fn resolve_single_module(text: &str, upto: Stage) -> Resolution {
-    let (arena, mut interner, mut cfg, mut compiler) = mock_single_module_compiler(text);
+    resolve_single_module_with_config(text, upto, ChrnConfig::default())
+}
+
+pub(super) fn resolve_single_module_with_config(
+    text: &str,
+    upto: Stage,
+    cfg: ChrnConfig,
+) -> Resolution {
+    let (arena, mut interner, mut cfg, mut compiler) =
+        mock_single_module_compiler_with_config(text, cfg);
 
     let asts = build_asts(&arena, &mut cfg, &mut interner, &compiler);
     let reg_envs = build_registration_envs(&compiler, &arena, &asts);

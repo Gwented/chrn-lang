@@ -290,7 +290,7 @@ fn scope_core_type_namespace_test() {
 
     for (name, type_id) in namespaced_builtins() {
         let scope_id = ns_scope_of(&compiler, type_id);
-        let bounds_to_check = if name == "u64" {
+        let bounds_to_check = if name == "f128" {
             vec![bits_id, bytes_id]
         } else {
             vec![max_id, min_id]
@@ -346,13 +346,19 @@ fn scope_core_type_namespace_unreachable_test() {
         diags.ty
     );
 
-    // `u64::MAX`, `i128`, `u128` and `f128` bounds do not fit `InstiationValue`, and `sized`/`unsized`
-    // are pointer-sized, so none of them carry a `MAX` constant
+    // `f128` carries metadata attributes but no MAX bound
+    let f128_res = resolve_single_module("let CONSTANT = f128::MAX", Stage::Constraint);
+    assert!(
+        f128_res.err_count() > 0,
+        "`f128` declares no MAX bound, so `f128::MAX` should not resolve"
+    );
+
+    // `sized`/`unsized` are pointer-sized, so neither carries an intrinsic namespace
     for (interned, builtin_ty, ns) in &CORE_BUILTIN_TYPES_DATASET {
         let interner = Intern::init();
         let name = interner.search_idx(*interned as usize);
 
-        if !ns.is_empty() && name != "u64" {
+        if !ns.is_empty() {
             continue;
         }
 

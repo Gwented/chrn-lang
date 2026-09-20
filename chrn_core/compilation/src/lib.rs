@@ -18,5 +18,17 @@ pub mod semantic;
 /// Max depth for config reach for `chrn`, excluding `override` section expansion
 pub const CFG_MAX_COMPLEX_NEST_LEVEL: u8 = 2;
 
+// For float and int where applicable
+/// Default max bits for numeric values
+pub const DEFAULT_MAX_NUMERIC_BITS: u32 = 256;
+
+// May be larger.
+/// Default max bits for numeric values
+pub const INT_BITS_BEFORE_ARBITRARY: u32 = 64;
+
+// Will not change
+/// Default max bits for numeric values
+pub const FLOAT_BITS_BEFORE_ARBITRARY: u32 = 64;
+
 #[cfg(test)]
 mod tests;

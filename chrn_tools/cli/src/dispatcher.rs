@@ -38,7 +38,7 @@ pub fn exec(cli: &Cli, cli_cfg: &CliConfig) -> Result<String, Option<String>> {
     }
 }
 
-/// Executes `CheckCmd` which checks for any compilation errors regarding a given Script file
+/// Executes `CheckCmd` which checks for any compilation errors regarding a given chrn file
 fn exec_check(
     check_cmd: &CheckCmd,
     glob_args: &GlobalArgs,
@@ -52,6 +52,7 @@ fn exec_check(
     if check_cmd.perf_tracker {
         builder = builder.add_perf_tracker();
     }
+    builder = builder.add_max_numeric_bits(check_cmd.numeric_bits);
 
     let chrn_cfg = builder.build();
 

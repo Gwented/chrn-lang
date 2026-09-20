@@ -85,7 +85,7 @@ use crate::analyser;
 pub(crate) const STATE_LOCK_TIMEOUT: Duration = Duration::from_millis(500);
 
 use chrn_utils::arena::Arena;
-use chrn_utils::budget::mem_budget::{BudgetResult, MemoryBudget};
+use chrn_utils::budget::mem_budget::{BudgetResult, MemoryBudgetUsize};
 use compilation::chrn_config::ChrnConfig;
 use chrn_utils::id_types::{
     AstId, ImplId, ImplMemberId, InternedId, ModuleId, PathId, SourceRegionId, SymbolId, TypeId,
@@ -886,7 +886,7 @@ impl DocumentState {
         // budgets its `Reporter`: consume per core diagnostic, truncate the stage
         // that crosses the limit, and keep counting what was dropped so the total
         // can be reported.
-        let mut budget = MemoryBudget::new(analyser::MAX_DIAGNOSTICS);
+        let mut budget = MemoryBudgetUsize::new(analyser::MAX_DIAGNOSTICS);
 
         for (summary, source) in stages {
             let diags = summary.diags();

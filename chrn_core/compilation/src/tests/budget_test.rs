@@ -3,7 +3,7 @@ use super::helpers::*;
 #[test]
 fn checked_consume_budget_tests() {
     // Overflow check
-    let mut budget = MemoryBudget::default();
+    let mut budget = MemoryBudgetUsize::default();
     budget.consume(1);
     assert!(matches!(
         budget.checked_consume(usize::MAX),
@@ -11,7 +11,7 @@ fn checked_consume_budget_tests() {
     ));
 
     // Overage check
-    let mut budget = MemoryBudget::new(10);
+    let mut budget = MemoryBudgetUsize::new(10);
     assert!(matches!(
         budget.checked_consume(15),
         BudgetResult::Overage(5)
@@ -21,14 +21,14 @@ fn checked_consume_budget_tests() {
     assert_eq!(budget.remaining(), 10);
 
     // Limit Reached
-    let mut budget = MemoryBudget::new(10);
+    let mut budget = MemoryBudgetUsize::new(10);
     assert!(matches!(
         budget.checked_consume(10),
         BudgetResult::LimitReached,
     ));
 
     // Stable
-    let mut budget = MemoryBudget::new(10);
+    let mut budget = MemoryBudgetUsize::new(10);
     assert!(matches!(budget.checked_consume(9), BudgetResult::Stable,));
 }
 

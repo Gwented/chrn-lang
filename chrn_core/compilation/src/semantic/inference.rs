@@ -9,8 +9,8 @@ use crate::{
 
 pub(crate) fn infer_type_from_val(compiler: &ScriptCompiler, val: &Value) -> Option<TypeId> {
     match val {
-        Value::ArbitraryInt(_) => Some(TypeId::new(compiler_constants::CORE_I64)),
-        Value::ArbitraryFloat(_) => Some(TypeId::new(compiler_constants::CORE_F64)),
+        Value::ArbitraryInt(kind) => Some(kind.type_id()),
+        Value::ArbitraryFloat(kind) => Some(kind.type_id()),
         Value::Bool(_) => Some(TypeId::new(compiler_constants::CORE_BOOL)),
         Value::Char(_) => Some(TypeId::new(compiler_constants::CORE_CHAR)),
         Value::Func(func_sym) => {

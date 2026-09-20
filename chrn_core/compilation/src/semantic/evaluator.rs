@@ -3,7 +3,7 @@ use chrn_utils::{intern::Intern, utils::containers::SpannedContainerRef};
 use crate::{
     parser::ast::ast_concepts::{BinaryOp, UnaryOp},
     semantic::{
-        arbitraries::{ArbitraryFloatKind, ArbitraryIntKind},
+        arbitraries::{ArbitraryFloatKind, NumericIntError},
         values::Value,
     },
 };
@@ -11,6 +11,8 @@ use crate::{
 pub enum UnaryOpResult {
     Output(Value),
     Invalid,
+    /// User configured numeric limit
+    NumericLimitExceeded,
 }
 
 pub enum BinaryOpResult {
@@ -18,6 +20,16 @@ pub enum BinaryOpResult {
     Invalid,
     DivideByZero,
     InvalidShift,
+    /// User configured numeric limit
+    NumericLimitExceeded,
+}
+
+fn value_fits_numeric_limit(value: &Value, max_numeric_bits: u64) -> bool {
+    match value {
+        Value::ArbitraryInt(value) => value.fits_numeric_bits(max_numeric_bits),
+        Value::ArbitraryFloat(value) => value.fits_numeric_bits(max_numeric_bits),
+        _ => true,
+    }
 }
 
 // Is this the type checker's?
@@ -97,7 +109,18 @@ pub fn is_compatible_binary(lhs: &Value, op: BinaryOp, rhs: &Value) -> bool {
 }
 
 pub fn apply_unary_op(op: UnaryOp, sp_operand: SpannedContainerRef<Value>) -> UnaryOpResult {
+    apply_unary_op_with_limit(op, sp_operand, crate::DEFAULT_MAX_NUMERIC_BITS as u64)
+}
+
+pub fn apply_unary_op_with_limit(
+    op: UnaryOp,
+    sp_operand: SpannedContainerRef<Value>,
+    max_numeric_bits: u64,
+) -> UnaryOpResult {
     let operand = sp_operand.inner;
+    if !value_fits_numeric_limit(operand, max_numeric_bits) {
+        return UnaryOpResult::NumericLimitExceeded;
+    }
 
     let res = match op {
         UnaryOp::Not => match operand {
@@ -117,6 +140,9 @@ pub fn apply_unary_op(op: UnaryOp, sp_operand: SpannedContainerRef<Value>) -> Un
     };
 
     match res {
+        Some(val) if !value_fits_numeric_limit(&val, max_numeric_bits) => {
+            UnaryOpResult::NumericLimitExceeded
+        }
         Some(val) => UnaryOpResult::Output(val),
         None => UnaryOpResult::Invalid,
     }
@@ -130,8 +156,38 @@ pub fn apply_binary_op(
     sp_rhs: SpannedContainerRef<Value>,
     interner: &mut Intern,
 ) -> BinaryOpResult {
+    apply_binary_op_with_limit(
+        sp_lhs,
+        op,
+        sp_rhs,
+        interner,
+        (crate::DEFAULT_MAX_NUMERIC_BITS) as u64,
+    )
+}
+
+pub fn apply_binary_op_with_limit(
+    sp_lhs: SpannedContainerRef<Value>,
+    op: BinaryOp,
+    sp_rhs: SpannedContainerRef<Value>,
+    interner: &mut Intern,
+    max_numeric_bits: u64,
+) -> BinaryOpResult {
     let lhs = sp_lhs.inner;
     let rhs = sp_rhs.inner;
+    if !value_fits_numeric_limit(lhs, max_numeric_bits)
+        || !value_fits_numeric_limit(rhs, max_numeric_bits)
+    {
+        return BinaryOpResult::NumericLimitExceeded;
+    }
+    // Checks if bits(a * b) >= bits(a) + bits(b) - 1, so rejects before
+    // creating a potentially large BigInt. Zeros excluded since always valid.
+    if let (BinaryOp::Mult, Value::ArbitraryInt(lhs), Value::ArbitraryInt(rhs)) = (op, lhs, rhs)
+        && !lhs.is_zero()
+        && !rhs.is_zero()
+        && lhs.numeric_bits() + rhs.numeric_bits() - 1 > max_numeric_bits
+    {
+        return BinaryOpResult::NumericLimitExceeded;
+    }
 
     let res = match op {
         BinaryOp::Add => match lhs {
@@ -316,12 +372,12 @@ pub fn apply_binary_op(
                         // is `NaN`). `DBig` has no NaN representation and
                         // panics when the result would be NaN, so route
                         // zero-divisor cases through `f64`.
-                        return BinaryOpResult::Output(Value::ArbitraryFloat(
-                            ArbitraryFloatKind::F64(lhs_inner.to_f64() % rhs_inner.to_f64()),
-                        ));
+                        Some(Value::ArbitraryFloat(ArbitraryFloatKind::F64(
+                            lhs_inner.to_f64() % rhs_inner.to_f64(),
+                        )))
+                    } else {
+                        Some(Value::ArbitraryFloat(lhs_inner % rhs_inner))
                     }
-
-                    Some(Value::ArbitraryFloat(lhs_inner % rhs_inner))
                 }
                 _ => None,
             },
@@ -403,20 +459,34 @@ pub fn apply_binary_op(
         },
         BinaryOp::BitRightShift => match lhs {
             Value::ArbitraryInt(lhs_inner) => match rhs {
-                Value::ArbitraryInt(rhs_inner) => match lhs_inner.checked_shr(rhs_inner) {
-                    Some(val) => Some(Value::ArbitraryInt(val)),
-                    None => return BinaryOpResult::InvalidShift,
-                },
+                Value::ArbitraryInt(rhs_inner) => {
+                    match lhs_inner.checked_shr_with_limit(rhs_inner, max_numeric_bits) {
+                        Ok(val) => Some(Value::ArbitraryInt(val)),
+                        Err(NumericIntError::InvalidShift) => {
+                            return BinaryOpResult::InvalidShift;
+                        }
+                        Err(NumericIntError::LimitExceeded) => {
+                            return BinaryOpResult::NumericLimitExceeded;
+                        }
+                    }
+                }
                 _ => None,
             },
             _ => None,
         },
         BinaryOp::BitLeftShift => match lhs {
             Value::ArbitraryInt(lhs_inner) => match rhs {
-                Value::ArbitraryInt(rhs_inner) => match lhs_inner.checked_shl(rhs_inner) {
-                    Some(val) => Some(Value::ArbitraryInt(val)),
-                    None => return BinaryOpResult::InvalidShift,
-                },
+                Value::ArbitraryInt(rhs_inner) => {
+                    match lhs_inner.checked_shl_with_limit(rhs_inner, max_numeric_bits) {
+                        Ok(val) => Some(Value::ArbitraryInt(val)),
+                        Err(NumericIntError::InvalidShift) => {
+                            return BinaryOpResult::InvalidShift;
+                        }
+                        Err(NumericIntError::LimitExceeded) => {
+                            return BinaryOpResult::NumericLimitExceeded;
+                        }
+                    }
+                }
                 _ => None,
             },
             _ => None,
@@ -431,6 +501,9 @@ pub fn apply_binary_op(
     };
 
     match res {
+        Some(val) if !value_fits_numeric_limit(&val, max_numeric_bits) => {
+            BinaryOpResult::NumericLimitExceeded
+        }
         Some(val) => BinaryOpResult::Output(val),
         None => BinaryOpResult::Invalid,
     }

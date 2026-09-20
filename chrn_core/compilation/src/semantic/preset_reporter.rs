@@ -5,7 +5,6 @@ mod static_enricher;
 
 use crate::chrn_config::ChrnConfig;
 use crate::lookup::member_lookup::MemberLookupResult;
-use crate::lookup::scopes;
 use crate::lookup::scopes::scopes_concepts::AssociatedScopeKind;
 use crate::resolvers::resolver_env::ResolverEnv;
 use crate::script_compiler::ScriptCompiler;
@@ -225,6 +224,15 @@ pub(crate) fn create_diag_builder_preset(
 
             SourceDiagnostic::builder(None, DiagnosticLevel::Error, core_msg, region.path_id)
                 .add_annotation(sp_num.span, AnnotationKind::Primary, None)
+        }
+        PresetErr::NumericLimitExceeded { spans, max_bits } => {
+            let core_msg = format!("Numeric value exceeds the configured {max_bits}-bit limit");
+            let mut builder =
+                SourceDiagnostic::builder(None, DiagnosticLevel::Error, core_msg, region.path_id);
+            for span in spans {
+                builder = builder.add_annotation(span, AnnotationKind::Primary, None);
+            }
+            builder
         }
         PresetErr::General(src_diag) => src_diag,
         PresetErr::Lookup(lookup_err) => match lookup_err {

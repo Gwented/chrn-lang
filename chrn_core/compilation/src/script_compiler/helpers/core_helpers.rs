@@ -1,6 +1,7 @@
 //! Compiler generated compiler-specific helpers
 
 use chrn_utils::{id_types::InternedId, intern};
+use dashu_int::IBig;
 use lang::types::{boundaries::TypeBoundaryFlags, builtins::BuiltinType};
 
 use crate::{
@@ -16,6 +17,10 @@ use crate::{
 };
 
 use super::instantiation_symbols::InstiationValue;
+
+//NOTE: BuiltinTypes assigned must align with possible arbitrary values, rather than the actual
+//value present. There is also no consistency in regards to something being i64 or u64 by default,
+//maybe will deal with that when it poses an issue. Bug are solved though.
 
 static NAMESPACE_I8: [InstantiationSymbolBase; 5] = [
     new_max(InstantiationVariable::new(
@@ -36,10 +41,7 @@ static NAMESPACE_U8: [InstantiationSymbolBase; 5] = [
         InstiationType::BuiltinType(BuiltinType::I64),
         InstiationValue::I64(u8::MAX as i64),
     )),
-    new_min(InstantiationVariable::new(
-        InstiationType::BuiltinType(BuiltinType::I64),
-        InstiationValue::I64(u8::MIN as i64),
-    )),
+    new_min_unsigned(),
     new_bits(8),
     new_bytes(1),
     new_radix(2),
@@ -64,10 +66,7 @@ static NAMESPACE_U16: [InstantiationSymbolBase; 5] = [
         InstiationType::BuiltinType(BuiltinType::I64),
         InstiationValue::I64(u16::MAX as i64),
     )),
-    new_min(InstantiationVariable::new(
-        InstiationType::BuiltinType(BuiltinType::I64),
-        InstiationValue::I64(u16::MIN as i64),
-    )),
+    new_min_unsigned(),
     new_bits(16),
     new_bytes(2),
     new_radix(2),
@@ -300,10 +299,7 @@ static NAMESPACE_U32: [InstantiationSymbolBase; 5] = [
         InstiationType::BuiltinType(BuiltinType::I64),
         InstiationValue::I64(u32::MAX as i64),
     )),
-    new_min(InstantiationVariable::new(
-        InstiationType::BuiltinType(BuiltinType::I64),
-        InstiationValue::I64(u32::MIN as i64),
-    )),
+    new_min_unsigned(),
     new_bits(32),
     new_bytes(4),
     new_radix(2),
@@ -528,7 +524,16 @@ static NAMESPACE_I64: [InstantiationSymbolBase; 5] = [
     new_radix(2),
 ];
 
-static NAMESPACE_U64: [InstantiationSymbolBase; 3] = [new_bits(64), new_bytes(8), new_radix(2)];
+static NAMESPACE_U64: [InstantiationSymbolBase; 5] = [
+    new_max(InstantiationVariable::new(
+        InstiationType::BuiltinType(BuiltinType::U64),
+        InstiationValue::U64(u64::MAX),
+    )),
+    new_min_unsigned(),
+    new_bits(64),
+    new_bytes(8),
+    new_radix(2),
+];
 
 static NAMESPACE_F64: [InstantiationSymbolBase; 34] = [
     new_max(InstantiationVariable::new(
@@ -735,9 +740,50 @@ static NAMESPACE_F64: [InstantiationSymbolBase; 34] = [
     ),
 ];
 
-//TODO: `u64::MAX`, `i128`, `u128` and `f128` bounds do not fit `InstiationValue`, which only carries
-//`I64` and `F64`. `sized`/`unsized` are pointer-sized, so their bounds belong to the target rather
-//than the host. The 128-bit types stay empty until the value system covers them.
+//TODO: `f128` bounds do not fit `InstiationValue`, which only carries `F64` and `DBig` (decimal).
+//`sized`/`unsized` are pointer-sized, so their bounds belong to the target rather than the host.
+//The 128-bit float stays empty until float values cover 128-bit IEEE floats.
+
+static NAMESPACE_I128: [InstantiationSymbolBase; 5] = [
+    new_max(InstantiationVariable::new(
+        InstiationType::BuiltinType(BuiltinType::BigInt),
+        InstiationValue::BigInt(IBig::from_parts_const(
+            dashu_int::Sign::Positive,
+            i128::MAX as u128,
+        )),
+    )),
+    new_min(InstantiationVariable::new(
+        InstiationType::BuiltinType(BuiltinType::BigInt),
+        InstiationValue::BigInt(IBig::from_parts_const(
+            dashu_int::Sign::Negative,
+            i128::MIN.unsigned_abs(),
+        )),
+    )),
+    new_bits(128),
+    new_bytes(16),
+    new_radix(2),
+];
+
+static NAMESPACE_U128: [InstantiationSymbolBase; 5] = [
+    new_max(InstantiationVariable::new(
+        InstiationType::BuiltinType(BuiltinType::BigInt),
+        InstiationValue::BigInt(IBig::from_parts_const(dashu_int::Sign::Positive, u128::MAX)),
+    )),
+    new_min_unsigned(),
+    new_bits(128),
+    new_bytes(16),
+    new_radix(2),
+];
+
+//NOTE: `f128` bounds (MAX/MIN) do not fit `InstiationValue`, which only carries `F64` and `DBig` (decimal).
+//`f128` acts as a metadata namespace providing representable bit-range and precision attributes.
+static NAMESPACE_F128: [InstantiationSymbolBase; 5] = [
+    new_bits(128),
+    new_bytes(16),
+    new_radix(2),
+    new_digits(33),
+    new_mantissa_digits(113),
+];
 
 // Will just be [[]] like the ns entries
 /// Every core builtin type, paired with its interned name and the `TypeId` it must have.
@@ -758,9 +804,9 @@ pub static CORE_BUILTIN_TYPES_DATASET: [(u32, BuiltinType, &'static [Instantiati
     // -- Eveneutally faojjkaj --
     (intern::INTERNED_F64, BuiltinType::F64, &NAMESPACE_F64),
     // -- Eveneutally faojjkaj --
-    (intern::INTERNED_I128, BuiltinType::I128, &[]),
-    (intern::INTERNED_U128, BuiltinType::U128, &[]),
-    (intern::INTERNED_F128, BuiltinType::F128, &[]),
+    (intern::INTERNED_I128, BuiltinType::I128, &NAMESPACE_I128),
+    (intern::INTERNED_U128, BuiltinType::U128, &NAMESPACE_U128),
+    (intern::INTERNED_F128, BuiltinType::F128, &NAMESPACE_F128),
     (intern::INTERNED_SIZED, BuiltinType::Sized, &[]),
     (intern::INTERNED_UNSIZED, BuiltinType::Unsized, &[]),
     // -- Eveneutally faojjkaj --
@@ -975,6 +1021,12 @@ const fn new_max(var: InstantiationVariable) -> InstantiationSymbolBase {
 }
 const fn new_min(var: InstantiationVariable) -> InstantiationSymbolBase {
     new_const(intern::INTERNED_MIN_UPPER, var)
+}
+const fn new_min_unsigned() -> InstantiationSymbolBase {
+    new_min(InstantiationVariable::new(
+        InstiationType::BuiltinType(BuiltinType::U64),
+        InstiationValue::U64(0),
+    ))
 }
 const fn new_bits(bits: i64) -> InstantiationSymbolBase {
     new_const(

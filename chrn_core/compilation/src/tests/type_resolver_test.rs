@@ -12,7 +12,194 @@ use crate::semantic::hir::hir_symbols::SymbolKind;
 use crate::semantic::values::ValueInfo;
 use crate::walk_type_id_deferred;
 use chrn_utils::id_types::TypeId;
+use chrn_utils::source_map::source_diagnostic::annotations::AnnotationKind;
 use chrn_utils::source_map::source_span::SourceSpan;
+
+fn config_with_numeric_limit(max_numeric_bits: u32) -> ChrnConfig {
+    ChrnConfig::builder()
+        .add_max_numeric_bits(max_numeric_bits)
+        .build()
+}
+
+fn assert_numeric_limit_error(
+    source: &str,
+    max_numeric_bits: u32,
+    expected_annotations: &[(u32, u32, &str)],
+) {
+    let resolution = resolve_single_module_with_config(
+        source,
+        Stage::Type,
+        config_with_numeric_limit(max_numeric_bits),
+    );
+
+    assert_eq!(
+        resolution.err_count(),
+        1,
+        "unexpected diagnostics: {:?}",
+        resolution.ty
+    );
+    assert_eq!(resolution.ty.err_count(), 1);
+    let diagnostic = &resolution.ty.diags[0];
+    assert_eq!(diagnostic.level, DiagnosticLevel::Error);
+    assert_eq!(
+        diagnostic.core_msg,
+        format!("Numeric value exceeds the configured {max_numeric_bits}-bit limit")
+    );
+    assert!(
+        diagnostic.help.is_empty(),
+        "numeric-limit diagnostics must remain interface-neutral: {:?}",
+        diagnostic.help
+    );
+    assert_eq!(diagnostic.annotations.len(), expected_annotations.len());
+    for (annotation, &(start, end, expected_text)) in
+        diagnostic.annotations.iter().zip(expected_annotations)
+    {
+        assert_eq!(annotation.kind, AnnotationKind::Primary);
+        assert_eq!(
+            annotation.span,
+            SourceSpan::new(SourceRegionId::new(0), start, end)
+        );
+        assert_eq!(
+            &source[annotation.span.range_exclusive_usize()],
+            expected_text
+        );
+    }
+}
+
+#[test]
+fn chrn_config_default_uses_max_numeric_bits_constant() {
+    assert_eq!(
+        ChrnConfig::default().max_numeric_bits(),
+        crate::DEFAULT_MAX_NUMERIC_BITS
+    );
+}
+
+/// Protects the magnitude-bit boundary: 255 needs exactly eight bits, while 256 needs nine.
+#[test]
+fn type_resolver_enforces_configured_integer_literal_limit() {
+    let accepted =
+        resolve_single_module_with_config("let X = 255", Stage::Type, config_with_numeric_limit(8))
+            .expect_ok();
+    assert!(matches!(
+        accepted.value_of("X"),
+        Value::ArbitraryInt(ArbitraryIntKind::I64(255))
+    ));
+
+    assert_numeric_limit_error("let X = 256", 8, &[(8, 11, "256")]);
+}
+
+/// Protects result checking after arithmetic on individually valid operands.
+#[test]
+fn type_resolver_rejects_multiplication_result_above_numeric_limit() {
+    let accepted = resolve_single_module_with_config(
+        "let X = 15 * 17",
+        Stage::Type,
+        config_with_numeric_limit(8),
+    )
+    .expect_ok();
+    assert!(matches!(
+        accepted.value_of("X"),
+        Value::ArbitraryInt(ArbitraryIntKind::I64(255))
+    ));
+
+    assert_numeric_limit_error("let X = 16 * 16", 8, &[(8, 10, "16"), (13, 15, "16")]);
+}
+
+/// Protects the pre-allocation left-shift bound as well as its exact accepted edge.
+#[test]
+fn type_resolver_rejects_left_shift_result_above_numeric_limit() {
+    let accepted = resolve_single_module_with_config(
+        "let X = 1 << 7",
+        Stage::Type,
+        config_with_numeric_limit(8),
+    )
+    .expect_ok();
+    assert!(matches!(
+        accepted.value_of("X"),
+        Value::ArbitraryInt(ArbitraryIntKind::I64(128))
+    ));
+
+    assert_numeric_limit_error("let X = 1 << 8", 8, &[(8, 9, "1"), (13, 14, "8")]);
+}
+
+/// Protects the absolute shift ceiling when the configured numeric limit is higher.
+#[test]
+fn type_resolver_rejects_left_shift_above_absolute_limit() {
+    let shift = ArbitraryIntKind::MAX_SHIFT_BITS + 1;
+    let shift_text = shift.to_string();
+    let source = format!("let X = 1 << {shift_text}");
+    let resolution = resolve_single_module_with_config(
+        &source,
+        Stage::Type,
+        config_with_numeric_limit(shift + 1),
+    );
+
+    assert_eq!(
+        resolution.err_count(),
+        1,
+        "unexpected diagnostics: {:?}",
+        resolution.ty
+    );
+    assert_eq!(resolution.ty.err_count(), 1);
+    let diagnostic = &resolution.ty.diags[0];
+    assert_eq!(diagnostic.level, DiagnosticLevel::Error);
+    assert_eq!(diagnostic.core_msg, "Shift amount is out of range");
+    assert!(diagnostic.help.is_empty());
+    assert_eq!(diagnostic.annotations.len(), 2);
+    assert!(
+        diagnostic
+            .annotations
+            .iter()
+            .all(|annotation| annotation.kind == AnnotationKind::Primary)
+    );
+    let annotated_text = diagnostic
+        .annotations
+        .iter()
+        .map(|annotation| &source[annotation.span.range_exclusive_usize()])
+        .collect::<Vec<_>>();
+    assert_eq!(annotated_text, ["1", shift_text.as_str()]);
+}
+
+/// Protects both the fixed `f64` representation boundary and arbitrary exponent accounting.
+#[test]
+fn type_resolver_enforces_numeric_limit_for_float_literals() {
+    let accepted = resolve_single_module_with_config(
+        "let X = 1.5",
+        Stage::Type,
+        config_with_numeric_limit(64),
+    )
+    .expect_ok();
+    assert!(matches!(
+        accepted.value_of("X"),
+        Value::ArbitraryFloat(ArbitraryFloatKind::F64(value)) if value == 1.5
+    ));
+
+    assert_numeric_limit_error("let X = 1.5", 63, &[(8, 11, "1.5")]);
+    assert_numeric_limit_error("let X = 1e1000", 64, &[(8, 14, "1e1000")]);
+    assert_numeric_limit_error("let X = 1e-1000", 64, &[(8, 15, "1e-1000")]);
+}
+
+/// Protects float binary operation overflow and subsequent numeric limit enforcement.
+#[test]
+fn type_resolver_enforces_numeric_limit_for_float_operations() {
+    assert_numeric_limit_error(
+        "let X = 1e308 * 2.0",
+        128,
+        &[(8, 13, "1e308"), (16, 19, "2.0")],
+    );
+
+    assert_numeric_limit_error(
+        "let X = 1e308 * 2.0",
+        u32::MAX,
+        &[(8, 13, "1e308"), (16, 19, "2.0")],
+    );
+}
+
+/// Protects numeric-limit validation of the IEEE NaN produced by float remainder by zero.
+#[test]
+fn type_resolver_enforces_numeric_limit_for_float_remainder_by_zero() {
+    assert_numeric_limit_error("let X = 5.5 % 0.0", 64, &[(8, 11, "5.5"), (14, 17, "0.0")]);
+}
 
 #[test]
 fn type_resolver_simple_test() {
@@ -354,7 +541,12 @@ fn type_resolver_unparseable_integer_yields_numeric_overflow_diagnostic() {
 /// magnitude and precision.
 #[test]
 fn type_resolver_overflowing_float_literal_becomes_bigfloat() {
-    let res = resolve_single_module("let X = 1e1000", Stage::Type).expect_ok();
+    let res = resolve_single_module_with_config(
+        "let X = 1e1000",
+        Stage::Type,
+        config_with_numeric_limit(4096),
+    )
+    .expect_ok();
     match res.value_of("X") {
         Value::ArbitraryFloat(ArbitraryFloatKind::BigFloat(v)) => {
             assert!(
@@ -378,7 +570,7 @@ fn type_resolver_overflowing_float_literal_becomes_bigfloat() {
 
 #[test]
 fn type_resolver_literal_types_match_arbitrary_type_id() {
-    let res = resolve_single_module(
+    let res = resolve_single_module_with_config(
         "
         let A = 42
         let B = 9223372036854775808
@@ -387,6 +579,7 @@ fn type_resolver_literal_types_match_arbitrary_type_id() {
         let E = 1e1000
         ",
         Stage::Type,
+        config_with_numeric_limit(4096),
     )
     .expect_ok();
 
