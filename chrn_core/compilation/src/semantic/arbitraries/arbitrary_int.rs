@@ -4,7 +4,7 @@ use chrn_utils::id_types::TypeId;
 use dashu_int::IBig;
 use dashu_int::ops::BitTest;
 
-use crate::lexer::token::Notation;
+use crate::lexer::notations::IntegerNotation;
 use crate::script_compiler::compiler_constants;
 
 /// Representable `chrn` integers.
@@ -26,14 +26,14 @@ impl ArbitraryIntKind {
     }
     //WARN: Is this retrying ok?
     /// Parses an integer string under the specified notation.
-    pub fn from_str(s: &str, notation: Notation) -> Option<Self> {
+    pub fn from_str(s: &str, notation: IntegerNotation) -> Option<Self> {
         Self::from_str_with_limit(s, notation, u64::MAX).ok()
     }
 
     /// Parses an integer literal respecting `max_bits`.
     pub fn from_str_with_limit(
         s: &str,
-        notation: Notation,
+        notation: IntegerNotation,
         max_bits: u64,
     ) -> Result<Self, NumericIntParseError> {
         if let Ok(num) = i64::from_str_radix(s, notation.radix()) {
@@ -70,7 +70,7 @@ impl ArbitraryIntKind {
     }
 
     /// Returns true when literal spelling proves its magnitude exceeds `max_bits`.
-    pub fn literal_exceeds_numeric_bits(s: &str, notation: Notation, max_bits: u64) -> bool {
+    pub fn literal_exceeds_numeric_bits(s: &str, notation: IntegerNotation, max_bits: u64) -> bool {
         let s = s.strip_prefix(['+', '-']).unwrap_or(s);
         let digits = s.trim_start_matches('0');
         if digits.is_empty() {
@@ -93,8 +93,8 @@ impl ArbitraryIntKind {
         }
         let trailing_digits = digit_count - 1;
         let minimum_bits = match notation {
-            Notation::Decimal => trailing_digits * 3321 / 1000 + 1,
-            Notation::Bin | Notation::Octal | Notation::Hex => {
+            IntegerNotation::Decimal => trailing_digits * 3321 / 1000 + 1,
+            IntegerNotation::Bin | IntegerNotation::Octal | IntegerNotation::Hex => {
                 trailing_digits * (notation.radix().ilog2() as u64) + (first.ilog2() as u64) + 1
             }
         };

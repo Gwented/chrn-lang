@@ -65,7 +65,7 @@ complex->
 for State {
     // override JAVA {}
     stating {
-        idents = 3
+        // idents = 3
         /*override JAVA=>types {
         // Maybe being able to do:
         // change self = java::int

@@ -45,7 +45,10 @@ for varthing1 {}
 // let x = i32::e#3
 
 // {} <- for multiple maybe
-// #chrn[MAX_NUM_BITS = 256]
+
+// comptime directs & runtime directives distinction?
+// Maybe modle finder collects comptime syntax only?
+#chrn[MAX_NUMERIC_BITS(256), MAX_THING(3, 9)]
 
 // rm msg for let always inferred
 //
@@ -64,7 +67,7 @@ import "../chrn_core/chrn_tests/def.chrn"
 let octal = 0o2
 let hex = 0x003
 @end
-// let decimal_overflow = 9223372036854775808
+let decimal_overflow = 9223372036854775808
 
 var->
 varthing1: str

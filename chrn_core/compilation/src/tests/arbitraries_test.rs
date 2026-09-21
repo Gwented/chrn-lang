@@ -5,7 +5,7 @@ use chrn_utils::id_types::TypeId;
 use dashu_float::DBig;
 use dashu_int::IBig;
 
-use crate::lexer::token::Notation;
+use crate::lexer::notations::IntegerNotation;
 use crate::script_compiler::compiler_constants;
 use crate::semantic::arbitraries::{
     ArbitraryFloatKind, ArbitraryIntKind, NumericFloatParseError, NumericIntError,
@@ -17,73 +17,73 @@ use crate::semantic::arbitraries::{
 fn arbitrary_int_from_str_radixes() {
     // Binary radix
     assert_eq!(
-        ArbitraryIntKind::from_str("1010", Notation::Bin),
+        ArbitraryIntKind::from_str("1010", IntegerNotation::Bin),
         Some(ArbitraryIntKind::I64(10))
     );
     assert_eq!(
-        ArbitraryIntKind::from_str("0", Notation::Bin),
+        ArbitraryIntKind::from_str("0", IntegerNotation::Bin),
         Some(ArbitraryIntKind::I64(0))
     );
     assert_eq!(
-        ArbitraryIntKind::from_str("-101", Notation::Bin),
+        ArbitraryIntKind::from_str("-101", IntegerNotation::Bin),
         Some(ArbitraryIntKind::I64(-5))
     );
     assert_eq!(
-        ArbitraryIntKind::from_str("11111111", Notation::Bin),
+        ArbitraryIntKind::from_str("11111111", IntegerNotation::Bin),
         Some(ArbitraryIntKind::I64(255))
     );
 
     // Octal radix
     assert_eq!(
-        ArbitraryIntKind::from_str("755", Notation::Octal),
+        ArbitraryIntKind::from_str("755", IntegerNotation::Octal),
         Some(ArbitraryIntKind::I64(493))
     );
     assert_eq!(
-        ArbitraryIntKind::from_str("0", Notation::Octal),
+        ArbitraryIntKind::from_str("0", IntegerNotation::Octal),
         Some(ArbitraryIntKind::I64(0))
     );
     assert_eq!(
-        ArbitraryIntKind::from_str("-77", Notation::Octal),
+        ArbitraryIntKind::from_str("-77", IntegerNotation::Octal),
         Some(ArbitraryIntKind::I64(-63))
     );
     assert_eq!(
-        ArbitraryIntKind::from_str("177777", Notation::Octal),
+        ArbitraryIntKind::from_str("177777", IntegerNotation::Octal),
         Some(ArbitraryIntKind::I64(65535))
     );
 
     // Decimal radix
     assert_eq!(
-        ArbitraryIntKind::from_str("12345", Notation::Decimal),
+        ArbitraryIntKind::from_str("12345", IntegerNotation::Decimal),
         Some(ArbitraryIntKind::I64(12345))
     );
     assert_eq!(
-        ArbitraryIntKind::from_str("-987", Notation::Decimal),
+        ArbitraryIntKind::from_str("-987", IntegerNotation::Decimal),
         Some(ArbitraryIntKind::I64(-987))
     );
     assert_eq!(
-        ArbitraryIntKind::from_str("0", Notation::Decimal),
+        ArbitraryIntKind::from_str("0", IntegerNotation::Decimal),
         Some(ArbitraryIntKind::I64(0))
     );
 
     // Hex radix
     assert_eq!(
-        ArbitraryIntKind::from_str("1a", Notation::Hex),
+        ArbitraryIntKind::from_str("1a", IntegerNotation::Hex),
         Some(ArbitraryIntKind::I64(26))
     );
     assert_eq!(
-        ArbitraryIntKind::from_str("1A", Notation::Hex),
+        ArbitraryIntKind::from_str("1A", IntegerNotation::Hex),
         Some(ArbitraryIntKind::I64(26))
     );
     assert_eq!(
-        ArbitraryIntKind::from_str("deadbeef", Notation::Hex),
+        ArbitraryIntKind::from_str("deadbeef", IntegerNotation::Hex),
         Some(ArbitraryIntKind::I64(3735928559))
     );
     assert_eq!(
-        ArbitraryIntKind::from_str("DEADBEEF", Notation::Hex),
+        ArbitraryIntKind::from_str("DEADBEEF", IntegerNotation::Hex),
         Some(ArbitraryIntKind::I64(3735928559))
     );
     assert_eq!(
-        ArbitraryIntKind::from_str("-ff", Notation::Hex),
+        ArbitraryIntKind::from_str("-ff", IntegerNotation::Hex),
         Some(ArbitraryIntKind::I64(-255))
     );
 }
@@ -92,111 +92,111 @@ fn arbitrary_int_from_str_radixes() {
 fn arbitrary_int_from_str_tier_transitions() {
     // i64 boundaries
     assert!(matches!(
-        ArbitraryIntKind::from_str("9223372036854775807", Notation::Decimal),
+        ArbitraryIntKind::from_str("9223372036854775807", IntegerNotation::Decimal),
         Some(ArbitraryIntKind::I64(v)) if v == i64::MAX
     ));
     assert!(matches!(
-        ArbitraryIntKind::from_str("-9223372036854775808", Notation::Decimal),
+        ArbitraryIntKind::from_str("-9223372036854775808", IntegerNotation::Decimal),
         Some(ArbitraryIntKind::I64(v)) if v == i64::MIN
     ));
     assert!(matches!(
-        ArbitraryIntKind::from_str("7fffffffffffffff", Notation::Hex),
+        ArbitraryIntKind::from_str("7fffffffffffffff", IntegerNotation::Hex),
         Some(ArbitraryIntKind::I64(v)) if v == i64::MAX
     ));
     assert!(matches!(
-        ArbitraryIntKind::from_str("777777777777777777777", Notation::Octal),
+        ArbitraryIntKind::from_str("777777777777777777777", IntegerNotation::Octal),
         Some(ArbitraryIntKind::I64(v)) if v == i64::MAX
     ));
 
     // Transition to U64 for [i64::MAX + 1, u64::MAX]
     assert!(matches!(
-        ArbitraryIntKind::from_str("9223372036854775808", Notation::Decimal),
+        ArbitraryIntKind::from_str("9223372036854775808", IntegerNotation::Decimal),
         Some(ArbitraryIntKind::U64(v)) if v == 1u64 << 63
     ));
     assert!(matches!(
-        ArbitraryIntKind::from_str("8000000000000000", Notation::Hex),
+        ArbitraryIntKind::from_str("8000000000000000", IntegerNotation::Hex),
         Some(ArbitraryIntKind::U64(v)) if v == 1u64 << 63
     ));
     assert!(matches!(
         ArbitraryIntKind::from_str(
             "1000000000000000000000000000000000000000000000000000000000000000",
-            Notation::Bin
+            IntegerNotation::Bin
         ),
         Some(ArbitraryIntKind::U64(v)) if v == 1u64 << 63
     ));
     assert!(matches!(
-        ArbitraryIntKind::from_str("1000000000000000000000", Notation::Octal),
+        ArbitraryIntKind::from_str("1000000000000000000000", IntegerNotation::Octal),
         Some(ArbitraryIntKind::U64(v)) if v == 1u64 << 63
     ));
     assert!(matches!(
-        ArbitraryIntKind::from_str("18446744073709551615", Notation::Decimal),
+        ArbitraryIntKind::from_str("18446744073709551615", IntegerNotation::Decimal),
         Some(ArbitraryIntKind::U64(v)) if v == u64::MAX
     ));
     assert!(matches!(
-        ArbitraryIntKind::from_str("ffffffffffffffff", Notation::Hex),
+        ArbitraryIntKind::from_str("ffffffffffffffff", IntegerNotation::Hex),
         Some(ArbitraryIntKind::U64(v)) if v == u64::MAX
     ));
     assert!(matches!(
-        ArbitraryIntKind::from_str("1777777777777777777777", Notation::Octal),
+        ArbitraryIntKind::from_str("1777777777777777777777", IntegerNotation::Octal),
         Some(ArbitraryIntKind::U64(v)) if v == u64::MAX
     ));
 
     // Transition to BigInt for values > u64::MAX
     let over_u64 = IBig::from(u64::MAX) + IBig::from(1);
     assert!(matches!(
-        ArbitraryIntKind::from_str("18446744073709551616", Notation::Decimal),
+        ArbitraryIntKind::from_str("18446744073709551616", IntegerNotation::Decimal),
         Some(ArbitraryIntKind::BigInt(ref v)) if *v == over_u64
     ));
     let pow64 = IBig::from(1u64) << 64;
     assert!(matches!(
-        ArbitraryIntKind::from_str("10000000000000000", Notation::Hex),
+        ArbitraryIntKind::from_str("10000000000000000", IntegerNotation::Hex),
         Some(ArbitraryIntKind::BigInt(ref v)) if *v == pow64
     ));
     assert!(matches!(
         ArbitraryIntKind::from_str(
             "10000000000000000000000000000000000000000000000000000000000000000",
-            Notation::Bin
+            IntegerNotation::Bin
         ),
         Some(ArbitraryIntKind::BigInt(ref v)) if *v == pow64
     ));
     assert!(matches!(
-        ArbitraryIntKind::from_str("2000000000000000000000", Notation::Octal),
+        ArbitraryIntKind::from_str("2000000000000000000000", IntegerNotation::Octal),
         Some(ArbitraryIntKind::BigInt(ref v)) if *v == pow64
     ));
 
     // Transition to BigInt for values < i64::MIN
     let under_i64 = IBig::from(i64::MIN) - IBig::from(1);
     assert!(matches!(
-        ArbitraryIntKind::from_str("-9223372036854775809", Notation::Decimal),
+        ArbitraryIntKind::from_str("-9223372036854775809", IntegerNotation::Decimal),
         Some(ArbitraryIntKind::BigInt(ref v)) if *v == under_i64
     ));
     assert!(matches!(
-        ArbitraryIntKind::from_str("-8000000000000001", Notation::Hex),
+        ArbitraryIntKind::from_str("-8000000000000001", IntegerNotation::Hex),
         Some(ArbitraryIntKind::BigInt(ref v)) if *v == under_i64
     ));
     // Explicit leading `+` normalizes properly across tiers
     assert!(matches!(
-        ArbitraryIntKind::from_str("+0", Notation::Decimal),
+        ArbitraryIntKind::from_str("+0", IntegerNotation::Decimal),
         Some(ArbitraryIntKind::I64(0))
     ));
     assert!(matches!(
-        ArbitraryIntKind::from_str("+42", Notation::Decimal),
+        ArbitraryIntKind::from_str("+42", IntegerNotation::Decimal),
         Some(ArbitraryIntKind::I64(42))
     ));
     assert!(matches!(
-        ArbitraryIntKind::from_str("+9223372036854775807", Notation::Decimal),
+        ArbitraryIntKind::from_str("+9223372036854775807", IntegerNotation::Decimal),
         Some(ArbitraryIntKind::I64(v)) if v == i64::MAX
     ));
     assert!(matches!(
-        ArbitraryIntKind::from_str("+9223372036854775808", Notation::Decimal),
+        ArbitraryIntKind::from_str("+9223372036854775808", IntegerNotation::Decimal),
         Some(ArbitraryIntKind::U64(v)) if v == 1u64 << 63
     ));
     assert!(matches!(
-        ArbitraryIntKind::from_str("+18446744073709551615", Notation::Decimal),
+        ArbitraryIntKind::from_str("+18446744073709551615", IntegerNotation::Decimal),
         Some(ArbitraryIntKind::U64(v)) if v == u64::MAX
     ));
     assert!(matches!(
-        ArbitraryIntKind::from_str("+18446744073709551616", Notation::Decimal),
+        ArbitraryIntKind::from_str("+18446744073709551616", IntegerNotation::Decimal),
         Some(ArbitraryIntKind::BigInt(ref v)) if *v == over_u64
     ));
 }
@@ -204,32 +204,32 @@ fn arbitrary_int_from_str_tier_transitions() {
 #[test]
 fn arbitrary_int_from_str_invalid_and_empty() {
     // Empty string returns None for all notations
-    assert_eq!(ArbitraryIntKind::from_str("", Notation::Bin), None);
-    assert_eq!(ArbitraryIntKind::from_str("", Notation::Octal), None);
-    assert_eq!(ArbitraryIntKind::from_str("", Notation::Decimal), None);
-    assert_eq!(ArbitraryIntKind::from_str("", Notation::Hex), None);
+    assert_eq!(ArbitraryIntKind::from_str("", IntegerNotation::Bin), None);
+    assert_eq!(ArbitraryIntKind::from_str("", IntegerNotation::Octal), None);
+    assert_eq!(ArbitraryIntKind::from_str("", IntegerNotation::Decimal), None);
+    assert_eq!(ArbitraryIntKind::from_str("", IntegerNotation::Hex), None);
 
     // Invalid digits for radix
-    assert_eq!(ArbitraryIntKind::from_str("102", Notation::Bin), None);
-    assert_eq!(ArbitraryIntKind::from_str("2", Notation::Bin), None);
-    assert_eq!(ArbitraryIntKind::from_str("1a", Notation::Bin), None);
+    assert_eq!(ArbitraryIntKind::from_str("102", IntegerNotation::Bin), None);
+    assert_eq!(ArbitraryIntKind::from_str("2", IntegerNotation::Bin), None);
+    assert_eq!(ArbitraryIntKind::from_str("1a", IntegerNotation::Bin), None);
 
-    assert_eq!(ArbitraryIntKind::from_str("89", Notation::Octal), None);
-    assert_eq!(ArbitraryIntKind::from_str("78", Notation::Octal), None);
-    assert_eq!(ArbitraryIntKind::from_str("8", Notation::Octal), None);
+    assert_eq!(ArbitraryIntKind::from_str("89", IntegerNotation::Octal), None);
+    assert_eq!(ArbitraryIntKind::from_str("78", IntegerNotation::Octal), None);
+    assert_eq!(ArbitraryIntKind::from_str("8", IntegerNotation::Octal), None);
 
-    assert_eq!(ArbitraryIntKind::from_str("12a3", Notation::Decimal), None);
-    assert_eq!(ArbitraryIntKind::from_str("f", Notation::Decimal), None);
-    assert_eq!(ArbitraryIntKind::from_str("1.0", Notation::Decimal), None);
+    assert_eq!(ArbitraryIntKind::from_str("12a3", IntegerNotation::Decimal), None);
+    assert_eq!(ArbitraryIntKind::from_str("f", IntegerNotation::Decimal), None);
+    assert_eq!(ArbitraryIntKind::from_str("1.0", IntegerNotation::Decimal), None);
 
-    assert_eq!(ArbitraryIntKind::from_str("12g", Notation::Hex), None);
-    assert_eq!(ArbitraryIntKind::from_str("xyz", Notation::Hex), None);
-    assert_eq!(ArbitraryIntKind::from_str("0x10", Notation::Hex), None);
+    assert_eq!(ArbitraryIntKind::from_str("12g", IntegerNotation::Hex), None);
+    assert_eq!(ArbitraryIntKind::from_str("xyz", IntegerNotation::Hex), None);
+    assert_eq!(ArbitraryIntKind::from_str("0x10", IntegerNotation::Hex), None);
 
     // Isolated signs or symbols
-    assert_eq!(ArbitraryIntKind::from_str("+", Notation::Decimal), None);
-    assert_eq!(ArbitraryIntKind::from_str("-", Notation::Decimal), None);
-    assert_eq!(ArbitraryIntKind::from_str("?", Notation::Decimal), None);
+    assert_eq!(ArbitraryIntKind::from_str("+", IntegerNotation::Decimal), None);
+    assert_eq!(ArbitraryIntKind::from_str("-", IntegerNotation::Decimal), None);
+    assert_eq!(ArbitraryIntKind::from_str("?", IntegerNotation::Decimal), None);
 }
 
 #[test]
@@ -1296,6 +1296,28 @@ fn arbitrary_float_equality_and_ordering() {
         neg_huge.partial_cmp(&finite),
         Some(std::cmp::Ordering::Less)
     );
+
+    // Compare the exact binary64 value, not the rounded decimal display.
+    let decimal_tenth = ArbitraryFloatKind::BigFloat(DBig::from_str("0.1").unwrap());
+    let binary_tenth = ArbitraryFloatKind::F64(0.1);
+    assert_eq!(
+        decimal_tenth.partial_cmp(&binary_tenth),
+        Some(std::cmp::Ordering::Less)
+    );
+    assert_eq!(
+        binary_tenth.partial_cmp(&decimal_tenth),
+        Some(std::cmp::Ordering::Greater)
+    );
+
+    // IEEE equality and ordering do not distinguish the signs of zero.
+    let big_zero = ArbitraryFloatKind::BigFloat(DBig::ZERO);
+    let negative_zero = ArbitraryFloatKind::F64(-0.0);
+    assert_eq!(big_zero, negative_zero);
+    assert_eq!(negative_zero, big_zero);
+    assert_eq!(
+        big_zero.partial_cmp(&negative_zero),
+        Some(std::cmp::Ordering::Equal)
+    );
 }
 
 #[test]
@@ -1498,12 +1520,43 @@ fn arbitrary_float_bigfloat_arithmetic_rounds_ties_to_even() {
 }
 
 #[test]
+fn arbitrary_float_binary_operators_support_all_ownership_forms() {
+    macro_rules! assert_all_forms {
+        ($operator:tt, $expected:literal) => {{
+            let lhs = ArbitraryFloatKind::BigFloat(DBig::from_str("7.5").unwrap());
+            let rhs = ArbitraryFloatKind::F64(2.0);
+            let expected = DBig::from_str($expected).unwrap();
+
+            for actual in [
+                lhs.clone() $operator rhs.clone(),
+                lhs.clone() $operator &rhs,
+                &lhs $operator rhs.clone(),
+                &lhs $operator &rhs,
+            ] {
+                assert!(
+                    matches!(actual, ArbitraryFloatKind::BigFloat(ref value) if value == &expected),
+                    "expected BigFloat({expected}), got {actual:?}"
+                );
+            }
+        }};
+    }
+
+    assert_all_forms!(+, "9.5");
+    assert_all_forms!(-, "5.5");
+    assert_all_forms!(*, "15");
+    assert_all_forms!(/, "3.75");
+    assert_all_forms!(%, "1.5");
+}
+
+#[test]
 fn arbitrary_float_bigfloat_remainder_truncates_quotient_toward_zero() {
     for (lhs_text, rhs_text, expected_text) in [
         ("7", "4", "3"),
         ("7", "-4", "3"),
         ("-7", "4", "-3"),
         ("-7", "-4", "-3"),
+        ("7.5", "-4", "3.5"),
+        ("-7.5", "4", "-3.5"),
     ] {
         let lhs = ArbitraryFloatKind::BigFloat(DBig::from_str(lhs_text).unwrap());
         let rhs = ArbitraryFloatKind::BigFloat(DBig::from_str(rhs_text).unwrap());
@@ -1660,6 +1713,26 @@ fn arbitrary_float_conversions_use_ieee_rounding_and_exact_binary_values() {
 }
 
 #[test]
+fn arbitrary_float_conversion_obeys_the_binary64_overflow_boundary() {
+    // Under round-to-nearest, ties-to-even, the overflow threshold is exactly
+    // 2^1024 - 2^970: halfway between f64::MAX and the next power of two.
+    let overflow_midpoint = (IBig::from(1_u8) << 1024) - (IBig::from(1_u8) << 970);
+    let just_below = ArbitraryFloatKind::BigFloat(DBig::from(
+        overflow_midpoint.clone() - IBig::from(1_u8),
+    ));
+    let at_midpoint = ArbitraryFloatKind::BigFloat(DBig::from(overflow_midpoint.clone()));
+    let negative_just_below = ArbitraryFloatKind::BigFloat(DBig::from(-(
+        overflow_midpoint.clone() - IBig::from(1_u8)
+    )));
+    let negative_at_midpoint = ArbitraryFloatKind::BigFloat(DBig::from(-overflow_midpoint));
+
+    assert_eq!(just_below.to_bits(), f64::MAX.to_bits());
+    assert_eq!(at_midpoint.to_bits(), f64::INFINITY.to_bits());
+    assert_eq!(negative_just_below.to_bits(), (-f64::MAX).to_bits());
+    assert_eq!(negative_at_midpoint.to_bits(), f64::NEG_INFINITY.to_bits());
+}
+
+#[test]
 fn arbitrary_float_zero_divisor_ieee_safety() {
     // BigFloat / 0.0 must yield IEEE infinity rather than panicking in DBig
     let bf_ten = ArbitraryFloatKind::BigFloat(DBig::from_str("10.0").unwrap());
@@ -1804,6 +1877,26 @@ fn arbitrary_float_signed_zero_parsing() {
 }
 
 #[test]
+fn arbitrary_float_signed_zero_display_round_trips_its_ieee_sign() {
+    for value in [
+        ArbitraryFloatKind::F64(-0.0),
+        ArbitraryFloatKind::BigFloat(-DBig::ZERO),
+    ] {
+        let displayed = value.to_string();
+        let reparsed = ArbitraryFloatKind::from_str(&displayed).expect("displayed zero reparses");
+
+        assert_eq!(displayed, "-0");
+        assert_eq!(reparsed.to_bits(), (-0.0f64).to_bits());
+    }
+
+    let positive_zero = ArbitraryFloatKind::BigFloat(DBig::ZERO);
+    let displayed = positive_zero.to_string();
+    let reparsed = ArbitraryFloatKind::from_str(&displayed).expect("displayed zero reparses");
+    assert_eq!(displayed, "0");
+    assert_eq!(reparsed.to_bits(), 0.0f64.to_bits());
+}
+
+#[test]
 fn arbitrary_float_explicit_ieee_special_values_remain_f64() {
     let nan = ArbitraryFloatKind::from_str("NaN").expect("NaN parses");
     assert!(matches!(nan, ArbitraryFloatKind::F64(value) if value.is_nan()));
@@ -1822,6 +1915,8 @@ fn arbitrary_float_explicit_ieee_special_values_remain_f64() {
 fn arbitrary_float_signed_zero_arithmetic_follows_ieee_754() {
     let positive = ArbitraryFloatKind::BigFloat(DBig::from_str("3.0").unwrap());
     let negative = ArbitraryFloatKind::BigFloat(DBig::from_str("-3.0").unwrap());
+    let big_positive_zero = ArbitraryFloatKind::BigFloat(DBig::from_str("0").unwrap());
+    let big_negative_zero = ArbitraryFloatKind::BigFloat(-DBig::ZERO);
     let positive_zero = ArbitraryFloatKind::F64(0.0);
     let negative_zero = ArbitraryFloatKind::F64(-0.0);
 
@@ -1849,6 +1944,24 @@ fn arbitrary_float_signed_zero_arithmetic_follows_ieee_754() {
     assert_eq!(
         (&negative_zero + &positive_zero).to_bits(),
         0.0f64.to_bits()
+    );
+    assert_eq!(
+        [
+            (&big_positive_zero - &big_positive_zero).to_bits(),
+            (&big_negative_zero - &big_positive_zero).to_bits(),
+            (&big_positive_zero - &big_negative_zero).to_bits(),
+            (&big_negative_zero - &big_negative_zero).to_bits(),
+            (&positive + &negative).to_bits(),
+            (&negative + &positive).to_bits(),
+        ],
+        [
+            0.0f64.to_bits(),
+            (-0.0f64).to_bits(),
+            0.0f64.to_bits(),
+            0.0f64.to_bits(),
+            0.0f64.to_bits(),
+            0.0f64.to_bits(),
+        ]
     );
 }
 
@@ -1993,113 +2106,113 @@ fn arbitrary_int_from_str_with_limit_boundaries() {
     let pow64 = IBig::from(1u8) << 64;
 
     assert_eq!(
-        ArbitraryIntKind::from_str_with_limit("255", Notation::Decimal, 8),
+        ArbitraryIntKind::from_str_with_limit("255", IntegerNotation::Decimal, 8),
         Ok(ArbitraryIntKind::I64(255))
     );
     assert_eq!(
-        ArbitraryIntKind::from_str_with_limit("256", Notation::Decimal, 8),
+        ArbitraryIntKind::from_str_with_limit("256", IntegerNotation::Decimal, 8),
         Err(NumericIntParseError::LimitExceeded)
     );
     assert_eq!(
-        ArbitraryIntKind::from_str_with_limit(BIN_POW64, Notation::Bin, 64),
+        ArbitraryIntKind::from_str_with_limit(BIN_POW64, IntegerNotation::Bin, 64),
         Err(NumericIntParseError::LimitExceeded)
     );
     assert_eq!(
-        ArbitraryIntKind::from_str_with_limit(BIN_POW64, Notation::Bin, 65),
+        ArbitraryIntKind::from_str_with_limit(BIN_POW64, IntegerNotation::Bin, 65),
         Ok(ArbitraryIntKind::BigInt(pow64.clone()))
     );
     assert!(ArbitraryIntKind::literal_exceeds_numeric_bits(
         BIN_POW64,
-        Notation::Bin,
+        IntegerNotation::Bin,
         64
     ));
     assert!(!ArbitraryIntKind::literal_exceeds_numeric_bits(
         BIN_POW64,
-        Notation::Bin,
+        IntegerNotation::Bin,
         65
     ));
     assert_eq!(
-        ArbitraryIntKind::from_str_with_limit(OCTAL_POW64, Notation::Octal, 64),
+        ArbitraryIntKind::from_str_with_limit(OCTAL_POW64, IntegerNotation::Octal, 64),
         Err(NumericIntParseError::LimitExceeded)
     );
     assert_eq!(
-        ArbitraryIntKind::from_str_with_limit(OCTAL_POW64, Notation::Octal, 65),
+        ArbitraryIntKind::from_str_with_limit(OCTAL_POW64, IntegerNotation::Octal, 65),
         Ok(ArbitraryIntKind::BigInt(pow64.clone()))
     );
     assert!(ArbitraryIntKind::literal_exceeds_numeric_bits(
         OCTAL_POW64,
-        Notation::Octal,
+        IntegerNotation::Octal,
         64
     ));
     assert!(!ArbitraryIntKind::literal_exceeds_numeric_bits(
         OCTAL_POW64,
-        Notation::Octal,
+        IntegerNotation::Octal,
         65
     ));
     assert_eq!(
-        ArbitraryIntKind::from_str_with_limit(HEX_POW64, Notation::Hex, 64),
+        ArbitraryIntKind::from_str_with_limit(HEX_POW64, IntegerNotation::Hex, 64),
         Err(NumericIntParseError::LimitExceeded)
     );
     assert_eq!(
-        ArbitraryIntKind::from_str_with_limit(HEX_POW64, Notation::Hex, 65),
+        ArbitraryIntKind::from_str_with_limit(HEX_POW64, IntegerNotation::Hex, 65),
         Ok(ArbitraryIntKind::BigInt(pow64.clone()))
     );
     assert!(ArbitraryIntKind::literal_exceeds_numeric_bits(
         HEX_POW64,
-        Notation::Hex,
+        IntegerNotation::Hex,
         64
     ));
     assert!(!ArbitraryIntKind::literal_exceeds_numeric_bits(
         HEX_POW64,
-        Notation::Hex,
+        IntegerNotation::Hex,
         65
     ));
     assert_eq!(
-        ArbitraryIntKind::from_str_with_limit("-255", Notation::Decimal, 8),
+        ArbitraryIntKind::from_str_with_limit("-255", IntegerNotation::Decimal, 8),
         Ok(ArbitraryIntKind::I64(-255))
     );
     assert_eq!(
-        ArbitraryIntKind::from_str_with_limit("-256", Notation::Decimal, 8),
+        ArbitraryIntKind::from_str_with_limit("-256", IntegerNotation::Decimal, 8),
         Err(NumericIntParseError::LimitExceeded)
     );
     assert_eq!(
-        ArbitraryIntKind::from_str_with_limit("9223372036854775808", Notation::Decimal, 64),
+        ArbitraryIntKind::from_str_with_limit("9223372036854775808", IntegerNotation::Decimal, 64),
         Ok(ArbitraryIntKind::U64(1u64 << 63))
     );
     assert_eq!(
-        ArbitraryIntKind::from_str_with_limit("9223372036854775808", Notation::Decimal, 63),
+        ArbitraryIntKind::from_str_with_limit("9223372036854775808", IntegerNotation::Decimal, 63),
         Err(NumericIntParseError::LimitExceeded)
     );
     assert_eq!(
-        ArbitraryIntKind::from_str_with_limit("18446744073709551616", Notation::Decimal, 64),
+        ArbitraryIntKind::from_str_with_limit("18446744073709551616", IntegerNotation::Decimal, 64),
         Err(NumericIntParseError::LimitExceeded)
     );
     assert_eq!(
-        ArbitraryIntKind::from_str_with_limit("18446744073709551616", Notation::Decimal, 65),
+        ArbitraryIntKind::from_str_with_limit("18446744073709551616", IntegerNotation::Decimal, 65),
         Ok(ArbitraryIntKind::BigInt(pow64))
     );
     assert_eq!(
-        ArbitraryIntKind::from_str_with_limit("not_a_number", Notation::Decimal, 64),
+        ArbitraryIntKind::from_str_with_limit("not_a_number", IntegerNotation::Decimal, 64),
         Err(NumericIntParseError::Invalid)
     );
     // Invalid spellings report `Invalid` even when the digit-length estimate
     // alone exceeds a small limit.
     assert_eq!(
-        ArbitraryIntKind::from_str_with_limit("12a3", Notation::Decimal, 8),
+        ArbitraryIntKind::from_str_with_limit("12a3", IntegerNotation::Decimal, 8),
         Err(NumericIntParseError::Invalid)
     );
     assert!(!ArbitraryIntKind::literal_exceeds_numeric_bits(
         "12a3",
-        Notation::Decimal,
+        IntegerNotation::Decimal,
         8
     ));
     assert_eq!(
-        ArbitraryIntKind::from_str_with_limit("1x", Notation::Hex, 4),
+        ArbitraryIntKind::from_str_with_limit("1x", IntegerNotation::Hex, 4),
         Err(NumericIntParseError::Invalid)
     );
     assert!(!ArbitraryIntKind::literal_exceeds_numeric_bits(
         "1x",
-        Notation::Hex,
+        IntegerNotation::Hex,
         4
     ));
 }

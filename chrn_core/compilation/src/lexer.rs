@@ -6,6 +6,7 @@
 //WAS MISSED. I DO NOT BELIEVE THERE ARE BUGS LEFT.
 
 pub mod lexer_output;
+pub mod notations;
 pub mod token;
 pub mod trivia;
 // TODO: Maybe give this diagnostics
@@ -22,7 +23,8 @@ use crate::{
     chrn_config::{ChrnConfig, chrn_perf::ChrnPerfStage},
     lexer::{
         lexer_output::LexerOutput,
-        token::{Notation, SpannedToken, Token},
+        notations::{FloatNotation, IntegerNotation, Notation},
+        token::{SpannedToken, Token},
         trivia::{Trivia, TriviaKind},
     },
 };
@@ -801,16 +803,26 @@ impl Lexer<'_> {
                 }
 
                 let num_notation = if (notation & NOTATION_HEX) != 0 {
-                    Notation::Hex
+                    IntegerNotation::Hex
                 } else if (notation & NOTATION_BIN) != 0 {
-                    Notation::Bin
+                    IntegerNotation::Bin
                 } else {
-                    Notation::Octal
+                    IntegerNotation::Octal
                 };
 
-                (digits.to_string(), num_notation)
+                (digits.to_string(), num_notation.into())
             } else {
-                (raw_str.replace('_', ""), Notation::Decimal)
+                //coverage
+                let n = if (notation & NOTATION_FLOAT) != 0 {
+                    if (notation & NOTATION_SCIENTIFIC) != 0 {
+                        FloatNotation::Scientific.into()
+                    } else {
+                        FloatNotation::Decimal.into()
+                    }
+                } else {
+                    IntegerNotation::Decimal.into()
+                };
+                (raw_str.replace('_', ""), n)
             };
 
         let id = interner.intern(&id_str);
@@ -818,19 +830,21 @@ impl Lexer<'_> {
         //WARN: NO END - 1 TO FIX EXCLUSIVE END
         let span = SourceSpan::new(self.current_region_id, start as u32, end as u32);
 
-        if (notation & NOTATION_FLOAT) == 0 {
-            SpannedToken {
-                tok: Token::Integer(id, num_notation),
-                // NOTE: Same read_id reasoning
+        match num_notation {
+            Notation::Integer(n) => {
+                SpannedToken {
+                    tok: Token::Integer(id, n),
+                    // NOTE: Same read_id reasoning
+                    span,
+                    leading_trivia_indices: self.trivia_start_idx as u32
+                        ..self.trivia_end_idx as u32,
+                }
+            }
+            Notation::Float(n) => SpannedToken {
+                tok: Token::Float(id, n),
                 span,
                 leading_trivia_indices: self.trivia_start_idx as u32..self.trivia_end_idx as u32,
-            }
-        } else {
-            SpannedToken {
-                tok: Token::Float(id, num_notation),
-                span,
-                leading_trivia_indices: self.trivia_start_idx as u32..self.trivia_end_idx as u32,
-            }
+            },
         }
     }
 

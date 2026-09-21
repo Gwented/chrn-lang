@@ -47,7 +47,7 @@ use crate::lookup::scopes::{self, scopes_helpers};
 use crate::parser::ast::ast_concepts::{
     AbstractConfig, AbstractConfigKind, AbstractDirective, AstConfigMemberMetadataKind,
 };
-use crate::parser::ast::ast_exprs::{AstExpr, PathSegment, SpannedExpr};
+use crate::parser::ast::ast_exprs::{AstExpr, PathSegment};
 use crate::parser::ast::ast_stmts::AstStmt;
 use crate::resolvers::resolver_env::ResolverEnv;
 use crate::resolvers::resolver_state::ResolverState;
@@ -3197,7 +3197,7 @@ impl<'res> TypeResolver<'res> {
         // So, in "let x = y" we would want the `SymbolId` of `x` to check for cyclic deps, but if
         // we were just typing "[x, y]" there are no cycles because there is no assignment
         parent_sym_id_opt: Option<SymbolId>,
-        spanned_expr: &SpannedExpr,
+        spanned_expr: &SpannedContainer<AstExpr>,
         // Only usable with something like, alias(x) where x is local, not section local overall
         // like var->
         local_scope_id: Option<ScopeId>,
@@ -3207,7 +3207,7 @@ impl<'res> TypeResolver<'res> {
     ) -> Result<ExprId, PresetErr> {
         let lookup_pref =
             ScopeLookupPreferenceFlags::new(ScopeLookupPreferenceFlags::VARIABLE.into());
-        match &spanned_expr.expr {
+        match &spanned_expr.inner {
             AstExpr::Var(name_id) => {
                 if let Some(scope_id) = local_scope_id {
                     //FIXME:
@@ -3992,7 +3992,7 @@ impl<'res> TypeResolver<'res> {
                 // creating inline expressions is also confusing so, not sure.
                 let inline_expr = match &last_seg.inner {
                     PathSegment::Ident(interned_id) => {
-                        SpannedExpr::new(AstExpr::Var(*interned_id), last_seg.span)
+                        SpannedContainer::new(AstExpr::Var(*interned_id), last_seg.span)
                     }
                     PathSegment::Generic(_) => {
                         let core_msg = "Generics are only usable in type expressions".to_string();
@@ -4124,7 +4124,7 @@ impl<'res> TypeResolver<'res> {
     fn resolve_member(
         &mut self,
         sym_parent: Option<SymbolId>,
-        member: &SpannedExpr,
+        member: &SpannedContainer<AstExpr>,
         local_scope: Option<ScopeId>,
         associated_scope: AssociatedScopeKind,
         scope_type: ScopeType,
@@ -4147,7 +4147,7 @@ impl<'res> TypeResolver<'res> {
             todo!();
         }
 
-        if let AstExpr::Var(name_id) = member.expr {
+        if let AstExpr::Var(name_id) = member.inner {
             if let Some(sym_id) = scopes::find_sym_id(
                 self.compiler,
                 todo!(),

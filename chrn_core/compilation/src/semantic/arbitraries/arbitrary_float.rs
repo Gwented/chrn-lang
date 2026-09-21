@@ -179,7 +179,30 @@ impl ArbitraryFloatKind {
     pub fn to_f64(&self) -> f64 {
         match self {
             Self::F64(v) => *v,
-            Self::BigFloat(v) => v.clone().with_rounding::<HalfEven>().to_f64().value(),
+            Self::BigFloat(v) => {
+                let converted = v.clone().with_rounding::<HalfEven>().to_f64().value();
+                if !v.repr().is_infinite() && converted.is_infinite() {
+                    // The round-to-nearest binary64 overflow boundary is the
+                    // midpoint between `f64::MAX` and 2^1024. Correct the
+                    // decimal conversion's early overflow immediately below
+                    // that boundary; the midpoint itself rounds to infinity.
+                    let overflow_midpoint =
+                        DBig::from((IBig::from(1_u8) << 1024) - (IBig::from(1_u8) << 970));
+                    let magnitude = if v < &DBig::ZERO {
+                        -v.clone()
+                    } else {
+                        v.clone()
+                    };
+                    if magnitude < overflow_midpoint {
+                        return if converted.is_sign_negative() {
+                            -f64::MAX
+                        } else {
+                            f64::MAX
+                        };
+                    }
+                }
+                converted
+            }
         }
     }
 
@@ -321,6 +344,10 @@ impl std::fmt::Display for ArbitraryFloatKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ArbitraryFloatKind::F64(num) => write!(f, "{num}"),
+            // `DBig`'s default formatter suppresses the sign of zero. Preserve
+            // it here because signed zero is observable IEEE 754 state and
+            // parsing the displayed value must not silently change its sign.
+            ArbitraryFloatKind::BigFloat(fbig) if fbig.repr().is_neg_zero() => f.write_str("-0"),
             ArbitraryFloatKind::BigFloat(fbig) => write!(f, "{fbig}"),
         }
     }

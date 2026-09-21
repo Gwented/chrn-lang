@@ -2,7 +2,7 @@ use chrn_utils::{
     id_types::InternedId, source_map::source_span::SourceSpan, utils::containers::SpannedContainer,
 };
 
-use crate::parser::ast::ast_exprs::{PathSegment, SpannedExpr, TypeExpr};
+use crate::parser::ast::ast_exprs::{AstExpr, PathSegment, TypeExpr};
 
 /// Holds general statements.
 /// Does not hold a statement like `let` due to it only being available in `neutral`, which would make
@@ -14,6 +14,7 @@ pub enum AstStmt {
     MultiAssignType(AbstractTypeMultiAssign),
 }
 
+//TODO: Rename to something more generic
 /// Option assignment ast representation
 /// "outer { opt_name = [2, 3] }"
 #[derive(Debug)]
@@ -22,14 +23,14 @@ pub struct AbstractOptionAssignment {
     pub name_id: InternedId,
     pub name_span: SourceSpan,
     /// Must be an `ArrayExpr`
-    pub array_expr: SpannedExpr,
+    pub array_expr: SpannedContainer<AstExpr>,
 }
 
 impl AbstractOptionAssignment {
     pub fn new(
         name_id: InternedId,
         name_span: SourceSpan,
-        array_expr: SpannedExpr,
+        array_expr: SpannedContainer<AstExpr>,
     ) -> AbstractOptionAssignment {
         AbstractOptionAssignment {
             name_id,

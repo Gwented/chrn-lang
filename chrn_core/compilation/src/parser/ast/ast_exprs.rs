@@ -3,21 +3,9 @@ use chrn_utils::{
 };
 
 use crate::{
-    lexer::token::Notation,
+    lexer::notations::{FloatNotation, IntegerNotation},
     parser::ast::ast_concepts::{AbstractMemberAccess, BinaryOp, Unary},
 };
-
-#[derive(Debug)]
-pub struct SpannedExpr {
-    pub expr: AstExpr,
-    pub span: SourceSpan,
-}
-
-impl SpannedExpr {
-    pub fn new(expr: AstExpr, span: SourceSpan) -> SpannedExpr {
-        SpannedExpr { expr, span }
-    }
-}
 
 // This could look better...
 // Does this need a literal specific variant?
@@ -28,19 +16,25 @@ pub enum AstExpr {
     StaticAccess(Vec<SpannedContainer<PathSegment>>),
     Bool(bool),
     /// Variable name, along with optional default type
-    Default(Box<SpannedExpr>, Box<SpannedExpr>),
-    Integer(InternedId, Notation),
-    Float(InternedId, Notation),
+    Default(
+        Box<SpannedContainer<AstExpr>>,
+        Box<SpannedContainer<AstExpr>>,
+    ),
+    Integer(InternedId, IntegerNotation),
+    Float(InternedId, FloatNotation),
     Str(InternedId),
     Char(char),
     /// Caller, Args
-    Call(Box<SpannedExpr>, Vec<SpannedExpr>),
+    Call(
+        Box<SpannedContainer<AstExpr>>,
+        Vec<SpannedContainer<AstExpr>>,
+    ),
     MemberAccess(AbstractMemberAccess),
     Unary(Unary),
     BinaryExpr {
-        lhs: Box<SpannedExpr>,
+        lhs: Box<SpannedContainer<AstExpr>>,
         op: BinaryOp,
-        rhs: Box<SpannedExpr>,
+        rhs: Box<SpannedContainer<AstExpr>>,
     },
     Array(ArrayExpr),
 }
@@ -48,11 +42,14 @@ pub enum AstExpr {
 #[derive(Debug)]
 pub(crate) struct CallExpr {
     pub(crate) name_id: InternedId,
-    pub(crate) spanned_expr: Vec<SpannedExpr>,
+    pub(crate) spanned_expr: Vec<SpannedContainer<AstExpr>>,
 }
 
 impl CallExpr {
-    pub(crate) fn new(name_id: InternedId, spanned_expr: Vec<SpannedExpr>) -> CallExpr {
+    pub(crate) fn new(
+        name_id: InternedId,
+        spanned_expr: Vec<SpannedContainer<AstExpr>>,
+    ) -> CallExpr {
         CallExpr {
             name_id,
             spanned_expr,
@@ -62,26 +59,14 @@ impl CallExpr {
 
 #[derive(Debug)]
 pub struct ArrayExpr {
-    pub elements: Vec<SpannedExpr>,
+    pub elements: Vec<SpannedContainer<AstExpr>>,
 }
 
 impl ArrayExpr {
-    pub fn new(elements: Vec<SpannedExpr>) -> ArrayExpr {
+    pub fn new(elements: Vec<SpannedContainer<AstExpr>>) -> ArrayExpr {
         ArrayExpr { elements }
     }
 }
-
-// #[derive(Debug, Clone)]
-// pub struct SpannedTypeExpr {
-//     pub ty_expr: TypeExpr,
-//     pub span: SourceSpan,
-// }
-//
-// impl SpannedTypeExpr {
-//     pub fn new(ty_expr: TypeExpr, span: SourceSpan) -> SpannedTypeExpr {
-//         SpannedTypeExpr { ty_expr, span }
-//     }
-// }
 
 #[derive(Debug, Clone)]
 pub enum TypeExpr {

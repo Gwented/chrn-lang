@@ -19,9 +19,7 @@ use crate::parser::ast::ast_concepts::{
     Unary, UnaryOp,
 };
 
-use crate::parser::ast::ast_exprs::{
-    AbstractGeneric, ArrayExpr, AstExpr, PathSegment, SpannedExpr, TypeExpr,
-};
+use crate::parser::ast::ast_exprs::{AbstractGeneric, ArrayExpr, AstExpr, PathSegment, TypeExpr};
 use crate::parser::ast::ast_stmts::{AbstractOptionAssignment, AbstractTypeMultiAssign, AstStmt};
 use crate::parser::branch::{Branch, NestBranch, NeutralBranch, SectionBranch};
 use crate::parser::context::ParserContext;
@@ -384,6 +382,14 @@ pub fn parse(
                     }
                 }
             },
+            Token::HashSymbol => {
+                if !state.is_neutral() {
+                    todo!("Not neural");
+                }
+                ctx.advance_tok();
+                dbg!(parse_directive(&mut ctx, interner));
+                todo!();
+            }
             Token::Invalid(id) => {
                 ctx.advance_tok();
                 let err_str = interner.search(id);
@@ -1092,7 +1098,7 @@ fn parse_option_assignment(
         let span = only_element.span;
         let array_expr = AstExpr::Array(ArrayExpr::new(vec![only_element]));
 
-        SpannedExpr::new(array_expr, span)
+        SpannedContainer::new(array_expr, span)
     };
 
     consume_trailing_comma(ctx);
@@ -1112,7 +1118,7 @@ fn parse_array(
     ctx: &mut ParserContext,
     budget: &ParserBudget,
     interner: &Intern,
-) -> Result<SpannedExpr, Token> {
+) -> Result<SpannedContainer<AstExpr>, Token> {
     ctx.expect_verbose(
         TokenKind::OBracket,
         "Expected '[' to declare array, found ",
@@ -1126,7 +1132,7 @@ fn parse_array(
         interner,
     )?;
 
-    let mut elements: Vec<SpannedExpr> = Vec::new();
+    let mut elements: Vec<SpannedContainer<AstExpr>> = Vec::new();
 
     let start = ctx.peek_span().start;
 
@@ -1170,7 +1176,7 @@ fn parse_array(
 
     let array_expr = ArrayExpr::new(elements);
 
-    Ok(SpannedExpr::new(AstExpr::Array(array_expr), span))
+    Ok(SpannedContainer::new(AstExpr::Array(array_expr), span))
 }
 
 //TODO:
@@ -1232,7 +1238,7 @@ fn parse_expr(
     min_bp: u8,
     budget: &ParserBudget,
     interner: &Intern,
-) -> Result<SpannedExpr, Token> {
+) -> Result<SpannedContainer<AstExpr>, Token> {
     let _guard = budget.increase_depth().map_err(|_| {
         let msg = format!(
             "Reached max recursive depth of {}",
@@ -1283,7 +1289,7 @@ fn parse_expr(
             let end = rhs.span.end;
             let span = SourceSpan::new(ctx.region.region_id, start, end);
 
-            lhs = SpannedExpr::new(
+            lhs = SpannedContainer::new(
                 AstExpr::BinaryExpr {
                     op,
                     lhs: Box::new(lhs),
@@ -1301,7 +1307,7 @@ fn parse_expr(
             let rhs = parse_expr(ctx, bp + 1, budget, interner)?;
 
             let span = SourceSpan::new(ctx.region.region_id, lhs.span.start, rhs.span.end);
-            lhs = SpannedExpr::new(
+            lhs = SpannedContainer::new(
                 AstExpr::BinaryExpr {
                     op,
                     lhs: Box::new(lhs),
@@ -1321,7 +1327,7 @@ fn parse_postfix(
     ctx: &mut ParserContext,
     budget: &ParserBudget,
     interner: &Intern,
-) -> Result<SpannedExpr, Token> {
+) -> Result<SpannedContainer<AstExpr>, Token> {
     let mut lhs = parse_primary(ctx, budget, interner)?;
 
     loop {
@@ -1336,7 +1342,7 @@ fn parse_postfix(
                 ctx.peek_behind(1).span.end,
             );
 
-            lhs = SpannedExpr::new(AstExpr::Call(Box::new(lhs), args), span);
+            lhs = SpannedContainer::new(AstExpr::Call(Box::new(lhs), args), span);
         } else if ctx.peek_kind() == TokenKind::Id && ctx.peek_ahead(1).tok == Token::OParen {
             let call_start = ctx.advance_span();
             ctx.advance_tok();
@@ -1348,7 +1354,7 @@ fn parse_postfix(
                 ctx.peek_behind(1).span.end,
             );
 
-            lhs = SpannedExpr::new(AstExpr::Call(Box::new(lhs), args), span);
+            lhs = SpannedContainer::new(AstExpr::Call(Box::new(lhs), args), span);
         } else if ctx.peek_tok() == Token::Dot && ctx.peek_ahead(1).tok.kind() == TokenKind::Id {
             ctx.advance_tok();
 
@@ -1372,7 +1378,7 @@ fn parse_postfix(
                 ctx.peek_behind(1).span.end,
             );
 
-            lhs = SpannedExpr::new(
+            lhs = SpannedContainer::new(
                 AstExpr::MemberAccess(AbstractMemberAccess::new(Box::new(lhs), field_id)),
                 span,
             );
@@ -1389,7 +1395,7 @@ fn parse_primary(
     ctx: &mut ParserContext,
     budget: &ParserBudget,
     interner: &Intern,
-) -> Result<SpannedExpr, Token> {
+) -> Result<SpannedContainer<AstExpr>, Token> {
     //TEST:
     let _guard = budget.increase_depth().map_err(|_| {
         let msg = format!(
@@ -1432,7 +1438,7 @@ fn parse_primary(
         Token::Id(name_id) if ctx.peek_ahead(1).tok == Token::Assign => {
             let ident_span = ctx.advance_span();
 
-            let ident_expr = SpannedExpr::new(AstExpr::Var(name_id), ident_span);
+            let ident_expr = SpannedContainer::new(AstExpr::Var(name_id), ident_span);
 
             ctx.advance_tok();
 
@@ -1446,7 +1452,7 @@ fn parse_primary(
 
             let default = AstExpr::Default(Box::new(ident_expr), Box::new(expr));
 
-            Ok(SpannedExpr::new(default, span))
+            Ok(SpannedContainer::new(default, span))
         }
         Token::Id(_) if ctx.peek_ahead(1).tok == Token::StaticAccess => {
             let start = ctx.peek_span().start;
@@ -1454,34 +1460,40 @@ fn parse_primary(
             let end = ctx.peek_behind(1).span.end;
 
             let static_span = SourceSpan::new(ctx.region.region_id, start, end);
-            let sp_expr = SpannedExpr::new(AstExpr::StaticAccess(access_path), static_span);
+            let sp_expr = SpannedContainer::new(AstExpr::StaticAccess(access_path), static_span);
 
             Ok(sp_expr)
         }
         Token::BoolLiteral(boolean) => {
             let span = ctx.advance_span();
-            Ok(SpannedExpr::new(AstExpr::Bool(boolean), span))
+            Ok(SpannedContainer::new(AstExpr::Bool(boolean), span))
         }
         Token::Id(name_id) => {
             let span = ctx.advance_span();
-            Ok(SpannedExpr::new(AstExpr::Var(name_id), span))
+            Ok(SpannedContainer::new(AstExpr::Var(name_id), span))
         }
         Token::Integer(name_id, notation) => {
             let span = ctx.advance_span();
-            Ok(SpannedExpr::new(AstExpr::Integer(name_id, notation), span))
+            Ok(SpannedContainer::new(
+                AstExpr::Integer(name_id, notation),
+                span,
+            ))
         }
         Token::Float(name_id, notation) => {
             let span = ctx.advance_span();
-            Ok(SpannedExpr::new(AstExpr::Float(name_id, notation), span))
+            Ok(SpannedContainer::new(
+                AstExpr::Float(name_id, notation),
+                span,
+            ))
         }
         Token::Str(name_id) => {
             let span = ctx.advance_span();
-            Ok(SpannedExpr::new(AstExpr::Str(name_id), span))
+            Ok(SpannedContainer::new(AstExpr::Str(name_id), span))
         }
         Token::Char(ch) => {
             let span = ctx.advance_span();
 
-            Ok(SpannedExpr::new(AstExpr::Char(ch), span))
+            Ok(SpannedContainer::new(AstExpr::Char(ch), span))
         }
         t if t.kind().is_terminator() => {
             ctx.advance_tok();
@@ -1527,8 +1539,8 @@ fn parse_call_args(
     ctx: &mut ParserContext,
     budget: &ParserBudget,
     interner: &Intern,
-) -> Result<Vec<SpannedExpr>, Token> {
-    let mut args: Vec<SpannedExpr> = Vec::new();
+) -> Result<Vec<SpannedContainer<AstExpr>>, Token> {
+    let mut args: Vec<SpannedContainer<AstExpr>> = Vec::new();
 
     if ctx.peek_tok() == Token::CParen {
         ctx.advance_tok();
@@ -1553,7 +1565,7 @@ fn parse_unary(
     ctx: &mut ParserContext,
     budget: &ParserBudget,
     interner: &Intern,
-) -> Result<SpannedExpr, Token> {
+) -> Result<SpannedContainer<AstExpr>, Token> {
     let _guard = budget.increase_depth().map_err(|_| {
         let msg = format!(
             "Reached max recursive depth of {}",
@@ -1580,7 +1592,7 @@ fn parse_unary(
             let span = SourceSpan::new(ctx.region.region_id, start, expr.span.end);
             let unary = Unary::new(UnaryOp::Negate, Box::new(expr));
 
-            Ok(SpannedExpr::new(AstExpr::Unary(unary), span))
+            Ok(SpannedContainer::new(AstExpr::Unary(unary), span))
         }
         Token::ExclamationPoint => {
             let start = ctx.advance_span().start;
@@ -1590,7 +1602,7 @@ fn parse_unary(
 
             let unary = Unary::new(UnaryOp::Not, Box::new(expr));
 
-            Ok(SpannedExpr::new(AstExpr::Unary(unary), span))
+            Ok(SpannedContainer::new(AstExpr::Unary(unary), span))
         }
         Token::Tilde => {
             let start = ctx.advance_span().start;
@@ -1600,7 +1612,7 @@ fn parse_unary(
 
             let unary = Unary::new(UnaryOp::BitNot, Box::new(expr));
 
-            Ok(SpannedExpr::new(AstExpr::Unary(unary), span))
+            Ok(SpannedContainer::new(AstExpr::Unary(unary), span))
         }
         _ => parse_postfix(ctx, budget, interner),
     }
@@ -2119,10 +2131,23 @@ fn parse_directive(ctx: &mut ParserContext, interner: &Intern) -> Result<Abstrac
         interner,
     )?;
 
+    let inputs: Vec<Intern> = if ctx.peek_tok() == Token::OBracket {
+        todo!()
+    } else {
+        Vec::new()
+    };
+
     let sp_name_id = SpannedContainer::new(name_id, name_span);
     let abs_directive = AbstractDirective::new(sp_name_id);
 
     Ok(abs_directive)
+}
+
+fn parse_directive_inputs(ctx: &mut ParserContext, interner: &Intern) {
+    let inputs: Vec<AbstractOptionAssignment> = Vec::new();
+    if ctx.peek_tok() == Token::CBracket {
+        let exprs: Vec<SpannedContainer<AstExpr>> = Vec::new();
+    }
 }
 
 // Alias is this only one that uses this so_+@$_$@
@@ -2218,8 +2243,8 @@ fn handle_conds(
     ctx: &mut ParserContext,
     budget: &ParserBudget,
     interner: &Intern,
-) -> Result<Vec<SpannedExpr>, Token> {
-    let mut conds: Vec<SpannedExpr> = Vec::new();
+) -> Result<Vec<SpannedContainer<AstExpr>>, Token> {
+    let mut conds: Vec<SpannedContainer<AstExpr>> = Vec::new();
     // This count cannot end the definition since it would prevent arguments from being viewed
     ctx.expect_verbose(
         TokenKind::OBracket,

@@ -25,7 +25,7 @@ pub struct ConcreteTypeDef {
 //     pub name_id: InternedId,
 //     pub name_span: SourceSpan,
 //     pub sp_ty_expr: SpannedContainer<TypeExpr>,
-//     pub conds: Vec<SpannedExpr>,
+//     pub conds: Vec<SpannedContainer<AstExpr>>,
 //     pub directives: Vec<AbstractDirective>,
 // }
 //
@@ -35,7 +35,7 @@ pub struct ConcreteTypeDef {
 //         name_span: SourceSpan,
 //         sp_ty_expr: SpannedContainer<TypeExpr>,
 //         directives: Vec<AbstractDirective>,
-//         conds: Vec<SpannedExpr>,
+//         conds: Vec<SpannedContainer<AstExpr>>,
 //     ) -> AbstractTypeDef {
 //         AbstractTypeDef {
 //             name_id,

@@ -12,7 +12,7 @@ use lang::{
 use crate::{
     lookup::scopes::scopes_concepts::{ScopeLookupPattern, ScopeType},
     parser::ast::{
-        ast_exprs::{PathSegment, SpannedExpr, TypeExpr},
+        ast_exprs::{AstExpr, PathSegment, TypeExpr},
         ast_stmts::AstStmt,
     },
     semantic::hir::hir_impls::ConfigRootMetadataKind,
@@ -353,7 +353,7 @@ pub struct AbstractVar {
     pub name_span: SourceSpan,
     //// Type annotatoin
     // pub ty_ann: Option<SpannedContainer<TypeExpr>>,
-    pub spanned_expr: SpannedExpr,
+    pub spanned_expr: SpannedContainer<AstExpr>,
     pub is_priv: bool,
 }
 
@@ -362,7 +362,7 @@ impl AbstractVar {
         name_id: InternedId,
         name_span: SourceSpan,
         // ty_ann: Option<SpannedContainer<TypeExpr>>,
-        spanned_expr: SpannedExpr,
+        spanned_expr: SpannedContainer<AstExpr>,
         is_priv: bool,
     ) -> AbstractVar {
         AbstractVar {
@@ -394,7 +394,7 @@ pub struct AbstractTypeDef {
     pub name_span: SourceSpan,
     pub sp_ty_expr: SpannedContainer<TypeExpr>,
     pub is_priv: bool,
-    pub conds: Vec<SpannedExpr>,
+    pub conds: Vec<SpannedContainer<AstExpr>>,
     pub directives: Vec<AbstractDirective>,
 }
 
@@ -405,7 +405,7 @@ impl AbstractTypeDef {
         sp_ty_expr: SpannedContainer<TypeExpr>,
         directives: Vec<AbstractDirective>,
         is_priv: bool,
-        conds: Vec<SpannedExpr>,
+        conds: Vec<SpannedContainer<AstExpr>>,
     ) -> AbstractTypeDef {
         AbstractTypeDef {
             name_id,
@@ -422,7 +422,7 @@ impl AbstractTypeDef {
 pub struct AbstractStruct {
     pub name_id: InternedId,
     pub name_span: SourceSpan,
-    pub glob_conds: Vec<SpannedExpr>,
+    pub glob_conds: Vec<SpannedContainer<AstExpr>>,
     pub glob_directives: Vec<AbstractDirective>,
     pub fields: Vec<AbstractTypeDef>,
     pub is_priv: bool,
@@ -432,7 +432,7 @@ impl AbstractStruct {
     pub fn new(
         name_id: InternedId,
         name_span: SourceSpan,
-        glob_conds: Vec<SpannedExpr>,
+        glob_conds: Vec<SpannedContainer<AstExpr>>,
         glob_directives: Vec<AbstractDirective>,
         fields: Vec<AbstractTypeDef>,
         is_priv: bool,
@@ -454,7 +454,7 @@ pub struct AbstractEnum {
     pub name_id: InternedId,
     pub name_span: SourceSpan,
     pub variants: Vec<AbstractVariant>,
-    pub glob_conds: Vec<SpannedExpr>,
+    pub glob_conds: Vec<SpannedContainer<AstExpr>>,
     pub glob_directives: Vec<AbstractDirective>,
     pub is_priv: bool,
     // pub(crate) visibility: Visibility,
@@ -465,7 +465,7 @@ impl AbstractEnum {
         name_id: InternedId,
         name_span: SourceSpan,
         variants: Vec<AbstractVariant>,
-        glob_conds: Vec<SpannedExpr>,
+        glob_conds: Vec<SpannedContainer<AstExpr>>,
         glob_directives: Vec<AbstractDirective>,
         is_priv: bool,
     ) -> AbstractEnum {
@@ -488,7 +488,7 @@ pub struct AbstractVariant {
     // I think this is right?
     pub sp_ty_expr: Option<SpannedContainer<TypeExpr>>,
     pub directives: Vec<AbstractDirective>,
-    pub conds: Vec<SpannedExpr>,
+    pub conds: Vec<SpannedContainer<AstExpr>>,
 }
 
 impl AbstractVariant {
@@ -497,7 +497,7 @@ impl AbstractVariant {
         name_span: SourceSpan,
         // I think this is right?
         sp_ty_expr: Option<SpannedContainer<TypeExpr>>,
-        conds: Vec<SpannedExpr>,
+        conds: Vec<SpannedContainer<AstExpr>>,
         directives: Vec<AbstractDirective>,
     ) -> AbstractVariant {
         AbstractVariant {
@@ -514,14 +514,14 @@ impl AbstractVariant {
 pub struct AbstractFunc {
     pub name_id: InternedId,
     pub name_span: SourceSpan,
-    pub params: Vec<SpannedExpr>,
+    pub params: Vec<SpannedContainer<AstExpr>>,
 }
 
 impl AbstractFunc {
     pub fn new(
         name_id: InternedId,
         name_span: SourceSpan,
-        params: Vec<SpannedExpr>,
+        params: Vec<SpannedContainer<AstExpr>>,
     ) -> AbstractFunc {
         AbstractFunc {
             name_id,
@@ -688,7 +688,7 @@ impl AbstractParam {
 #[derive(Debug)]
 pub struct AbstractFieldDecl {
     pub name_id: InternedId,
-    pub fields: Vec<SpannedExpr>,
+    pub fields: Vec<SpannedContainer<AstExpr>>,
 }
 
 // impl AbstractFieldDecl {
@@ -702,7 +702,7 @@ pub struct AbstractAlias {
     pub name_id: InternedId,
     pub name_span: SourceSpan,
     pub params: Vec<AbstractParam>,
-    pub conds: Vec<SpannedExpr>,
+    pub conds: Vec<SpannedContainer<AstExpr>>,
     pub directives: Vec<AbstractDirective>,
     pub is_priv: bool,
 }
@@ -712,7 +712,7 @@ impl AbstractAlias {
         name_id: InternedId,
         name_span: SourceSpan,
         params: Vec<AbstractParam>,
-        conds: Vec<SpannedExpr>,
+        conds: Vec<SpannedContainer<AstExpr>>,
         directives: Vec<AbstractDirective>,
         is_priv: bool,
     ) -> AbstractAlias {
@@ -729,12 +729,12 @@ impl AbstractAlias {
 
 #[derive(Debug)]
 pub struct AbstractMemberAccess {
-    pub base: Box<SpannedExpr>,
+    pub base: Box<SpannedContainer<AstExpr>>,
     pub field: InternedId,
 }
 
 impl AbstractMemberAccess {
-    pub fn new(base: Box<SpannedExpr>, field: InternedId) -> AbstractMemberAccess {
+    pub fn new(base: Box<SpannedContainer<AstExpr>>, field: InternedId) -> AbstractMemberAccess {
         AbstractMemberAccess { base, field }
     }
 }
@@ -742,11 +742,11 @@ impl AbstractMemberAccess {
 #[derive(Debug)]
 pub struct Unary {
     pub op: UnaryOp,
-    pub spanned_expr: Box<SpannedExpr>,
+    pub spanned_expr: Box<SpannedContainer<AstExpr>>,
 }
 
 impl Unary {
-    pub fn new(op: UnaryOp, spanned_expr: Box<SpannedExpr>) -> Unary {
+    pub fn new(op: UnaryOp, spanned_expr: Box<SpannedContainer<AstExpr>>) -> Unary {
         Unary { op, spanned_expr }
     }
 }

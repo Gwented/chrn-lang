@@ -1,5 +1,5 @@
 pub(super) use crate::{
-    lexer::token::{Notation, Token},
+    lexer::token::Token,
     parser::ast::ast_concepts::AstInfo,
     resolvers::{
         constraint_resolver::ConstraintResolver,

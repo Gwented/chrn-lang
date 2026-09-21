@@ -54,7 +54,6 @@ use chrn_utils::id_types::id_tags::TaggedId;
 use compilation::parser::ast::ast_concepts::{AbstractDecl, AbstractImpl, AstInfo, Item};
 use compilation::parser::ast::ast_exprs::AstExpr;
 use compilation::parser::ast::ast_exprs::PathSegment;
-use compilation::parser::ast::ast_exprs::SpannedExpr;
 use compilation::parser::ast::ast_exprs::TypeExpr;
 use compilation::resolvers::constraint_resolver::ConstraintResolver;
 use compilation::resolvers::member_resolver::MemberResolver;
@@ -2100,10 +2099,10 @@ impl RefCollector<'_> {
     }
 
     /// Indexes the symbols, modules, fields, and variants named by an expression.
-    fn expr_refs(&mut self, expr: &SpannedExpr) {
-        match &expr.expr {
+    fn expr_refs(&mut self, expr: &SpannedContainer<AstExpr>) {
+        match &expr.inner {
             AstExpr::MemberAccess(acc) => {
-                if let AstExpr::Var(base_id) = acc.base.expr
+                if let AstExpr::Var(base_id) = acc.base.inner
                     && let Some(found_mod) = self.module_named(base_id)
                 {
                     self.map

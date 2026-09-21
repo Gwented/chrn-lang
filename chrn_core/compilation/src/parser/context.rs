@@ -21,7 +21,7 @@ use macrosc::s_suffix;
 
 use crate::{
     chrn_config::ChrnConfig,
-    lexer::token::{self, Notation, SpannedToken, Token, TokenKind},
+    lexer::token::{self, SpannedToken, Token, TokenKind},
     parser::{
         Evidence, InitialEvidence, NeutralBranch, SectionBranch, SemanticSituation, branch::Branch,
         parse_fmt,
