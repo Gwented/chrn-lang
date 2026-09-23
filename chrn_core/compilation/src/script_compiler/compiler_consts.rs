@@ -1,7 +1,8 @@
 use chrn_utils::id_types::DirectiveId;
-use lang::{
-    directives::{Directive, TypeDirective},
-    types::builtins::{BuiltinType, BuiltinTypeKind},
+use lang::types::builtins::BuiltinTypeKind;
+
+use crate::semantic::hir::directives::{
+    Directive, DirectiveInline, DirectivePreprocess, TypeDirective,
 };
 
 // -- CORE TYPE CONSTANTS --
@@ -77,20 +78,26 @@ pub const DIRECTIVE_BIN_IDX: usize = 4;
 pub const DIRECTIVE_OCTAL_IDX: usize = 5;
 pub const DIRECTIVE_UNICODE_IDX: usize = 6;
 
+// May be able to pout this in reigsitertry
 /// Maps given directive to it's built-in `DirectiveId`
-pub fn directive_to_id(directive: &Directive) -> DirectiveId {
+/// Panics if the given directive doesn't have a static id
+pub const fn directive_to_id_const(directive: &Directive) -> DirectiveId {
     let idx = match directive {
-        Directive::Warn => DIRECTIVE_WARN_IDX,
-        Directive::Ignore => DIRECTIVE_IGNORE_IDX,
-        Directive::Type(type_directive) => match type_directive {
-            TypeDirective::Scient => DIRECTIVE_SCIENT_IDX,
-            TypeDirective::Hex => DIRECTIVE_HEX_IDX,
-            TypeDirective::Bin => DIRECTIVE_BIN_IDX,
-            TypeDirective::Octal => DIRECTIVE_OCTAL_IDX,
-            TypeDirective::Unicode => DIRECTIVE_UNICODE_IDX,
+        Directive::Preprocess(preprocess) => match preprocess {
+            DirectivePreprocess::Chrn(_) => panic!("`directive_to_id_const` misuage"),
+        },
+        Directive::Comptime(comptime) => match comptime {
+            DirectiveInline::Warn => DIRECTIVE_WARN_IDX,
+            DirectiveInline::Ignore => DIRECTIVE_IGNORE_IDX,
+            DirectiveInline::Type(type_directive) => match type_directive {
+                TypeDirective::Scient => DIRECTIVE_SCIENT_IDX,
+                TypeDirective::Hex => DIRECTIVE_HEX_IDX,
+                TypeDirective::Bin => DIRECTIVE_BIN_IDX,
+                TypeDirective::Octal => DIRECTIVE_OCTAL_IDX,
+                TypeDirective::Unicode => DIRECTIVE_UNICODE_IDX,
+            },
         },
     };
-
     DirectiveId::new(idx as u32)
 }
 

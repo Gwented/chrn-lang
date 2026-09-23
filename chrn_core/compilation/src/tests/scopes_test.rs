@@ -3,7 +3,7 @@ use crate::lookup::scopes::find_sym_id;
 use crate::lookup::scopes::scopes_concepts::{
     AssociatedScopeKind, ScopeLookupPattern, ScopeLookupPreferenceFlags, ScopeType,
 };
-use crate::script_compiler::compiler_constants::builtin_ty_to_id;
+use crate::script_compiler::compiler_consts::builtin_ty_to_id;
 use crate::script_compiler::helpers::core_helpers::CORE_BUILTIN_TYPES_DATASET;
 use crate::semantic::hir::hir_concepts::Type;
 use crate::semantic::hir::hir_symbols::SymbolKind;

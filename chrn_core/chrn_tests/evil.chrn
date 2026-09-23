@@ -48,7 +48,7 @@ for varthing1 {}
 
 // comptime directs & runtime directives distinction?
 // Maybe modle finder collects comptime syntax only?
-#chrn[MAX_NUMERIC_BITS(256), MAX_THING(3, 9)]
+#chrn[MAX_NUMERIC_BITS(256), MAX_THING(3)]
 
 // rm msg for let always inferred
 //

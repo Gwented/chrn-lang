@@ -16,7 +16,7 @@ use crate::{
     module::module_concepts::{Import, ImportKind, Module},
     script_compiler::{
         ScriptCompiler,
-        compiler_constants::{CORE_UNKNOWN, builtin_ty_to_id},
+        compiler_consts::{CORE_UNKNOWN, builtin_ty_to_id},
         helpers::{
             compiler_helpers::DIRECTIVES_DATASET,
             core_helpers::{

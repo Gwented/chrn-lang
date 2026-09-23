@@ -12,11 +12,7 @@ use chrn_utils::{
         source_span::SourceSpan,
     },
 };
-use lang::{
-    algo::{self, FuzzyMatch},
-    chrn_classifier::ChrnClassifiable,
-    keywords::Keyword,
-};
+use lang::{chrn_classifier::ChrnClassifiable, keywords::Keyword};
 use macrosc::s_suffix;
 
 use crate::{
@@ -26,6 +22,7 @@ use crate::{
         Evidence, InitialEvidence, NeutralBranch, SectionBranch, SemanticSituation, branch::Branch,
         parse_fmt,
     },
+    semantic::algo::{self, FuzzyMatch},
 };
 
 use super::NestBranch;
@@ -97,6 +94,13 @@ impl<'a> ParserContext<'a> {
         initial_evidence: InitialEvidence,
         interner: &Intern,
     ) -> Result<InternedId, Token> {
+        debug_assert!(
+            matches!(
+                expected,
+                TokenKind::Id | TokenKind::Integer | TokenKind::Float | TokenKind::Str
+            ),
+            "`expect_id_verbose` misusage. Expected = {expected:?}"
+        );
         let found = self.advance();
         let branch = initial_evidence.branch;
 

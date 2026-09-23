@@ -9,11 +9,7 @@ use chrn_utils::{
     source_map::source_span::SourceSpan,
     utils::containers::SpannedContainer,
 };
-use lang::directives::Directive;
-use lang::{
-    chrn_classifier::ChrnClassifiable,
-    types::builtins::{BuiltinType, BuiltinTypeKind},
-};
+use lang::types::builtins::{BuiltinType, BuiltinTypeKind};
 
 use crate::{
     lookup::scopes::{
@@ -24,13 +20,14 @@ use crate::{
         },
     },
     parser::ast::{
-        ast_concepts::AbstractDirective,
+        ast_concepts::AbstractDirectiveInline,
         ast_exprs::{AbstractGeneric, PathSegment, TypeExpr},
     },
     resolvers::resolver_env::ResolverEnv,
     script_compiler::ScriptCompiler,
     semantic::{
         hir::{
+            directives::DirectiveInline,
             hir_concepts::{BuiltinTypeInfo, Type, TypeInfo},
             hir_symbols::{Symbol, SymbolKind, SymbolOrigin},
         },
@@ -469,6 +466,6 @@ pub fn resolve_static_access(
 
 // I KNOW WHAT THIS LOOKS LIKE BUT IT MIGHT BECOME MORE THAN THIS SO IT STILL GETS ITS OWN FUNCTION
 /// Resolves directive
-pub fn resolve_directive(abs_directive: &AbstractDirective) -> Option<Directive> {
-    Directive::try_from_interned_str(abs_directive.sp_name_id.inner)
+pub fn resolve_directive(abs_directive: &AbstractDirectiveInline) -> Option<DirectiveInline> {
+    DirectiveInline::try_from_interned_str(abs_directive.sp_name_id.inner)
 }

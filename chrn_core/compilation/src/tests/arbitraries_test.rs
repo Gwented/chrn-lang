@@ -6,7 +6,7 @@ use dashu_float::DBig;
 use dashu_int::IBig;
 
 use crate::lexer::notations::IntegerNotation;
-use crate::script_compiler::compiler_constants;
+use crate::script_compiler::compiler_consts;
 use crate::semantic::arbitraries::{
     ArbitraryFloatKind, ArbitraryIntKind, NumericFloatParseError, NumericIntError,
     NumericIntParseError, float_from_f32, float_from_f64, int_from_i32, int_from_i64, int_from_u32,
@@ -206,30 +206,72 @@ fn arbitrary_int_from_str_invalid_and_empty() {
     // Empty string returns None for all notations
     assert_eq!(ArbitraryIntKind::from_str("", IntegerNotation::Bin), None);
     assert_eq!(ArbitraryIntKind::from_str("", IntegerNotation::Octal), None);
-    assert_eq!(ArbitraryIntKind::from_str("", IntegerNotation::Decimal), None);
+    assert_eq!(
+        ArbitraryIntKind::from_str("", IntegerNotation::Decimal),
+        None
+    );
     assert_eq!(ArbitraryIntKind::from_str("", IntegerNotation::Hex), None);
 
     // Invalid digits for radix
-    assert_eq!(ArbitraryIntKind::from_str("102", IntegerNotation::Bin), None);
+    assert_eq!(
+        ArbitraryIntKind::from_str("102", IntegerNotation::Bin),
+        None
+    );
     assert_eq!(ArbitraryIntKind::from_str("2", IntegerNotation::Bin), None);
     assert_eq!(ArbitraryIntKind::from_str("1a", IntegerNotation::Bin), None);
 
-    assert_eq!(ArbitraryIntKind::from_str("89", IntegerNotation::Octal), None);
-    assert_eq!(ArbitraryIntKind::from_str("78", IntegerNotation::Octal), None);
-    assert_eq!(ArbitraryIntKind::from_str("8", IntegerNotation::Octal), None);
+    assert_eq!(
+        ArbitraryIntKind::from_str("89", IntegerNotation::Octal),
+        None
+    );
+    assert_eq!(
+        ArbitraryIntKind::from_str("78", IntegerNotation::Octal),
+        None
+    );
+    assert_eq!(
+        ArbitraryIntKind::from_str("8", IntegerNotation::Octal),
+        None
+    );
 
-    assert_eq!(ArbitraryIntKind::from_str("12a3", IntegerNotation::Decimal), None);
-    assert_eq!(ArbitraryIntKind::from_str("f", IntegerNotation::Decimal), None);
-    assert_eq!(ArbitraryIntKind::from_str("1.0", IntegerNotation::Decimal), None);
+    assert_eq!(
+        ArbitraryIntKind::from_str("12a3", IntegerNotation::Decimal),
+        None
+    );
+    assert_eq!(
+        ArbitraryIntKind::from_str("f", IntegerNotation::Decimal),
+        None
+    );
+    assert_eq!(
+        ArbitraryIntKind::from_str("1.0", IntegerNotation::Decimal),
+        None
+    );
 
-    assert_eq!(ArbitraryIntKind::from_str("12g", IntegerNotation::Hex), None);
-    assert_eq!(ArbitraryIntKind::from_str("xyz", IntegerNotation::Hex), None);
-    assert_eq!(ArbitraryIntKind::from_str("0x10", IntegerNotation::Hex), None);
+    assert_eq!(
+        ArbitraryIntKind::from_str("12g", IntegerNotation::Hex),
+        None
+    );
+    assert_eq!(
+        ArbitraryIntKind::from_str("xyz", IntegerNotation::Hex),
+        None
+    );
+    assert_eq!(
+        ArbitraryIntKind::from_str("0x10", IntegerNotation::Hex),
+        None
+    );
 
     // Isolated signs or symbols
-    assert_eq!(ArbitraryIntKind::from_str("+", IntegerNotation::Decimal), None);
-    assert_eq!(ArbitraryIntKind::from_str("-", IntegerNotation::Decimal), None);
-    assert_eq!(ArbitraryIntKind::from_str("?", IntegerNotation::Decimal), None);
+    assert_eq!(
+        ArbitraryIntKind::from_str("+", IntegerNotation::Decimal),
+        None
+    );
+    assert_eq!(
+        ArbitraryIntKind::from_str("-", IntegerNotation::Decimal),
+        None
+    );
+    assert_eq!(
+        ArbitraryIntKind::from_str("?", IntegerNotation::Decimal),
+        None
+    );
 }
 
 #[test]
@@ -714,10 +756,21 @@ fn arbitrary_int_checked_shr_with_limit_enforces_max_bits() {
         ArbitraryIntKind::I64(16).checked_shr_with_limit(&ArbitraryIntKind::I64(2), 64),
         Ok(ArbitraryIntKind::I64(4))
     );
-    // Collapsing a large valid shift stays `Ok` since the result fits.
+    // Collapsing the largest valid shift stays `Ok` since the result fits.
     assert_eq!(
-        big.checked_shr_with_limit(&ArbitraryIntKind::I64(1000), 64),
+        big.checked_shr_with_limit(
+            &ArbitraryIntKind::I64(ArbitraryIntKind::MAX_SHIFT_BITS as i64),
+            64,
+        ),
         Ok(ArbitraryIntKind::I64(0))
+    );
+    // Amounts above the absolute ceiling report `InvalidShift`, not `LimitExceeded`.
+    assert_eq!(
+        ArbitraryIntKind::I64(16).checked_shr_with_limit(
+            &ArbitraryIntKind::I64((ArbitraryIntKind::MAX_SHIFT_BITS + 1) as i64),
+            64,
+        ),
+        Err(NumericIntError::InvalidShift)
     );
     // Negative amounts still report `InvalidShift`, not `LimitExceeded`.
     assert_eq!(
@@ -1710,6 +1763,33 @@ fn arbitrary_float_conversions_use_ieee_rounding_and_exact_binary_values() {
         ArbitraryFloatKind::F64(f64::from_bits(1)).to_bigfloat(),
         Some(exact_min_subnormal)
     );
+
+    // The midpoint between the largest subnormal and the smallest normal has
+    // an odd lower significand, so ties-to-even selects the smallest normal.
+    let normal_boundary_midpoint = DBig::from_parts(
+        (IBig::from(1_u64 << 53) - IBig::from(1_u8)) * IBig::from(5_u8).pow(1075),
+        -1075,
+    );
+    assert_eq!(
+        ArbitraryFloatKind::BigFloat(normal_boundary_midpoint.clone()).to_bits(),
+        f64::MIN_POSITIVE.to_bits()
+    );
+    assert_eq!(
+        ArbitraryFloatKind::BigFloat(-normal_boundary_midpoint).to_bits(),
+        (-f64::MIN_POSITIVE).to_bits()
+    );
+
+    // Exercise the non-fractional conversion branch at binary64's finite
+    // upper limit, including the implicit leading significand bit.
+    let exact_max = DBig::from((IBig::from(1_u8) << 1024) - (IBig::from(1_u8) << 971));
+    assert_eq!(
+        ArbitraryFloatKind::F64(f64::MAX).to_bigfloat(),
+        Some(exact_max.clone())
+    );
+    assert_eq!(
+        ArbitraryFloatKind::F64(-f64::MAX).into_bigfloat(),
+        Some(-exact_max)
+    );
 }
 
 #[test]
@@ -1717,13 +1797,11 @@ fn arbitrary_float_conversion_obeys_the_binary64_overflow_boundary() {
     // Under round-to-nearest, ties-to-even, the overflow threshold is exactly
     // 2^1024 - 2^970: halfway between f64::MAX and the next power of two.
     let overflow_midpoint = (IBig::from(1_u8) << 1024) - (IBig::from(1_u8) << 970);
-    let just_below = ArbitraryFloatKind::BigFloat(DBig::from(
-        overflow_midpoint.clone() - IBig::from(1_u8),
-    ));
+    let just_below =
+        ArbitraryFloatKind::BigFloat(DBig::from(overflow_midpoint.clone() - IBig::from(1_u8)));
     let at_midpoint = ArbitraryFloatKind::BigFloat(DBig::from(overflow_midpoint.clone()));
-    let negative_just_below = ArbitraryFloatKind::BigFloat(DBig::from(-(
-        overflow_midpoint.clone() - IBig::from(1_u8)
-    )));
+    let negative_just_below =
+        ArbitraryFloatKind::BigFloat(DBig::from(-(overflow_midpoint.clone() - IBig::from(1_u8))));
     let negative_at_midpoint = ArbitraryFloatKind::BigFloat(DBig::from(-overflow_midpoint));
 
     assert_eq!(just_below.to_bits(), f64::MAX.to_bits());
@@ -1737,6 +1815,7 @@ fn arbitrary_float_zero_divisor_ieee_safety() {
     // BigFloat / 0.0 must yield IEEE infinity rather than panicking in DBig
     let bf_ten = ArbitraryFloatKind::BigFloat(DBig::from_str("10.0").unwrap());
     let bf_zero = ArbitraryFloatKind::BigFloat(DBig::from_str("0.0").unwrap());
+    let neg_bf_zero = ArbitraryFloatKind::BigFloat(-DBig::ZERO);
     let f_zero = ArbitraryFloatKind::F64(0.0);
     let neg_f_zero = ArbitraryFloatKind::F64(-0.0);
 
@@ -1749,23 +1828,30 @@ fn arbitrary_float_zero_divisor_ieee_safety() {
     let div_neg = &bf_ten / &neg_f_zero;
     assert_eq!(div_neg, ArbitraryFloatKind::F64(f64::NEG_INFINITY));
 
+    let div_neg_big = &bf_ten / &neg_bf_zero;
+    assert_eq!(
+        div_neg_big,
+        ArbitraryFloatKind::F64(f64::NEG_INFINITY),
+        "a BigFloat divisor must preserve its zero sign"
+    );
+
     // 0.0 / 0.0 must yield NaN rather than panicking in DBig
     let nan_div1 = &bf_zero / &f_zero;
-    assert!(nan_div1.to_f64().is_nan());
+    assert!(matches!(nan_div1, ArbitraryFloatKind::F64(value) if value.is_nan()));
 
     let nan_div2 = &bf_zero / &bf_zero;
-    assert!(nan_div2.to_f64().is_nan());
+    assert!(matches!(nan_div2, ArbitraryFloatKind::F64(value) if value.is_nan()));
 
     // BigFloat % 0.0 must yield NaN rather than panicking in DBig
     let rem1 = &bf_ten % &f_zero;
-    assert!(rem1.to_f64().is_nan());
+    assert!(matches!(rem1, ArbitraryFloatKind::F64(value) if value.is_nan()));
 
     let rem2 = &bf_ten % &bf_zero;
-    assert!(rem2.to_f64().is_nan());
+    assert!(matches!(rem2, ArbitraryFloatKind::F64(value) if value.is_nan()));
 
     let huge = ArbitraryFloatKind::from_str("1e1000").unwrap();
     let rem_huge = &huge % &f_zero;
-    assert!(rem_huge.to_f64().is_nan());
+    assert!(matches!(rem_huge, ArbitraryFloatKind::F64(value) if value.is_nan()));
 
     // Underflowing BigFloat / 0.0 must yield IEEE infinity rather than collapsing to NaN
     let uf = ArbitraryFloatKind::from_str("1e-400").unwrap();
@@ -1858,7 +1944,7 @@ fn arbitrary_float_mixed_infinity_arithmetic_precision() {
     assert_eq!(&huge % &pos_inf, huge);
     assert_eq!(&huge % &neg_inf, huge);
     let rem_inf = &pos_inf % &huge;
-    assert!(rem_inf.to_f64().is_nan());
+    assert!(matches!(rem_inf, ArbitraryFloatKind::F64(value) if value.is_nan()));
 }
 
 #[test]
@@ -1985,6 +2071,7 @@ fn arbitrary_float_bigfloat_zero_negation_produces_negative_zero() {
 fn arbitrary_float_indeterminate_operations_produce_nan() {
     let positive_infinity = ArbitraryFloatKind::BigFloat(DBig::INFINITY);
     let negative_infinity = ArbitraryFloatKind::BigFloat(DBig::NEG_INFINITY);
+    let nan = ArbitraryFloatKind::F64(f64::NAN);
     let zero = ArbitraryFloatKind::F64(0.0);
     let finite = ArbitraryFloatKind::BigFloat(DBig::from_str("3.0").unwrap());
 
@@ -1995,6 +2082,7 @@ fn arbitrary_float_indeterminate_operations_produce_nan() {
         &positive_infinity * &zero,
         &positive_infinity / &positive_infinity,
         &positive_infinity % &finite,
+        &finite % &nan,
     ] {
         assert!(
             matches!(result, ArbitraryFloatKind::F64(value) if value.is_nan()),
@@ -2065,24 +2153,24 @@ fn arbitrary_int_u64_fast_paths() {
 fn arbitrary_type_id_returns_expected_core_type_id() {
     assert_eq!(
         ArbitraryIntKind::I64(42).type_id(),
-        TypeId::new(compiler_constants::CORE_I64)
+        TypeId::new(compiler_consts::CORE_I64)
     );
     assert_eq!(
         ArbitraryIntKind::U64(42).type_id(),
-        TypeId::new(compiler_constants::CORE_U64)
+        TypeId::new(compiler_consts::CORE_U64)
     );
     assert_eq!(
         ArbitraryIntKind::BigInt(IBig::from(42)).type_id(),
-        TypeId::new(compiler_constants::CORE_BIGINT)
+        TypeId::new(compiler_consts::CORE_BIGINT)
     );
 
     assert_eq!(
         ArbitraryFloatKind::F64(42.0).type_id(),
-        TypeId::new(compiler_constants::CORE_F64)
+        TypeId::new(compiler_consts::CORE_F64)
     );
     assert_eq!(
         ArbitraryFloatKind::BigFloat(DBig::from_str("1e1000").unwrap()).type_id(),
-        TypeId::new(compiler_constants::CORE_BIGFLOAT)
+        TypeId::new(compiler_consts::CORE_BIGFLOAT)
     );
 }
 
@@ -2092,9 +2180,9 @@ fn arbitrary_type_id_is_const_evaluable() {
     const U64_TY: TypeId = ArbitraryIntKind::U64(0).type_id();
     const F64_TY: TypeId = ArbitraryFloatKind::F64(0.0).type_id();
 
-    assert_eq!(I64_TY, TypeId::new(compiler_constants::CORE_I64));
-    assert_eq!(U64_TY, TypeId::new(compiler_constants::CORE_U64));
-    assert_eq!(F64_TY, TypeId::new(compiler_constants::CORE_F64));
+    assert_eq!(I64_TY, TypeId::new(compiler_consts::CORE_I64));
+    assert_eq!(U64_TY, TypeId::new(compiler_consts::CORE_U64));
+    assert_eq!(F64_TY, TypeId::new(compiler_consts::CORE_F64));
 }
 
 #[test]

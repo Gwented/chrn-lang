@@ -1,8 +1,6 @@
 use super::helpers::*;
 use crate::parser::ast::ast_concepts::BinaryOp;
-use crate::script_compiler::compiler_constants::{
-    CORE_BOOL, CORE_CHAR, CORE_F64, CORE_I64, CORE_STR,
-};
+use crate::script_compiler::compiler_consts::{CORE_BOOL, CORE_CHAR, CORE_F64, CORE_I64, CORE_STR};
 use crate::script_compiler::helpers::core_helpers::core_instantiation_reservations;
 use crate::semantic::hir::hir_concepts::Type;
 use crate::semantic::hir::hir_symbols::SymbolKind;

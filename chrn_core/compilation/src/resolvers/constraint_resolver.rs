@@ -17,7 +17,6 @@ use chrn_utils::{
 use lang::{
     chrn_classifier::ChrnClassified,
     config_schemas::{self, ConfigSchema, ConfigSchemaKind},
-    directives::Directive,
     types::{boundaries::TypeBoundaryFlags, builtins::BuiltinType},
 };
 
@@ -34,6 +33,7 @@ use crate::{
     semantic::{
         compilation_unit::CompilationUnit,
         hir::{
+            directives::{Directive, DirectiveInline, DirectivePreprocess},
             hir_concepts::Type,
             hir_impls::{ConfigMember, ConfigMemberMetadataKind, ConfigRootKind},
             hir_symbols::MemberSymbolKind,
@@ -553,12 +553,15 @@ impl<'a> ConstraintResolver<'a> {
         }
 
         for sp_directive in &type_def.directives {
-            let directive = &self.compiler.directives[sp_directive.inner];
+            // let directive = &self.compiler.directives[sp_directive.inner];
+            let Directive::Comptime(directive) = &self.compiler.directives[todo!()] else {
+                panic!("verity");
+            };
             match &ty_info.ty {
                 Type::Struct(_) | Type::Enum(_) => {
                     if directive.has_restrictions() {
                         let preset_err = PresetErr::VagueDirective(SpannedContainer::new(
-                            directive.clone(),
+                            *directive,
                             sp_directive.span,
                         ));
 
@@ -947,7 +950,8 @@ impl<'a> ConstraintResolver<'a> {
                     field.type_id,
                     abs_struct.name_span,
                     ty_span,
-                    &SpannedContainerRef::new(directive, sp_directive.span),
+                    todo!(),
+                    // &SpannedContainerRef::new(&directive.clone().into(), sp_directive.span),
                     &mut vec![],
                     env,
                 ) {
@@ -975,7 +979,8 @@ impl<'a> ConstraintResolver<'a> {
                     field.type_id,
                     abs_struct.name_span,
                     *field_ty_span,
-                    &SpannedContainerRef::new(directive, sp_directive.span),
+                    todo!(),
+                    // &SpannedContainerRef::new(&directive.clone().into(), sp_directive.span),
                     &mut vec![],
                     env,
                 ) {
@@ -1069,7 +1074,8 @@ impl<'a> ConstraintResolver<'a> {
                         inner_id,
                         abs_enum.name_span,
                         ty_span,
-                        &SpannedContainerRef::new(directive, sp_directive.span),
+                        todo!(),
+                        // &SpannedContainerRef::new(&directive.clone().into(), sp_directive.span),
                         &mut vec![],
                         env,
                     ) {
@@ -1099,7 +1105,8 @@ impl<'a> ConstraintResolver<'a> {
                         inner_id,
                         abs_enum.name_span,
                         variant_ty_span,
-                        &SpannedContainerRef::new(directive, sp_directive.span),
+                        todo!(),
+                        // &SpannedContainerRef::new(&directive.clone().into(), sp_directive.span),
                         &mut vec![],
                         env,
                     ) {
@@ -1363,7 +1370,7 @@ impl<'a> ConstraintResolver<'a> {
         type_id: TypeId,
         parent_span: SourceSpan,
         active_span: SourceSpan,
-        spanned_directive: &SpannedContainerRef<Directive>,
+        spanned_directive: &SpannedContainerRef<DirectiveInline>,
         visited: &mut Vec<TypeId>,
         env: &ResolverEnv,
         // Making this vec makes error messages painful depending on which message failed, so it
@@ -1522,10 +1529,12 @@ impl<'a> ConstraintResolver<'a> {
                     builtin_ty => {
                         let ty_boundaries = builtin_ty.kind().boundaries();
                         let directive_boundaries = spanned_directive.inner.boundaries();
-
                         if !directive_boundaries.overlaps(ty_boundaries) {
                             return Err(Some(PresetErr::UnsupportedDirective {
-                                sp_directive: spanned_directive.into_owned(),
+                                sp_directive: SpannedContainer::new(
+                                    spanned_directive.inner.clone().into(),
+                                    spanned_directive.span,
+                                ),
                                 sym_span: active_span,
                             }));
                         }

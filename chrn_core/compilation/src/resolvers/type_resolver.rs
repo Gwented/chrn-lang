@@ -45,7 +45,7 @@ use crate::lookup::scopes::scopes_concepts::{
 };
 use crate::lookup::scopes::{self, scopes_helpers};
 use crate::parser::ast::ast_concepts::{
-    AbstractConfig, AbstractConfigKind, AbstractDirective, AstConfigMemberMetadataKind,
+    AbstractConfig, AbstractConfigKind, AbstractDirectiveInline, AstConfigMemberMetadataKind,
 };
 use crate::parser::ast::ast_exprs::{AstExpr, PathSegment};
 use crate::parser::ast::ast_stmts::AstStmt;
@@ -57,7 +57,7 @@ use crate::resolvers::type_resolver::cfg_ctx::{
 };
 use crate::resolvers::typechecker;
 use crate::resolvers::typechecker::typechecker_concepts::ExpectedKindType;
-use crate::script_compiler::{ScriptCompiler, compiler_constants};
+use crate::script_compiler::{ScriptCompiler, compiler_consts};
 use crate::semantic::arbitraries::{
     ArbitraryFloatKind, ArbitraryIntKind, NumericFloatParseError, NumericIntParseError,
 };
@@ -2735,7 +2735,7 @@ impl<'res> TypeResolver<'res> {
                     self.cfg,
                     self.interner,
                 );
-                TypeId::new(compiler_constants::CORE_UNKNOWN)
+                TypeId::new(compiler_consts::CORE_UNKNOWN)
             }
         };
 
@@ -3050,7 +3050,7 @@ impl<'res> TypeResolver<'res> {
                         self.cfg,
                         self.interner,
                     );
-                    TypeId::new(compiler_constants::CORE_UNKNOWN)
+                    TypeId::new(compiler_consts::CORE_UNKNOWN)
                 }
             };
 
@@ -3704,7 +3704,7 @@ impl<'res> TypeResolver<'res> {
             AstExpr::Char(c) => {
                 let expr_id = self.compiler.exprs.make_id();
                 let val_id = self.compiler.values.make_id();
-                let type_id = TypeId::new(compiler_constants::CORE_CHAR);
+                let type_id = TypeId::new(compiler_consts::CORE_CHAR);
 
                 let val = Value::Char(*c);
                 let val_info = ValueInfo::new(type_id, expr_id, Some(val));
@@ -3776,7 +3776,7 @@ impl<'res> TypeResolver<'res> {
                 let expr_id = self.compiler.exprs.make_id();
                 let val_id = self.compiler.values.make_id();
 
-                let type_id = TypeId::new(compiler_constants::CORE_STR);
+                let type_id = TypeId::new(compiler_consts::CORE_STR);
 
                 let val = Value::InternedStr(*name_id);
                 let val_info = ValueInfo::new(type_id, expr_id, Some(val));
@@ -3877,7 +3877,7 @@ impl<'res> TypeResolver<'res> {
             // Also maybe bring back value pre-allocation
             AstExpr::Bool(boolean) => {
                 //FIX:
-                let type_id = TypeId::new(compiler_constants::CORE_BOOL);
+                let type_id = TypeId::new(compiler_consts::CORE_BOOL);
 
                 let expr_id = self.compiler.exprs.make_id();
                 let val_id = self.compiler.values.make_id();
@@ -4253,7 +4253,7 @@ impl<'res> TypeResolver<'res> {
     /// This is a helper.
     fn handle_directives(
         &self,
-        abs_directives: &[AbstractDirective],
+        abs_directives: &[AbstractDirectiveInline],
         env: &ResolverEnv,
     ) -> (Vec<SpannedContainer<DirectiveId>>, Vec<PresetErr>) {
         let mut directive_ids = Vec::with_capacity(abs_directives.len());
@@ -4261,8 +4261,8 @@ impl<'res> TypeResolver<'res> {
 
         for abs_directive in abs_directives {
             match resolution::resolve_directive(abs_directive) {
-                Some(dir) => {
-                    let directive_id = compiler_constants::directive_to_id(&dir);
+                Some(direct) => {
+                    let directive_id = todo!();
                     let sp_directive_id =
                         SpannedContainer::new(directive_id, abs_directive.sp_name_id.span);
                     directive_ids.push(sp_directive_id);

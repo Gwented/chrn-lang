@@ -7,7 +7,7 @@ use dashu_float::{
 };
 use dashu_int::{IBig, ops::BitTest};
 
-use crate::script_compiler::compiler_constants;
+use crate::script_compiler::compiler_consts;
 
 /// Representable `chrn` floating points.
 #[derive(Debug, Clone)]
@@ -55,8 +55,8 @@ impl ArbitraryFloatKind {
     /// Returns compile-time `TypeId` for `Self`.
     pub const fn type_id(&self) -> TypeId {
         match self {
-            Self::F64(_) => TypeId::new(compiler_constants::CORE_F64),
-            Self::BigFloat(_) => TypeId::new(compiler_constants::CORE_BIGFLOAT),
+            Self::F64(_) => TypeId::new(compiler_consts::CORE_F64),
+            Self::BigFloat(_) => TypeId::new(compiler_consts::CORE_BIGFLOAT),
         }
     }
     /// Parses a float string.
@@ -259,7 +259,7 @@ impl ArbitraryFloatKind {
                     return Self::F64(f64::NAN);
                 }
                 if !a.is_finite() || !b.is_finite() {
-                    if is_rem && a.is_finite() && !b.is_finite() {
+                    if is_rem && a.is_finite() && b.to_f64().is_infinite() {
                         return lhs.into_owned();
                     }
                     return Self::op_with_non_finite(a, b, f64_op, is_rem);

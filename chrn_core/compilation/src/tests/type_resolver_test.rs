@@ -1,5 +1,5 @@
 use super::helpers::*;
-use crate::script_compiler::compiler_constants::{
+use crate::script_compiler::compiler_consts::{
     CORE_BIGFLOAT, CORE_BIGINT, CORE_F64, CORE_I64, CORE_STR, CORE_U64, CORE_UNKNOWN,
 };
 use crate::semantic::arbitraries::{ArbitraryIntKind, int_from_i64};
@@ -122,40 +122,42 @@ fn type_resolver_rejects_left_shift_result_above_numeric_limit() {
 
 /// Protects the absolute shift ceiling when the configured numeric limit is higher.
 #[test]
-fn type_resolver_rejects_left_shift_above_absolute_limit() {
+fn type_resolver_rejects_shifts_above_absolute_limit() {
     let shift = ArbitraryIntKind::MAX_SHIFT_BITS + 1;
     let shift_text = shift.to_string();
-    let source = format!("let X = 1 << {shift_text}");
-    let resolution = resolve_single_module_with_config(
-        &source,
-        Stage::Type,
-        config_with_numeric_limit(shift + 1),
-    );
+    for op in ["<<", ">>"] {
+        let source = format!("let X = 1 {op} {shift_text}");
+        let resolution = resolve_single_module_with_config(
+            &source,
+            Stage::Type,
+            config_with_numeric_limit(shift + 1),
+        );
 
-    assert_eq!(
-        resolution.err_count(),
-        1,
-        "unexpected diagnostics: {:?}",
-        resolution.ty
-    );
-    assert_eq!(resolution.ty.err_count(), 1);
-    let diagnostic = &resolution.ty.diags[0];
-    assert_eq!(diagnostic.level, DiagnosticLevel::Error);
-    assert_eq!(diagnostic.core_msg, "Shift amount is out of range");
-    assert!(diagnostic.help.is_empty());
-    assert_eq!(diagnostic.annotations.len(), 2);
-    assert!(
-        diagnostic
+        assert_eq!(
+            resolution.err_count(),
+            1,
+            "unexpected diagnostics for `{op}`: {:?}",
+            resolution.ty
+        );
+        assert_eq!(resolution.ty.err_count(), 1);
+        let diagnostic = &resolution.ty.diags[0];
+        assert_eq!(diagnostic.level, DiagnosticLevel::Error);
+        assert_eq!(diagnostic.core_msg, "Shift amount is out of range");
+        assert!(diagnostic.help.is_empty());
+        assert_eq!(diagnostic.annotations.len(), 2);
+        assert!(
+            diagnostic
+                .annotations
+                .iter()
+                .all(|annotation| annotation.kind == AnnotationKind::Primary)
+        );
+        let annotated_text = diagnostic
             .annotations
             .iter()
-            .all(|annotation| annotation.kind == AnnotationKind::Primary)
-    );
-    let annotated_text = diagnostic
-        .annotations
-        .iter()
-        .map(|annotation| &source[annotation.span.range_exclusive_usize()])
-        .collect::<Vec<_>>();
-    assert_eq!(annotated_text, ["1", shift_text.as_str()]);
+            .map(|annotation| &source[annotation.span.range_exclusive_usize()])
+            .collect::<Vec<_>>();
+        assert_eq!(annotated_text, ["1", shift_text.as_str()]);
+    }
 }
 
 /// Protects both the fixed `f64` representation boundary and arbitrary exponent accounting.

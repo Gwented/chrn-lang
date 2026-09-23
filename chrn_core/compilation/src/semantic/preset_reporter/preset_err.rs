@@ -3,9 +3,7 @@ use chrn_utils::{
     source_map::{source_diagnostic::SourceDiagnosticBuilder, source_span::SourceSpan},
     utils::containers::SpannedContainer,
 };
-use lang::{
-    chrn_classifier::ChrnClassified, directives::Directive, types::boundaries::TypeBoundaryFlags,
-};
+use lang::{chrn_classifier::ChrnClassified, types::boundaries::TypeBoundaryFlags};
 
 use crate::{
     constraints::ArgConstraint,
@@ -14,6 +12,7 @@ use crate::{
     resolvers::typechecker::typechecker_concepts::{ExpectedKind, ExpectedKindType},
     semantic::{
         hir::{
+            directives::{Directive, DirectiveInline},
             hir_concepts::TypeKind,
             hir_symbols::{BuiltinFuncKind, SymbolKindFlat},
         },
@@ -78,7 +77,7 @@ pub enum PresetErr {
     },
     /// SpannedArg,
     // Interesting name
-    VagueDirective(SpannedContainer<Directive>),
+    VagueDirective(SpannedContainer<DirectiveInline>),
     // CircularRef
     // Change this
     /// Occurs when an argument is applied to a type, that recursively holds itself inside of
@@ -90,7 +89,7 @@ pub enum PresetErr {
         sp_fmtted_parent: SpannedContainer<ChrnClassified>,
         // Actual parent name
         // SpannedContainer<InternedId>,
-        sp_directive: SpannedContainer<Directive>,
+        sp_directive: SpannedContainer<DirectiveInline>,
         err_ty_span: SourceSpan,
     },
     /// SpannedInterned number, type overflown

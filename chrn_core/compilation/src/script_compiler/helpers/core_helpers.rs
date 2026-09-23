@@ -8,7 +8,7 @@ use crate::{
     constraints::ArgConstraint,
     lookup::scopes::scopes_concepts::ScopeType,
     script_compiler::{
-        compiler_constants::{CORE_BOOL, CORE_UNKNOWN},
+        compiler_consts::{CORE_BOOL, CORE_UNKNOWN},
         helpers::instantiation_symbols::{
             InstantiationSymbolBase, InstantiationSymbolKind, InstantiationVariable, InstiationType,
         },

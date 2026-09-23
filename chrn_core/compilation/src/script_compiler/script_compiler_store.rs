@@ -1,8 +1,5 @@
 use chrn_utils::{
-    arena::Arena,
-    id_types::{SourceRegionId, SymbolId},
-    intern::Intern,
-    source_map::source_region::SourceRegion,
+    arena::Arena, id_types::SourceRegionId, intern::Intern, source_map::source_region::SourceRegion,
 };
 
 use crate::{

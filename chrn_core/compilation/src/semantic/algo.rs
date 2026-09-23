@@ -1,8 +1,8 @@
 use std::cmp;
 
-use crate::{
+use lang::{
     chrn_classifier::{ChrnClassifiable, ChrnClassified},
-    directives, keywords,
+    directive_consts, keywords,
     types::builtins,
 };
 
@@ -17,7 +17,7 @@ pub enum FuzzyMatch {
 }
 
 impl ChrnClassifiable for FuzzyMatch {
-    fn to_classified(&self) -> crate::chrn_classifier::ChrnClassified {
+    fn to_classified(&self) -> lang::chrn_classifier::ChrnClassified {
         match self {
             FuzzyMatch::KW => ChrnClassified::KW,
             FuzzyMatch::Type => ChrnClassified::Type,
@@ -52,7 +52,9 @@ pub fn fuzzy_match(given: &[u8], target: FuzzyMatch) -> Vec<&str> {
         FuzzyMatch::Sect => {
             fuzzy_match_inner(given, &keywords::KEYWORDS_ARRAY[keywords::sect_range()])
         }
-        FuzzyMatch::Directive => fuzzy_match_inner(given, &directives::BUILTIN_DIRECTIVE_STRS),
+        FuzzyMatch::Directive => {
+            fuzzy_match_inner(given, &directive_consts::BUILTIN_DIRECTIVE_STRS)
+        }
     }
 }
 

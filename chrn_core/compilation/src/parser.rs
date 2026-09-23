@@ -1,8 +1,10 @@
 //TODO: Evidence info is very unfinished
+// Collapse past over-fit fns
 pub mod ast;
 mod branch;
 mod context;
 mod evidence;
+mod helpers;
 mod parse_fmt;
 mod parser_budget;
 mod parser_state;
@@ -12,9 +14,9 @@ use crate::chrn_config::chrn_perf::ChrnPerfStage;
 use crate::lexer::token::{SpannedToken, Token, TokenKind};
 use crate::lookup::scopes::scopes_concepts::ScopeLookupPattern;
 use crate::parser::ast::ast_concepts::{
-    AbstractAlias, AbstractConfig, AbstractConfigKind, AbstractDecl, AbstractDirective,
-    AbstractEnum, AbstractImpl, AbstractMemberAccess, AbstractParam, AbstractStruct,
-    AbstractTypeDef, AbstractVar, AbstractVariant, AstConfigComplexMetadata,
+    AbstractAlias, AbstractConfig, AbstractConfigKind, AbstractDecl, AbstractDirectiveInline,
+    AbstractDirectivePreprocess, AbstractEnum, AbstractImpl, AbstractMemberAccess, AbstractParam,
+    AbstractStruct, AbstractTypeDef, AbstractVar, AbstractVariant, AstConfigComplexMetadata,
     AstConfigMemberMetadataKind, AstConfigOverrideMetadata, AstInfo, BinaryOp, Item, SectionKind,
     Unary, UnaryOp,
 };
@@ -24,6 +26,7 @@ use crate::parser::ast::ast_stmts::{AbstractOptionAssignment, AbstractTypeMultiA
 use crate::parser::branch::{Branch, NestBranch, NeutralBranch, SectionBranch};
 use crate::parser::context::ParserContext;
 use crate::parser::evidence::{Evidence, InitialEvidence, SemanticEnv, SemanticSituation};
+use crate::parser::helpers::DelimiterContext;
 use crate::parser::parser_budget::ParserBudget;
 use crate::parser::parser_state::ParserState;
 use crate::semantic::hir::hir_impls::ConfigRootMetadataKind;
@@ -387,8 +390,8 @@ pub fn parse(
                     todo!("Not neural");
                 }
                 ctx.advance_tok();
-                dbg!(parse_directive(&mut ctx, interner));
-                todo!();
+                dbg!(parse_directive_preprocess(&mut ctx, &budget, interner));
+                // todo!();
             }
             Token::Invalid(id) => {
                 ctx.advance_tok();
@@ -495,7 +498,7 @@ fn parse_alias_stmt(
     };
 
     let directives = if ctx.peek_kind() == TokenKind::HashSymbol {
-        handle_directives(ctx, interner).unwrap_or_default()
+        handle_inline_directives(ctx, interner).unwrap_or_default()
     } else {
         Vec::new()
     };
@@ -610,7 +613,7 @@ fn parse_typedef(
     };
 
     let directives = if ctx.peek_kind() == TokenKind::HashSymbol {
-        handle_directives(ctx, interner).unwrap_or_default()
+        handle_inline_directives(ctx, interner).unwrap_or_default()
     } else {
         Vec::new()
     };
@@ -683,7 +686,7 @@ fn parse_nest_sect(
             };
 
             let args = if ctx.peek_kind() == TokenKind::HashSymbol {
-                handle_directives(ctx, interner).unwrap_or_default()
+                handle_inline_directives(ctx, interner).unwrap_or_default()
             } else {
                 Vec::new()
             };
@@ -732,7 +735,7 @@ fn parse_nest_sect(
             };
 
             let glob_directives = if ctx.peek_kind() == TokenKind::HashSymbol {
-                handle_directives(ctx, interner).unwrap_or_default()
+                handle_inline_directives(ctx, interner).unwrap_or_default()
             } else {
                 Vec::new()
             };
@@ -2087,7 +2090,7 @@ fn parse_variant(
     };
 
     let args = if ctx.peek_kind() == TokenKind::HashSymbol {
-        handle_directives(ctx, interner).unwrap_or_default()
+        handle_inline_directives(ctx, interner).unwrap_or_default()
     } else {
         Vec::new()
     };
@@ -2097,29 +2100,31 @@ fn parse_variant(
     Ok(variant)
 }
 
-// Egregious naming scheme
-fn handle_directives(
+fn handle_inline_directives(
     ctx: &mut ParserContext,
     interner: &Intern,
-) -> Result<Vec<AbstractDirective>, Token> {
-    let mut args: Vec<AbstractDirective> = Vec::new();
+) -> Result<Vec<AbstractDirectiveInline>, Token> {
+    let mut args: Vec<AbstractDirectiveInline> = Vec::new();
 
     // Doesn't need terminator check since the loop would need to be continued on purpose through
     // user-intent for this to not just error
     while ctx.peek_kind() == TokenKind::HashSymbol {
         ctx.advance_tok();
-        args.push(parse_directive(ctx, interner)?);
+        args.push(parse_inline_directive(ctx, interner)?);
     }
 
     Ok(args)
 }
 
-//TODO: Directive "#{directive}[{Identifier} = {Expr/TypeExpr}, {Expr/TypeExpr}, ..]" parsing
-fn parse_directive(ctx: &mut ParserContext, interner: &Intern) -> Result<AbstractDirective, Token> {
+/// Inline as in: `#warn`, `#octal`, etsy.
+fn parse_inline_directive(
+    ctx: &mut ParserContext,
+    interner: &Intern,
+) -> Result<AbstractDirectiveInline, Token> {
     let name_span = ctx.peek_span();
     let name_id = ctx.expect_id_verbose(
         TokenKind::Id,
-        "Unknown directive ",
+        "Expected identifier for directive, found ",
         "",
         //TODO: Need overall env passing in
         InitialEvidence::new(
@@ -2131,23 +2136,171 @@ fn parse_directive(ctx: &mut ParserContext, interner: &Intern) -> Result<Abstrac
         interner,
     )?;
 
-    let inputs: Vec<Intern> = if ctx.peek_tok() == Token::OBracket {
-        todo!()
-    } else {
-        Vec::new()
-    };
-
     let sp_name_id = SpannedContainer::new(name_id, name_span);
-    let abs_directive = AbstractDirective::new(sp_name_id);
-
+    let abs_directive = AbstractDirectiveInline::new(sp_name_id);
     Ok(abs_directive)
 }
 
-fn parse_directive_inputs(ctx: &mut ParserContext, interner: &Intern) {
-    let inputs: Vec<AbstractOptionAssignment> = Vec::new();
-    if ctx.peek_tok() == Token::CBracket {
-        let exprs: Vec<SpannedContainer<AstExpr>> = Vec::new();
+//TODO: Directive "#{directive}[{Identifier} = {Expr/TypeExpr}, {Expr/TypeExpr}, ..]" parsing
+fn parse_directive_preprocess(
+    ctx: &mut ParserContext,
+    budget: &ParserBudget,
+    interner: &Intern,
+) -> Result<AbstractDirectivePreprocess, Token> {
+    let self_delim_ctx = DelimiterContext::with_comma(TokenKind::OBracket, TokenKind::CBracket);
+
+    let name_span = ctx.peek_span();
+    let name_id = ctx.expect_id_verbose(
+        TokenKind::Id,
+        "Expected identifier for directive, found ",
+        "",
+        //TODO: Need overall env passing in
+        InitialEvidence::new(
+            SemanticEnv::SectNest,
+            SemanticSituation::DirectiveParsing,
+            //TODO: Tag
+            Branch::Directive,
+        ),
+        interner,
+    )?;
+
+    let sp_direct_name_id = SpannedContainer::new(name_id, name_span);
+    let mut inputs: Vec<AbstractOptionAssignment> = Vec::new();
+
+    ctx.expect_verbose(
+        self_delim_ctx.opening(),
+        "Expected '[' to declare directive, found ",
+        "",
+        InitialEvidence::new(
+            //TODO: Should pass ctx
+            SemanticEnv::SectNeutral,
+            SemanticSituation::MissingStartDelimiter,
+            Branch::Directive,
+        ),
+        interner,
+    )?;
+
+    //#{ident}[] <-
+    if ctx.peek_tok().kind() == self_delim_ctx.closing() {
+        ctx.advance_tok();
+        return Ok(AbstractDirectivePreprocess::new(sp_direct_name_id, inputs));
     }
+
+    //TODO: change naming of opt for abs
+    let env = SemanticEnv::SectNeutral;
+    let branch = Branch::Directive;
+
+    // Guaranteed to have > 0 element
+    while ctx.peek_tok().kind() != self_delim_ctx.closing() {
+        let opt_name_span = ctx.peek_span();
+        let opt_name_id = ctx.expect_id_verbose(
+            TokenKind::Id,
+            // Not sure about this name
+            "Expected identifier for directive option, found ",
+            "",
+            InitialEvidence::new(
+                //TODO: Should pass ctx
+                env,
+                SemanticSituation::MissingStartDelimiter,
+                branch,
+            ),
+            interner,
+        )?;
+
+        let exprs = parse_exprs_enclosing(
+            ctx,
+            DelimiterContext::new(TokenKind::OParen, TokenKind::Comma, TokenKind::CParen),
+            env,
+            branch,
+            budget,
+            interner,
+        )?;
+
+        let start = exprs[0].span.start;
+        //TODO: What about a function that takes in &[T] where T has a span and > 0 elements?
+        let end = exprs[exprs.len() - 1].span.end;
+        let array_span = SourceSpan::new(ctx.region.region_id, start, end);
+
+        let array = AstExpr::Array(ArrayExpr::new(exprs));
+
+        let opt = AbstractOptionAssignment::new(
+            opt_name_id,
+            opt_name_span,
+            SpannedContainer::new(array, array_span),
+        );
+
+        inputs.push(opt);
+
+        if ctx.peek_tok().kind() == self_delim_ctx.arg_sep() {
+            ctx.advance_tok();
+        }
+    }
+
+    ctx.expect_verbose(
+        self_delim_ctx.closing(),
+        "Expected ']' to declare directive, found ",
+        "",
+        InitialEvidence::new(
+            SemanticEnv::SectNeutral,
+            SemanticSituation::UnclosedDelimiter,
+            Branch::Directive,
+        ),
+        interner,
+    )?;
+
+    Ok(AbstractDirectivePreprocess::new(sp_direct_name_id, inputs))
+}
+
+/// General parsing of an open and closing delimiter expr context, with arg separators.
+///
+/// Behavior:
+/// - Returns empty `Vec` if `closing` is seen directly `opening` like "[] <-"
+/// - Allows for trailing comma
+fn parse_exprs_enclosing(
+    ctx: &mut ParserContext,
+    delim_ctx: DelimiterContext,
+    //TEST:
+    env: SemanticEnv,
+    branch: Branch,
+    budget: &ParserBudget,
+    interner: &Intern,
+    // Maybe this can just take in a function, and type T returned from function.
+) -> Result<Vec<SpannedContainer<AstExpr>>, Token> {
+    ctx.expect_verbose(
+        delim_ctx.opening(),
+        // Single quotes
+        &format!("Expected opening '{}', found ", delim_ctx.opening()),
+        "",
+        InitialEvidence::new(
+            //TODO: Should pass ctx
+            SemanticEnv::SectNeutral,
+            SemanticSituation::MissingStartDelimiter,
+            Branch::Directive,
+        ),
+        interner,
+    )?;
+
+    let mut exprs = Vec::new();
+
+    if ctx.peek_tok().kind() == delim_ctx.closing() {
+        return Ok(exprs);
+    }
+
+    while ctx.peek_tok().kind() != delim_ctx.closing() {
+        exprs.push(parse_expr(ctx, 0, budget, interner)?);
+        if ctx.peek_tok().kind() == delim_ctx.arg_sep() {
+            ctx.advance_tok();
+        }
+    }
+
+    ctx.expect_verbose(
+        delim_ctx.closing(),
+        &format!("Expected closing '{}', found ", delim_ctx.closing()),
+        "",
+        InitialEvidence::new(env, SemanticSituation::UnclosedDelimiter, branch),
+        interner,
+    )?;
+    Ok(exprs)
 }
 
 // Alias is this only one that uses this so_+@$_$@

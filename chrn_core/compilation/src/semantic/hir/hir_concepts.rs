@@ -6,7 +6,7 @@ use std::collections::HashMap;
 
 use chrn_utils::{
     arena::Arena,
-    id_types::{ExprId, MemberId, ModuleId, ScopeId, TypeId, ValueId},
+    id_types::{ModuleId, TypeId},
     loop_abort,
 };
 use lang::{

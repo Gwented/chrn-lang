@@ -5,7 +5,7 @@ use dashu_int::IBig;
 use dashu_int::ops::BitTest;
 
 use crate::lexer::notations::IntegerNotation;
-use crate::script_compiler::compiler_constants;
+use crate::script_compiler::compiler_consts;
 
 /// Representable `chrn` integers.
 #[derive(Debug, Clone)]
@@ -19,9 +19,9 @@ impl ArbitraryIntKind {
     /// Returns compile-time `TypeId` for `Self`.
     pub const fn type_id(&self) -> TypeId {
         match self {
-            Self::I64(_) => TypeId::new(compiler_constants::CORE_I64),
-            Self::U64(_) => TypeId::new(compiler_constants::CORE_U64),
-            Self::BigInt(_) => TypeId::new(compiler_constants::CORE_BIGINT),
+            Self::I64(_) => TypeId::new(compiler_consts::CORE_I64),
+            Self::U64(_) => TypeId::new(compiler_consts::CORE_U64),
+            Self::BigInt(_) => TypeId::new(compiler_consts::CORE_BIGINT),
         }
     }
     //WARN: Is this retrying ok?
@@ -261,7 +261,9 @@ impl ArbitraryIntKind {
         rhs: &Self,
         max_bits: u64,
     ) -> Result<Self, NumericIntError> {
-        let shift = rhs.shift_amount().ok_or(NumericIntError::InvalidShift)?;
+        let shift = rhs
+            .checked_shift_amount()
+            .ok_or(NumericIntError::InvalidShift)?;
         let res = self.shr_amount(shift);
         if res.fits_numeric_bits(max_bits) {
             Ok(res)

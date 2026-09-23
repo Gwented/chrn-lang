@@ -86,6 +86,7 @@ pub enum SymbolKind {
     /// Represents a namespace of any kind. Can currently be either a module symbol or plain
     /// namespace. This guarantees that the `Symbol` has an assigned `AssociatedScopeKind`
     Namespace,
+    // WARN: Maybe remove the symbol kind
     /// Represents a directive symbol
     Directive(DirectiveId),
     /// Is a symbol instead of `Type` since they have no usage overlap.

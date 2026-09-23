@@ -1,4 +1,4 @@
-pub mod compiler_constants;
+pub mod compiler_consts;
 pub(crate) mod helpers;
 pub mod reporter;
 pub mod script_compiler_store;
@@ -16,10 +16,7 @@ use chrn_utils::{
     intern,
     source_map::source_span::SourceSpan,
 };
-use lang::{
-    directives::Directive,
-    types::{boundaries::TypeBoundaryFlags, builtins::BuiltinType},
-};
+use lang::types::{boundaries::TypeBoundaryFlags, builtins::BuiltinType};
 
 use crate::{
     id_tag_decls::{
@@ -42,6 +39,7 @@ use crate::{
         },
     },
     semantic::{
+        hir::directives::{Directive, DirectiveInline},
         hir::{
             hir_concepts::{BuiltinTypeInfo, Table, Type, TypeInfo},
             hir_exprs::{ExprHir, ResolvedExpr, ResolvedExprMetadata},
@@ -445,6 +443,29 @@ impl ScriptCompiler {
         }
     }
 
+    // pub(super) fn get_directive_inline(
+    //     &self,
+    //     sym_id: TaggedId<SymbolId, DirectiveTag>,
+    // ) -> &DirectiveInline {
+    //     match &self.syms[sym_id.inner()] {
+    //         sym_info => match &sym_info.kind {
+    //             SymbolKind::Directive(directive_id) => &self.directives[*directive_id],
+    //             _ => unreachable!(),
+    //         },
+    //     }
+    // }
+    //
+    // pub(super) fn get_directive_preprocess(
+    //     &self,
+    //     sym_id: TaggedId<SymbolId, DirectiveTag>,
+    // ) -> &Directive {
+    //     match &self.syms[sym_id.inner()] {
+    //         sym_info => match &sym_info.kind {
+    //             SymbolKind::Directive(directive_id) => &self.directives[*directive_id],
+    //             _ => unreachable!(),
+    //         },
+    //     }
+    // }
     pub(super) fn get_directive(&self, sym_id: TaggedId<SymbolId, DirectiveTag>) -> &Directive {
         match &self.syms[sym_id.inner()] {
             sym_info => match &sym_info.kind {
@@ -879,7 +900,7 @@ impl ScriptCompiler {
     /// Loads all compiler known directives
     fn load_directives(&mut self) {
         for (name_id, directive) in compiler_helpers::DIRECTIVES_DATASET {
-            self.register_directive(name_id, directive);
+            self.register_directive_const(name_id, directive);
         }
         debug_assert_eq!(
             compiler_helpers::DIRECTIVES_DATASET.len(),
@@ -889,7 +910,27 @@ impl ScriptCompiler {
 
     fn register_directive(&mut self, interned_id: InternedId, directive: Directive) {
         let sym_id = self.syms.make_id();
-        let directive_id = compiler_constants::directive_to_id(&directive);
+        let directive_id = compiler_consts::directive_to_id_const(&directive);
+        debug_assert_eq!(directive_id.id, self.directives.len() as u32);
+
+        let sym = Symbol::new(
+            interned_id,
+            sym_id,
+            None,
+            SymbolOrigin::Compiler,
+            false,
+            None,
+            ScopeType::Compiler,
+            SymbolKind::Directive(directive_id),
+        );
+
+        self.syms.push(sym);
+        self.directives.push(directive);
+    }
+
+    fn register_directive_const(&mut self, interned_id: InternedId, directive: Directive) {
+        let sym_id = self.syms.make_id();
+        let directive_id = compiler_consts::directive_to_id_const(&directive);
         debug_assert_eq!(directive_id.id, self.directives.len() as u32);
 
         let sym = Symbol::new(
@@ -1078,7 +1119,7 @@ impl ScriptCompiler {
     ) -> TypeId {
         match ty {
             InstiationType::BuiltinType(builtin) => {
-                TypeId::new(compiler_constants::builtin_ty_to_id(builtin.kind()))
+                TypeId::new(compiler_consts::builtin_ty_to_id(builtin.kind()))
             }
         }
     }

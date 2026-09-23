@@ -4,32 +4,40 @@
 // Beep
 
 use chrn_utils::{id_types::InternedId, intern};
-use lang::directives::{Directive, TypeDirective};
 
-use crate::script_compiler::compiler_constants;
+use crate::{
+    script_compiler::compiler_consts,
+    semantic::hir::directives::{Directive, DirectiveInline, TypeDirective},
+};
 
 pub static DIRECTIVES_DATASET: [(InternedId, Directive);
-    compiler_constants::DIRECTIVE_UNICODE_IDX + 1] = [
-    (InternedId::new(intern::INTERNED_WARN), Directive::Warn),
-    (InternedId::new(intern::INTERNED_IGNORE), Directive::Ignore),
+    compiler_consts::DIRECTIVE_UNICODE_IDX + 1] = [
+    (
+        InternedId::new(intern::INTERNED_WARN),
+        Directive::Comptime(DirectiveInline::Warn),
+    ),
+    (
+        InternedId::new(intern::INTERNED_IGNORE),
+        Directive::Comptime(DirectiveInline::Ignore),
+    ),
     (
         InternedId::new(intern::INTERNED_SCIENT),
-        Directive::Type(TypeDirective::Scient),
+        Directive::Comptime(DirectiveInline::Type(TypeDirective::Scient)),
     ),
     (
         InternedId::new(intern::INTERNED_HEX),
-        Directive::Type(TypeDirective::Hex),
+        Directive::Comptime(DirectiveInline::Type(TypeDirective::Hex)),
     ),
     (
         InternedId::new(intern::INTERNED_BIN),
-        Directive::Type(TypeDirective::Bin),
+        Directive::Comptime(DirectiveInline::Type(TypeDirective::Bin)),
     ),
     (
         InternedId::new(intern::INTERNED_OCTAL),
-        Directive::Type(TypeDirective::Octal),
+        Directive::Comptime(DirectiveInline::Type(TypeDirective::Octal)),
     ),
     (
         InternedId::new(intern::INTERNED_UNICODE),
-        Directive::Type(TypeDirective::Unicode),
+        Directive::Comptime(DirectiveInline::Type(TypeDirective::Unicode)),
     ),
 ];

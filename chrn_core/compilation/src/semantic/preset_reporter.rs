@@ -15,6 +15,7 @@ use crate::semantic::preset_reporter::engine_concepts::{
 };
 use crate::semantic::preset_reporter::preset_err::{LookupError, MathError, PresetErr};
 use crate::semantic::resolution::resolution_concepts::{StaticAccessResult, TypeExprResult};
+use crate::semantic::{self, algo};
 use chrn_utils::err_codes::ErrorCode;
 use chrn_utils::source_map::source_diagnostic::annotations::AnnotationKind;
 use chrn_utils::source_map::source_diagnostic::{
@@ -123,8 +124,7 @@ pub(crate) fn create_diag_builder_preset(
             )
             .add_annotation(sp_interned_id.span, AnnotationKind::Primary, None);
 
-            let similar_vec =
-                lang::algo::fuzzy_match(err_name.as_bytes(), lang::algo::FuzzyMatch::Directive);
+            let similar_vec = algo::fuzzy_match(err_name.as_bytes(), algo::FuzzyMatch::Directive);
 
             //FIX: Every usage of this is very dis-organized
             if !similar_vec.is_empty() {

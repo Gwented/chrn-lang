@@ -1,3 +1,4 @@
+pub mod algo;
 pub mod arbitraries;
 pub mod checker_helpers;
 pub mod compilation_unit;

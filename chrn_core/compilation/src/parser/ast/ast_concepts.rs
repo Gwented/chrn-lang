@@ -13,7 +13,7 @@ use crate::{
     lookup::scopes::scopes_concepts::{ScopeLookupPattern, ScopeType},
     parser::ast::{
         ast_exprs::{AstExpr, PathSegment, TypeExpr},
-        ast_stmts::AstStmt,
+        ast_stmts::{AbstractOptionAssignment, AstStmt},
     },
     semantic::hir::hir_impls::ConfigRootMetadataKind,
 };
@@ -376,13 +376,28 @@ impl AbstractVar {
 }
 
 #[derive(Debug)]
-pub struct AbstractDirective {
+pub struct AbstractDirectiveInline {
     pub sp_name_id: SpannedContainer<InternedId>,
 }
 
-impl AbstractDirective {
-    pub fn new(sp_name_id: SpannedContainer<InternedId>) -> AbstractDirective {
-        AbstractDirective { sp_name_id }
+impl AbstractDirectiveInline {
+    pub fn new(sp_name_id: SpannedContainer<InternedId>) -> AbstractDirectiveInline {
+        AbstractDirectiveInline { sp_name_id }
+    }
+}
+
+#[derive(Debug)]
+pub struct AbstractDirectivePreprocess {
+    pub sp_name_id: SpannedContainer<InternedId>,
+    pub inputs: Vec<AbstractOptionAssignment>,
+}
+
+impl AbstractDirectivePreprocess {
+    pub fn new(
+        sp_name_id: SpannedContainer<InternedId>,
+        inputs: Vec<AbstractOptionAssignment>,
+    ) -> Self {
+        Self { sp_name_id, inputs }
     }
 }
 
@@ -395,7 +410,7 @@ pub struct AbstractTypeDef {
     pub sp_ty_expr: SpannedContainer<TypeExpr>,
     pub is_priv: bool,
     pub conds: Vec<SpannedContainer<AstExpr>>,
-    pub directives: Vec<AbstractDirective>,
+    pub directives: Vec<AbstractDirectiveInline>,
 }
 
 impl AbstractTypeDef {
@@ -403,7 +418,7 @@ impl AbstractTypeDef {
         name_id: InternedId,
         name_span: SourceSpan,
         sp_ty_expr: SpannedContainer<TypeExpr>,
-        directives: Vec<AbstractDirective>,
+        directives: Vec<AbstractDirectiveInline>,
         is_priv: bool,
         conds: Vec<SpannedContainer<AstExpr>>,
     ) -> AbstractTypeDef {
@@ -423,7 +438,7 @@ pub struct AbstractStruct {
     pub name_id: InternedId,
     pub name_span: SourceSpan,
     pub glob_conds: Vec<SpannedContainer<AstExpr>>,
-    pub glob_directives: Vec<AbstractDirective>,
+    pub glob_directives: Vec<AbstractDirectiveInline>,
     pub fields: Vec<AbstractTypeDef>,
     pub is_priv: bool,
 }
@@ -433,7 +448,7 @@ impl AbstractStruct {
         name_id: InternedId,
         name_span: SourceSpan,
         glob_conds: Vec<SpannedContainer<AstExpr>>,
-        glob_directives: Vec<AbstractDirective>,
+        glob_directives: Vec<AbstractDirectiveInline>,
         fields: Vec<AbstractTypeDef>,
         is_priv: bool,
     ) -> AbstractStruct {
@@ -455,7 +470,7 @@ pub struct AbstractEnum {
     pub name_span: SourceSpan,
     pub variants: Vec<AbstractVariant>,
     pub glob_conds: Vec<SpannedContainer<AstExpr>>,
-    pub glob_directives: Vec<AbstractDirective>,
+    pub glob_directives: Vec<AbstractDirectiveInline>,
     pub is_priv: bool,
     // pub(crate) visibility: Visibility,
 }
@@ -466,7 +481,7 @@ impl AbstractEnum {
         name_span: SourceSpan,
         variants: Vec<AbstractVariant>,
         glob_conds: Vec<SpannedContainer<AstExpr>>,
-        glob_directives: Vec<AbstractDirective>,
+        glob_directives: Vec<AbstractDirectiveInline>,
         is_priv: bool,
     ) -> AbstractEnum {
         AbstractEnum {
@@ -487,7 +502,7 @@ pub struct AbstractVariant {
     pub name_span: SourceSpan,
     // I think this is right?
     pub sp_ty_expr: Option<SpannedContainer<TypeExpr>>,
-    pub directives: Vec<AbstractDirective>,
+    pub directives: Vec<AbstractDirectiveInline>,
     pub conds: Vec<SpannedContainer<AstExpr>>,
 }
 
@@ -498,7 +513,7 @@ impl AbstractVariant {
         // I think this is right?
         sp_ty_expr: Option<SpannedContainer<TypeExpr>>,
         conds: Vec<SpannedContainer<AstExpr>>,
-        directives: Vec<AbstractDirective>,
+        directives: Vec<AbstractDirectiveInline>,
     ) -> AbstractVariant {
         AbstractVariant {
             name_id,
@@ -703,7 +718,7 @@ pub struct AbstractAlias {
     pub name_span: SourceSpan,
     pub params: Vec<AbstractParam>,
     pub conds: Vec<SpannedContainer<AstExpr>>,
-    pub directives: Vec<AbstractDirective>,
+    pub directives: Vec<AbstractDirectiveInline>,
     pub is_priv: bool,
 }
 
@@ -713,7 +728,7 @@ impl AbstractAlias {
         name_span: SourceSpan,
         params: Vec<AbstractParam>,
         conds: Vec<SpannedContainer<AstExpr>>,
-        directives: Vec<AbstractDirective>,
+        directives: Vec<AbstractDirectiveInline>,
         is_priv: bool,
     ) -> AbstractAlias {
         AbstractAlias {

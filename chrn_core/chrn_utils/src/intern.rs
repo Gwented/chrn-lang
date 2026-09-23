@@ -159,6 +159,8 @@ pub const INTERNED_UTF16_MAX_CODE_UNITS: u32 = 149;
 pub const INTERNED_UTF16_MIN_CODE_UNITS: u32 = 150;
 pub const INTERNED_UTF32_BYTES: u32 = 151;
 pub const INTERNED_UTF32_BITS: u32 = 152;
+pub const INTERNED_CHRN: u32 = 153;
+pub const INTERNED_MAX_NUMERIC_BITS: u32 = 154;
 
 // Collection,
 // CharacterMappable,
@@ -334,6 +336,8 @@ pub static PRELOADED_STRINGS: [(&str, u32); INTERNER_PRELOAD_SIZE] = [
     ("UTF16_MIN_CODE_UNITS", INTERNED_UTF16_MIN_CODE_UNITS),
     ("UTF32_BYTES", INTERNED_UTF32_BYTES),
     ("UTF32_BITS", INTERNED_UTF32_BITS),
+    ("chrn", INTERNED_CHRN),
+    ("MAX_NUMERIC_BITS", INTERNED_MAX_NUMERIC_BITS),
 ];
 
 /// Interner used for the chrn language
@@ -349,7 +353,7 @@ pub struct Intern {
     pos: usize,
 }
 
-pub const INTERNER_PRELOAD_SIZE: usize = (INTERNED_UTF32_BITS + 1) as usize;
+pub const INTERNER_PRELOAD_SIZE: usize = (INTERNED_MAX_NUMERIC_BITS + 1) as usize;
 
 impl Intern {
     /// Creates interner that pre-loads itself with all defined interned string literals.

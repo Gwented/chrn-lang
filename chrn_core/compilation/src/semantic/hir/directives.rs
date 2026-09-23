@@ -1,67 +1,152 @@
 use chrn_utils::{id_types::InternedId, intern};
-
-use crate::{
+use lang::{
     chrn_classifier::{ChrnClassifiable, ChrnClassified},
     types::{boundaries::TypeBoundaryFlags, builtins::BuiltinType},
 };
+//Might be a little too much here
 
-/// If a new directive is added ensure this is updated
-pub static BUILTIN_DIRECTIVE_STRS: [&str; 7] =
-    ["warn", "scient", "hex", "bin", "octal", "ignore", "unicode"];
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// General directives not specific to anything
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Directive {
-    Warn,
-    Ignore,
-    Type(TypeDirective),
-}
-
-impl From<TypeDirective> for Directive {
-    fn from(val: TypeDirective) -> Self {
-        Directive::Type(val)
-    }
+    Preprocess(DirectivePreprocess),
+    Comptime(DirectiveInline),
 }
 
 impl Directive {
-    /// If `self` has any form of restrictions, returns `true`
-    /// Otherwise `false`
-    pub fn has_restrictions(self) -> bool {
-        match self {
-            Directive::Warn | Directive::Ignore => false,
-            Directive::Type(type_directive) => type_directive.has_restrictions(),
-        }
-    }
-    pub fn supports_builtin_type(self, builtin_type: &BuiltinType) -> bool {
-        match self {
-            Directive::Warn | Directive::Ignore => true,
-            Directive::Type(type_directive) => type_directive.supports_builtin_type(builtin_type),
-        }
+    pub const fn try_from_interned_str(interned_id: InternedId) -> Option<Directive> {
+        if let Some(found) = DirectiveInline::try_from_interned_str(interned_id) {
+            return Some(Directive::Comptime(found));
+        };
+        if let Some(found) = DirectivePreprocess::try_from_interned_str(interned_id) {
+            return Some(Directive::Preprocess(found));
+        };
+        None
     }
 
-    pub fn boundaries(self) -> TypeBoundaryFlags {
+    //WARN: Comptime is based off of the input boundary.
+    // Inline is the input boundary but from the env
+    pub const fn boundaries(self) -> TypeBoundaryFlags {
         match self {
-            Directive::Warn | Directive::Ignore => TypeBoundaryFlags::all(),
-            Directive::Type(type_directive) => type_directive.boundaries(),
-        }
-    }
-
-    pub fn try_from_interned_str(interned_id: InternedId) -> Option<Directive> {
-        match interned_id.id {
-            intern::INTERNED_WARN => Some(Directive::Warn),
-            intern::INTERNED_IGNORE => Some(Directive::Ignore),
-            // Ok this looks confusing
-            _ => Some(TypeDirective::try_from_interned_str(interned_id)?.into()),
+            Directive::Preprocess(d) => d.boundaries(),
+            Directive::Comptime(d) => d.boundaries(),
         }
     }
 }
 
 impl ChrnClassifiable for Directive {
-    fn to_classified(&self) -> crate::chrn_classifier::ChrnClassified {
+    fn to_classified(&self) -> ChrnClassified {
         match self {
-            Directive::Warn => ChrnClassified::DirectiveWarn,
-            Directive::Ignore => ChrnClassified::DirectiveIgnore,
-            Directive::Type(type_directive) => type_directive.to_classified(),
+            Directive::Preprocess(d) => d.to_classified(),
+            Directive::Comptime(d) => d.to_classified(),
+        }
+    }
+}
+
+impl From<DirectiveInline> for Directive {
+    fn from(v: DirectiveInline) -> Self {
+        Directive::Comptime(v)
+    }
+}
+
+impl From<TypeDirective> for Directive {
+    fn from(val: TypeDirective) -> Self {
+        Directive::Comptime(DirectiveInline::Type(val))
+    }
+}
+
+/// General directives not specific to anything
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DirectivePreprocess {
+    Chrn(InternedId),
+}
+
+impl DirectivePreprocess {
+    pub const fn try_from_interned_str(interned_id: InternedId) -> Option<DirectivePreprocess> {
+        // None right now
+        match interned_id {
+            _ => None,
+        }
+    }
+
+    pub const fn boundaries(self) -> TypeBoundaryFlags {
+        match self {
+            DirectivePreprocess::Chrn(_) => TypeBoundaryFlags::STR,
+        }
+    }
+
+    pub const fn has_params(self) -> bool {
+        match self {
+            DirectivePreprocess::Chrn(_) => false,
+        }
+    }
+}
+
+impl ChrnClassifiable for DirectivePreprocess {
+    fn to_classified(&self) -> ChrnClassified {
+        match self {
+            DirectivePreprocess::Chrn(_) => ChrnClassified::Chrn,
+        }
+    }
+}
+
+/// General directives not specific to anything
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DirectiveInline {
+    Warn,
+    Ignore,
+    Type(TypeDirective),
+}
+
+impl From<TypeDirective> for DirectiveInline {
+    fn from(val: TypeDirective) -> Self {
+        DirectiveInline::Type(val)
+    }
+}
+
+impl DirectiveInline {
+    /// If `self` has any form of restrictions, returns `true`
+    /// Otherwise `false`
+    pub fn has_restrictions(self) -> bool {
+        match self {
+            DirectiveInline::Warn | DirectiveInline::Ignore => false,
+            DirectiveInline::Type(d) => d.has_restrictions(),
+        }
+    }
+    pub fn supports_builtin_type(self, builtin_type: &BuiltinType) -> bool {
+        match self {
+            DirectiveInline::Warn | DirectiveInline::Ignore => true,
+            DirectiveInline::Type(d) => d.supports_builtin_type(builtin_type),
+        }
+    }
+
+    pub const fn boundaries(self) -> TypeBoundaryFlags {
+        match self {
+            DirectiveInline::Warn | DirectiveInline::Ignore => TypeBoundaryFlags::all(),
+            DirectiveInline::Type(d) => d.boundaries(),
+        }
+    }
+
+    pub const fn try_from_interned_str(interned_id: InternedId) -> Option<DirectiveInline> {
+        match interned_id.id {
+            intern::INTERNED_WARN => Some(DirectiveInline::Warn),
+            intern::INTERNED_IGNORE => Some(DirectiveInline::Ignore),
+            // Ok this looks confusing
+            _ => {
+                let Some(ty_direct) = TypeDirective::try_from_interned_str(interned_id) else {
+                    return None;
+                };
+                Some(DirectiveInline::Type(ty_direct))
+            }
+        }
+    }
+}
+
+impl ChrnClassifiable for DirectiveInline {
+    fn to_classified(&self) -> lang::chrn_classifier::ChrnClassified {
+        match self {
+            DirectiveInline::Warn => ChrnClassified::DirectiveWarn,
+            DirectiveInline::Ignore => ChrnClassified::DirectiveIgnore,
+            DirectiveInline::Type(type_directive) => type_directive.to_classified(),
         }
     }
 }
@@ -141,7 +226,7 @@ impl TypeDirective {
         }
     }
 
-    pub fn boundaries(self) -> TypeBoundaryFlags {
+    pub const fn boundaries(self) -> TypeBoundaryFlags {
         match self {
             TypeDirective::Scient
             | TypeDirective::Hex
@@ -151,7 +236,7 @@ impl TypeDirective {
         }
     }
 
-    pub fn try_from_interned_str(interned_id: InternedId) -> Option<TypeDirective> {
+    pub const fn try_from_interned_str(interned_id: InternedId) -> Option<TypeDirective> {
         match interned_id.id {
             intern::INTERNED_SCIENT => Some(TypeDirective::Scient),
             intern::INTERNED_HEX => Some(TypeDirective::Hex),
