@@ -12,8 +12,8 @@ use crate::{
     resolvers::typechecker::typechecker_concepts::{ExpectedKind, ExpectedKindType},
     semantic::{
         hir::{
-            directives::{Directive, DirectiveInline},
             hir_concepts::TypeKind,
+            hir_directives::{Directive, DirectiveInline},
             hir_symbols::{BuiltinFuncKind, SymbolKindFlat},
         },
         values::ValueKind,

@@ -10,8 +10,7 @@ pub mod chrn_perf;
 use crate::chrn_config::{chrn_logger::ChrnConfigLogger, chrn_perf::ChrnPerf};
 
 //TEST: No longer has use but is useful to keep in case of any future use
-/// Config given before running a chrn language instance, which allows for external tooling
-/// capabilities, such as cli args.
+/// Alters `chrn` compiler behavior
 #[derive(Debug)]
 pub struct ChrnConfig {
     // This is purposefully nested so that it owns the specific methods for logging as to not convolute

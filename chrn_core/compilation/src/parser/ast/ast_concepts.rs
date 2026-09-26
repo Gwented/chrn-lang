@@ -26,6 +26,7 @@ pub struct AstInfo {
     /// order: `neutral`, `var`, `nest`, `complex`, `override`
     pub sections: [Option<AbstractSection>; 4],
     pub items: Arena<Item, AstId>,
+    pub preprocess_directives: Vec<AbstractDirectivePreprocess>,
 }
 
 impl AstInfo {
@@ -33,13 +34,15 @@ impl AstInfo {
         AstInfo {
             sections: [None, None, None, None],
             items: Arena::new(),
+            preprocess_directives: Vec::new(),
         }
     }
 
-    pub fn with_capacity(items_cap: usize) -> AstInfo {
+    pub fn with_capacities(items_cap: usize, directs_cap: usize) -> AstInfo {
         AstInfo {
             sections: [None, None, None, None],
             items: Arena::with_capacity(items_cap),
+            preprocess_directives: Vec::with_capacity(directs_cap),
         }
     }
 

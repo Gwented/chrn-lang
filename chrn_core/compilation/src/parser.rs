@@ -1,12 +1,16 @@
 //TODO: Evidence info is very unfinished
 // Collapse past over-fit fns
+//
+// What if there was a queue per stage, where here for example, `chrn` would be made, and chrn would
+// require that the parsing stage is done for it to be processed. it of course is processed in the
+// parsing stage itself, so it immediately applies itself where possible.
 pub mod ast;
 mod branch;
 mod context;
 mod evidence;
-mod helpers;
 mod parse_fmt;
 mod parser_budget;
+pub mod parser_helpers;
 mod parser_state;
 
 use crate::chrn_config::ChrnConfig;
@@ -26,8 +30,8 @@ use crate::parser::ast::ast_stmts::{AbstractOptionAssignment, AbstractTypeMultiA
 use crate::parser::branch::{Branch, NestBranch, NeutralBranch, SectionBranch};
 use crate::parser::context::ParserContext;
 use crate::parser::evidence::{Evidence, InitialEvidence, SemanticEnv, SemanticSituation};
-use crate::parser::helpers::DelimiterContext;
 use crate::parser::parser_budget::ParserBudget;
+use crate::parser::parser_helpers::DelimiterContext;
 use crate::parser::parser_state::ParserState;
 use crate::semantic::hir::hir_impls::ConfigRootMetadataKind;
 use chrn_utils::intern::Intern;
@@ -53,11 +57,11 @@ pub fn parse(
     // possibly not even covering a config member. But to get more details, we'd need to carry known
     // sections crossed, which would probably not be worth over-complicating the API for.
     //
-    // Assumes 12 toks == at least 1 item
+    // Assumes 12 toks : item
     let speculated_items = tokens.len() / 12;
 
     // Output it's own summary? Does AstInfo hold a summary?
-    let mut ast_info = AstInfo::with_capacity(speculated_items);
+    let mut ast_info = AstInfo::with_capacities(speculated_items, 0);
 
     let mut state = ParserState::new();
     let budget = ParserBudget::new(
@@ -387,11 +391,14 @@ pub fn parse(
             },
             Token::HashSymbol => {
                 if !state.is_neutral() {
+                    // Neural
                     todo!("Not neural");
                 }
                 ctx.advance_tok();
-                dbg!(parse_directive_preprocess(&mut ctx, &budget, interner));
-                // todo!();
+
+                if let Ok(direct) = parse_directive_preprocess(&mut ctx, &budget, interner) {
+                    ast_info.preprocess_directives.push(direct);
+                }
             }
             Token::Invalid(id) => {
                 ctx.advance_tok();

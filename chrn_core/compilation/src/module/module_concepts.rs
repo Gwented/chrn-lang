@@ -5,55 +5,6 @@ use chrn_utils::{
     utils::containers::SpannedContainer,
 };
 
-/// Imports used by user and compiler generated modules
-#[derive(Debug, Clone)]
-pub struct Import {
-    pub name_id: InternedId,
-    pub kind: ImportKind,
-    pub sp_alias_id: Option<SpannedContainer<InternedId>>,
-}
-
-impl Import {
-    pub const fn new(
-        name_id: InternedId,
-        kind: ImportKind,
-        sp_alias_id: Option<SpannedContainer<InternedId>>,
-    ) -> Import {
-        Import {
-            name_id,
-            kind,
-            sp_alias_id,
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum ImportKind {
-    /// Import that is from a source file and fully resolved.
-    /// Contains it's spanned path and module id
-    Source(SpannedContainer<PathId>, ModuleId),
-    /// Import from a source file that has a path attached to it, but no module id yet
-    UnresolvedSource(SpannedContainer<PathId>),
-    /// Import from source that had an unrecoverable error occur.
-    /// This means the import should NOT be touched in any resolution scenario, unless for
-    /// reporting or storing metadata.
-    ErrorSource(SpannedContainer<PathId>),
-    /// Core module originated importt
-    Core(ModuleId),
-}
-
-#[derive(Debug, Default, Clone)]
-pub struct Bind {
-    pub path_id: PathId,
-    pub path_span: SourceSpan,
-}
-
-impl Bind {
-    pub const fn new(path_id: PathId, path_span: SourceSpan) -> Bind {
-        Bind { path_id, path_span }
-    }
-}
-
 //TODO:
 //Maybe, a kind field that says user or builtin,
 //or, a wrapper that has a module that could explicitly represent if it's user or not
@@ -64,18 +15,20 @@ impl Bind {
 pub struct Module {
     /// File name that will be used internally
     pub name_id: InternedId,
-    /// It's own module id position
+    /// `ModuleId` of `self`
     pub self_id: ModuleId,
     /// Imports found in the module
-    // What if imports were tagged with bit-wise?
     pub imports: Vec<Import>,
-    /// Representation of the module's state
+    /// Module's current state
     pub state: ModuleState,
+    /// Bind pathing
     pub bind: Option<Bind>,
-    /// Represents the 5 known scopes as well as any local scopes
+    /// Holds the 4 known section scopes as well as any local scopes
     pub scopes: Vec<ScopeId>,
     // HashSet maybe
     pub exports: Vec<SymbolId>,
+    //NOTE: If the directive system goes farther we then need an isolated cfg relationship
+    // pub cfg:
     /// Metadata that exists if the module contains a source file
     // As of right now this represents the difference between a pre-loaded and user space module
     pub region_id: Option<SourceRegionId>,
@@ -221,5 +174,54 @@ impl PartialEq for ModuleIdent {
 impl std::hash::Hash for ModuleIdent {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.ident_id.hash(state);
+    }
+}
+
+/// Imports used by user and compiler generated modules
+#[derive(Debug, Clone)]
+pub struct Import {
+    pub name_id: InternedId,
+    pub kind: ImportKind,
+    pub sp_alias_id: Option<SpannedContainer<InternedId>>,
+}
+
+impl Import {
+    pub const fn new(
+        name_id: InternedId,
+        kind: ImportKind,
+        sp_alias_id: Option<SpannedContainer<InternedId>>,
+    ) -> Import {
+        Import {
+            name_id,
+            kind,
+            sp_alias_id,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum ImportKind {
+    /// Import that is from a source file and fully resolved.
+    /// Contains it's spanned path and module id
+    Source(SpannedContainer<PathId>, ModuleId),
+    /// Import from a source file that has a path attached to it, but no module id yet
+    UnresolvedSource(SpannedContainer<PathId>),
+    /// Import from source that had an unrecoverable error occur.
+    /// This means the import should NOT be touched in any resolution scenario, unless for
+    /// reporting or storing metadata.
+    ErrorSource(SpannedContainer<PathId>),
+    /// Core module originated importt
+    Core(ModuleId),
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct Bind {
+    pub path_id: PathId,
+    pub path_span: SourceSpan,
+}
+
+impl Bind {
+    pub const fn new(path_id: PathId, path_span: SourceSpan) -> Bind {
+        Bind { path_id, path_span }
     }
 }

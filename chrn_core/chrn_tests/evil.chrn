@@ -46,12 +46,13 @@ for varthing1 {}
 
 // {} <- for multiple maybe
 
+// What if we had something like i"" where it's like b"" but it's a string with invalid utf-8, so we
+// know to ignore it?
+
 // comptime directs & runtime directives distinction?
 // Maybe modle finder collects comptime syntax only?
-#chrn[MAX_NUMERIC_BITS(256), MAX_THING(3)]
+#chrn[MAX_NUMERIC_BITS(256), MAX_THING(2)]
 
-// rm msg for let always inferred
-//
 // Thinking about removing the big int usage and just making caps or integers.
 // So, we can pick "--max-int-bits=" where the eq value must be a known bit range like 256, 512, etc.
 // Floats may stay the same, but the integer part can definitely be less complication, we don't need

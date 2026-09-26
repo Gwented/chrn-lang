@@ -27,8 +27,8 @@ use crate::{
     script_compiler::ScriptCompiler,
     semantic::{
         hir::{
-            directives::DirectiveInline,
             hir_concepts::{BuiltinTypeInfo, Type, TypeInfo},
+            hir_directives::DirectiveInline,
             hir_symbols::{Symbol, SymbolKind, SymbolOrigin},
         },
         resolution::resolution_concepts::{StaticAccessOption, StaticAccessResult, TypeExprResult},

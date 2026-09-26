@@ -39,7 +39,7 @@ use crate::{
         },
     },
     semantic::{
-        hir::directives::{Directive, DirectiveInline},
+        hir::hir_directives::{Directive, DirectiveInline},
         hir::{
             hir_concepts::{BuiltinTypeInfo, Table, Type, TypeInfo},
             hir_exprs::{ExprHir, ResolvedExpr, ResolvedExprMetadata},
@@ -95,7 +95,7 @@ pub struct ScriptCompiler {
     pub scopes: Arena<ScopeInfo, ScopeId>,
     /// Information regarding intrinsic data such as core's `ModuleId`
     pub intrinsic_registry: IntrinsicRegistry,
-    /// The current stage the compiler is in
+    /// Current stage the compiler is in
     pub resolver_state: ResolverState,
 }
 
@@ -908,7 +908,7 @@ impl ScriptCompiler {
         );
     }
 
-    fn register_directive(&mut self, interned_id: InternedId, directive: Directive) {
+    fn register_directive(&mut self, interned_id: InternedId, directive: DirectiveInline) {
         let sym_id = self.syms.make_id();
         let directive_id = compiler_consts::directive_to_id_const(&directive);
         debug_assert_eq!(directive_id.id, self.directives.len() as u32);
@@ -925,10 +925,10 @@ impl ScriptCompiler {
         );
 
         self.syms.push(sym);
-        self.directives.push(directive);
+        self.directives.push(Directive::Inline(directive));
     }
 
-    fn register_directive_const(&mut self, interned_id: InternedId, directive: Directive) {
+    fn register_directive_const(&mut self, interned_id: InternedId, directive: DirectiveInline) {
         let sym_id = self.syms.make_id();
         let directive_id = compiler_consts::directive_to_id_const(&directive);
         debug_assert_eq!(directive_id.id, self.directives.len() as u32);
@@ -945,7 +945,7 @@ impl ScriptCompiler {
         );
 
         self.syms.push(sym);
-        self.directives.push(directive);
+        self.directives.push(Directive::Inline(directive));
     }
 
     /// Creates scope with the constants needed for an `override` section to function then returns

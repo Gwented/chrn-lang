@@ -1,7 +1,7 @@
 use chrn_utils::{
     arena::Arena,
     core_error::ScriptError,
-    id_types::{ModuleId, SourceRegionId, SymbolId},
+    id_types::{ModuleId, SourceRegionId},
     source_map::{source_diagnostic::SourceDiagnosticSummary, source_region::SourceRegion},
 };
 use compilation::{
@@ -18,7 +18,10 @@ use compilation::{
     script_compiler::{
         ScriptCompiler, reporter::Reporter, script_compiler_store::ScriptCompilerStore,
     },
-    semantic::compilation_unit::CompilationUnit,
+    semantic::{
+        compilation_unit::CompilationUnit,
+        hir::hir_directives::{DirectivePreprocess, lexer_processor},
+    },
 };
 
 use crate::script_compiler_cache::ScriptCompilerCache;
@@ -45,12 +48,33 @@ pub fn run_all(
         //TEST: The error messages get worse when they are allowed  to be read with a broken region
         let mod_id = ModuleId::new(i as u32);
 
-        let (toks_opt, trivia_opt) =
+        //NOTE: For compiler directives, the intent is that the entry module is the precendent.
+        //Let's say the entry has "#chrn[MAX_NUMERIC_BITS(256)]"
+        //That means even if a later module has MAX_NUMERIC_BITS(4) it'll only abide by the entry.
+        //May change. Maybe we can use the `rec` keyword to require enabling the entry module only
+        //behavior.
+        let (toks_opt, trivia_opt, hash_indices) =
             if let Some(lex_out) = run_lexer(compiler, compiler_store, &compiler_cache, mod_id) {
-                (lex_out.toks.into(), lex_out.trivia.into())
+                (
+                    lex_out.toks.into(),
+                    lex_out.trivia.into(),
+                    lex_out.hash_tok_indices,
+                )
             } else {
-                (None, None)
+                (None, None, Vec::new())
             };
+
+        //TEST:
+        if let Some(toks) = &toks_opt {
+            for idx in hash_indices {
+                dbg!(lexer_processor::produce_directives(
+                    toks,
+                    idx,
+                    &compiler_store.interner
+                ));
+            }
+            panic!("Or at least your spare time");
+        }
 
         let ast_info_opt = if let Some(toks) = &toks_opt {
             let (ast_info_opt, diag_summary) =
@@ -69,16 +93,25 @@ pub fn run_all(
         compiler_store.asts.push(ast_info_opt);
     }
 
+    //TEST: Not sure what to do with the directives
+    for info_opt in &compiler_store.asts {
+        let Some(info) = info_opt else {
+            continue;
+        };
+        panic!("Stop");
+        // would be done differently since linear
+        // for direct in &info.preprocess_directives {
+        //     lexer_processor::produce_directives(toks, hash_idx, interner)
+        // }
+    }
+
     // if reporter.diag_summary().has_err() {
     //     return Err(ScriptError::Parser);
     // }
 
-    // Storing this so that the compiler can be borrowed without conflicts and keep resolution incremental
+    // Storing this so that the compiler can be borrowed without conflicts
     let mod_len = compiler.mods.len();
 
-    // TEST:
-    // This should be stored internally
-    //
     // Creates envs so that resolvers can maintain their state, given the current environment of modules
     let registration_envs =
         create_registration_envs(compiler, &compiler_store.region_arena, &compiler_store.asts);
@@ -107,7 +140,6 @@ pub fn run_all(
     // Ownership transfer
     compiler_store.compilation_syms = mod_symbols;
 
-    //TEST:
     // Leaving the registration stage and being able to use the later resolver stage env
     let resolver_envs = create_resolver_envs(
         compiler,
@@ -170,7 +202,7 @@ pub fn run_all(
         reporter.merge_summary_safe(constraint_resolver.resolve(&current_env));
     }
 
-    if reporter.diag_summary().err_count() > 0 {
+    if reporter.diag_summary().has_err() {
         return Err(ScriptError::Semantic);
     }
 
@@ -221,8 +253,6 @@ pub fn run_lexer(
 
 /// * reporter: To store diagnostics
 /// * current_mod_id: Current `ModuleId`
-/// * toks_opt: Tokens which are an Option due to pipelines themselves possibly not knowing if their
-/// tokens are `Some` or not.
 /// * toks: Tokens associated with the given module
 /// * compiler: Compiler associated with the current module
 /// * compiler_cache: Optional caching structure
@@ -230,8 +260,6 @@ pub fn run_parser(
     compiler: &ScriptCompiler,
     // Also needs mutable for lexer
     compiler_store: &mut ScriptCompilerStore,
-    // Could make this optional
-    // More like "Orchestrator"
     //TODO: I don't think this can stay external and maintain usefulness
     compiler_cache: &Option<&mut ScriptCompilerCache>,
     current_mod_id: ModuleId,

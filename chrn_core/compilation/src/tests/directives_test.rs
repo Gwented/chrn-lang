@@ -1,12 +1,4 @@
-use super::helpers::*;
-use crate::{
-    script_compiler::compiler_consts::{
-        DIRECTIVE_BIN_IDX, DIRECTIVE_HEX_IDX, DIRECTIVE_IGNORE_IDX, DIRECTIVE_OCTAL_IDX,
-        DIRECTIVE_SCIENT_IDX, DIRECTIVE_UNICODE_IDX, DIRECTIVE_WARN_IDX, directive_to_id_const,
-    },
-    semantic::hir::directives::{Directive, TypeDirective},
-};
-use chrn_utils::{id_types::DirectiveId, intern, intern::Intern};
+use chrn_utils::{intern, intern::Intern};
 use lang::directive_consts::BUILTIN_DIRECTIVE_STRS;
 //NOTE: Only the idices matching test will exist if something ilke #lang(C) is added since those
 //types of directives wouldn't be pre-registered, and would more so had inners that may carry known

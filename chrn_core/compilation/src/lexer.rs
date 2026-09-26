@@ -97,6 +97,7 @@ impl Lexer<'_> {
         // 40 bytes : 1 token
         let speculated_toks = self.src_bytes.len() / 40;
         let mut toks: Vec<SpannedToken> = Vec::with_capacity(speculated_toks);
+        let mut hash_tok_indices: Vec<usize> = Vec::new();
 
         self.cfg.perf_tracker_mut().start(self.current_path_id);
 
@@ -352,6 +353,8 @@ impl Lexer<'_> {
                     });
                 }
                 '#' => {
+                    hash_tok_indices.push(toks.len());
+
                     let pos = self.pos as u32;
                     toks.push(SpannedToken {
                         tok: Token::HashSymbol,
@@ -576,7 +579,7 @@ impl Lexer<'_> {
 
         let mut trivia: Vec<Trivia> = Vec::with_capacity(self.trivia.len());
         trivia.append(&mut self.trivia);
-        LexerOutput::new(toks, trivia, self.invalid_toks)
+        LexerOutput::new(toks, trivia, hash_tok_indices, self.invalid_toks)
     }
 
     /// Reads a string of characters based off of language expected heuristics

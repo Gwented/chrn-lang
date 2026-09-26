@@ -33,8 +33,8 @@ use crate::{
     semantic::{
         compilation_unit::CompilationUnit,
         hir::{
-            directives::{Directive, DirectiveInline, DirectivePreprocess},
             hir_concepts::Type,
+            hir_directives::{Directive, DirectiveInline, DirectivePreprocessValue},
             hir_impls::{ConfigMember, ConfigMemberMetadataKind, ConfigRootKind},
             hir_symbols::MemberSymbolKind,
         },
@@ -554,7 +554,7 @@ impl<'a> ConstraintResolver<'a> {
 
         for sp_directive in &type_def.directives {
             // let directive = &self.compiler.directives[sp_directive.inner];
-            let Directive::Comptime(directive) = &self.compiler.directives[todo!()] else {
+            let Directive::Inline(directive) = &self.compiler.directives[todo!()] else {
                 panic!("verity");
             };
             match &ty_info.ty {
