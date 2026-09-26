@@ -1143,9 +1143,6 @@ impl DocumentState {
             .map(|(path, span, owner)| (path.to_string_lossy().into_owned(), span, owner))
     }
 
-    /// Check if a given byte offset falls within a comment (single or multi).
-    /// Uses binary search for O(log n) performance.
-    /// Also checks for single-line comments by looking for // before the cursor on the current line.
     /// Finds all symbol-map entries across every cached document that share the same
     /// definition key `(def_path, def_span, def_owner_sym_id)`.  Used by references
     /// and rename to implement cross-module search without duplicating the iteration
@@ -1208,39 +1205,21 @@ impl DocumentState {
         results
     }
 
+    /// Check whether an absolute byte offset lies in lexer comment trivia.
     pub fn offset_in_comment(&self, byte_offset: usize) -> bool {
         // Trivia spans are relative to the region's `src_bytes`, so convert the
         // absolute byte offset to a relative one before comparing.
-        let rel_offset = byte_offset.saturating_sub(self.script_start);
+        let Some(rel_offset) = byte_offset.checked_sub(self.script_start) else {
+            return false;
+        };
 
         let idx = self
             .trivia
             .partition_point(|t| t.span.start as usize <= rel_offset);
-        if idx > 0 {
-            let t = &self.trivia[idx - 1];
-            if rel_offset < t.span.end as usize && t.kind.is_comment() {
-                return true;
-            }
+        idx > 0 && {
+            let trivia = &self.trivia[idx - 1];
+            rel_offset < trivia.span.end as usize && trivia.kind.is_comment()
         }
-
-        let text = self.text.as_bytes();
-        if byte_offset >= text.len() {
-            return false;
-        }
-
-        // The `//` line-comment check operates on the absolute document text so
-        // the same line is examined regardless of where the script section starts.
-        let line_start = text[..byte_offset]
-            .iter()
-            .rposition(|&b| b == b'\n')
-            .map(|p| p + 1)
-            .unwrap_or(0);
-
-        if text[line_start..byte_offset].windows(2).any(|w| w == b"//") {
-            return true;
-        }
-
-        false
     }
 }
 

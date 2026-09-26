@@ -6,7 +6,9 @@ use chrn_utils::intern::Intern;
 use chrn_utils::source_map::source_span::SourceSpan;
 use compilation::script_compiler::ScriptCompiler;
 use std::sync::Arc;
-use tower_lsp::lsp_types::CompletionResponse;
+use tower_lsp::lsp_types::{
+    CompletionItemKind, CompletionResponse, CompletionTextEdit, InsertTextFormat, Range,
+};
 
 #[test]
 fn nested_config_without_a_member_type_still_offers_member_options() {
@@ -36,9 +38,9 @@ fn nested_config_without_a_member_type_still_offers_member_options() {
         .map(|item| item.label)
         .collect();
 
-    assert!(labels.iter().any(|label| label == "cases"));
-    assert!(labels.iter().any(|label| label == "default_val"));
-    assert!(!labels.iter().any(|label| label == "idents"));
+    assert!(labels.iter().any(|label| label == "cases ="));
+    assert!(labels.iter().any(|label| label == "default_val ="));
+    assert!(!labels.iter().any(|label| label == "idents ="));
 }
 
 /// An invoked completion inside the script section offers the language keywords and
@@ -65,6 +67,15 @@ async fn completion_in_the_script_section_offers_keywords() {
     assert!(
         labels.contains(&"let"),
         "keywords are offered, got {labels:?}"
+    );
+    assert_eq!(
+        items
+            .iter()
+            .find(|item| item.label == "let")
+            .unwrap()
+            .insert_text,
+        None,
+        "non-module completions keep their default insertion"
     );
     assert!(
         labels.contains(&"var->"),
@@ -178,12 +189,248 @@ async fn general_completion_exposes_only_the_import_alias_as_a_module() {
 
     let alias = items
         .iter()
-        .find(|item| item.label == "public_api")
+        .find(|item| item.label == "public_api::")
         .unwrap_or_else(|| panic!("the visible import alias is completed, got {items:?}"));
     assert_eq!(alias.kind, Some(CompletionItemKind::MODULE));
+    assert_eq!(alias.insert_text.as_deref(), Some("public_api::"));
     assert!(
         items.iter().all(|item| item.label != "dependency"),
         "an aliased import must not expose its original module name, got {items:?}"
+    );
+}
+
+/// The editor already has a separator after the cursor; accepting the module
+/// must not add a second one.
+#[tokio::test(start_paused = true)]
+async fn module_completion_before_existing_separator_does_not_duplicate_it() {
+    let workspace = TempWorkspace::new("module_existing_separator");
+    let dependency_uri = workspace.write("dependency.chrn", "export let ITEM = 1\n");
+    let dependency_path = dependency_uri.to_file_path().unwrap();
+    let text = format!(
+        "import \"{}\" as public_api\npublic_api::ITEM\n",
+        dependency_path.display()
+    );
+    let uri = workspace.write("main.chrn", &text);
+    let mut session = Session::new().await;
+    session.open(&uri, &text).await;
+
+    let mut position = position_of(&text, "public_api::ITEM", 0);
+    position.character += "public_api".len() as u32;
+    let Some(CompletionResponse::Array(items)) = session.completion(&uri, position, None).await
+    else {
+        panic!("general completion returns an item array");
+    };
+    let item = items
+        .iter()
+        .find(|item| item.label == "public_api::")
+        .unwrap();
+    assert_eq!(item.kind, Some(CompletionItemKind::MODULE));
+    assert_eq!(
+        item.insert_text.as_deref(),
+        Some("public_api"),
+        "the existing `::` supplies the separator"
+    );
+}
+
+/// A module can contain a visible module binding with the same name. The
+/// completion edit must start at the cursor after `::`, not replace the earlier
+/// `evil` segment selected by a client's word matching.
+#[tokio::test(start_paused = true)]
+async fn same_name_module_completion_appends_after_static_access() {
+    let workspace = TempWorkspace::new("same_name_module_completion");
+    let text = "let value = (evil::)\n";
+    let uri = workspace.write("evil.chrn", text);
+    let mut session = Session::new().await;
+    session.open(&uri, text).await;
+
+    let mut position = position_of(text, "evil::", 0);
+    position.character += "evil::".len() as u32;
+    let Some(CompletionResponse::Array(items)) = session.completion(&uri, position, None).await
+    else {
+        panic!("static access completion returns an item array");
+    };
+    let item = items
+        .iter()
+        .find(|item| item.label == "evil::")
+        .unwrap_or_else(|| panic!("the current module is offered: {items:?}"));
+    assert_eq!(item.kind, Some(CompletionItemKind::MODULE));
+    assert_eq!(
+        item.text_edit,
+        Some(CompletionTextEdit::Edit(tower_lsp::lsp_types::TextEdit {
+            range: Range::new(position, position),
+            new_text: "evil::".into(),
+        })),
+        "accepting the completion must append `evil::` at the cursor"
+    );
+    let Some(CompletionTextEdit::Edit(edit)) = &item.text_edit else {
+        unreachable!("the completion edit was checked above");
+    };
+    let offset = crate::text::position_to_offset(text, edit.range.start);
+    let mut accepted = text.to_string();
+    accepted.insert_str(offset, &edit.new_text);
+    assert_eq!(accepted, "let value = (evil::evil::)\n");
+}
+
+#[test]
+fn config_option_completion_inserts_assignment_syntax() {
+    let state = DocumentState::new(
+        Arc::new(String::new()),
+        Vec::new(),
+        Vec::new(),
+        Intern::init(),
+        0,
+        None,
+        0,
+    );
+    let compiler = ScriptCompiler::init(None, chrn_utils::arena::Arena::new());
+    let candidate = ConfigCompletionCandidate {
+        open: 0,
+        close: 1,
+        name_start: 0,
+        type_id: None,
+        scope_id: None,
+        is_root: false,
+        configured_options: Vec::new(),
+        configured_members: Vec::new(),
+    };
+    let items = config_completion_items(&state, &compiler, candidate, "iden");
+    let [item] = items.as_slice() else {
+        panic!("the option prefix resolves to one item: {items:?}");
+    };
+    assert_eq!(item.label, "idents =");
+    assert_eq!(item.kind, Some(CompletionItemKind::PROPERTY));
+    assert_eq!(item.insert_text.as_deref(), Some("idents = "));
+}
+
+/// A call-capable predicate is completed as a call only in a condition. Snippet
+/// syntax must never be sent to clients that do not advertise snippet support.
+#[tokio::test(start_paused = true)]
+async fn condition_function_completion_respects_client_snippet_support() {
+    let workspace = TempWorkspace::new("condition_call_completion");
+    let text = "nest->\nstruct Record { value: i32 [Ran] }\n";
+    let uri = workspace.write("main.chrn", text);
+    let mut position = position_of(text, "Ran", 0);
+    position.character += 3;
+
+    for (supports_snippets, expected_text, expected_format) in [
+        (false, "Range()", None),
+        (true, "Range($0)", Some(InsertTextFormat::SNIPPET)),
+    ] {
+        let mut session = Session::new_with_snippet_support(supports_snippets).await;
+        session.open(&uri, text).await;
+        let Some(CompletionResponse::Array(items)) = session.completion(&uri, position, None).await
+        else {
+            panic!("condition completion returns an item array");
+        };
+        let item = items
+            .iter()
+            .find(|item| item.label == "Range(..)")
+            .unwrap_or_else(|| panic!("Range is offered in a condition: {items:?}"));
+        assert_eq!(item.kind, Some(CompletionItemKind::FUNCTION));
+        assert_eq!(item.insert_text.as_deref(), Some(expected_text));
+        assert_eq!(item.insert_text_format, expected_format);
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn callable_completion_outside_condition_shows_call_shape_without_inserting_it() {
+    let workspace = TempWorkspace::new("plain_callable_completion");
+    let text = "let chosen = Ran\n";
+    let uri = workspace.write("main.chrn", text);
+    let mut session = Session::new_with_snippet_support(true).await;
+    session.open(&uri, text).await;
+
+    let mut position = position_of(text, "Ran", 0);
+    position.character += 3;
+    let Some(CompletionResponse::Array(items)) = session.completion(&uri, position, None).await
+    else {
+        panic!("general completion returns an item array");
+    };
+    let item = items
+        .iter()
+        .find(|item| item.label == "Range(..)")
+        .unwrap_or_else(|| panic!("the callable symbol remains available: {items:?}"));
+    assert_eq!(item.kind, Some(CompletionItemKind::FUNCTION));
+    assert_eq!(item.insert_text.as_deref(), Some("Range"));
+    assert_eq!(item.insert_text_format, None);
+}
+
+#[tokio::test(start_paused = true)]
+async fn general_completion_uses_visible_symbols_without_raw_token_duplicates() {
+    let workspace = TempWorkspace::new("general_visible_symbols");
+    let text = "let visible = missing_name\nlet answer = vis\n";
+    let uri = workspace.write("main.chrn", text);
+    let mut session = Session::new().await;
+    session.open(&uri, text).await;
+
+    let mut position = position_of(text, "vis", 1);
+    position.character += 3;
+    let Some(CompletionResponse::Array(items)) = session.completion(&uri, position, None).await
+    else {
+        panic!("general completion returns an item array");
+    };
+    let visible: Vec<_> = items
+        .iter()
+        .filter(|item| item.label == "visible")
+        .collect();
+    assert_eq!(
+        visible.len(),
+        1,
+        "the in-scope declaration appears once: {items:?}"
+    );
+    assert_eq!(visible[0].kind, Some(CompletionItemKind::VARIABLE));
+
+    let mut position = position_of(text, "missing_name", 0);
+    position.line += 1;
+    position.character = "let answer = ".len() as u32;
+    let Some(CompletionResponse::Array(items)) = session.completion(&uri, position, None).await
+    else {
+        panic!("general completion returns an item array");
+    };
+    assert!(
+        items.iter().all(|item| item.label != "missing_name"),
+        "an unresolved source token is not a visible symbol: {items:?}"
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn neutral_completion_excludes_declared_var_section_symbols() {
+    let workspace = TempWorkspace::new("general_scope_filter");
+    let text = "let visible = 1\nlet answer = vis\nvar->\nvisible_var: i32\nnest->\nvis\n";
+    let uri = workspace.write("main.chrn", text);
+    let mut session = Session::new().await;
+    session.open(&uri, text).await;
+
+    let mut position = position_of(text, "vis", 1);
+    position.character += 3;
+    let Some(CompletionResponse::Array(items)) = session.completion(&uri, position, None).await
+    else {
+        panic!("neutral completion returns an item array");
+    };
+    let visible: Vec<_> = items
+        .iter()
+        .filter(|item| item.label == "visible")
+        .collect();
+    assert_eq!(
+        visible.len(),
+        1,
+        "visible neutral symbol is offered once: {items:?}"
+    );
+    assert_eq!(visible[0].kind, Some(CompletionItemKind::VARIABLE));
+    assert!(
+        items.iter().all(|item| item.label != "visible_var"),
+        "a var-section declaration is not visible in the neutral section: {items:?}"
+    );
+
+    let mut position = position_of(text, "vis", 3);
+    position.character += 3;
+    let Some(CompletionResponse::Array(items)) = session.completion(&uri, position, None).await
+    else {
+        panic!("nest completion returns an item array");
+    };
+    assert!(
+        items.iter().any(|item| item.label == "visible_var"),
+        "the var-section declaration is registered and visible from nest: {items:?}"
     );
 }
 
@@ -494,9 +741,9 @@ async fn arrow_config_completion_matches_braces_for_struct_members() {
             actual,
             vec![
                 ("available".into(), Some(CompletionItemKind::FIELD)),
-                ("cases".into(), Some(CompletionItemKind::PROPERTY)),
-                ("default_val".into(), Some(CompletionItemKind::PROPERTY)),
-                ("idents".into(), Some(CompletionItemKind::PROPERTY)),
+                ("cases =".into(), Some(CompletionItemKind::PROPERTY)),
+                ("default_val =".into(), Some(CompletionItemKind::PROPERTY)),
+                ("idents =".into(), Some(CompletionItemKind::PROPERTY)),
             ],
             "{name}: complete the inner member using its type and the member option schema"
         );
@@ -539,9 +786,9 @@ async fn scalar_arrow_completion_uses_member_options_and_stops_at_parent_close()
     assert_eq!(
         actual,
         vec![
-            ("cases".into(), Some(CompletionItemKind::PROPERTY)),
-            ("default_val".into(), Some(CompletionItemKind::PROPERTY)),
-            ("idents".into(), Some(CompletionItemKind::PROPERTY)),
+            ("cases =".into(), Some(CompletionItemKind::PROPERTY)),
+            ("default_val =".into(), Some(CompletionItemKind::PROPERTY)),
+            ("idents =".into(), Some(CompletionItemKind::PROPERTY)),
         ]
     );
 

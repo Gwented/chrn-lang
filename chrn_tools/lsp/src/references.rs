@@ -17,7 +17,7 @@
 //! within each file are removed with [`crate::text::deduplicate_range_indices`].
 
 use crate::state::STATE_LOCK_TIMEOUT;
-use crate::state::{DocumentCache, DocumentState, EntityOccurrence, SemanticEntity};
+use crate::state::{DocumentCache, DocumentState, SemanticEntity};
 use crate::text::{LineIndex, position_to_offset};
 use chrn_utils::id_types::SymbolId;
 use chrn_utils::source_map::source_span::SourceSpan;
@@ -27,10 +27,9 @@ use tower_lsp::lsp_types::{Location, Position, Range, Url};
 /// `(decl_span, owner_sym_id)` key — used for local bindings.
 fn collect_local_occurrences(
     state: &DocumentState,
-    def_span: &SourceSpan,
+    def_span: SourceSpan,
     def_owner_sym_id: Option<SymbolId>,
-    uri: &Url,
-) -> Vec<Location> {
+) -> Vec<Range> {
     let mut results = Vec::new();
     let lines = LineIndex::new(&state.text);
     for (span, ent) in &state.symbol_map {
@@ -39,7 +38,7 @@ fn collect_local_occurrences(
             owner_sym_id,
             ..
         } = ent
-            && *decl_span == *def_span
+            && *decl_span == def_span
             && *owner_sym_id == def_owner_sym_id
         {
             // `span` is relative to the region's `src_bytes`; shift to absolute
@@ -47,48 +46,23 @@ fn collect_local_occurrences(
             // `Position`.
             let abs_start = crate::text::rel_to_abs_offset(span.start, state.script_start) as usize;
             let abs_end = crate::text::rel_to_abs_offset(span.end, state.script_start) as usize;
-            results.push(Location {
-                uri: uri.clone(),
-                range: Range {
-                    start: lines.position(abs_start),
-                    end: lines.position(abs_end),
-                },
+            results.push(Range {
+                start: lines.position(abs_start),
+                end: lines.position(abs_end),
             });
         }
     }
     results
 }
 
-/// Converts raw matching-entity tuples into deduplicated [`Location`] values.
-fn matching_entities_to_locations(entities: Vec<EntityOccurrence>) -> Vec<Location> {
-    let mut results = Vec::new();
-    for (state_uri, ranges) in crate::text::occurrences_to_ranges(entities) {
-        if let Ok(uri) = Url::parse(&state_uri) {
-            results.extend(ranges.into_iter().map(|range| Location {
-                uri: uri.clone(),
-                range,
-            }));
-        }
-    }
-    results
-}
-
-/// Computes the list of locations where the symbol at `position` is referenced.
-///
-/// # Parameters
-/// * `uri`       — URI of the file containing the cursor.
-/// * `position`  — Cursor position in LSP UTF-16 coordinates.
-/// * `doc_cache` — Cache of all analysed documents to search.
-///
-/// # Returns
-/// * `Some(Vec<Location>)` with one entry per reference occurrence.
-/// * `None` when the cursor is in a comment, no entity is found, or the entity
-///   is a module (module references are not yet tracked).
-pub fn compute_references(
+/// Resolve local or cross-document occurrences once for references and rename.
+/// Release the current state guard before the cross-document search, which
+/// acquires it again.
+pub(crate) fn find_occurrence_ranges(
     uri: &Url,
     position: Position,
     doc_cache: &DocumentCache,
-) -> Option<Vec<Location>> {
+) -> Option<Vec<(Url, Vec<Range>)>> {
     let uri_str = uri.to_string();
     let state_arc = doc_cache.get(&uri_str)?;
 
@@ -97,7 +71,7 @@ pub fn compute_references(
     // reentrant, so holding this guard across `find_matching_entities` deadlocks
     // as soon as a writer (an analysis task) is queued between the two reads.
     // Resolve the definition key under the guard, then drop it before searching.
-    let (def_path, def_span, def_owner_sym_id, is_local, local_locations) = {
+    let (def_path, def_span, def_owner_sym_id, is_local, local_ranges) = {
         let state = state_arc.try_read_for(STATE_LOCK_TIMEOUT)?;
 
         let byte_offset = position_to_offset(&state.text, position);
@@ -107,7 +81,7 @@ pub fn compute_references(
 
         let entity = state.get_entity_at_offset(byte_offset)?;
 
-        // We don't support references for modules yet
+        // Module entities are not handled by these searches.
         if matches!(entity, SemanticEntity::Module(_)) {
             return None;
         }
@@ -115,31 +89,42 @@ pub fn compute_references(
         let (def_path, def_span, def_owner_sym_id) = state.definition_site(entity)?;
         let def_path = def_path.to_path_buf();
         let is_local = matches!(entity, SemanticEntity::Local { .. });
-        let local_locations = if is_local {
-            collect_local_occurrences(&state, &def_span, def_owner_sym_id, uri)
+        let local_ranges = if is_local {
+            collect_local_occurrences(&state, def_span, def_owner_sym_id)
         } else {
             Vec::new()
         };
-        (
-            def_path,
-            def_span,
-            def_owner_sym_id,
-            is_local,
-            local_locations,
-        )
+        (def_path, def_span, def_owner_sym_id, is_local, local_ranges)
     };
 
-    let locations = if is_local {
-        local_locations
+    let ranges = if is_local {
+        vec![(uri.clone(), local_ranges)]
     } else {
         let entities =
             DocumentState::find_matching_entities(doc_cache, &def_path, def_span, def_owner_sym_id);
-        matching_entities_to_locations(entities)
+        crate::text::occurrences_to_ranges(entities)
+            .into_iter()
+            .filter_map(|(state_uri, ranges)| Url::parse(&state_uri).ok().map(|uri| (uri, ranges)))
+            .collect()
     };
 
-    if locations.is_empty() {
-        return None;
-    }
+    Some(ranges)
+}
 
-    Some(locations)
+/// Computes the list of locations where the symbol at `position` is referenced.
+pub fn compute_references(
+    uri: &Url,
+    position: Position,
+    doc_cache: &DocumentCache,
+) -> Option<Vec<Location>> {
+    let locations: Vec<_> = find_occurrence_ranges(uri, position, doc_cache)?
+        .into_iter()
+        .flat_map(|(uri, ranges)| {
+            ranges.into_iter().map(move |range| Location {
+                uri: uri.clone(),
+                range,
+            })
+        })
+        .collect();
+    (!locations.is_empty()).then_some(locations)
 }

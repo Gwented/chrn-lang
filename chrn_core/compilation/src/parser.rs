@@ -1270,7 +1270,6 @@ fn parse_expr(
 
     let mut lhs = parse_unary(ctx, budget, interner)?;
 
-    // I REFUSE TO BREAK APART TOKENS
     loop {
         // Use lookahead to detect << and >> as shift operators, avoiding conflict
         // with generic angle brackets in type contexts.

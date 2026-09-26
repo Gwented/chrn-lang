@@ -51,14 +51,15 @@ use compilation::semantic::hir::hir_impls::{
 };
 use compilation::semantic::hir::hir_symbols::{FuncForm, Symbol, SymbolKind, VariableState};
 use parking_lot::RwLock;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 use std::{collections::HashMap, sync::Arc};
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
 use tower_lsp::lsp_types::{
-    CompletionItem, CompletionItemKind, CompletionResponse, GotoDefinitionResponse, LocationLink,
-    Position, Range, SemanticToken, Url,
+    CompletionItem, CompletionItemKind, CompletionResponse, CompletionTextEdit,
+    GotoDefinitionResponse, InsertTextFormat, LocationLink, Position, Range, SemanticToken,
+    TextEdit, Url,
 };
 use tower_lsp::{Client, LanguageServer, jsonrpc};
 
@@ -74,9 +75,9 @@ use crate::text::apply_text_change;
 
 // Semantic token support (keyword/string/number highlighting)
 use crate::state::SemanticEntity;
-use compilation::chrn_config::ChrnConfig;
 use chrn_utils::intern::Intern;
 use chrn_utils::source_map::source_diagnostic::SourceDiagnosticSummary;
+use compilation::chrn_config::ChrnConfig;
 use lang::types::builtins::BuiltinTypeKind as ChBuiltinTypeKind;
 use std::io::Cursor;
 
@@ -136,6 +137,7 @@ pub struct Backend {
     /// Process-wide source of unique analysis generations. Generations never
     /// repeat when a URI is closed and reopened.
     next_version: Arc<AtomicU64>,
+    snippet_support: Arc<AtomicBool>,
     /// Hash of the last-published diagnostics per URI; used to suppress
     /// redundant `publishDiagnostics` notifications.  Only an 8-byte digest is
     /// stored per document rather than the full JSON payload.
@@ -156,6 +158,7 @@ impl Backend {
             docs: Arc::new(RwLock::new(HashMap::new())),
             pending_versions: Arc::new(RwLock::new(HashMap::new())),
             next_version: Arc::new(AtomicU64::new(1)),
+            snippet_support: Arc::new(AtomicBool::new(false)),
             diags_cache: Arc::new(RwLock::new(HashMap::new())),
             pending_tasks: Arc::new(RwLock::new(HashMap::new())),
             analysis_slots: Arc::new(tokio::sync::Semaphore::new(2)),
@@ -541,6 +544,121 @@ fn symbol_completion_kind(compiler: &ScriptCompiler, sym: &Symbol) -> Completion
         // not yet attach a `TypeId` to them.
         SymbolKind::ExternType(_) => CompletionItemKind::CLASS,
     }
+}
+
+fn completion_item(label: String, kind: CompletionItemKind, module_suffix: bool) -> CompletionItem {
+    let (label, insert_text) = if kind == CompletionItemKind::MODULE {
+        let insert_text = if module_suffix {
+            format!("{label}::")
+        } else {
+            label.clone()
+        };
+        (format!("{label}::"), Some(insert_text))
+    } else {
+        (label, None)
+    };
+    CompletionItem {
+        label,
+        kind: Some(kind),
+        insert_text,
+        ..Default::default()
+    }
+}
+
+fn set_completion_edits(items: &mut [CompletionItem], text: &str, start: usize, end: usize) {
+    // Replace only the member prefix; clients can otherwise match an identical
+    // qualifier before `::` or `.` and treat the insertion as a no-op.
+    let range = Range::new(
+        crate::text::offset_to_position(text, start),
+        crate::text::offset_to_position(text, end),
+    );
+    for item in items {
+        item.text_edit = Some(CompletionTextEdit::Edit(TextEdit {
+            range,
+            new_text: item
+                .insert_text
+                .clone()
+                .unwrap_or_else(|| item.label.clone()),
+        }));
+    }
+}
+
+fn is_call_symbol(compiler: &ScriptCompiler, sym: &Symbol) -> bool {
+    let type_id = match sym.kind {
+        SymbolKind::Type(type_id) => type_id,
+        SymbolKind::Variable(var_id) => {
+            let VariableState::Known(value_id) = compiler.vars[var_id].state else {
+                return false;
+            };
+            compiler.values[value_id].type_id
+        }
+        _ => return false,
+    };
+    let mut type_id = type_id;
+    let checked = compilation::walk_type_id_deferred!(&compiler.types, type_id);
+    matches!(&compiler.types[checked.inner].ty, Type::Func(func) if matches!(func.kind.form(), FuncForm::Call))
+}
+
+fn symbol_completion_item(
+    compiler: &ScriptCompiler,
+    sym: &Symbol,
+    label: String,
+    module_suffix: bool,
+    call_completion: bool,
+    snippet_support: bool,
+) -> CompletionItem {
+    let kind = symbol_completion_kind(compiler, sym);
+    let mut item = completion_item(label, kind, module_suffix);
+    if is_call_symbol(compiler, sym) {
+        item.insert_text = Some(if call_completion {
+            if snippet_support {
+                item.insert_text_format = Some(InsertTextFormat::SNIPPET);
+                format!("{}($0)", item.label)
+            } else {
+                format!("{}()", item.label)
+            }
+        } else {
+            item.label.clone()
+        });
+        item.label.push_str("(..)");
+    }
+    item
+}
+
+fn completion_context(
+    state: &DocumentState,
+    byte_off: usize,
+) -> (scopes_concepts::ScopeType, bool) {
+    use lang::keywords::Keyword;
+
+    let relative_offset = byte_off.saturating_sub(state.script_start) as u32;
+    let mut section = scopes_concepts::ScopeType::Neutral;
+    let mut bracket_depth = 0usize;
+    for (index, token) in state.tokens.iter().enumerate() {
+        if token.span.start >= relative_offset {
+            break;
+        }
+        match token.tok {
+            ScriptToken::Keyword(keyword)
+                if matches!(keyword, Keyword::Var | Keyword::Nest | Keyword::Complex)
+                    && state.tokens.get(index + 1).is_some_and(|next| {
+                        next.span.start < relative_offset
+                            && matches!(next.tok, ScriptToken::SlimArrow)
+                    }) =>
+            {
+                section = match keyword {
+                    Keyword::Var => scopes_concepts::ScopeType::Var,
+                    Keyword::Nest => scopes_concepts::ScopeType::Nest,
+                    Keyword::Complex => scopes_concepts::ScopeType::Complex,
+                    _ => unreachable!(),
+                };
+            }
+            ScriptToken::OBracket => bracket_depth += 1,
+            ScriptToken::CBracket => bracket_depth = bracket_depth.saturating_sub(1),
+            _ => {}
+        }
+    }
+    (section, bracket_depth > 0)
 }
 
 /// Collects symbols owned by `mod_id`'s qualified namespace.
@@ -1236,10 +1354,12 @@ pub(crate) fn config_completion_items(
             .filter_map(|(_, sym_id)| {
                 let sym = &compiler.syms[sym_id];
                 let name = state.interner.search(sym.name_id);
-                (prefix.is_empty() || name.starts_with(prefix)).then(|| CompletionItem {
-                    label: name.to_string(),
-                    kind: Some(symbol_completion_kind(compiler, sym)),
-                    ..Default::default()
+                (prefix.is_empty() || name.starts_with(prefix)).then(|| {
+                    completion_item(
+                        name.to_string(),
+                        symbol_completion_kind(compiler, sym),
+                        true,
+                    )
                 })
             })
             .collect();
@@ -1285,8 +1405,9 @@ pub(crate) fn config_completion_items(
         let name = state.interner.search(option.name_id);
         if prefix.is_empty() || name.starts_with(prefix) {
             items.push(CompletionItem {
-                label: name.to_string(),
+                label: format!("{name} ="),
                 kind: Some(CompletionItemKind::PROPERTY),
+                insert_text: Some(format!("{name} = ")),
                 ..Default::default()
             });
         }
@@ -1437,8 +1558,18 @@ fn classify_id_token(
 impl LanguageServer for Backend {
     async fn initialize(
         &self,
-        _params: tower_lsp::lsp_types::InitializeParams,
+        params: tower_lsp::lsp_types::InitializeParams,
     ) -> jsonrpc::Result<tower_lsp::lsp_types::InitializeResult> {
+        self.snippet_support.store(
+            params
+                .capabilities
+                .text_document
+                .and_then(|text_document| text_document.completion)
+                .and_then(|completion| completion.completion_item)
+                .and_then(|item| item.snippet_support)
+                .unwrap_or(false),
+            Ordering::Relaxed,
+        );
         let server_capabilities = tower_lsp::lsp_types::ServerCapabilities {
             // Advertise incremental sync so clients (neovim) send ranged edits.
             text_document_sync: Some(tower_lsp::lsp_types::TextDocumentSyncCapability::Kind(
@@ -1987,6 +2118,10 @@ impl LanguageServer for Backend {
             start_b += 1;
         }
         let prefix = &state.text[start_b..byte_off.min(state.text.len())];
+        let module_suffix = !state.text[byte_off..].starts_with("::");
+        let (section, in_condition) = completion_context(state, byte_off);
+        let call_completion = in_condition && !state.text[byte_off..].starts_with('(');
+        let snippet_support = self.snippet_support.load(Ordering::Relaxed);
 
         // `>` triggers automatically only as the second character of `=>`.
         if params
@@ -2045,11 +2180,14 @@ impl LanguageServer for Backend {
                         let sym = &compiler.syms[sym_id];
                         let name = state.interner.search(sym.name_id);
                         if prefix.is_empty() || name.starts_with(prefix) {
-                            items.push(CompletionItem {
-                                label: name.to_string(),
-                                kind: Some(symbol_completion_kind(compiler, sym)),
-                                ..Default::default()
-                            });
+                            items.push(symbol_completion_item(
+                                compiler,
+                                sym,
+                                name.to_string(),
+                                module_suffix,
+                                call_completion,
+                                snippet_support,
+                            ));
                         }
                     };
 
@@ -2079,6 +2217,7 @@ impl LanguageServer for Backend {
                     }
                 }
             }
+            set_completion_edits(&mut items, &state.text, start_b, byte_off);
             return Ok(Some(CompletionResponse::Array(items)));
         }
 
@@ -2105,12 +2244,14 @@ impl LanguageServer for Backend {
                             }
                             let sym_name = state.interner.search(sym.name_id);
                             if prefix.is_empty() || sym_name.starts_with(prefix) {
-                                let kind = symbol_completion_kind(compiler, sym);
-                                items.push(CompletionItem {
-                                    label: sym_name.to_string(),
-                                    kind: Some(kind),
-                                    ..Default::default()
-                                });
+                                items.push(symbol_completion_item(
+                                    compiler,
+                                    sym,
+                                    sym_name.to_string(),
+                                    module_suffix,
+                                    call_completion,
+                                    snippet_support,
+                                ));
                             }
                         }
                     } else {
@@ -2119,12 +2260,14 @@ impl LanguageServer for Backend {
                             let sym = &compiler.syms[*sym_id];
                             let sym_name = state.interner.search(sym.name_id);
                             if prefix.is_empty() || sym_name.starts_with(prefix) {
-                                let kind = symbol_completion_kind(compiler, sym);
-                                items.push(CompletionItem {
-                                    label: sym_name.to_string(),
-                                    kind: Some(kind),
-                                    ..Default::default()
-                                });
+                                items.push(symbol_completion_item(
+                                    compiler,
+                                    sym,
+                                    sym_name.to_string(),
+                                    module_suffix,
+                                    call_completion,
+                                    snippet_support,
+                                ));
                             }
                         }
                     }
@@ -2143,16 +2286,19 @@ impl LanguageServer for Backend {
                         let member = &compiler.syms[memb_id];
                         let member_name = state.interner.search(member.name_id);
                         if prefix.is_empty() || member_name.starts_with(prefix) {
-                            let kind = symbol_completion_kind(compiler, member);
-                            items.push(CompletionItem {
-                                label: member_name.to_string(),
-                                kind: Some(kind),
-                                ..Default::default()
-                            });
+                            items.push(symbol_completion_item(
+                                compiler,
+                                member,
+                                member_name.to_string(),
+                                module_suffix,
+                                call_completion,
+                                snippet_support,
+                            ));
                         }
                     }
                 }
             }
+            set_completion_edits(&mut items, &state.text, start_b, byte_off);
             return Ok(Some(CompletionResponse::Array(items)));
         }
 
@@ -2179,10 +2325,15 @@ impl LanguageServer for Backend {
                 .filter_map(|(_, sym_id)| {
                     let sym = &compiler.syms[sym_id];
                     let name = state.interner.search(sym.name_id);
-                    (prefix.is_empty() || name.starts_with(prefix)).then(|| CompletionItem {
-                        label: name.to_string(),
-                        kind: Some(symbol_completion_kind(compiler, sym)),
-                        ..Default::default()
+                    (prefix.is_empty() || name.starts_with(prefix)).then(|| {
+                        symbol_completion_item(
+                            compiler,
+                            sym,
+                            name.to_string(),
+                            module_suffix,
+                            call_completion,
+                            snippet_support,
+                        )
                     })
                 })
                 .collect();
@@ -2227,31 +2378,56 @@ impl LanguageServer for Backend {
         ];
 
         let mut items: Vec<CompletionItem> = Vec::new();
-        // Every source below filters on the same prefix and builds the same item.
-        let mut push_item = |label: String, kind: CompletionItemKind| {
-            if prefix.is_empty() || label.starts_with(prefix) {
-                items.push(CompletionItem {
-                    label,
-                    kind: Some(kind),
-                    ..Default::default()
-                });
-            }
-        };
-
-        for (label, kind) in SUGGESTIONS {
-            push_item(label.to_string(), *kind);
-        }
+        let mut seen = std::collections::HashSet::new();
 
         if let Some(compiler) = &state.compiler {
             //TODO: Should auto-complete any module that has a src of "None"
+            // Follow the active section's lookup order. A source token alone is
+            // not evidence that its name is visible here.
+            for scope_type in section.accessible_scopes() {
+                if *scope_type == scopes_concepts::ScopeType::Core {
+                    continue;
+                }
+                for scope_id in &compiler.mods[ModuleId::new(0)].scopes {
+                    let scope = &compiler.scopes[*scope_id].scope;
+                    if scope.scope_type != *scope_type {
+                        continue;
+                    }
+                    for (_, sym_id) in scope.table.iter_interned() {
+                        let sym = &compiler.syms[sym_id];
+                        let name = state.interner.search(sym.name_id);
+                        if (prefix.is_empty() || name.starts_with(prefix))
+                            && seen.insert(name.to_string())
+                        {
+                            items.push(symbol_completion_item(
+                                compiler,
+                                sym,
+                                name.to_string(),
+                                module_suffix,
+                                call_completion,
+                                snippet_support,
+                            ));
+                        }
+                    }
+                }
+            }
+
             // Core library exports: types, functions, and constants.
             let core_mod = &compiler.mods[compiler.intrinsic_registry.core_mod_id];
             for sym_id in &core_mod.exports {
                 let sym = &compiler.syms[*sym_id];
-                push_item(
-                    state.interner.search(sym.name_id).to_string(),
-                    symbol_completion_kind(compiler, sym),
-                );
+                let name = state.interner.search(sym.name_id);
+                if (prefix.is_empty() || name.starts_with(prefix)) && seen.insert(name.to_string())
+                {
+                    items.push(symbol_completion_item(
+                        compiler,
+                        sym,
+                        name.to_string(),
+                        module_suffix,
+                        call_completion,
+                        snippet_support,
+                    ));
+                }
             }
 
             // Compiler-origin directives (`#warn`, `#ignore`, `#scient`, …), read from
@@ -2260,45 +2436,23 @@ impl LanguageServer for Backend {
             for sym in &compiler.syms.items {
                 if matches!(sym.kind, SymbolKind::Directive(_)) {
                     let name = state.interner.search(sym.name_id);
-                    push_item(format!("#{}", name), symbol_completion_kind(compiler, sym));
-                }
-            }
-
-            // Module symbols are the compiler's authoritative view of names visible
-            // from this module, including import aliases.
-            for sym_id in reachable_module_symbols(compiler, ModuleId::new(0)) {
-                let sym = &compiler.syms[sym_id];
-                if matches!(sym.kind, SymbolKind::Namespace)
-                    && matches!(
-                        sym.associated_scope,
-                        Some(scopes_concepts::AssociatedScopeKind::Module(_))
-                    )
-                {
-                    push_item(
-                        state.interner.search(sym.name_id).to_string(),
-                        CompletionItemKind::MODULE,
-                    );
+                    let label = format!("#{name}");
+                    if (prefix.is_empty() || label.starts_with(prefix))
+                        && seen.insert(label.clone())
+                    {
+                        items.push(completion_item(
+                            label,
+                            symbol_completion_kind(compiler, sym),
+                            module_suffix,
+                        ));
+                    }
                 }
             }
         }
 
-        // Reuse pre-computed tokens from the analyzed state instead of re-lexing.
-        let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
-        for st in &state.tokens {
-            // Only include identifiers that are within the script section (before
-            // `serial_start`).  `st.span.end` is relative to the region's
-            // `src_bytes`, so add `script_start` to compare against the absolute
-            // `serial_start`.
-            let tok_end_abs = crate::text::rel_to_abs_offset(st.span.end, script_start);
-            if (tok_end_abs as usize) > serial_start {
-                continue;
-            }
-
-            if let ScriptToken::Id(id) = st.tok {
-                let name = state.interner.search(id);
-                if seen.insert(name) {
-                    push_item(name.to_string(), CompletionItemKind::VARIABLE);
-                }
+        for (label, kind) in SUGGESTIONS {
+            if (prefix.is_empty() || label.starts_with(prefix)) && seen.insert(label.to_string()) {
+                items.push(completion_item(label.to_string(), *kind, module_suffix));
             }
         }
 

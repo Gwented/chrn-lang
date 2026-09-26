@@ -248,6 +248,34 @@ async fn test_hover_reports_the_inferred_type_of_a_binding() {
     );
 }
 
+/// A `//` inside a string is not a comment; the real line comment still is.
+#[tokio::test(start_paused = true)]
+async fn test_hover_after_comment_marker_in_string_on_same_line() {
+    let workspace = TempWorkspace::new("hover_after_string_slashes");
+    let text = "let suffix = \"there\"\nlet value = \"https://x\" + suffix // suffix\n";
+    let uri = workspace.write("main.chrn", text);
+
+    let mut session = Session::new().await;
+    session.open(&uri, text).await;
+
+    let hover = session
+        .hover(&uri, position_of(text, "suffix", 1))
+        .await
+        .expect("the use after the string remains hoverable");
+    assert!(
+        hover_text(&hover).contains("suffix: str = \"there\""),
+        "hover resolves the binding after the string, got `{}`",
+        hover_text(&hover)
+    );
+    assert!(
+        session
+            .hover(&uri, position_of(text, "suffix", 2))
+            .await
+            .is_none(),
+        "the same identifier in the real line comment has no hover"
+    );
+}
+
 /// Hover over a built-in namespace member written in real code (`i32::MAX`) resolves
 /// through the semantic map to the instantiation variable and reports its value.
 #[tokio::test(start_paused = true)]

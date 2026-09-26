@@ -66,6 +66,11 @@ pub struct Session {
 impl Session {
     /// Starts a server and completes the `initialize` / `initialized` handshake.
     pub async fn new() -> Session {
+        Self::new_with_snippet_support(false).await
+    }
+
+    /// Starts a client that advertises whether it can expand completion snippets.
+    pub async fn new_with_snippet_support(snippet_support: bool) -> Session {
         let (service, socket) = LspService::new(Backend::new);
         let mut session = Session {
             service,
@@ -75,8 +80,10 @@ impl Session {
             diagnostics: HashMap::new(),
         };
 
-        let params =
+        let mut params =
             serde_json::to_value(InitializeParams::default()).expect("InitializeParams serializes");
+        params["capabilities"]["textDocument"]["completion"]["completionItem"] =
+            json!({ "snippetSupport": snippet_support });
         let result = session.request("initialize", params).await;
         let _: InitializeResult =
             serde_json::from_value(result).expect("initialize returns an InitializeResult");
