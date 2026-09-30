@@ -78,6 +78,7 @@ impl<'a, T: std::hash::Hash> std::hash::Hash for SpannedOptContainer<'a, T> {
     }
 }
 
+// Maybe don't be pub?
 pub struct CheckedContainer<T> {
     pub inner: T,
 }

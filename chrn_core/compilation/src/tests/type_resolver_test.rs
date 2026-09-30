@@ -1,4 +1,5 @@
 use super::helpers::*;
+use crate::resolvers::typechecker::is_same_ty;
 use crate::script_compiler::compiler_consts::{
     CORE_BIGFLOAT, CORE_BIGINT, CORE_F64, CORE_I64, CORE_STR, CORE_U64, CORE_UNKNOWN,
 };
@@ -12,6 +13,7 @@ use crate::walk_type_id_deferred;
 use chrn_utils::id_types::TypeId;
 use chrn_utils::source_map::source_diagnostic::annotations::AnnotationKind;
 use chrn_utils::source_map::source_span::SourceSpan;
+use lang::types::builtins::BuiltinType;
 
 fn config_with_numeric_limit(max_numeric_bits: u32) -> ChrnConfig {
     ChrnConfig::builder()
@@ -599,6 +601,38 @@ fn concrete_type(resolution: &Resolution, mut type_id: TypeId) -> TypeId {
     walk_type_id_deferred!(&resolution.compiler.types, type_id).inner
 }
 
+fn assert_nested_array_value(found: &Value, expected: &Value) {
+    match (found, expected) {
+        (Value::Array(found), Value::Array(expected)) => {
+            assert_eq!(found.len(), expected.len());
+            for (found, expected) in found.iter().zip(expected) {
+                assert_nested_array_value(found, expected);
+            }
+        }
+        _ => assert!(
+            values_eq(found, expected),
+            "expected {expected:?}, got {found:?}"
+        ),
+    }
+}
+
+fn assert_list_i64_type(resolution: &Resolution, mut type_id: TypeId, depth: usize) {
+    for layer in 0..depth {
+        type_id = concrete_type(resolution, type_id);
+        let Type::BuiltinTypeInfo(info) = &resolution.compiler.types[type_id].ty else {
+            panic!(
+                "expected List at layer {layer}, got {:?}",
+                resolution.compiler.types[type_id].ty
+            );
+        };
+        let BuiltinType::List(inner) = info.ty else {
+            panic!("expected List at layer {layer}, got {:?}", info.ty);
+        };
+        type_id = inner;
+    }
+    assert_eq!(concrete_type(resolution, type_id), TypeId::new(CORE_I64));
+}
+
 #[test]
 fn standing_expr_resolves_pending_symbol_in_root_option() {
     let resolution = resolve_single_module(
@@ -615,10 +649,8 @@ fn standing_expr_resolves_pending_symbol_in_root_option() {
     .expect_ok();
 
     let (expr, value) = root_option_expr_and_value(&resolution, "values");
-    assert_eq!(
-        concrete_type(&resolution, expr.type_id),
-        TypeId::new(CORE_I64)
-    );
+    assert_list_i64_type(&resolution, expr.type_id, 1);
+    assert_list_i64_type(&resolution, value.type_id, 1);
     assert_i64_array("values", value, &[4]);
 }
 
@@ -641,17 +673,13 @@ fn standing_expr_repairs_each_dependent_expression_tree() {
     .expect_ok();
 
     let (direct_expr, direct_value) = root_option_expr_and_value(&resolution, "direct");
-    assert_eq!(
-        concrete_type(&resolution, direct_expr.type_id),
-        TypeId::new(CORE_I64)
-    );
+    assert_list_i64_type(&resolution, direct_expr.type_id, 1);
+    assert_list_i64_type(&resolution, direct_value.type_id, 1);
     assert_i64_array("direct", direct_value, &[4]);
 
     let (computed_expr, computed_value) = root_option_expr_and_value(&resolution, "computed");
-    assert_eq!(
-        concrete_type(&resolution, computed_expr.type_id),
-        TypeId::new(CORE_I64)
-    );
+    assert_list_i64_type(&resolution, computed_expr.type_id, 1);
+    assert_list_i64_type(&resolution, computed_value.type_id, 1);
     assert_i64_array("computed", computed_value, &[1, 6]);
 }
 
@@ -671,13 +699,254 @@ fn standing_expr_updates_resolved_value_type() {
     .expect_ok();
 
     let (expr, value) = root_option_expr_and_value(&resolution, "values");
+    assert_list_i64_type(&resolution, expr.type_id, 1);
+    assert_list_i64_type(&resolution, value.type_id, 1);
+}
+
+#[test]
+fn standing_expr_preserves_nested_pending_array_layers() {
+    let resolution = resolve_single_module(
+        "let PENDING = SOURCE
+         let SOURCE = 4
+         nest-> struct Settings {}
+         complex-> Settings { values = [[[PENDING]]] }",
+        Stage::Type,
+    )
+    .expect_ok();
+
+    let (expr, value) = root_option_expr_and_value(&resolution, "values");
+    assert_list_i64_type(&resolution, expr.type_id, 3);
+    assert_list_i64_type(&resolution, value.type_id, 3);
+    let expected = Value::Array(vec![Value::Array(vec![Value::Array(vec![
+        Value::ArbitraryInt(int_from_i64(4)),
+    ])])]);
+    assert_nested_array_value(value.const_val.as_ref().unwrap(), &expected);
+}
+
+#[test]
+fn standing_expr_accepts_separately_allocated_matching_nested_lists() {
+    let resolution = resolve_single_module(
+        "let PENDING = SOURCE
+         let SOURCE = 4
+         nest-> struct Settings {}
+         complex-> Settings { values = [[PENDING], [1]] }",
+        Stage::Type,
+    )
+    .expect_ok();
+
+    let (expr, value) = root_option_expr_and_value(&resolution, "values");
+    assert_list_i64_type(&resolution, expr.type_id, 2);
+    assert_list_i64_type(&resolution, value.type_id, 2);
+    let expected = Value::Array(vec![
+        Value::Array(vec![Value::ArbitraryInt(int_from_i64(4))]),
+        Value::Array(vec![Value::ArbitraryInt(int_from_i64(1))]),
+    ]);
+    assert_nested_array_value(value.const_val.as_ref().unwrap(), &expected);
+}
+
+#[test]
+fn standing_expr_waits_for_each_pending_array_element() {
+    let resolution = resolve_single_module(
+        "let FIRST = SOURCE
+         let SECOND = LATER
+         let SOURCE = 4
+         let LATER = 7
+         nest-> struct Settings {}
+         complex-> Settings { values = [FIRST, SECOND] }",
+        Stage::Type,
+    )
+    .expect_ok();
+
+    let (expr, value) = root_option_expr_and_value(&resolution, "values");
+    assert_list_i64_type(&resolution, expr.type_id, 1);
+    assert_list_i64_type(&resolution, value.type_id, 1);
+    assert_i64_array("values", value, &[4, 7]);
+}
+
+#[test]
+fn standing_expr_rejects_nested_list_and_scalar_mismatch() {
+    let source = "let PENDING = SOURCE
+                  let SOURCE = 4
+                  nest-> struct Settings {}
+                  complex-> Settings { values = [[PENDING], 1] }";
+    let resolution = resolve_single_module(source, Stage::Type);
+    assert_eq!(resolution.err_count(), 1, "{:?}", resolution.ty);
+    assert_eq!(resolution.ty.err_count(), 1);
+    let diagnostic = &resolution.ty.diags[0];
+    assert_eq!(diagnostic.level, DiagnosticLevel::Error);
+    assert_eq!(diagnostic.core_msg, "Expected `List`, found `i64`");
+    assert_eq!(diagnostic.annotations.len(), 1);
+    assert_eq!(diagnostic.annotations[0].kind, AnnotationKind::Primary);
     assert_eq!(
-        concrete_type(&resolution, expr.type_id),
-        TypeId::new(CORE_I64)
+        &source[diagnostic.annotations[0].span.range_exclusive_usize()],
+        "1"
     );
+}
+
+fn named_comparison_type(resolution: &Resolution, name: &str) -> TypeId {
+    let symbol = resolution
+        .compiler
+        .syms
+        .iter()
+        .find(|symbol| resolution.interner.search(symbol.name_id) == name)
+        .unwrap_or_else(|| panic!("missing type declaration {name}"));
+    let SymbolKind::Type(type_id) = symbol.kind else {
+        panic!("{name} must be a type declaration");
+    };
+    match &resolution.compiler.types[type_id].ty {
+        Type::TypeDef(definition) => definition.type_id,
+        Type::Struct(_) | Type::Enum(_) => type_id,
+        other => panic!("unexpected declaration type for {name}: {other:?}"),
+    }
+}
+
+#[test]
+fn is_same_ty_accepts_identical_map_id() {
+    let resolution = resolve_single_module("var-> mapping: Map<str, i32>", Stage::Type).expect_ok();
+    let mapping = named_comparison_type(&resolution, "mapping");
+
+    assert!(
+        is_same_ty(&resolution.compiler.types, mapping, mapping),
+        "Map<str, i32> must compare equal to itself"
+    );
+}
+
+#[test]
+fn is_same_ty_accepts_separately_resolved_matching_maps() {
+    let resolution = resolve_single_module(
+        "var-> first: Map<str, i32> second: Map<str, i32>",
+        Stage::Type,
+    )
+    .expect_ok();
+    let first = named_comparison_type(&resolution, "first");
+    let second = named_comparison_type(&resolution, "second");
+    assert_ne!(first, second, "exercise separately allocated map types");
+
+    assert!(
+        is_same_ty(&resolution.compiler.types, first, second),
+        "equal map keys and values must make the map types equal"
+    );
+}
+
+#[test]
+fn is_same_ty_rejects_maps_with_both_parameters_different() {
+    let resolution = resolve_single_module(
+        "var->
+            first: Map<str, i32>
+            second: Map<i32, str>
+            different_key: Map<i32, i32>
+            different_value: Map<str, str>",
+        Stage::Type,
+    )
+    .expect_ok();
+    let first = named_comparison_type(&resolution, "first");
+    let second = named_comparison_type(&resolution, "second");
+    assert_ne!(first, second, "exercise separately allocated map types");
+
+    assert!(
+        !is_same_ty(
+            &resolution.compiler.types,
+            first,
+            named_comparison_type(&resolution, "different_key"),
+        ),
+        "matching values must not conceal different map keys"
+    );
+    assert!(
+        !is_same_ty(
+            &resolution.compiler.types,
+            first,
+            named_comparison_type(&resolution, "different_value"),
+        ),
+        "matching keys must not conceal different map values"
+    );
+    assert!(
+        !is_same_ty(&resolution.compiler.types, first, second),
+        "Map<str, i32> and Map<i32, str> must differ in both parameters"
+    );
+}
+
+#[test]
+fn is_same_ty_accepts_identical_and_matching_tuples() {
+    let resolution = resolve_single_module(
+        "var->
+            first: Tuple<i32, str, Tuple<List<i32>, Map<str, i32>>>
+            second: Tuple<i32, str, Tuple<List<i32>, Map<str, i32>>>",
+        Stage::Type,
+    )
+    .expect_ok();
+    let types = &resolution.compiler.types;
+    let first = named_comparison_type(&resolution, "first");
+    let second = named_comparison_type(&resolution, "second");
+    assert_ne!(first, second, "exercise separately allocated tuple types");
+
+    assert!(is_same_ty(types, first, first), "a tuple must equal itself");
+    assert!(
+        is_same_ty(types, first, second),
+        "matching tuple elements must compare equal recursively"
+    );
+}
+
+#[test]
+fn is_same_ty_rejects_tuple_length_order_and_element_mismatches() {
+    let resolution = resolve_single_module(
+        "var->
+            first: Tuple<i32, str, Tuple<List<i32>, Map<str, i32>>>
+            shorter: Tuple<i32, str>
+            swapped: Tuple<str, i32, Tuple<List<i32>, Map<str, i32>>>
+            different_last: Tuple<i32, str, str>
+            different_nested: Tuple<i32, str, Tuple<List<str>, Map<str, i32>>>",
+        Stage::Type,
+    )
+    .expect_ok();
+    let types = &resolution.compiler.types;
+    let first = named_comparison_type(&resolution, "first");
+
+    for name in ["shorter", "swapped", "different_last", "different_nested"] {
+        let other = named_comparison_type(&resolution, name);
+        assert!(
+            !is_same_ty(types, first, other),
+            "tuple comparison must reject {name}"
+        );
+        assert!(
+            !is_same_ty(types, other, first),
+            "tuple comparison must reject {name} in the reverse direction"
+        );
+    }
+}
+
+#[test]
+fn is_same_ty_preserves_nominal_identity_inside_collections() {
+    let resolution = resolve_single_module(
+        "nest->
+            struct Item {}
+            enum Color { Red Blue }
+         var->
+            items: List<Item>
+            more_items: List<Item>
+            colors: List<Color>
+            more_colors: List<Color>
+            numbers: List<i32>
+            more_numbers: List<i32>
+            number: i32",
+        Stage::Type,
+    )
+    .expect_ok();
+    let types = &resolution.compiler.types;
+    let named = |name| named_comparison_type(&resolution, name);
+
+    assert!(!is_same_ty(types, named("numbers"), named("number")));
+    assert!(is_same_ty(types, named("numbers"), named("more_numbers")));
+    assert!(!is_same_ty(types, named("Item"), named("Color")));
+    assert!(!is_same_ty(types, named("items"), named("colors")));
+
+    let comparisons = [
+        is_same_ty(types, named("Item"), named("Item")),
+        is_same_ty(types, named("Color"), named("Color")),
+        is_same_ty(types, named("items"), named("more_items")),
+        is_same_ty(types, named("colors"), named("more_colors")),
+    ];
     assert_eq!(
-        concrete_type(&resolution, value.type_id),
-        TypeId::new(CORE_I64),
-        "resolving a standing expression must update its cached value type with its expression type"
+        comparisons, [true; 4],
+        "the same struct, enum, List<struct>, and List<enum> must compare equal"
     );
 }

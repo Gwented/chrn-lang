@@ -86,7 +86,7 @@ pub enum Type {
 }
 
 impl Type {
-    pub fn kind(compiler: &ScriptCompiler, mut type_id: TypeId) -> TypeKind {
+    pub fn to_kind(compiler: &ScriptCompiler, mut type_id: TypeId) -> TypeKind {
         let checked = walk_type_id_deferred!(compiler.types, type_id);
         match &compiler.types[checked.inner].ty {
             Type::BuiltinTypeInfo(builtin_ty) => TypeKind::BuiltinType(builtin_ty.ty.kind()),
@@ -181,12 +181,11 @@ impl ChrnClassifiable for TypeKind {
 /// Required metadata for compiler built-in types
 #[derive(Debug)]
 pub struct BuiltinTypeInfo {
-    pub sym_id: SymbolId,
     pub ty: BuiltinType,
 }
 
 impl BuiltinTypeInfo {
-    pub fn new(sym_id: SymbolId, ty: BuiltinType) -> BuiltinTypeInfo {
-        BuiltinTypeInfo { sym_id, ty }
+    pub fn new(ty: BuiltinType) -> BuiltinTypeInfo {
+        BuiltinTypeInfo { ty }
     }
 }

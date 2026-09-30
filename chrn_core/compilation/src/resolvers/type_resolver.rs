@@ -29,6 +29,7 @@ use chrn_utils::source_map::source_diagnostic::{
 use chrn_utils::source_map::source_span::{self, SourceSpan};
 use chrn_utils::utils::containers::{SpannedContainer, SpannedContainerRef};
 use lang::chrn_classifier::ChrnClassified;
+use lang::types::builtins::BuiltinType;
 
 use crate::chrn_config::ChrnConfig;
 use crate::chrn_config::chrn_perf::ChrnPerfStage;
@@ -64,7 +65,7 @@ use crate::semantic::arbitraries::{
 use crate::semantic::checker_helpers::{DuplicateIdentResult, DuplicateTracker};
 use crate::semantic::compilation_unit::CompilationUnit;
 use crate::semantic::evaluator::{BinaryOpResult, UnaryOpResult};
-use crate::semantic::hir::hir_concepts::{Type, TypeInfo};
+use crate::semantic::hir::hir_concepts::{BuiltinTypeInfo, Type, TypeInfo};
 use crate::semantic::hir::hir_exprs::{
     ExprHir, Param, PossibleMember, ResolvedExpr, ResolvedExprMetadata,
 };
@@ -153,7 +154,7 @@ impl<'res> TypeResolver<'res> {
     /// mutating off of given envs.
     pub fn resolve<'env>(&mut self, env: &'env ResolverEnv) -> SourceDiagnosticSummary {
         self.cfg.perf_tracker_mut().start(env.region.path_id);
-        // Re-used hashet when identifiers are checked, like for configs, alias params, etc.
+        // Re-used hash-set for when identifiers are checked, like for configs, alias params, etc.
         let mut ident_tracker: DuplicateTracker<SpannedContainer<InternedId>> =
             DuplicateTracker::with_capacities(4, 0);
 
@@ -485,20 +486,6 @@ impl<'res> TypeResolver<'res> {
         let AbstractConfigKind::Root(sp_path_segs, root_meta) = &abs_cfg_root.kind else {
             unreachable!()
         };
-
-        // TODO: Complex can only take in type expressions and lookup types.
-        // Override can do the same type lookup, while also being able to use it's intrinsic
-        // namespaces like PYTHON.
-        // This means that this config handling needs to encode accounting for the scope type in
-        // regards to which can actually consume what.
-        //
-        // The current idea is to on override, search for the symbol with a preference of namspace OR
-        // type, and for complex search for only namespace. But the difficult part is that one wants
-        // a type id, one wants a symbol, so should it be a kind? Should the type id retrieval be
-        // derived from config kind and extracted through known methods, or just keep TypeId?
-        // I LOVE SPENDING AN INCONSIDERABLE AMOUNT OF TIME ON SEMANTIC QUESTIONS. JUST WRITE. THE.
-        // CODE.
-        // Ok :(
 
         //TODO: We need to get the scoping, given the pathing, and then search for the symbol id in
         //the given scope.
@@ -2240,7 +2227,7 @@ impl<'res> TypeResolver<'res> {
                     Err(preset_err) => {
                         // Extracting module of origin from the pending expression by using the symbol
                         // attached to the expression upon it's creation
-                        //WARN: Suspicious
+                        // TODO: Maybe mark the parent as error?
 
                         preset_reporter::report_preset(
                             &self.compiler,
@@ -2522,11 +2509,31 @@ impl<'res> TypeResolver<'res> {
                 for expr_id in expr_ids {
                     let expr = &self.compiler.exprs[*expr_id];
 
-                    //TODO: Need to typecheck this too later. Would maybe be best as a check of, for
-                    //each instance where an array's type is mutated, it is checked against the
-                    //present array type.
+                    // Check every known element against the first known element's full type.
                     if !self.compiler.check_unknown(expr.type_id) && type_id_opt.is_none() {
                         type_id_opt = Some(expr.type_id);
+                    }
+
+                    if let Some(current_type_id) = type_id_opt
+                        && !self.compiler.check_unknown(expr.type_id)
+                    {
+                        //NOTE: Should this only report if the array get's all const?
+                        //
+                        // Checking for type mismatch like "[2, 'c']"
+                        if !typechecker::is_same_ty(
+                            &self.compiler.types,
+                            current_type_id,
+                            expr.type_id,
+                        ) {
+                            let expected_kind = Type::to_kind(self.compiler, current_type_id);
+                            return Err(PresetErr::TypeMismatch {
+                                expected_kind: expected_kind.into(),
+                                sp_found_type_id: SpannedContainer::new(
+                                    expr.type_id,
+                                    expr.meta.expect_user(),
+                                ),
+                            });
+                        }
                     }
 
                     let val_info = &self.compiler.values[expr.val_id];
@@ -2560,10 +2567,17 @@ impl<'res> TypeResolver<'res> {
                 }
 
                 if !has_resolved_ty {
-                    if let Some(new_type_id) = type_id_opt {
+                    if let Some(inner_type_id) = type_id_opt {
                         let array = &mut self.compiler.exprs[current_expr_id];
-                        array.type_id = new_type_id;
-                        self.compiler.values[array.val_id].type_id = new_type_id;
+                        // Preserve the slot referenced by enclosing arrays and pending users.
+                        self.compiler.types[array.type_id] = TypeInfo::new(
+                            Type::BuiltinTypeInfo(BuiltinTypeInfo::new(BuiltinType::List(
+                                inner_type_id,
+                            ))),
+                            //TODO: Maybe current module id but this doesn't really matter right now
+                            self.compiler.intrinsic_registry.core_mod_id,
+                        );
+                        self.compiler.values[array.val_id].type_id = array.type_id;
                         has_resolved_ty = true;
                     }
                 }
@@ -2579,24 +2593,25 @@ impl<'res> TypeResolver<'res> {
                 // it, which means anything further up the tree cannot reach that singular symbol
                 // point again.
                 unreachable!();
-                // This is unreachable
-                let val_info = &self.compiler.values[*val_id];
-
-                let new_type_id = val_info.type_id;
-                let const_val_opt = val_info.const_val.clone();
-
-                has_resolved_ty = self.compiler.check_unknown(new_type_id);
-                has_const_val = const_val_opt.is_some();
-
-                let expr = &mut self.compiler.exprs[current_expr_id];
-                // Mutating the type address so that it is now deferred to it's real type
-                self.compiler.types[expr.type_id].ty = Type::Deferred(new_type_id);
-
-                let inner_val = &mut self.compiler.values[expr.val_id];
-                self.compiler.types[inner_val.type_id].ty = Type::Deferred(new_type_id);
-
-                inner_val.type_id = new_type_id;
-                inner_val.const_val = const_val_opt;
+                // This snippet is kept because the semantics encoded in this are very important for
+                // if a change is needed later
+                // let val_info = &self.compiler.values[*val_id];
+                //
+                // let new_type_id = val_info.type_id;
+                // let const_val_opt = val_info.const_val.clone();
+                //
+                // has_resolved_ty = self.compiler.check_unknown(new_type_id);
+                // has_const_val = const_val_opt.is_some();
+                //
+                // let expr = &mut self.compiler.exprs[current_expr_id];
+                // // Mutating the type address so that it is now deferred to it's real type
+                // self.compiler.types[expr.type_id].ty = Type::Deferred(new_type_id);
+                //
+                // let inner_val = &mut self.compiler.values[expr.val_id];
+                // self.compiler.types[inner_val.type_id].ty = Type::Deferred(new_type_id);
+                //
+                // inner_val.type_id = new_type_id;
+                // inner_val.const_val = const_val_opt;
             }
         }
 
@@ -2687,9 +2702,6 @@ impl<'res> TypeResolver<'res> {
         // expression is resolved further, since it's already pointing the the same expression it
         // will by proxy be updated
 
-        //WARN: MAKE SURE EXPRESSION RESOLUTION IS NOT BROKEN FROM VAR CHANGES
-        // dbg!(&self.compiler.types[TypeId::new(43)]);
-        // panic!();
         let var = self.compiler.get_var_mut(parent_sym_id);
         var.state = VariableState::Known(val_id);
 
@@ -4023,11 +4035,16 @@ impl<'res> TypeResolver<'res> {
                 )
             }
             AstExpr::Array(array_expr) => {
+                //NOTE: Need to store List type id
                 let mut array: Vec<ExprId> = Vec::with_capacity(array_expr.elements.len());
 
                 let mut found_const_vals = 0;
                 let mut type_id_opt = None;
 
+                // Allows for reporting only the first mismatch
+                let mut mismatch_err_opt: Option<PresetErr> = None;
+
+                // Compare element types structurally, including nested collections.
                 for sp_expr in &array_expr.elements {
                     // register as inputs?
                     let expr_id = self.register_expr(
@@ -4046,14 +4063,37 @@ impl<'res> TypeResolver<'res> {
                         found_const_vals += 1;
                     }
 
-                    //WARN: Need to typecheck this too later
+                    // Only the first non-unknown type is used
                     if type_id_opt.is_none() && !self.compiler.check_unknown(expr.type_id) {
                         type_id_opt = Some(expr.type_id);
+                    }
+
+                    // Checking for type mismatch like "[2, 'c']"
+                    if let Some(current_type_id) = type_id_opt
+                        && mismatch_err_opt.is_none()
+                        && !self.compiler.check_unknown(expr.type_id)
+                    {
+                        //TODO:
+                        if !typechecker::is_same_ty(
+                            &self.compiler.types,
+                            current_type_id,
+                            expr.type_id,
+                        ) {
+                            let expected_kind = Type::to_kind(self.compiler, current_type_id);
+                            mismatch_err_opt = Some(PresetErr::TypeMismatch {
+                                expected_kind: expected_kind.into(),
+                                sp_found_type_id: SpannedContainer::new(
+                                    expr.type_id,
+                                    expr.meta.expect_user(),
+                                ),
+                            });
+                        }
                     }
 
                     array.push(expr_id);
                 }
 
+                //NOTE: How about we instead use an enum that may or may not route to ourselves?
                 let inputs = array.clone();
 
                 let array_expr_id = self.compiler.exprs.make_id();
@@ -4068,14 +4108,18 @@ impl<'res> TypeResolver<'res> {
                     expr.user = Some(array_expr_id);
                 }
 
+                //TODO: Make list here all types, but not the type id
                 let array_type_id = if let Some(inner_type_id) = type_id_opt {
-                    inner_type_id
+                    let info = BuiltinTypeInfo::new(BuiltinType::List(inner_type_id));
+                    //WARN: This seems a little wrong
+                    let ty_info = TypeInfo::new(
+                        Type::BuiltinTypeInfo(info),
+                        self.compiler.intrinsic_registry.core_mod_id,
+                    );
+                    self.compiler.push_ty(ty_info)
                 } else {
-                    let type_id = self.compiler.types.make_id();
                     let ty_info = TypeInfo::new(Type::Unknown, env.current_mod);
-                    self.compiler.types.push(ty_info);
-
-                    type_id
+                    self.compiler.push_ty(ty_info)
                 };
 
                 let const_val_opt = if found_const_vals == array.len() {
@@ -4084,6 +4128,7 @@ impl<'res> TypeResolver<'res> {
                     for expr_id in &array {
                         let expr = &self.compiler.exprs[*expr_id];
                         let val_info = &self.compiler.values[expr.val_id];
+                        //FIXME: If this is an array the clone is huge.
                         let val = val_info
                             .const_val
                             .as_ref()
@@ -4091,6 +4136,21 @@ impl<'res> TypeResolver<'res> {
                             .clone();
 
                         values.push(val);
+                    }
+
+                    // Only reports when all values are const so that `traverse_expr` is in charge
+                    // of reporting given an unknown type array, which avoids duplicate reports.
+                    //
+                    // Does NOT terminate on err so the semantic data is retained.
+                    if let Some(err) = mismatch_err_opt {
+                        preset_reporter::report_preset(
+                            self.compiler,
+                            &mut self.summary,
+                            err,
+                            env.region,
+                            self.cfg,
+                            self.interner,
+                        );
                     }
 
                     Some(Value::Array(values))
@@ -4249,8 +4309,6 @@ impl<'res> TypeResolver<'res> {
 
     /// Unknown or invalid directives produce a `PresetErr` which is returned alongside any
     /// successfully resolved directive ids.
-    ///
-    /// This is a helper.
     fn handle_directives(
         &self,
         abs_directives: &[AbstractDirectiveInline],

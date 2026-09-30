@@ -65,16 +65,16 @@ pub fn run_all(
             };
 
         //TEST:
-        if let Some(toks) = &toks_opt {
-            for idx in hash_indices {
-                dbg!(lexer_processor::produce_directives(
-                    toks,
-                    idx,
-                    &compiler_store.interner
-                ));
-            }
-            panic!("Or at least your spare time");
-        }
+        // if let Some(toks) = &toks_opt {
+        //     for idx in hash_indices {
+        //         dbg!(lexer_processor::produce_directives(
+        //             toks,
+        //             idx,
+        //             &compiler_store.interner
+        //         ));
+        //     }
+        //     // panic!("Or at least your spare time");
+        // }
 
         let ast_info_opt = if let Some(toks) = &toks_opt {
             let (ast_info_opt, diag_summary) =
@@ -94,16 +94,16 @@ pub fn run_all(
     }
 
     //TEST: Not sure what to do with the directives
-    for info_opt in &compiler_store.asts {
-        let Some(info) = info_opt else {
-            continue;
-        };
-        panic!("Stop");
-        // would be done differently since linear
-        // for direct in &info.preprocess_directives {
-        //     lexer_processor::produce_directives(toks, hash_idx, interner)
-        // }
-    }
+    // for info_opt in &compiler_store.asts {
+    //     let Some(info) = info_opt else {
+    //         continue;
+    //     };
+    //     panic!("Stop");
+    //     // would be done differently since linear
+    //     // for direct in &info.preprocess_directives {
+    //     //     lexer_processor::produce_directives(toks, hash_idx, interner)
+    //     // }
+    // }
 
     // if reporter.diag_summary().has_err() {
     //     return Err(ScriptError::Parser);

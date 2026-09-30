@@ -216,7 +216,13 @@ fn core_builtin_type_id_alignment() {
             "builtin at CORE id {core_id} does not match the table entry"
         );
 
-        let sym = &compiler.syms[info.sym_id];
+        let sym_id = compiler
+            .intrinsic_registry
+            .builtin_repo
+            .as_ref()
+            .and_then(|repo| repo.get(info.ty.kind()))
+            .expect("builtin symbol id in repository");
+        let sym = &compiler.syms[sym_id];
         assert_eq!(
             sym.name_id,
             InternedId::new(interned),
@@ -557,7 +563,14 @@ fn builtin_ns_scope(
         );
     };
 
-    match compiler.syms[info.sym_id].associated_scope {
+    let sym_id = compiler
+        .intrinsic_registry
+        .builtin_repo
+        .as_ref()
+        .and_then(|repo| repo.get(info.ty.kind()))
+        .expect("builtin symbol id in repository");
+
+    match compiler.syms[sym_id].associated_scope {
         Some(AssociatedScopeKind::Scope(scope_id)) => {
             assert!(
                 !ns.is_empty(),
@@ -605,9 +618,16 @@ fn core_namespaced_builtins_own_a_core_scope() {
         };
         let scope_info = compiler.get_scope(scope_id);
 
+        let sym_id = compiler
+            .intrinsic_registry
+            .builtin_repo
+            .as_ref()
+            .and_then(|repo| repo.get(info.ty.kind()))
+            .expect("builtin symbol id in repository");
+
         assert_eq!(
             scope_info.sym_owner,
-            Some(info.sym_id),
+            Some(sym_id),
             "namespace scope of {:?} is not owned by its builtin's symbol",
             builtin_ty.kind()
         );

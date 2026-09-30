@@ -1001,34 +1001,55 @@ fn parse_expr_static_access_with_generics() {
 
 #[test]
 fn parse_expr_array() {
-    // Arrays in let-expressions are not directly supported by parse_primary,
-    // but they ARE parsed in config option assignments.
-    let text = "complex->\n    Cfg { opt = [1, 2, 3] }";
-    let (ast, interner) = parse_text(text);
+    let text = "let x = [2,3,4,7,]";
+    let (ast, diags, interner) = parse_text_with_diags(text);
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
 
-    let cfg = ast.get_cfg_root(section_items(&ast, SectionKind::Complex)[0]);
-    assert_eq!(cfg.ast_stmts.len(), 1);
-    let AstStmt::OptAssignment(opt) = &cfg.ast_stmts[0] else {
-        panic!("expected option assignment");
-    };
-    assert_eq!(interner.search(opt.name_id), "opt");
-    match &opt.array_expr.inner {
+    let var = ast.get_var(section_items(&ast, SectionKind::Neutral)[0]);
+    assert_eq!(var.spanned_expr.span.start, 8);
+    assert_eq!(var.spanned_expr.span.end, text.len() as u32);
+    match &var.spanned_expr.inner {
         AstExpr::Array(arr) => {
-            assert_eq!(arr.elements.len(), 3);
-            match &arr.elements[0].inner {
-                AstExpr::Integer(id, _) => assert_eq!(interner.search(*id), "1"),
-                other => panic!("expected Integer, got {other:?}"),
-            }
-            match &arr.elements[1].inner {
-                AstExpr::Integer(id, _) => assert_eq!(interner.search(*id), "2"),
-                other => panic!("expected Integer, got {other:?}"),
-            }
-            match &arr.elements[2].inner {
-                AstExpr::Integer(id, _) => assert_eq!(interner.search(*id), "3"),
-                other => panic!("expected Integer, got {other:?}"),
+            assert_eq!(arr.elements.len(), 4);
+            for (element, expected) in arr.elements.iter().zip(["2", "3", "4", "7"]) {
+                match &element.inner {
+                    AstExpr::Integer(id, IntegerNotation::Decimal) => {
+                        assert_eq!(interner.search(*id), expected);
+                    }
+                    other => panic!("expected decimal Integer({expected}), got {other:?}"),
+                }
             }
         }
         other => panic!("expected Array, got {other:?}"),
+    }
+}
+
+#[test]
+fn parse_expr_nested_array() {
+    let text = "let x = [[2,3,],4]";
+    let (ast, diags, interner) = parse_text_with_diags(text);
+    assert!(diags.is_empty(), "unexpected diagnostics: {diags:?}");
+
+    let var = ast.get_var(section_items(&ast, SectionKind::Neutral)[0]);
+    let AstExpr::Array(outer) = &var.spanned_expr.inner else {
+        panic!("expected outer Array, got {:?}", var.spanned_expr.inner);
+    };
+    assert_eq!(outer.elements.len(), 2);
+    let AstExpr::Array(inner) = &outer.elements[0].inner else {
+        panic!("expected inner Array, got {:?}", outer.elements[0].inner);
+    };
+    assert_eq!(inner.elements.len(), 2);
+    for (element, expected) in inner.elements.iter().zip(["2", "3"]) {
+        match &element.inner {
+            AstExpr::Integer(id, IntegerNotation::Decimal) => {
+                assert_eq!(interner.search(*id), expected);
+            }
+            other => panic!("expected decimal Integer({expected}), got {other:?}"),
+        }
+    }
+    match &outer.elements[1].inner {
+        AstExpr::Integer(id, IntegerNotation::Decimal) => assert_eq!(interner.search(*id), "4"),
+        other => panic!("expected decimal Integer(4), got {other:?}"),
     }
 }
 

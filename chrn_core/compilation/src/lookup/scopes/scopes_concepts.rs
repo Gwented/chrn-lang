@@ -1,5 +1,8 @@
 use chrn_utils::id_types::{ModuleId, ScopeId, SymbolId};
-use lang::chrn_classifier::{ChrnClassifiable, ChrnClassified};
+use lang::{
+    chrn_classifier::{ChrnClassifiable, ChrnClassified},
+    types::builtins::BuiltinTypeKind,
+};
 
 use crate::semantic::hir::{hir_concepts::Table, hir_symbols::SymbolKindFlat};
 
@@ -284,13 +287,197 @@ impl ChrnClassifiable for AssociatedScopeKind {
 pub struct IntrinsicRegistry {
     pub core_mod_id: ModuleId,
     pub complex_scope_id: Option<ScopeId>,
+    // TEST:
+    pub builtin_repo: Option<BuiltinIdRepository>,
 }
 
 impl IntrinsicRegistry {
-    pub fn new(core_mod_id: ModuleId, complex_scope_id: Option<ScopeId>) -> IntrinsicRegistry {
+    pub fn new(
+        core_mod_id: ModuleId,
+        complex_scope_id: Option<ScopeId>,
+        builtin_repo: Option<BuiltinIdRepository>,
+    ) -> IntrinsicRegistry {
         IntrinsicRegistry {
             core_mod_id,
             complex_scope_id,
+            builtin_repo,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BuiltinIdRepository {
+    pub i8: SymbolId,
+    pub u8: SymbolId,
+    pub i16: SymbolId,
+    pub u16: SymbolId,
+    pub f16: SymbolId,
+    pub i32: SymbolId,
+    pub u32: SymbolId,
+    pub f32: SymbolId,
+    pub i64: SymbolId,
+    pub u64: SymbolId,
+    pub f64: SymbolId,
+    pub i128: SymbolId,
+    pub u128: SymbolId,
+    pub f128: SymbolId,
+    pub sized: SymbolId,
+    pub r#unsized: SymbolId,
+    pub str: SymbolId,
+    pub char: SymbolId,
+    pub nil: SymbolId,
+    pub bool: SymbolId,
+    pub bigint: SymbolId,
+    pub bigfloat: SymbolId,
+    pub runtime: SymbolId,
+}
+
+impl BuiltinIdRepository {
+    pub fn builder() -> BuiltinIdRepositoryBuilder {
+        BuiltinIdRepositoryBuilder::new()
+    }
+
+    pub fn get(&self, kind: BuiltinTypeKind) -> Option<SymbolId> {
+        match kind {
+            BuiltinTypeKind::I8 => Some(self.i8),
+            BuiltinTypeKind::U8 => Some(self.u8),
+            BuiltinTypeKind::I16 => Some(self.i16),
+            BuiltinTypeKind::U16 => Some(self.u16),
+            BuiltinTypeKind::F16 => Some(self.f16),
+            BuiltinTypeKind::I32 => Some(self.i32),
+            BuiltinTypeKind::U32 => Some(self.u32),
+            BuiltinTypeKind::F32 => Some(self.f32),
+            BuiltinTypeKind::I64 => Some(self.i64),
+            BuiltinTypeKind::U64 => Some(self.u64),
+            BuiltinTypeKind::F64 => Some(self.f64),
+            BuiltinTypeKind::I128 => Some(self.i128),
+            BuiltinTypeKind::U128 => Some(self.u128),
+            BuiltinTypeKind::F128 => Some(self.f128),
+            BuiltinTypeKind::Sized => Some(self.sized),
+            BuiltinTypeKind::Unsized => Some(self.r#unsized),
+            BuiltinTypeKind::Str => Some(self.str),
+            BuiltinTypeKind::Char => Some(self.char),
+            BuiltinTypeKind::Nil => Some(self.nil),
+            BuiltinTypeKind::Bool => Some(self.bool),
+            BuiltinTypeKind::BigInt => Some(self.bigint),
+            BuiltinTypeKind::BigFloat => Some(self.bigfloat),
+            BuiltinTypeKind::Runtime => Some(self.runtime),
+            BuiltinTypeKind::List
+            | BuiltinTypeKind::Set
+            | BuiltinTypeKind::Map
+            | BuiltinTypeKind::Tuple => None,
+        }
+    }
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct BuiltinIdRepositoryBuilder {
+    pub i8: Option<SymbolId>,
+    pub u8: Option<SymbolId>,
+    pub i16: Option<SymbolId>,
+    pub u16: Option<SymbolId>,
+    pub f16: Option<SymbolId>,
+    pub i32: Option<SymbolId>,
+    pub u32: Option<SymbolId>,
+    pub f32: Option<SymbolId>,
+    pub i64: Option<SymbolId>,
+    pub u64: Option<SymbolId>,
+    pub f64: Option<SymbolId>,
+    pub i128: Option<SymbolId>,
+    pub u128: Option<SymbolId>,
+    pub f128: Option<SymbolId>,
+    pub sized: Option<SymbolId>,
+    pub unsized_: Option<SymbolId>,
+    pub str: Option<SymbolId>,
+    pub char: Option<SymbolId>,
+    pub nil: Option<SymbolId>,
+    pub bool: Option<SymbolId>,
+    pub bigint: Option<SymbolId>,
+    pub bigfloat: Option<SymbolId>,
+    pub runtime: Option<SymbolId>,
+}
+
+impl BuiltinIdRepositoryBuilder {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn add(&mut self, kind: BuiltinTypeKind, id: SymbolId) {
+        let slot = match kind {
+            BuiltinTypeKind::I8 => &mut self.i8,
+            BuiltinTypeKind::U8 => &mut self.u8,
+            BuiltinTypeKind::I16 => &mut self.i16,
+            BuiltinTypeKind::U16 => &mut self.u16,
+            BuiltinTypeKind::F16 => &mut self.f16,
+            BuiltinTypeKind::I32 => &mut self.i32,
+            BuiltinTypeKind::U32 => &mut self.u32,
+            BuiltinTypeKind::F32 => &mut self.f32,
+            BuiltinTypeKind::I64 => &mut self.i64,
+            BuiltinTypeKind::U64 => &mut self.u64,
+            BuiltinTypeKind::F64 => &mut self.f64,
+            BuiltinTypeKind::I128 => &mut self.i128,
+            BuiltinTypeKind::U128 => &mut self.u128,
+            BuiltinTypeKind::F128 => &mut self.f128,
+            BuiltinTypeKind::Sized => &mut self.sized,
+            BuiltinTypeKind::Unsized => &mut self.unsized_,
+            BuiltinTypeKind::Str => &mut self.str,
+            BuiltinTypeKind::Char => &mut self.char,
+            BuiltinTypeKind::Nil => &mut self.nil,
+            BuiltinTypeKind::Bool => &mut self.bool,
+            BuiltinTypeKind::BigInt => &mut self.bigint,
+            BuiltinTypeKind::BigFloat => &mut self.bigfloat,
+            BuiltinTypeKind::Runtime => &mut self.runtime,
+            //TODO: Maybe unspecial case this
+            BuiltinTypeKind::List
+            | BuiltinTypeKind::Set
+            | BuiltinTypeKind::Map
+            | BuiltinTypeKind::Tuple => {
+                panic!("`BuiltinIdRepositoryBuilder` cannot store compound builtin type `{kind:?}`")
+            }
+        };
+        debug_assert!(
+            slot.is_none(),
+            "symbol id for builtin kind `{:?}` was already set in `BuiltinIdRepositoryBuilder`",
+            kind
+        );
+        *slot = Some(id);
+    }
+
+    pub fn build(self) -> BuiltinIdRepository {
+        BuiltinIdRepository {
+            i8: self.i8.expect("i8 must be set in BuiltinIdRepository"),
+            u8: self.u8.expect("u8 must be set in BuiltinIdRepository"),
+            i16: self.i16.expect("i16 must be set in BuiltinIdRepository"),
+            u16: self.u16.expect("u16 must be set in BuiltinIdRepository"),
+            f16: self.f16.expect("f16 must be set in BuiltinIdRepository"),
+            i32: self.i32.expect("i32 must be set in BuiltinIdRepository"),
+            u32: self.u32.expect("u32 must be set in BuiltinIdRepository"),
+            f32: self.f32.expect("f32 must be set in BuiltinIdRepository"),
+            i64: self.i64.expect("i64 must be set in BuiltinIdRepository"),
+            u64: self.u64.expect("u64 must be set in BuiltinIdRepository"),
+            f64: self.f64.expect("f64 must be set in BuiltinIdRepository"),
+            i128: self.i128.expect("i128 must be set in BuiltinIdRepository"),
+            u128: self.u128.expect("u128 must be set in BuiltinIdRepository"),
+            f128: self.f128.expect("f128 must be set in BuiltinIdRepository"),
+            sized: self
+                .sized
+                .expect("sized must be set in BuiltinIdRepository"),
+            r#unsized: self
+                .unsized_
+                .expect("unsized must be set in BuiltinIdRepository"),
+            str: self.str.expect("str must be set in BuiltinIdRepository"),
+            char: self.char.expect("char must be set in BuiltinIdRepository"),
+            nil: self.nil.expect("nil must be set in BuiltinIdRepository"),
+            bool: self.bool.expect("bool must be set in BuiltinIdRepository"),
+            bigint: self
+                .bigint
+                .expect("bigint must be set in BuiltinIdRepository"),
+            bigfloat: self
+                .bigfloat
+                .expect("bigfloat must be set in BuiltinIdRepository"),
+            runtime: self
+                .runtime
+                .expect("runtime must be set in BuiltinIdRepository"),
         }
     }
 }

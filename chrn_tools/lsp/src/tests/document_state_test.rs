@@ -108,6 +108,7 @@ fn test_offset_in_comment_single_line() {
     let cache = DocumentCache::new(10);
     let uri = "file:///comment_test.chrn";
     let text = Arc::new("let x = 1 // comment here".to_string());
+    let text_len = text.len();
     let state_arc = cache.get_or_create(uri, text, 0, None, 1);
     let state = state_arc.read();
 
@@ -122,6 +123,10 @@ fn test_offset_in_comment_single_line() {
     assert!(
         state.offset_in_comment(18),
         "offset inside comment text should be in comment"
+    );
+    assert!(
+        state.offset_in_comment(text_len),
+        "offset at the end of an EOF line comment should be in comment"
     );
 }
 
@@ -246,6 +251,34 @@ async fn test_hover_reports_the_inferred_type_of_a_binding() {
         "hover reports the binding and its inferred type, got `{}`",
         hover_text(&hover)
     );
+}
+
+#[tokio::test(start_paused = true)]
+async fn test_hover_reports_array_type_and_limits_displayed_elements() {
+    let workspace = TempWorkspace::new("hover_array_binding");
+    let text = "let short = [2, 3, 4, 7,]\nlet five = [1, 2, 3, 4, 5]\nlet long = [1, 2, 3, 4, 5, 6]\nlet empty = []\nlet scalar = 9\nlet use_short = short\nlet use_five = five\nlet use_long = long\nlet use_empty = empty\nlet use_scalar = scalar\n";
+    let uri = workspace.write("main.chrn", text);
+
+    let mut session = Session::new().await;
+    session.open(&uri, text).await;
+
+    for (name, expected) in [
+        ("short", "short: List<i64> = \\[2, 3, 4, 7\\]"),
+        ("five", "five: List<i64> = \\[1, 2, 3, 4, 5\\]"),
+        ("long", "long: List<i64> = \\[1, 2, 3, 4, 5, ..\\]"),
+        ("empty", "empty: Unknown = \\[\\]"),
+        ("scalar", "scalar: Arbitrary Integer = 9"),
+    ] {
+        let hover = session
+            .hover(&uri, position_of(text, name, 2))
+            .await
+            .unwrap_or_else(|| panic!("hovering `{name}` returns contents"));
+        assert_eq!(
+            hover_text(&hover).lines().next(),
+            Some(expected),
+            "hover for `{name}`"
+        );
+    }
 }
 
 /// A `//` inside a string is not a comment; the real line comment still is.

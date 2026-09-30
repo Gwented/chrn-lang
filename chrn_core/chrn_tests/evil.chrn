@@ -51,7 +51,7 @@ for varthing1 {}
 
 // comptime directs & runtime directives distinction?
 // Maybe modle finder collects comptime syntax only?
-#chrn[MAX_NUMERIC_BITS(256), MAX_THING(2)]
+// #chrn[MAX_NUMERIC_BITS(256), MAX_THING(2)]
 
 // Thinking about removing the big int usage and just making caps or integers.
 // So, we can pick "--max-int-bits=" where the eq value must be a known bit range like 256, 512, etc.
@@ -59,7 +59,7 @@ for varthing1 {}
 // big int for that. Float also needs "--max-float-bits". Or we can keep the numeric version which dictates
 // both, while still keeping the specific int/float.
 // let float = 2e-1000000000000
-import "../chrn_core/chrn_tests/def.chrn"
+// import "../chrn_core/chrn_tests/def.chrn"
 // let x = def::decimal
 // Namespaces like i128::MAX bypass the max bits because they don't check cfg
 
@@ -67,8 +67,18 @@ import "../chrn_core/chrn_tests/def.chrn"
 // let bin = f32::NAN + f32::INF
 // Please remember me I'm an issue
 // let x = core::f16::NEG_INF + 2
-let octal = 0o2
-let hex = (evil::)
+
+// let x = []
+// Incorrectly seeing this as right because arrays simply hold a `TypeId` of integer, but the correct
+// type is `Array<Integer>`. Need resolution to see these as different.
+let array = [[2, 2], 4]
+
+// This passes incorrectly
+// let array = [[2, 2], 4, evil::evil::evil::evil::core::IsWhitespace]
+@end
+let s = "hi"
+let octal = 0o23
+let hex = 2
 // let x = [2,3,4,45,5,5,,5,,5,5,5]
 // @end
 // Completion should show literal as solved value rather than just the notation.
@@ -97,11 +107,12 @@ override JAVA {
 for Structure {
     cases = ["UpperSnakeCase", "camelCase"]
     field1 {
+        idents = 2
         // This gives up too early. If the assignment is invalid should still semantically resolve opt.
         // idents = two
 
-        // COMPLETE ME
-        idents = 2
+        // Lsp isn't picking this up as err even though compiler does. Could be quitting early.
+        // idents = 2
         override JAVA=>types{change = java::char}
         override RUST=>types{change = rust::i32}
         // Says is a variable and not a type, but should point to the source where it saw the

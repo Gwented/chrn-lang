@@ -83,6 +83,40 @@ async fn completion_in_the_script_section_offers_keywords() {
     );
 }
 
+/// A completion request at the end of a line comment is still in the comment.
+/// A `//` inside a string must not suppress completion in later code.
+#[tokio::test(start_paused = true)]
+async fn completion_at_line_comment_end_is_suppressed() {
+    let workspace = TempWorkspace::new("line_comment_completion");
+    let text = "let url = \"https://x\" + value // note\nlet after = 1\n";
+    let uri = workspace.write("main.chrn", text);
+
+    let mut session = Session::new().await;
+    session.open(&uri, text).await;
+
+    let mut comment_end = position_of(text, "note", 0);
+    comment_end.character += "note".len() as u32;
+    let Some(CompletionResponse::Array(items)) =
+        session.completion(&uri, comment_end, None).await
+    else {
+        panic!("comment completion returns an item array");
+    };
+    assert!(items.is_empty(), "line comment offered completions: {items:?}");
+
+    for needle in ["value", "after"] {
+        let position = position_of(text, needle, 0);
+        let Some(CompletionResponse::Array(items)) =
+            session.completion(&uri, position, None).await
+        else {
+            panic!("completion after the string or comment returns an item array");
+        };
+        assert!(
+            items.iter().any(|item| item.label == "let"),
+            "expected normal completion at {needle}, got {items:?}"
+        );
+    }
+}
+
 /// Static access on a built-in type offers its namespace members (`MAX`, `MIN`),
 /// which live in builtin-type namespace scopes rather than any module.
 #[tokio::test(start_paused = true)]

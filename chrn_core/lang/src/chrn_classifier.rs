@@ -10,8 +10,6 @@ pub trait ChrnClassifiable {
     // }
 }
 
-// HELP
-//TEST: May change in form but a general print format is needed
 /// Enum that depicts any language needed identifiers in a unified form
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChrnClassified {

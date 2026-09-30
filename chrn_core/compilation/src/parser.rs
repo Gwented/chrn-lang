@@ -34,6 +34,7 @@ use crate::parser::parser_budget::ParserBudget;
 use crate::parser::parser_helpers::DelimiterContext;
 use crate::parser::parser_state::ParserState;
 use crate::semantic::hir::hir_impls::ConfigRootMetadataKind;
+use chrn_utils::id_types::InternedId;
 use chrn_utils::intern::Intern;
 use chrn_utils::source_map::source_diagnostic::SourceDiagnosticSummary;
 use chrn_utils::source_map::source_region::SourceRegion;
@@ -457,12 +458,10 @@ fn parse_alias_stmt(
     budget: &ParserBudget,
     interner: &Intern,
 ) -> Result<AbstractAlias, Token> {
-    let name_span = ctx.peek_span();
-
-    let name_id = ctx.expect_id_verbose(
+    let sp_name_id = parse_id(
+        ctx,
         TokenKind::Id,
-        "Expected identifier after `alias`, found ",
-        "",
+        None,
         // Maybe just ask for basic high level information
         InitialEvidence::new(
             SemanticEnv::Alias,
@@ -515,7 +514,14 @@ fn parse_alias_stmt(
     //     ctx.report_verbose("", Branch::Neutral(NeutralBranch::Alias), interner);
     // }
 
-    let alias = AbstractAlias::new(name_id, name_span, params, conds, directives, is_priv);
+    let alias = AbstractAlias::new(
+        sp_name_id.inner,
+        sp_name_id.span,
+        params,
+        conds,
+        directives,
+        is_priv,
+    );
 
     Ok(alias)
 }
@@ -589,7 +595,7 @@ fn parse_typedef(
         InitialEvidence::new(
             SemanticEnv::SectVar,
             SemanticSituation::IdentBinding,
-            //TODO: Tag this :)
+            //TODO: Tag this
             //No
             Branch::Section(SectionBranch::Var),
         ),
@@ -640,7 +646,7 @@ fn parse_nest_sect(
 ) -> Result<Item, Token> {
     // Wait what is this error?
     let kw = ctx.expect_kw_verbose(
-        "Expected `enum` or `struct`, found ",
+        "Expected keyword `enum` or `struct`, found ",
         "",
         InitialEvidence::new(
             SemanticEnv::SectNest,
@@ -653,12 +659,10 @@ fn parse_nest_sect(
     //TODO: Can likely be done simpler but keep for simplicity
     let item = match kw {
         Keyword::Struct => {
-            let name_span = ctx.peek_span();
-
-            let name_id = ctx.expect_id_verbose(
+            let sp_name_id = parse_id(
+                ctx,
                 TokenKind::Id,
-                "Expected identifier for struct, found ",
-                "",
+                None,
                 InitialEvidence::new(
                     SemanticEnv::SectNest,
                     SemanticSituation::IdentBinding,
@@ -667,7 +671,7 @@ fn parse_nest_sect(
                 interner,
             )?;
 
-            let struct_name = interner.search(name_id);
+            let struct_name = interner.search(sp_name_id.inner);
 
             ctx.expect_verbose(
                 TokenKind::OCurlyBracket,
@@ -699,18 +703,23 @@ fn parse_nest_sect(
             };
 
             // Unsure if structures or enums will have fields so just stays for now
-            let structure = AbstractStruct::new(name_id, name_span, conds, args, fields, is_priv);
+            let structure = AbstractStruct::new(
+                sp_name_id.inner,
+                sp_name_id.span,
+                conds,
+                args,
+                fields,
+                is_priv,
+            );
 
             Item::Decl(AbstractDecl::Struct(structure))
         }
         //FIX: Make this normal
         Keyword::Enum => {
-            let name_span = ctx.peek_span();
-
-            let name_id = ctx.expect_id_verbose(
+            let sp_name_id = parse_id(
+                ctx,
                 TokenKind::Id,
-                "Expected identifier for enum, found ",
-                "",
+                None,
                 InitialEvidence::new(
                     SemanticEnv::SectNest,
                     SemanticSituation::IdentBinding,
@@ -719,7 +728,7 @@ fn parse_nest_sect(
                 interner,
             )?;
 
-            let enum_name = interner.search(name_id);
+            let enum_name = interner.search(sp_name_id.inner);
 
             ctx.expect_verbose(
                 TokenKind::OCurlyBracket,
@@ -748,8 +757,8 @@ fn parse_nest_sect(
             };
 
             let enumeration = AbstractEnum::new(
-                name_id,
-                name_span,
+                sp_name_id.inner,
+                sp_name_id.span,
                 variants,
                 glob_conds,
                 glob_directives,
@@ -1032,6 +1041,7 @@ fn handle_cfg_metadata(
                 AstConfigMemberMetadataKind::Override(meta),
             )
         } else {
+            // If !root
             let meta_kind = if let Some(ConfigRootMetadataKind::Override) = current_root_meta_opt {
                 AstConfigMemberMetadataKind::Override(AstConfigOverrideMetadata::new())
             } else {
@@ -1041,7 +1051,6 @@ fn handle_cfg_metadata(
             (ScopeLookupPattern::NoRestrictions, meta_kind)
         };
 
-        // If !root
         let name_span = ctx.peek_span();
         let name_id = ctx.expect_id_verbose(
             TokenKind::Id,
@@ -1121,7 +1130,6 @@ fn parse_option_assignment(
 }
 
 // Should this just return elements similar to how call_args does?
-//NOTE: May add parse_array to parse_expr eventually
 /// Parses assuming that '[' is the starting point.
 /// Parses ',' delimited elements "[1,2,3,4,]"
 fn parse_array(
@@ -1129,6 +1137,7 @@ fn parse_array(
     budget: &ParserBudget,
     interner: &Intern,
 ) -> Result<SpannedContainer<AstExpr>, Token> {
+    let start = ctx.peek_span().start;
     ctx.expect_verbose(
         TokenKind::OBracket,
         "Expected '[' to declare array, found ",
@@ -1143,8 +1152,6 @@ fn parse_array(
     )?;
 
     let mut elements: Vec<SpannedContainer<AstExpr>> = Vec::new();
-
-    let start = ctx.peek_span().start;
 
     while !ctx.peek_tok().kind().is_terminator() && ctx.peek_tok() != Token::CBracket {
         let sp_expr = parse_expr(ctx, 0, budget, interner)?;
@@ -1425,6 +1432,7 @@ fn parse_primary(
         Token::Poison
     })?;
     match ctx.peek_tok() {
+        Token::OBracket => parse_array(ctx, budget, interner),
         Token::OParen => {
             ctx.advance_tok();
             let expr = parse_expr(ctx, 0, budget, interner)?;
@@ -2292,7 +2300,7 @@ fn parse_exprs_enclosing(
         return Ok(exprs);
     }
 
-    while ctx.peek_tok().kind() != delim_ctx.closing() {
+    while !ctx.peek_tok().kind().is_terminator() && ctx.peek_tok().kind() != delim_ctx.closing() {
         exprs.push(parse_expr(ctx, 0, budget, interner)?);
         if ctx.peek_tok().kind() == delim_ctx.arg_sep() {
             ctx.advance_tok();
@@ -2461,6 +2469,41 @@ fn handle_conds(
     );
 
     Ok(conds)
+}
+
+//TEST:
+/// Identifier parsing helper
+///
+/// Forms an "Expected {expected_name}, found " msg
+/// If no `expected_name` is given the `TokenKind`'s default naming is used.
+fn parse_id(
+    ctx: &mut ParserContext,
+    expected: TokenKind,
+    expected_name: Option<&str>,
+    evidence: InitialEvidence,
+    interner: &Intern,
+) -> Result<SpannedContainer<InternedId>, Token> {
+    let name_span = ctx.peek_span();
+
+    let expected_name = if let Some(s) = expected_name {
+        s
+    } else {
+        match expected {
+            TokenKind::Id => "identifier",
+            TokenKind::Str => "string literal",
+            TokenKind::Integer | TokenKind::Float => "number",
+            _ => panic!("`parse_ident` misusage"),
+        }
+    };
+
+    let name_id = ctx.expect_id_verbose(
+        TokenKind::Id,
+        &format!("Expected {expected_name}, found "),
+        "",
+        evidence,
+        interner,
+    )?;
+    Ok(SpannedContainer::new(name_id, name_span))
 }
 
 //NOTE: Could make the first pass only resolve the basics so that module resolution for local

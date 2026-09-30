@@ -19,7 +19,7 @@
 //!     ├─ create_resolver_envs                 — envs that carry compilation_syms
 //!     ├─ MemberResolver::resolve              — field/variant resolution
 //!     ├─ TypeResolver::resolve                — type inference & checking
-//!     ├─ ConstraintResolver::resolve          — constraint checking (supported units)
+//!     ├─ ConstraintResolver::resolve          — constraint checking
 //!     └─ build_symbol_map                     — populate the span → entity index
 //! ```
 //!
@@ -36,11 +36,12 @@
 //! of cross-module dependency edges so that editing a shared import file correctly
 //! invalidates all documents that import it.
 
-use compilation::id_tag_decls::{ConfigMemberTag, ConfigRootTag};
+use compilation::chrn_config::ChrnConfig;
+use compilation::id_tag_decls::ConfigMemberTag;
 use compilation::lexer::Lexer;
 use compilation::lexer::token::SpannedToken;
 use compilation::lexer::token::Token as ScriptToken;
-use compilation::lexer::trivia::Trivia;
+use compilation::lexer::trivia::{Trivia, TriviaKind};
 use compilation::lookup::member_lookup::{self, MemberLookupPattern, MemberLookupResult};
 use compilation::lookup::scopes;
 use compilation::lookup::scopes::scopes_concepts::AssociatedScopeKind;
@@ -64,9 +65,7 @@ use compilation::script_compiler::ScriptCompiler;
 use compilation::semantic::compilation_unit::CompilationUnit;
 use compilation::semantic::hir::hir_concepts::Type;
 use compilation::semantic::hir::hir_exprs::{ExprHir, ResolvedExprMetadata};
-use compilation::semantic::hir::hir_impls::{
-    ConfigMemberMetadataKind, ConfigRoot, ConfigRootCommon, ConfigRootKind, ImplMemberKind,
-};
+use compilation::semantic::hir::hir_impls::{ConfigRoot, ConfigRootCommon, ImplMemberKind};
 use compilation::semantic::hir::hir_symbols::MemberSymbolKind;
 use compilation::semantic::hir::hir_symbols::SymbolKind;
 use compilation::semantic::hir::hir_symbols::SymbolOrigin;
@@ -85,7 +84,6 @@ pub(crate) const STATE_LOCK_TIMEOUT: Duration = Duration::from_millis(500);
 
 use chrn_utils::arena::Arena;
 use chrn_utils::budget::mem_budget::{BudgetResult, MemoryBudgetUsize};
-use compilation::chrn_config::ChrnConfig;
 use chrn_utils::id_types::{
     AstId, ImplId, ImplMemberId, InternedId, ModuleId, PathId, SourceRegionId, SymbolId, TypeId,
 };
@@ -458,52 +456,14 @@ impl DocumentState {
                 }
             }
 
-            // Constraint resolution for all supported units. Same rationale as
+            // Constraint resolution for all units. Same rationale as
             // above: do not abort on parse errors, the resolver will skip past
             // unparseable items and produce diagnostics only for the parts that
             // did parse. A single `ConstraintResolver` is reused.
-            //
-            // Core's override constraint branch is still an explicit `todo!()`.
-            // Excluding only those config units keeps the LSP usable for the
-            // symbols TypeResolver already produced (`JAVA::types::java::int`)
-            // without suppressing constraint checks for unrelated declarations.
-            let constraint_units: Vec<Option<Vec<CompilationUnit>>> = compilation_syms
-                .iter()
-                .map(|units| {
-                    let units = units.as_ref()?;
-                    Some(
-                        units
-                            .iter()
-                            .filter(|unit| {
-                                !matches!(
-                                    unit,
-                                    CompilationUnit::ConfigRoot(impl_id)
-                                        if config_has_override(&compiler, *impl_id)
-                                )
-                            })
-                            .cloned()
-                            .collect::<Vec<_>>(),
-                    )
-                })
-                .collect();
-            let constraint_envs: Vec<Option<ResolverEnv>> = module_inputs
-                .iter()
-                .enumerate()
-                .map(|(mod_idx, parts)| {
-                    let (ast_info, region) = (*parts)?;
-                    let units = constraint_units[mod_idx].as_ref()?;
-                    Some(ResolverEnv::new(
-                        ast_info,
-                        region,
-                        ModuleId::new(mod_idx as u32),
-                        units,
-                    ))
-                })
-                .collect();
             let mut constraint_resolver =
                 ConstraintResolver::new(&mut chrn_cfg, &self.interner, &mut compiler);
 
-            for env in constraint_envs.iter().flatten() {
+            for env in resolver_envs.iter().flatten() {
                 let mut cn_summary = constraint_resolver.resolve(env);
                 if !cn_summary.diags.is_empty() {
                     self.cn_errors.append_summary(&mut cn_summary);
@@ -1205,7 +1165,12 @@ impl DocumentState {
         results
     }
 
-    /// Check whether an absolute byte offset lies in lexer comment trivia.
+    /// Check whether an absolute byte offset is inside a comment for LSP features.
+    ///
+    /// Intentionally include the cursor immediately after a `//` comment, at
+    /// the line ending or EOF. Lexer spans are end-exclusive, but that cursor
+    /// is still on the comment line and must not offer completion. Keep this
+    /// distinction when changing comment or trivia handling.
     pub fn offset_in_comment(&self, byte_offset: usize) -> bool {
         // Trivia spans are relative to the region's `src_bytes`, so convert the
         // absolute byte offset to a relative one before comparing.
@@ -1216,10 +1181,26 @@ impl DocumentState {
         let idx = self
             .trivia
             .partition_point(|t| t.span.start as usize <= rel_offset);
-        idx > 0 && {
-            let trivia = &self.trivia[idx - 1];
-            rel_offset < trivia.span.end as usize && trivia.kind.is_comment()
+        let Some(trivia) = idx.checked_sub(1).and_then(|idx| self.trivia.get(idx)) else {
+            return false;
+        };
+        if trivia.kind.is_comment() && rel_offset < trivia.span.end as usize {
+            return true;
         }
+
+        // The cursor can sit just after a `//` comment, at EOF or at the
+        // newline. The comment span is end-exclusive, but completion still
+        // belongs to the comment at that position.
+        let previous = if trivia.kind == TriviaKind::Newline
+            && trivia.span.start as usize == rel_offset
+        {
+            idx.checked_sub(2).and_then(|idx| self.trivia.get(idx))
+        } else {
+            Some(trivia)
+        };
+        previous.is_some_and(|trivia| {
+            trivia.kind == TriviaKind::SingleComment && trivia.span.end as usize == rel_offset
+        })
     }
 }
 
@@ -1766,38 +1747,6 @@ impl Default for DocumentCache {
     }
 }
 
-/// Returns whether a config implementation contains an override branch that
-/// the core constraint resolver cannot inspect yet.
-fn config_has_override(
-    compiler: &ScriptCompiler,
-    impl_id: TaggedId<ImplId, ConfigRootTag>,
-) -> bool {
-    let cfg_root = compiler.get_cfg_root(impl_id);
-    if matches!(cfg_root.kind, ConfigRootKind::Override) {
-        return true;
-    }
-
-    fn member_has_override(
-        compiler: &ScriptCompiler,
-        memb_id: TaggedId<ImplMemberId, ConfigMemberTag>,
-    ) -> bool {
-        let member = compiler.get_cfg_member(memb_id);
-        matches!(&member.meta, ConfigMemberMetadataKind::Override(_))
-            || member
-                .cfg_members
-                .iter()
-                .copied()
-                .any(|child_id| member_has_override(compiler, child_id))
-    }
-
-    cfg_root
-        .common
-        .cfg_membs
-        .iter()
-        .copied()
-        .any(|memb_id| member_has_override(compiler, memb_id))
-}
-
 /// Read-only context shared by the AST reference walks that populate
 /// [`DocumentState::symbol_map`].
 ///
@@ -2230,16 +2179,20 @@ impl RefCollector<'_> {
                 (entity, compiler.get_type_id_from_memb_id(memb_id))
             }
             MemberLookupResult::ImpossibleTypeMemberAccess(resolved_type_id)
-                if let Type::BuiltinTypeInfo(builtin_info) =
-                    &compiler.types[resolved_type_id].ty =>
+                if matches!(
+                    compiler.types[resolved_type_id].ty,
+                    Type::BuiltinTypeInfo(_)
+                ) =>
             {
                 // Built-in namespace members such as `i32::MAX` live in the
                 // built-in type's associated namespace scope, not in member
                 // arenas like struct fields do.
-                let member_sym_id = match compiler.syms[builtin_info.sym_id].associated_scope {
-                    Some(AssociatedScopeKind::Scope(scope_id)) => Some(scope_id),
-                    _ => None,
-                }
+                let member_sym_id = compiler
+                    .get_sym_id_from_type_id(resolved_type_id)
+                    .and_then(|sym_id| match compiler.syms[sym_id].associated_scope {
+                        Some(AssociatedScopeKind::Scope(scope_id)) => Some(scope_id),
+                        _ => None,
+                    })
                 .and_then(|scope_id| {
                     compiler.scopes[scope_id]
                         .scope

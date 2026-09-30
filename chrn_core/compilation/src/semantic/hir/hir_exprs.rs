@@ -26,6 +26,8 @@ impl Param {
     }
 }
 
+//TODO: Maybe for arrays, route to `self` so that we aren't cloning an array with data we already have.
+//Possibly put in exprhir the self part, where inputs has the source of truth.
 #[derive(Debug)]
 pub struct ResolvedExpr {
     /// Type of expr
@@ -105,6 +107,7 @@ pub enum ExprHir {
         op: BinaryOp,
         rhs: ExprId,
     },
+    // TODO: Decide if ExprHir or inputs should be the owner of this in `ResolvedExpr`
     Array(Vec<ExprId>),
 }
 

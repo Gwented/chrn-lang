@@ -1,14 +1,16 @@
 use super::helpers::*;
 use crate::lookup::scopes::find_sym_id;
 use crate::lookup::scopes::scopes_concepts::{
-    AssociatedScopeKind, ScopeLookupPattern, ScopeLookupPreferenceFlags, ScopeType,
+    AssociatedScopeKind, BuiltinIdRepository, BuiltinIdRepositoryBuilder, ScopeLookupPattern,
+    ScopeLookupPreferenceFlags, ScopeType,
 };
 use crate::script_compiler::compiler_consts::builtin_ty_to_id;
 use crate::script_compiler::helpers::core_helpers::CORE_BUILTIN_TYPES_DATASET;
 use crate::semantic::hir::hir_concepts::Type;
 use crate::semantic::hir::hir_symbols::SymbolKind;
-use chrn_utils::id_types::{ScopeId, TypeId};
+use chrn_utils::id_types::{ScopeId, SymbolId, TypeId};
 use chrn_utils::intern;
+use lang::types::builtins::BuiltinTypeKind;
 
 /// Runs lexing, parsing, and namespace resolution on a single-module script, returning the
 /// compiler and interner so scope lookups can be performed directly.
@@ -267,11 +269,11 @@ fn namespaced_builtins() -> Vec<(String, TypeId)> {
 
 /// The scope a built-in's symbol owns, which is where its intrinsic constants live.
 fn ns_scope_of(compiler: &ScriptCompiler, type_id: TypeId) -> ScopeId {
-    let Type::BuiltinTypeInfo(info) = &compiler.types[type_id].ty else {
-        panic!("expected a builtin at {type_id:?}");
-    };
+    let sym_id = compiler
+        .get_sym_id_from_type_id(type_id)
+        .expect("expected a builtin symbol id");
 
-    match compiler.syms[info.sym_id].associated_scope {
+    match compiler.syms[sym_id].associated_scope {
         Some(AssociatedScopeKind::Scope(scope_id)) => scope_id,
         other => panic!("builtin at {type_id:?} owns no namespace scope, got {other:?}"),
     }
@@ -373,6 +375,53 @@ fn scope_core_type_namespace_unreachable_test() {
         assert!(
             res.err_count() > 0,
             "`{:?}` declares no MAX bound, so `{name}::MAX` should not resolve",
+            builtin_ty.kind()
+        );
+    }
+}
+
+#[test]
+fn builtin_id_repository_builder_full_build() {
+    let mut builder = BuiltinIdRepository::builder();
+    for (idx, (_, builtin_ty, _)) in CORE_BUILTIN_TYPES_DATASET.iter().enumerate() {
+        builder.add(builtin_ty.kind(), SymbolId::new(idx as u32));
+    }
+    let repo = builder.build();
+    assert_eq!(repo.i8, SymbolId::new(0));
+    assert_eq!(repo.get(BuiltinTypeKind::I8), Some(SymbolId::new(0)));
+    assert_eq!(repo.get(BuiltinTypeKind::List), None);
+}
+
+#[test]
+#[cfg(debug_assertions)]
+#[should_panic]
+fn builtin_id_repository_builder_duplicate_debug_assert() {
+    let mut builder = BuiltinIdRepository::builder();
+    builder.add(BuiltinTypeKind::I8, SymbolId::new(1));
+    builder.add(BuiltinTypeKind::I8, SymbolId::new(2));
+}
+
+#[test]
+#[should_panic]
+fn builtin_id_repository_builder_incomplete_panics() {
+    let mut builder = BuiltinIdRepository::builder();
+    builder.add(BuiltinTypeKind::I8, SymbolId::new(1));
+    builder.build();
+}
+
+#[test]
+fn builtin_id_repository_initialized_in_compiler() {
+    let (compiler, _) = ns_resolve("");
+    let repo = compiler
+        .intrinsic_registry
+        .builtin_repo
+        .as_ref()
+        .expect("builtin_repo must be initialized in ScriptCompiler");
+
+    for (_, builtin_ty, _) in &CORE_BUILTIN_TYPES_DATASET {
+        assert!(
+            repo.get(builtin_ty.kind()).is_some(),
+            "missing symbol for {:?} in builtin_repo",
             builtin_ty.kind()
         );
     }

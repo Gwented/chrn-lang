@@ -1659,7 +1659,11 @@ impl<'a> ConstraintResolver<'a> {
         //             for expr_id in expr_id_args.iter().skip(1) {
         //                 let other_type_id = self.compiler.exprs[expr_id ].type_id;
         //
-        //                 if req_type_id != other_type_id {
+        //                 if !crate::resolvers::typechecker::is_same_ty(
+        //                     &self.compiler.types,
+        //                     req_type_id,
+        //                     other_type_id,
+        //                 ) {
         //                     let req_span = self.compiler.exprs[req_expr_id ].span;
         //                     let other_span = self.compiler.exprs[expr_id ].span;
         //
@@ -1835,7 +1839,11 @@ impl<'a> ConstraintResolver<'a> {
         //                 dbg!(ty);
         //
         //                 panic!();
-        //                 if parent_ty_id != other_ty_id {
+        //                 if !crate::resolvers::typechecker::is_same_ty(
+        //                     types,
+        //                     parent_ty_id,
+        //                     other_ty_id,
+        //                 ) {
         //                     let other_span = self.compiler.exprs[expr_id ].span;
         //                     let msg = "Must be the same type as `self`".to_string();
         //

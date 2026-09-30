@@ -892,11 +892,17 @@ pub static CORE_BUILTIN_TYPES_DATASET: [(u32, BuiltinType, &'static [Instantiati
     (intern::INTERNED_BOOL, BuiltinType::Bool, &NAMESPACE_BOOL),
     (intern::INTERNED_BIGINT, BuiltinType::BigInt, &[]),
     (intern::INTERNED_BIGFLOAT, BuiltinType::BigFloat, &[]),
+    //TODO: How are we adding these
+    // Will be enums for now
+    // (intern::INTERNED_LIST, BuiltinType::List, &[]),
+    // (intern::INTERNED_SET, BuiltinType::Set, &[]),
+    // (intern::INTERNED_MAP, BuiltinType::Map, &[]),
+    // (intern::INTERNED_TUPLE, BuiltinType::Tuple, &[]),
     (intern::INTERNED_RUNTIME, BuiltinType::Runtime, &[]),
 ];
 
 /// Every core boundary type, paired with its interned name. Loaded after `CORE_BUILTIN_TYPES` and
-/// the unknown type, so these have no `CORE_*` constants.
+/// the unknown type, these have no `CORE_*` constants.
 pub static CORE_BOUNDARIES_DATASET: [(u32, TypeBoundaryFlags); 11] = [
     (intern::INTERNED_RANGED, TypeBoundaryFlags::RANGED),
     (

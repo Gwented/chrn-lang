@@ -1,5 +1,5 @@
 use crate::analyser::{config_load_error_to_diagnostics, push_diagnostic, version_is_current};
-use crate::tests::session::{Session, TempWorkspace};
+use crate::tests::session::{Session, TempWorkspace, position_of};
 use chrn_utils::arena::Arena;
 use chrn_utils::core_error::ConfigLoadError;
 use chrn_utils::id_types::{PathId, SourceRegionId};
@@ -322,6 +322,44 @@ async fn test_session_publishes_parse_diagnostics_in_absolute_positions() {
             },
         },
         "the error points at the `=` on the third line of the file"
+    );
+}
+
+/// Constraint checking must still inspect an option assignment when the same
+/// config member contains a nested language override, as in `evil.chrn`.
+#[tokio::test(start_paused = true)]
+async fn test_session_reports_constraint_error_beside_nested_override() {
+    let workspace = TempWorkspace::new("constraint_beside_nested_override");
+    let invalid = "nest->\nstruct Structure { field1: i32 }\ncomplex->\nfor Structure {\n    field1 {\n        idents = 2\n        override JAVA=>types{change = java::char}\n    }\n}\n";
+    let valid = invalid.replace("idents = 2", "idents = \"field1\"");
+    let uri = workspace.write("main.chrn", invalid);
+
+    let mut session = Session::new().await;
+    let diagnostics = session.open(&uri, invalid).await;
+    let error = diagnostics
+        .iter()
+        .find(|d| d.message.contains("required by option `idents`"))
+        .expect("the invalid option must produce its constraint diagnostic");
+    assert_eq!(error.severity, Some(DiagnosticSeverity::ERROR));
+    assert_eq!(error.source.as_deref(), Some("chrn-constraint"));
+    assert!(
+        diagnostics
+            .iter()
+            .all(|d| d.source.as_deref() == Some("chrn-constraint")),
+        "the nested override introduces no unrelated errors, got {diagnostics:?}"
+    );
+    let mut start = position_of(invalid, "idents = 2", 0);
+    start.character += "idents = ".len() as u32;
+    assert_eq!(
+        error.range,
+        Range::new(start, Position::new(start.line, start.character + 1))
+    );
+
+    session.change_full(&uri, &valid).await;
+    assert!(
+        session.diagnostics(&uri).is_empty(),
+        "fixing the option clears its diagnostic, got {:?}",
+        session.diagnostics(&uri)
     );
 }
 

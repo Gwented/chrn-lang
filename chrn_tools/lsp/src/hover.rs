@@ -836,8 +836,15 @@ fn format_value(v: &Value, interner: &Intern) -> String {
         Value::RuntimeStr(s) => format!("\"{s}\""),
         Value::Func(_) => "Function".to_string(),
         Value::Array(elems) => {
-            let parts: Vec<String> = elems.iter().map(|ev| format_value(ev, interner)).collect();
-            format!("[{}]", parts.join(", "))
+            let mut parts: Vec<String> = elems
+                .iter()
+                .take(5)
+                .map(|ev| format_value(ev, interner))
+                .collect();
+            if elems.len() > 5 {
+                parts.push("..".to_string());
+            }
+            format!("\\[{}\\]", parts.join(", "))
         }
         Value::Unknown => "Unknown".into(),
     }

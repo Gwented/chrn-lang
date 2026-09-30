@@ -26,7 +26,10 @@ use crate::{
     },
     lookup::scopes::{
         self,
-        scopes_concepts::{AssociatedScopeKind, IntrinsicRegistry, Scope, ScopeInfo, ScopeType},
+        scopes_concepts::{
+            AssociatedScopeKind, BuiltinIdRepository, BuiltinIdRepositoryBuilder,
+            IntrinsicRegistry, Scope, ScopeInfo, ScopeType,
+        },
     },
     module::module_concepts::{Bind, Import, ImportKind, Module, ModuleState},
     resolvers::resolver_state::ResolverState,
@@ -39,9 +42,9 @@ use crate::{
         },
     },
     semantic::{
-        hir::hir_directives::{Directive, DirectiveInline},
         hir::{
             hir_concepts::{BuiltinTypeInfo, Table, Type, TypeInfo},
+            hir_directives::{Directive, DirectiveInline},
             hir_exprs::{ExprHir, ResolvedExpr, ResolvedExprMetadata},
             hir_impls::{
                 ConfigMember, ConfigRoot, ImplHir, ImplHirKind, ImplMemberKind,
@@ -83,15 +86,15 @@ pub struct ScriptCompiler {
     /// collection that would be considered fields, but more general since the language is small
     /// scale and would likely not benefit much from such a wide variety of collections.
     pub sym_members: Arena<MemberSymbolKind, MemberId>,
-    /// Held `ImplMemberKind`s
+    /// `ImplMemberKind` arena
     pub impl_membs: Arena<ImplMemberKind, ImplMemberId>,
-    /// Held `VarDef`s
+    /// `VarDef` arena
     pub vars: Arena<VarDef, VariableId>,
-    /// All user defined `ConfigRoot`s
+    /// `ConfigRoot` arena
     pub cfgs: Arena<ConfigRoot, ConfigRootId>,
     /// Contains compiler generated directives. No user input driven directives exist currently.
     pub directives: Arena<Directive, DirectiveId>,
-    /// Scope arena
+    /// `ScopeInfo` arena
     pub scopes: Arena<ScopeInfo, ScopeId>,
     /// Information regarding intrinsic data such as core's `ModuleId`
     pub intrinsic_registry: IntrinsicRegistry,
@@ -111,7 +114,7 @@ impl ScriptCompiler {
         // WARN: This is a little dangerous because it is a contract saying, this MUST load core as
         // the next scope. As long as load_core is called first, this remains truthful.
         let core_mod_id = mods.make_id();
-        let intrinsic_registry = IntrinsicRegistry::new(core_mod_id, None);
+        let intrinsic_registry = IntrinsicRegistry::new(core_mod_id, None, None);
 
         // For capacity (em-dash). An alias replaces the import's name rather than adding a second
         // identifier, so each import is worth exactly one symbol.
@@ -168,8 +171,8 @@ impl ScriptCompiler {
             resolver_state: ResolverState::NAMESPACE,
         };
         // Should this lazy load the section intrinsics though?
-        // Yuppy
-        compiler.load_core();
+        let builtin_repo = compiler.load_core();
+        compiler.intrinsic_registry.builtin_repo = Some(builtin_repo);
         compiler.load_directives();
         compiler.create_module_symbols();
 
@@ -638,7 +641,7 @@ impl ScriptCompiler {
 
     // Ok but what if this was const
     /// Attempts to get a `SymbolId` out of a `TypeId`
-    pub(super) fn get_sym_id_from_type_id(&self, mut type_id: TypeId) -> Option<SymbolId> {
+    pub fn get_sym_id_from_type_id(&self, mut type_id: TypeId) -> Option<SymbolId> {
         let checked = walk_type_id_deferred!(&self.types, type_id);
         match &self.types[checked.inner].ty {
             Type::Struct(struct_def) => Some(struct_def.self_id.inner()),
@@ -646,7 +649,15 @@ impl ScriptCompiler {
             Type::Func(func_def) => Some(func_def.self_id.inner()),
             Type::Alias(alias_def) => Some(alias_def.self_id.inner()),
             Type::TypeDef(type_def) => Some(type_def.self_id.inner()),
-            Type::BuiltinTypeInfo(info) => Some(info.sym_id),
+            Type::BuiltinTypeInfo(info) => {
+                let id = self
+                    .intrinsic_registry
+                    .builtin_repo
+                    .as_ref()
+                    .and_then(|repo| repo.get(info.ty.kind()))
+                    .expect("`init` failed");
+                Some(id)
+            }
             Type::Boundaries(_) | Type::Unknown => None,
             Type::Deferred(_) => unreachable!(),
         }
@@ -837,7 +848,7 @@ impl ScriptCompiler {
     // -- STARTUP --
 
     /// Loads the core module
-    fn load_core(&mut self) {
+    fn load_core(&mut self) -> BuiltinIdRepository {
         //TODO: If namespace core exists as a module then should error earlier
         let core_name_id = InternedId::new(intern::INTERNED_CORE);
         let core_mod_id = self.mods.make_id();
@@ -873,7 +884,7 @@ impl ScriptCompiler {
 
         core_mod.scopes.push(core_scope_id);
 
-        self.load_core_types(core_mod.self_id, core_scope_id);
+        let repo = self.load_core_types(core_mod.self_id, core_scope_id);
         self.load_core_funcs(core_mod.self_id, core_scope_id);
 
         let table = &mut self.scopes[core_scope_id].scope.table;
@@ -895,6 +906,8 @@ impl ScriptCompiler {
             user_mod.imports.push(core_import.clone());
             user_mod.scopes.push(core_scope_id);
         }
+
+        repo
     }
 
     /// Loads all compiler known directives
@@ -1171,14 +1184,19 @@ impl ScriptCompiler {
         table.interned_to_sym.insert(name_id, sym_id);
     }
 
-    // Make &mut self?
-    // --- Beep
     /// Helper to load all of core's types
-    fn load_core_types(&mut self, core_mod_id: ModuleId, core_scope_id: ScopeId) {
+    fn load_core_types(
+        &mut self,
+        core_mod_id: ModuleId,
+        core_scope_id: ScopeId,
+    ) -> BuiltinIdRepository {
         // -- Concrete types --
+        let mut builder = BuiltinIdRepository::builder();
         for (interned, ty, ns) in &core_helpers::CORE_BUILTIN_TYPES_DATASET {
             let interned_id = InternedId::new(*interned);
-            self.register_builtin(interned_id, ty.clone(), ns, core_scope_id, core_mod_id);
+            let sym_id =
+                self.register_builtin(interned_id, ty.clone(), ns, core_scope_id, core_mod_id);
+            builder.add(ty.kind(), sym_id);
         }
 
         // Is a special cookie because you're not supposed to be able to instantiate an `Unknown`
@@ -1190,6 +1208,16 @@ impl ScriptCompiler {
             let interned_id = InternedId::new(interned);
             self.register_boundary(interned_id, flags, core_scope_id, core_mod_id);
         }
+
+        builder.build()
+    }
+
+    //TEST:
+    /// Pushes `ty_info` into `self.types` and returns it's `TypeId`
+    pub fn push_ty(&mut self, ty_info: TypeInfo) -> TypeId {
+        let type_id = self.types.make_id();
+        self.types.push(ty_info);
+        type_id
     }
 
     /// Registers a single core builtin-type and pushes it
@@ -1200,12 +1228,12 @@ impl ScriptCompiler {
         ns: &[InstantiationSymbolBase],
         core_scope_id: ScopeId,
         core_mod_id: ModuleId,
-    ) {
+    ) -> SymbolId {
         let type_id = self.types.make_id();
         let sym_id = self.syms.make_id();
 
         self.types.push(TypeInfo::new(
-            Type::BuiltinTypeInfo(BuiltinTypeInfo::new(sym_id, builtin_ty)),
+            Type::BuiltinTypeInfo(BuiltinTypeInfo::new(builtin_ty)),
             core_mod_id,
         ));
 
@@ -1240,6 +1268,8 @@ impl ScriptCompiler {
             self.scopes.push(scope_info);
             self.register_instantiation_bases(scope_id, ns);
         }
+
+        sym_id
     }
 
     /// Registers a single core boundary type and pushes it

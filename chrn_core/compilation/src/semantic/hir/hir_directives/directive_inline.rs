@@ -10,6 +10,8 @@ pub enum DirectiveInline {
     Warn,
     Ignore,
     Type(TypeDirective),
+    // #exclude_ident
+    // ExcludeIdent,
 }
 
 impl From<TypeDirective> for DirectiveInline {

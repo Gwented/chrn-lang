@@ -205,16 +205,10 @@ fn resolve_generic(
                 let type_id = compiler.types.make_id();
 
                 let (interned_id, ty) = if kind == BuiltinTypeKind::List {
-                    let ty = Type::BuiltinTypeInfo(BuiltinTypeInfo::new(
-                        sym_id,
-                        BuiltinType::List(inner),
-                    ));
+                    let ty = Type::BuiltinTypeInfo(BuiltinTypeInfo::new(BuiltinType::List(inner)));
                     (InternedId::new(intern::INTERNED_LIST), ty)
                 } else {
-                    let ty = Type::BuiltinTypeInfo(BuiltinTypeInfo::new(
-                        sym_id,
-                        BuiltinType::Set(inner),
-                    ));
+                    let ty = Type::BuiltinTypeInfo(BuiltinTypeInfo::new(BuiltinType::Set(inner)));
                     (InternedId::new(intern::INTERNED_SET), ty)
                 };
 
@@ -270,10 +264,8 @@ fn resolve_generic(
                     SymbolKind::Type(type_id),
                 );
 
-                let tuple = Type::BuiltinTypeInfo(BuiltinTypeInfo::new(
-                    sym_id,
-                    BuiltinType::Tuple(elements),
-                ));
+                let tuple =
+                    Type::BuiltinTypeInfo(BuiltinTypeInfo::new(BuiltinType::Tuple(elements)));
 
                 let ty_info = TypeInfo::new(tuple, compiler.intrinsic_registry.core_mod_id);
                 compiler.types.push(ty_info);
@@ -331,8 +323,7 @@ fn resolve_generic(
                     SymbolKind::Type(type_id),
                 );
 
-                let map =
-                    Type::BuiltinTypeInfo(BuiltinTypeInfo::new(sym_id, BuiltinType::Map(key, val)));
+                let map = Type::BuiltinTypeInfo(BuiltinTypeInfo::new(BuiltinType::Map(key, val)));
 
                 let ty_info = TypeInfo::new(map, compiler.intrinsic_registry.core_mod_id);
                 compiler.types.push(ty_info);

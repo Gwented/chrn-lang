@@ -619,24 +619,12 @@ fn lex_float_literal_fraction_and_scientific_notation() {
         (b"3.14".as_slice(), "3.14", FloatNotation::Decimal),
         (b"0.0".as_slice(), "0.0", FloatNotation::Decimal),
         (b"1.2e3".as_slice(), "1.2e3", FloatNotation::Scientific),
-        (
-            b"3.14e+2".as_slice(),
-            "3.14e+2",
-            FloatNotation::Scientific,
-        ),
-        (
-            b"0.5e-10".as_slice(),
-            "0.5e-10",
-            FloatNotation::Scientific,
-        ),
+        (b"3.14e+2".as_slice(), "3.14e+2", FloatNotation::Scientific),
+        (b"0.5e-10".as_slice(), "0.5e-10", FloatNotation::Scientific),
         (b"1e10".as_slice(), "1e10", FloatNotation::Scientific),
         (b"1e+23".as_slice(), "1e+23", FloatNotation::Scientific),
         (b"1e-23".as_slice(), "1e-23", FloatNotation::Scientific),
-        (
-            b"1_000.5_0".as_slice(),
-            "1000.50",
-            FloatNotation::Decimal,
-        ),
+        (b"1_000.5_0".as_slice(), "1000.50", FloatNotation::Decimal),
         (b"1_e2".as_slice(), "1e2", FloatNotation::Scientific),
     ] {
         let (toks, interner) = lex(src);
@@ -689,7 +677,11 @@ fn lex_trailing_dot_numeric_literal_is_integer_and_dot() {
     // `2.` -> Integer("2") + Dot + EOF
     {
         let (toks, interner) = lex(b"2.");
-        assert_eq!(toks.len(), 3, "expected Integer + Dot + EOF for `2.`, got {toks:?}");
+        assert_eq!(
+            toks.len(),
+            3,
+            "expected Integer + Dot + EOF for `2.`, got {toks:?}"
+        );
         match &toks[0].tok {
             Token::Integer(id, IntegerNotation::Decimal) => {
                 assert_eq!(interner.search(*id), "2");
@@ -707,7 +699,11 @@ fn lex_trailing_dot_numeric_literal_is_integer_and_dot() {
     // `2.foo` -> Integer("2") + Dot + Id("foo") + EOF
     {
         let (toks, interner) = lex(b"2.foo");
-        assert_eq!(toks.len(), 4, "expected Integer + Dot + Id + EOF for `2.foo`, got {toks:?}");
+        assert_eq!(
+            toks.len(),
+            4,
+            "expected Integer + Dot + Id + EOF for `2.foo`, got {toks:?}"
+        );
         match &toks[0].tok {
             Token::Integer(id, IntegerNotation::Decimal) => assert_eq!(interner.search(*id), "2"),
             other => panic!("expected Integer for `2.foo`, got {other:?}"),
@@ -723,7 +719,11 @@ fn lex_trailing_dot_numeric_literal_is_integer_and_dot() {
     // `2..5` -> Integer("2") + Dot + Dot + Integer("5") + EOF
     {
         let (toks, interner) = lex(b"2..5");
-        assert_eq!(toks.len(), 5, "expected Integer + Dot + Dot + Integer + EOF for `2..5`, got {toks:?}");
+        assert_eq!(
+            toks.len(),
+            5,
+            "expected Integer + Dot + Dot + Integer + EOF for `2..5`, got {toks:?}"
+        );
         match &toks[0].tok {
             Token::Integer(id, IntegerNotation::Decimal) => assert_eq!(interner.search(*id), "2"),
             other => panic!("expected Integer for `2`, got {other:?}"),
@@ -757,7 +757,11 @@ fn lex_incomplete_scientific_notation_terminates_before_exponent() {
     // `1e` -> Integer("1") + Id("e") + EOF
     {
         let (toks, interner) = lex(b"1e");
-        assert_eq!(toks.len(), 3, "expected Integer + Id + EOF for `1e`, got {toks:?}");
+        assert_eq!(
+            toks.len(),
+            3,
+            "expected Integer + Id + EOF for `1e`, got {toks:?}"
+        );
         match &toks[0].tok {
             Token::Integer(id, IntegerNotation::Decimal) => assert_eq!(interner.search(*id), "1"),
             other => panic!("expected Integer for `1e`, got {other:?}"),
@@ -774,7 +778,11 @@ fn lex_incomplete_scientific_notation_terminates_before_exponent() {
     // `1e+` -> Integer("1") + Id("e") + Plus + EOF
     {
         let (toks, interner) = lex(b"1e+");
-        assert_eq!(toks.len(), 4, "expected Integer + Id + Plus + EOF for `1e+`, got {toks:?}");
+        assert_eq!(
+            toks.len(),
+            4,
+            "expected Integer + Id + Plus + EOF for `1e+`, got {toks:?}"
+        );
         match &toks[0].tok {
             Token::Integer(id, IntegerNotation::Decimal) => assert_eq!(interner.search(*id), "1"),
             other => panic!("expected Integer for `1e+`, got {other:?}"),
@@ -790,7 +798,11 @@ fn lex_incomplete_scientific_notation_terminates_before_exponent() {
     // `1.2e` -> Float("1.2") + Id("e") + EOF
     {
         let (toks, interner) = lex(b"1.2e");
-        assert_eq!(toks.len(), 3, "expected Float + Id + EOF for `1.2e`, got {toks:?}");
+        assert_eq!(
+            toks.len(),
+            3,
+            "expected Float + Id + EOF for `1.2e`, got {toks:?}"
+        );
         match &toks[0].tok {
             Token::Float(id, FloatNotation::Decimal) => assert_eq!(interner.search(*id), "1.2"),
             other => panic!("expected Float for `1.2e`, got {other:?}"),
@@ -807,7 +819,11 @@ fn lex_incomplete_scientific_notation_terminates_before_exponent() {
     // `1.2e+` -> Float("1.2") + Id("e") + Plus + EOF
     {
         let (toks, interner) = lex(b"1.2e+");
-        assert_eq!(toks.len(), 4, "expected Float + Id + Plus + EOF for `1.2e+`, got {toks:?}");
+        assert_eq!(
+            toks.len(),
+            4,
+            "expected Float + Id + Plus + EOF for `1.2e+`, got {toks:?}"
+        );
         match &toks[0].tok {
             Token::Float(id, FloatNotation::Decimal) => assert_eq!(interner.search(*id), "1.2"),
             other => panic!("expected Float for `1.2e+`, got {other:?}"),
@@ -837,7 +853,11 @@ fn lex_hex_literal_terminates_on_invalid_digit_or_empty_malformed() {
     // `0x1g` -> Integer("1", Hex) + Id("g") + EOF
     {
         let (toks, interner) = lex(b"0x1g");
-        assert_eq!(toks.len(), 3, "expected Hex Integer + Id + EOF for `0x1g`, got {toks:?}");
+        assert_eq!(
+            toks.len(),
+            3,
+            "expected Hex Integer + Id + EOF for `0x1g`, got {toks:?}"
+        );
         match &toks[0].tok {
             Token::Integer(id, IntegerNotation::Hex) => assert_eq!(interner.search(*id), "1"),
             other => panic!("expected Hex integer for `0x1g`, got {other:?}"),
@@ -854,7 +874,11 @@ fn lex_hex_literal_terminates_on_invalid_digit_or_empty_malformed() {
     // `0xg` -> Invalid + Id("g") + EOF
     {
         let (toks, interner) = lex(b"0xg");
-        assert_eq!(toks.len(), 3, "expected Invalid + Id + EOF for `0xg`, got {toks:?}");
+        assert_eq!(
+            toks.len(),
+            3,
+            "expected Invalid + Id + EOF for `0xg`, got {toks:?}"
+        );
         assert!(matches!(toks[0].tok, Token::Invalid(_)));
         assert_eq!(toks[0].span.start, 0);
         assert_eq!(toks[0].span.end, 2);
@@ -868,7 +892,11 @@ fn lex_hex_literal_terminates_on_invalid_digit_or_empty_malformed() {
     // `0x` alone -> Invalid + EOF
     {
         let (toks, _) = lex(b"0x");
-        assert_eq!(toks.len(), 2, "expected Invalid + EOF for `0x`, got {toks:?}");
+        assert_eq!(
+            toks.len(),
+            2,
+            "expected Invalid + EOF for `0x`, got {toks:?}"
+        );
         assert!(matches!(toks[0].tok, Token::Invalid(_)));
         assert_eq!(toks[0].span.start, 0);
         assert_eq!(toks[0].span.end, 2);
@@ -942,27 +970,11 @@ fn lex_numeric_notation_maps_to_correct_token_and_notation_enum() {
     }
 
     for &(src, expected_str, expected_notation) in &[
-        (
-            b"3.14".as_slice(),
-            "3.14",
-            FloatNotation::Decimal,
-        ),
-        (
-            b"1_000.5_0".as_slice(),
-            "1000.50",
-            FloatNotation::Decimal,
-        ),
+        (b"3.14".as_slice(), "3.14", FloatNotation::Decimal),
+        (b"1_000.5_0".as_slice(), "1000.50", FloatNotation::Decimal),
         (b"1e10".as_slice(), "1e10", FloatNotation::Scientific),
-        (
-            b"1e+23".as_slice(),
-            "1e+23",
-            FloatNotation::Scientific,
-        ),
-        (
-            b"1.2e-3".as_slice(),
-            "1.2e-3",
-            FloatNotation::Scientific,
-        ),
+        (b"1e+23".as_slice(), "1e+23", FloatNotation::Scientific),
+        (b"1.2e-3".as_slice(), "1.2e-3", FloatNotation::Scientific),
     ] {
         let (toks, interner) = lex(src);
         let src_str = std::str::from_utf8(src).unwrap();

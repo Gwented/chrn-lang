@@ -42,7 +42,7 @@ pub enum BuiltinType {
     Map(TypeId, TypeId),
     Set(TypeId),
     Tuple(Vec<TypeId>),
-    //TODO: any should either disallow all conditions and only take in unrestricted arguments, or
+    //TODO: Runtime should either disallow all conditions and only take in unrestricted arguments, or
     //be type inferred, given arguments or conditions
     Runtime,
 }
@@ -547,4 +547,13 @@ impl BuiltinTypeKind {
             _ => false,
         }
     }
+}
+
+//TEST: Since ids can't be stored for types -DW@$ should the type ids even be storing data structure
+//data? Str doesn't store the data for a reason, so..
+pub enum DataStructureKind {
+    List,
+    Map,
+    Set,
+    Tuple,
 }

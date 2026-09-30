@@ -31,6 +31,12 @@ pub const CORE_NIL: u32 = 18;
 pub const CORE_BOOL: u32 = 19;
 pub const CORE_BIGINT: u32 = 20;
 pub const CORE_BIGFLOAT: u32 = 21;
+//NOTE: DATASTRUCTS ADDED
+// pub const CORE_LIST: u32 = 22;
+// pub const CORE_SET: u32 = 23;
+// pub const CORE_MAP: u32 = 24;
+// pub const CORE_TUPLE: u32 = 25;
+//NOTE: DATASTRUCTS ADDED
 pub const CORE_RUNTIME: u32 = 22;
 // This particular type has no identifier because it's not a real type beyond being a signifier.
 pub const CORE_UNKNOWN: u32 = 23;
@@ -65,7 +71,11 @@ pub const fn builtin_ty_to_id(ty: BuiltinTypeKind) -> u32 {
         BuiltinTypeKind::List
         | BuiltinTypeKind::Set
         | BuiltinTypeKind::Map
-        | BuiltinTypeKind::Tuple => unreachable!(),
+        | BuiltinTypeKind::Tuple => panic!("`builtin_ty_to_id` misusage"),
+        // BuiltinTypeKind::List => CORE_LIST,
+        // BuiltinTypeKind::Set => CORE_SET,
+        // BuiltinTypeKind::Map => CORE_MAP,
+        // BuiltinTypeKind::Tuple => CORE_TUPLE,
     }
 }
 

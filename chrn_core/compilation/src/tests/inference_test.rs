@@ -10,6 +10,7 @@ use chrn_utils::{
     id_types::{InternedId, SymbolId, TypeId},
     intern,
 };
+use lang::types::builtins::BuiltinType;
 
 // -- Helpers --
 
@@ -74,11 +75,27 @@ const BITWISE: [BinaryOp; 5] = [
     BinaryOp::BitXor,
 ];
 
+fn assert_list_type(compiler: &ScriptCompiler, mut type_id: TypeId, depth: usize, scalar: u32) {
+    for layer in 0..depth {
+        let Type::BuiltinTypeInfo(info) = &compiler.types[type_id].ty else {
+            panic!(
+                "expected List at layer {layer}, got {:?}",
+                compiler.types[type_id].ty
+            );
+        };
+        let BuiltinType::List(inner) = info.ty else {
+            panic!("expected List at layer {layer}, got {:?}", info.ty);
+        };
+        type_id = inner;
+    }
+    assert_eq!(type_id, TypeId::new(scalar));
+}
+
 // -- infer_type_from_val --
 
 #[test]
 fn infer_val_maps_scalars_to_core_types() {
-    let compiler = core_only_compiler();
+    let mut compiler = core_only_compiler();
 
     let cases = [
         (Value::ArbitraryInt(ArbitraryIntKind::I64(7)), CORE_I64),
@@ -93,7 +110,7 @@ fn infer_val_maps_scalars_to_core_types() {
 
     for (val, expected) in cases {
         assert_eq!(
-            infer_type_from_val(&compiler, &val),
+            infer_type_from_val(&mut compiler, &val),
             Some(TypeId::new(expected)),
             "{:?} should infer core type {}",
             val,
@@ -106,22 +123,25 @@ fn infer_val_maps_scalars_to_core_types() {
 /// `f64`, because `Value` carries no width. Narrowing is not inference's job.
 #[test]
 fn infer_val_ignores_literal_width() {
-    let compiler = core_only_compiler();
+    let mut compiler = core_only_compiler();
 
     assert_eq!(
-        infer_type_from_val(&compiler, &Value::ArbitraryInt(ArbitraryIntKind::I64(0))),
         infer_type_from_val(
-            &compiler,
+            &mut compiler,
+            &Value::ArbitraryInt(ArbitraryIntKind::I64(0))
+        ),
+        infer_type_from_val(
+            &mut compiler,
             &Value::ArbitraryInt(ArbitraryIntKind::I64(i64::MAX))
         )
     );
     assert_eq!(
         infer_type_from_val(
-            &compiler,
+            &mut compiler,
             &Value::ArbitraryFloat(ArbitraryFloatKind::F64(0.0))
         ),
         infer_type_from_val(
-            &compiler,
+            &mut compiler,
             &Value::ArbitraryFloat(ArbitraryFloatKind::F64(f64::MAX))
         )
     );
@@ -130,100 +150,93 @@ fn infer_val_ignores_literal_width() {
 /// Interning is not consulted: any `InternedId` is `str`, valid or not.
 #[test]
 fn infer_val_str_does_not_read_the_interner() {
-    let compiler = core_only_compiler();
+    let mut compiler = core_only_compiler();
 
     let out_of_range = InternedId::new(u32::MAX);
     assert_eq!(
-        infer_type_from_val(&compiler, &Value::InternedStr(out_of_range)),
+        infer_type_from_val(&mut compiler, &Value::InternedStr(out_of_range)),
         Some(TypeId::new(CORE_STR))
     );
 }
 
 #[test]
 fn infer_val_unknown_is_none() {
-    let compiler = core_only_compiler();
+    let mut compiler = core_only_compiler();
 
-    assert_eq!(infer_type_from_val(&compiler, &Value::Unknown), None);
+    assert_eq!(infer_type_from_val(&mut compiler, &Value::Unknown), None);
 }
 
-/// An array infers to its *element* type, not a collection type. Arrays have no distinct core
-/// type id, so the element type is what callers get.
+/// Arrays retain their collection type around the inferred element type.
 #[test]
-fn infer_val_array_yields_element_type() {
-    let compiler = core_only_compiler();
+fn infer_val_array_yields_list_type() {
+    let mut compiler = core_only_compiler();
 
     let ints = Value::Array(vec![
         Value::ArbitraryInt(ArbitraryIntKind::I64(1)),
         Value::ArbitraryInt(ArbitraryIntKind::I64(2)),
     ]);
-    assert_eq!(
-        infer_type_from_val(&compiler, &ints),
-        Some(TypeId::new(CORE_I64))
-    );
+    let type_id = infer_type_from_val(&mut compiler, &ints).unwrap();
+    assert_list_type(&compiler, type_id, 1, CORE_I64);
 
     let strs = Value::Array(vec![Value::InternedStr(InternedId::new(0))]);
-    assert_eq!(
-        infer_type_from_val(&compiler, &strs),
-        Some(TypeId::new(CORE_STR))
-    );
+    let type_id = infer_type_from_val(&mut compiler, &strs).unwrap();
+    assert_list_type(&compiler, type_id, 1, CORE_STR);
 }
 
-/// Only the first element is inspected, so a heterogeneous array reports the first element's
-/// type instead of rejecting the array. Element agreement is checked elsewhere.
+/// Arrays infer a List using only the first element's type. Element agreement is checked elsewhere.
 #[test]
 fn infer_val_array_only_reads_first_element() {
-    let compiler = core_only_compiler();
+    let mut compiler = core_only_compiler();
 
     let mixed = Value::Array(vec![
         Value::Bool(true),
         Value::ArbitraryInt(ArbitraryIntKind::I64(1)),
         Value::Char('c'),
     ]);
-    assert_eq!(
-        infer_type_from_val(&compiler, &mixed),
-        Some(TypeId::new(CORE_BOOL))
-    );
+    let type_id = infer_type_from_val(&mut compiler, &mixed).unwrap();
+    assert_list_type(&compiler, type_id, 1, CORE_BOOL);
 }
 
-/// Recursion flattens: nesting depth is discarded and the innermost scalar wins.
+/// Every nested array contributes one List layer.
 #[test]
-fn infer_val_nested_array_flattens_to_scalar() {
-    let compiler = core_only_compiler();
+fn infer_val_nested_array_preserves_list_layers() {
+    let mut compiler = core_only_compiler();
 
     let nested = Value::Array(vec![Value::Array(vec![Value::Array(vec![
         Value::ArbitraryFloat(ArbitraryFloatKind::F64(1.0)),
     ])])]);
-    assert_eq!(
-        infer_type_from_val(&compiler, &nested),
-        Some(TypeId::new(CORE_F64))
-    );
+    let type_id = infer_type_from_val(&mut compiler, &nested).unwrap();
+    assert_list_type(&compiler, type_id, 3, CORE_F64);
 }
 
 #[test]
 fn infer_val_empty_array_is_none() {
-    let compiler = core_only_compiler();
+    let mut compiler = core_only_compiler();
 
-    assert_eq!(infer_type_from_val(&compiler, &Value::Array(vec![])), None);
+    assert_eq!(
+        infer_type_from_val(&mut compiler, &Value::Array(vec![])),
+        None
+    );
 }
 
 /// An empty array nested inside another array poisons the outer inference, since the recursive
-/// call is returned as-is.
+/// element type remains unknown.
 #[test]
 fn infer_val_nested_empty_array_is_none() {
-    let compiler = core_only_compiler();
+    let mut compiler = core_only_compiler();
 
     let nested_empty = Value::Array(vec![Value::Array(vec![])]);
-    assert_eq!(infer_type_from_val(&compiler, &nested_empty), None);
+    assert_eq!(infer_type_from_val(&mut compiler, &nested_empty), None);
 }
 
 /// A function value infers to its return type, not to the function type itself.
 #[test]
 fn infer_val_func_yields_return_type() {
-    let compiler = core_only_compiler();
+    let mut compiler = core_only_compiler();
     let (sym_id, ret_type) = first_core_func(&compiler);
 
     assert_eq!(
-        infer_type_from_val(&compiler, &Value::Func(sym_id)),
+        infer_type_from_val(&mut compiler, &Value::Func(sym_id)),
         Some(ret_type)
     );
 }
@@ -232,10 +245,10 @@ fn infer_val_func_yields_return_type() {
 #[test]
 #[should_panic]
 fn infer_val_tuple_is_unreachable() {
-    let compiler = core_only_compiler();
+    let mut compiler = core_only_compiler();
 
     infer_type_from_val(
-        &compiler,
+        &mut compiler,
         &Value::Tuple(vec![Value::ArbitraryInt(ArbitraryIntKind::I64(1))]),
     );
 }
@@ -244,9 +257,9 @@ fn infer_val_tuple_is_unreachable() {
 #[test]
 #[should_panic]
 fn infer_val_runtime_str_is_unreachable() {
-    let compiler = core_only_compiler();
+    let mut compiler = core_only_compiler();
 
-    infer_type_from_val(&compiler, &Value::RuntimeStr(String::from("hi")));
+    infer_type_from_val(&mut compiler, &Value::RuntimeStr(String::from("hi")));
 }
 
 // -- infer_type_from_binary_op --

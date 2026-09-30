@@ -162,14 +162,14 @@ pub static KEYWORD_DOCS: [Document; 15] = [
         key: "let",
         description: "Declares a reusable value; the type is inferred by default",
         example: Some(
-            "Declare a top-level value in the neutral section, or use `let … in …` to bind a value inside an expression.\n\n**Reusable declarations:**\n```chrn\nlet base = 10\nlet doubled = base * 2\n```\n\n**Scoped expression:**\n```chrn\nlet doubled = let value = 10 in value * 2\n```",
+            "Declare a top-level value in the neutral section.\n\n**Reusable declarations:**\n```chrn\nlet base = 10\nlet doubled = base * 2\n```",
         ),
     },
     Document {
         key: "change",
-        description: "Maps one or more chrn types to a language-specific type inside an override",
+        description: "Maps explicit chrn types or the current member to a language-specific type inside an override",
         example: Some(
-            "Put `change` inside a built-in override group such as `types`. List the chrn types on the left and the language type to use on the right.\n\n**One chrn type:**\n```chrn\noverride JAVA=>types {\n    change bool = java::boolean\n}\n```\n\n**Several chrn types:**\n```chrn\noverride JAVA=>types {\n    change i8, i16 = java::int\n}\n```",
+            "Put `change` inside a built-in override group such as `types`. List the chrn types on the left and the language type to use on the right. Inside a config member, omit the left-hand type to infer it from that member.\n\n**One chrn type:**\n```chrn\noverride JAVA=>types {\n    change bool = java::boolean\n}\n```\n\n**Several chrn types:**\n```chrn\noverride JAVA=>types {\n    change i8, i16 = java::int\n}\n```\n\n**Inferred member type:**\n```chrn\nfor Person {\n    age {\n        override RUST=>types { change = rust::u32 }\n    }\n}\n```",
         ),
     },
     Document {

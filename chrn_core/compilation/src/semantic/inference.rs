@@ -1,13 +1,17 @@
 use chrn_utils::id_types::TypeId;
+use lang::types::builtins::BuiltinType;
 
 use crate::{
     id_tag_decls::FuncTag,
     parser::ast::ast_concepts::BinaryOp,
     script_compiler::{ScriptCompiler, compiler_consts},
-    semantic::values::Value,
+    semantic::{
+        hir::hir_concepts::{BuiltinTypeInfo, Type, TypeInfo},
+        values::Value,
+    },
 };
 
-pub(crate) fn infer_type_from_val(compiler: &ScriptCompiler, val: &Value) -> Option<TypeId> {
+pub(crate) fn infer_type_from_val(compiler: &mut ScriptCompiler, val: &Value) -> Option<TypeId> {
     match val {
         Value::ArbitraryInt(kind) => Some(kind.type_id()),
         Value::ArbitraryFloat(kind) => Some(kind.type_id()),
@@ -24,8 +28,12 @@ pub(crate) fn infer_type_from_val(compiler: &ScriptCompiler, val: &Value) -> Opt
                 return None;
             }
 
-            // Recursively calling so the known element re-uses matching logic
-            infer_type_from_val(compiler, &elements[0])
+            // Preserve each array layer while inferring its element type.
+            let inner = infer_type_from_val(compiler, &elements[0])?;
+            Some(compiler.push_ty(TypeInfo::new(
+                Type::BuiltinTypeInfo(BuiltinTypeInfo::new(BuiltinType::List(inner))),
+                compiler.intrinsic_registry.core_mod_id,
+            )))
         }
         // Both of these are not possible as of right now from an operation
         // since there are no runtime values RIGHT NOW, and unknown is not a comptaible
