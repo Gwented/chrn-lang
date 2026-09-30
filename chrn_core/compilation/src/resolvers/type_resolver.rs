@@ -2563,7 +2563,7 @@ impl<'res> TypeResolver<'res> {
 
                     let array_expr = &mut self.compiler.exprs[current_expr_id];
                     let array_val = &mut self.compiler.values[array_expr.val_id];
-                    array_val.const_val = Some(Value::Array(values));
+                    array_val.const_val = Some(Value::List(values));
                 }
 
                 if !has_resolved_ty {
@@ -3862,11 +3862,14 @@ impl<'res> TypeResolver<'res> {
                 let type_id = if const_val_opt.is_some() {
                     operand_expr.type_id
                 } else {
-                    let type_id = self.compiler.types.make_id();
+                    //FIX:
+                    // Need to have this explanation somewhere general, but the reason this makes a
+                    // new unknown type instead of pointing to CORE_UNKNOWN is that only types we
+                    // know have to be built-in, or can't be deferred, can use the known built-in.
+                    // For example, if - wait why is this required built-in not pointing to unknown
+                    // then?
                     let ty_info = TypeInfo::new(Type::Unknown, env.current_mod);
-                    self.compiler.types.push(ty_info);
-
-                    type_id
+                    self.compiler.push_ty(ty_info)
                 };
 
                 let resolved_expr = ResolvedExpr::new(
@@ -3888,7 +3891,6 @@ impl<'res> TypeResolver<'res> {
             // What were we doing here?????
             // Also maybe bring back value pre-allocation
             AstExpr::Bool(boolean) => {
-                //FIX:
                 let type_id = TypeId::new(compiler_consts::CORE_BOOL);
 
                 let expr_id = self.compiler.exprs.make_id();
@@ -4123,7 +4125,7 @@ impl<'res> TypeResolver<'res> {
                 };
 
                 let const_val_opt = if found_const_vals == array.len() {
-                    let mut values: Vec<Value> = Vec::with_capacity(array_expr.elements.len());
+                    let mut vals: Vec<Value> = Vec::with_capacity(array_expr.elements.len());
 
                     for expr_id in &array {
                         let expr = &self.compiler.exprs[*expr_id];
@@ -4135,7 +4137,7 @@ impl<'res> TypeResolver<'res> {
                             .expect("Const value counting failed")
                             .clone();
 
-                        values.push(val);
+                        vals.push(val);
                     }
 
                     // Only reports when all values are const so that `traverse_expr` is in charge
@@ -4153,7 +4155,7 @@ impl<'res> TypeResolver<'res> {
                         );
                     }
 
-                    Some(Value::Array(values))
+                    Some(Value::List(vals))
                 } else {
                     None
                 };

@@ -171,14 +171,14 @@ fn infer_val_unknown_is_none() {
 fn infer_val_array_yields_list_type() {
     let mut compiler = core_only_compiler();
 
-    let ints = Value::Array(vec![
+    let ints = Value::List(vec![
         Value::ArbitraryInt(ArbitraryIntKind::I64(1)),
         Value::ArbitraryInt(ArbitraryIntKind::I64(2)),
     ]);
     let type_id = infer_type_from_val(&mut compiler, &ints).unwrap();
     assert_list_type(&compiler, type_id, 1, CORE_I64);
 
-    let strs = Value::Array(vec![Value::InternedStr(InternedId::new(0))]);
+    let strs = Value::List(vec![Value::InternedStr(InternedId::new(0))]);
     let type_id = infer_type_from_val(&mut compiler, &strs).unwrap();
     assert_list_type(&compiler, type_id, 1, CORE_STR);
 }
@@ -188,7 +188,7 @@ fn infer_val_array_yields_list_type() {
 fn infer_val_array_only_reads_first_element() {
     let mut compiler = core_only_compiler();
 
-    let mixed = Value::Array(vec![
+    let mixed = Value::List(vec![
         Value::Bool(true),
         Value::ArbitraryInt(ArbitraryIntKind::I64(1)),
         Value::Char('c'),
@@ -202,7 +202,7 @@ fn infer_val_array_only_reads_first_element() {
 fn infer_val_nested_array_preserves_list_layers() {
     let mut compiler = core_only_compiler();
 
-    let nested = Value::Array(vec![Value::Array(vec![Value::Array(vec![
+    let nested = Value::List(vec![Value::List(vec![Value::List(vec![
         Value::ArbitraryFloat(ArbitraryFloatKind::F64(1.0)),
     ])])]);
     let type_id = infer_type_from_val(&mut compiler, &nested).unwrap();
@@ -214,7 +214,7 @@ fn infer_val_empty_array_is_none() {
     let mut compiler = core_only_compiler();
 
     assert_eq!(
-        infer_type_from_val(&mut compiler, &Value::Array(vec![])),
+        infer_type_from_val(&mut compiler, &Value::List(vec![])),
         None
     );
 }
@@ -225,7 +225,7 @@ fn infer_val_empty_array_is_none() {
 fn infer_val_nested_empty_array_is_none() {
     let mut compiler = core_only_compiler();
 
-    let nested_empty = Value::Array(vec![Value::Array(vec![])]);
+    let nested_empty = Value::List(vec![Value::List(vec![])]);
     assert_eq!(infer_type_from_val(&mut compiler, &nested_empty), None);
 }
 

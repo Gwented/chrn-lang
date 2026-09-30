@@ -22,7 +22,7 @@ pub(crate) fn infer_type_from_val(compiler: &mut ScriptCompiler, val: &Value) ->
             Some(func_def.ret_type)
         }
         Value::InternedStr(_) => Some(TypeId::new(compiler_consts::CORE_STR)),
-        Value::Array(elements) => {
+        Value::List(elements) => {
             // Would this be possible?
             if elements.is_empty() {
                 return None;

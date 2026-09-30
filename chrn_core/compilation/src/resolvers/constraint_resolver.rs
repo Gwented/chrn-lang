@@ -320,7 +320,7 @@ impl<'a> ConstraintResolver<'a> {
             .expect("NOT DONE YET");
 
         // Maybe just add expects for expressions :(
-        let Value::Array(values) = const_array else {
+        let Value::List(values) = const_array else {
             panic!("NOT DONE");
         };
 

@@ -1191,13 +1191,12 @@ impl DocumentState {
         // The cursor can sit just after a `//` comment, at EOF or at the
         // newline. The comment span is end-exclusive, but completion still
         // belongs to the comment at that position.
-        let previous = if trivia.kind == TriviaKind::Newline
-            && trivia.span.start as usize == rel_offset
-        {
-            idx.checked_sub(2).and_then(|idx| self.trivia.get(idx))
-        } else {
-            Some(trivia)
-        };
+        let previous =
+            if trivia.kind == TriviaKind::Newline && trivia.span.start as usize == rel_offset {
+                idx.checked_sub(2).and_then(|idx| self.trivia.get(idx))
+            } else {
+                Some(trivia)
+            };
         previous.is_some_and(|trivia| {
             trivia.kind == TriviaKind::SingleComment && trivia.span.end as usize == rel_offset
         })
@@ -2193,14 +2192,14 @@ impl RefCollector<'_> {
                         Some(AssociatedScopeKind::Scope(scope_id)) => Some(scope_id),
                         _ => None,
                     })
-                .and_then(|scope_id| {
-                    compiler.scopes[scope_id]
-                        .scope
-                        .table
-                        .iter_interned()
-                        .find(|(name, _)| *name == name_id)
-                        .map(|(_, sym_id)| sym_id)
-                });
+                    .and_then(|scope_id| {
+                        compiler.scopes[scope_id]
+                            .scope
+                            .table
+                            .iter_interned()
+                            .find(|(name, _)| *name == name_id)
+                            .map(|(_, sym_id)| sym_id)
+                    });
                 let Some(member_sym_id) = member_sym_id else {
                     return PathCursor::Opaque;
                 };

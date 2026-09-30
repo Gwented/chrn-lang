@@ -582,7 +582,7 @@ fn root_option_expr_and_value<'a>(
 }
 
 fn assert_i64_array(option_name: &str, value: &ValueInfo, expected: &[i64]) {
-    let Some(Value::Array(values)) = &value.const_val else {
+    let Some(Value::List(values)) = &value.const_val else {
         panic!(
             "option `{option_name}` should hold a constant array, got {:?}",
             value.const_val
@@ -603,7 +603,7 @@ fn concrete_type(resolution: &Resolution, mut type_id: TypeId) -> TypeId {
 
 fn assert_nested_array_value(found: &Value, expected: &Value) {
     match (found, expected) {
-        (Value::Array(found), Value::Array(expected)) => {
+        (Value::List(found), Value::List(expected)) => {
             assert_eq!(found.len(), expected.len());
             for (found, expected) in found.iter().zip(expected) {
                 assert_nested_array_value(found, expected);
@@ -717,7 +717,7 @@ fn standing_expr_preserves_nested_pending_array_layers() {
     let (expr, value) = root_option_expr_and_value(&resolution, "values");
     assert_list_i64_type(&resolution, expr.type_id, 3);
     assert_list_i64_type(&resolution, value.type_id, 3);
-    let expected = Value::Array(vec![Value::Array(vec![Value::Array(vec![
+    let expected = Value::List(vec![Value::List(vec![Value::List(vec![
         Value::ArbitraryInt(int_from_i64(4)),
     ])])]);
     assert_nested_array_value(value.const_val.as_ref().unwrap(), &expected);
@@ -737,9 +737,9 @@ fn standing_expr_accepts_separately_allocated_matching_nested_lists() {
     let (expr, value) = root_option_expr_and_value(&resolution, "values");
     assert_list_i64_type(&resolution, expr.type_id, 2);
     assert_list_i64_type(&resolution, value.type_id, 2);
-    let expected = Value::Array(vec![
-        Value::Array(vec![Value::ArbitraryInt(int_from_i64(4))]),
-        Value::Array(vec![Value::ArbitraryInt(int_from_i64(1))]),
+    let expected = Value::List(vec![
+        Value::List(vec![Value::ArbitraryInt(int_from_i64(4))]),
+        Value::List(vec![Value::ArbitraryInt(int_from_i64(1))]),
     ]);
     assert_nested_array_value(value.const_val.as_ref().unwrap(), &expected);
 }

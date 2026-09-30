@@ -42,9 +42,9 @@ use serde_json::{Value, json};
 use tower::Service;
 use tower_lsp::jsonrpc::{Request, Response};
 use tower_lsp::lsp_types::{
-    CompletionResponse, Diagnostic, GotoDefinitionResponse, Hover, HoverContents, InitializeParams,
-    InitializeResult, Location, MarkedString, Position, Range, SemanticTokensResult, Url,
-    WorkspaceEdit,
+    CompletionResponse, Diagnostic, DocumentHighlight, GotoDefinitionResponse, Hover,
+    HoverContents, InitializeParams, InitializeResult, Location, MarkedString, Position, Range,
+    SemanticTokensResult, Url, WorkspaceEdit,
 };
 use tower_lsp::{ClientSocket, LspService};
 
@@ -61,6 +61,7 @@ pub struct Session {
     next_id: i64,
     doc_versions: HashMap<String, i32>,
     diagnostics: HashMap<String, Vec<Diagnostic>>,
+    initialize_result: Option<InitializeResult>,
 }
 
 impl Session {
@@ -78,6 +79,7 @@ impl Session {
             next_id: 1,
             doc_versions: HashMap::new(),
             diagnostics: HashMap::new(),
+            initialize_result: None,
         };
 
         let mut params =
@@ -85,8 +87,8 @@ impl Session {
         params["capabilities"]["textDocument"]["completion"]["completionItem"] =
             json!({ "snippetSupport": snippet_support });
         let result = session.request("initialize", params).await;
-        let _: InitializeResult =
-            serde_json::from_value(result).expect("initialize returns an InitializeResult");
+        session.initialize_result =
+            Some(serde_json::from_value(result).expect("initialize returns an InitializeResult"));
         session.notify("initialized", json!({})).await;
 
         session
@@ -95,6 +97,12 @@ impl Session {
     /// The live server backend, for asserting on state the protocol does not expose.
     pub fn backend(&self) -> &Backend {
         self.service.inner()
+    }
+
+    pub fn initialize_result(&self) -> &InitializeResult {
+        self.initialize_result
+            .as_ref()
+            .expect("session is initialized")
     }
 
     /// The most recently published diagnostics for `uri`, or an empty slice if the
@@ -228,6 +236,20 @@ impl Session {
         params["context"] = json!({ "includeDeclaration": true });
         let value = self.request("textDocument/references", params).await;
         serde_json::from_value(value).expect("references returns Location[] | null")
+    }
+
+    pub async fn document_highlight(
+        &mut self,
+        uri: &Url,
+        position: Position,
+    ) -> Option<Vec<DocumentHighlight>> {
+        let value = self
+            .request(
+                "textDocument/documentHighlight",
+                text_document_position(uri, position),
+            )
+            .await;
+        serde_json::from_value(value).expect("documentHighlight returns DocumentHighlight[] | null")
     }
 
     pub async fn rename(

@@ -21,7 +21,49 @@ use crate::state::{DocumentCache, DocumentState, SemanticEntity};
 use crate::text::{LineIndex, position_to_offset};
 use chrn_utils::id_types::SymbolId;
 use chrn_utils::source_map::source_span::SourceSpan;
-use tower_lsp::lsp_types::{Location, Position, Range, Url};
+use tower_lsp::lsp_types::{
+    DocumentHighlight, DocumentHighlightKind, Location, Position, Range, Url,
+};
+
+/// Highlight occurrences of the selected semantic entity in this document only.
+pub(crate) fn compute_document_highlights(
+    position: Position,
+    state: &DocumentState,
+) -> Option<Vec<DocumentHighlight>> {
+    let offset = position_to_offset(&state.text, position);
+    if offset < state.script_start || state.offset_in_comment(offset) {
+        return None;
+    }
+    let entity = state.get_entity_at_offset(offset)?;
+    let definition = state.definition_site(entity);
+    let lines = LineIndex::new(&state.text);
+    let ranges: Vec<_> = state
+        .symbol_map
+        .iter()
+        .filter(|(_, candidate)| {
+            candidate == entity
+                || definition.is_some_and(|site| state.definition_site(candidate) == Some(site))
+        })
+        .map(|(span, _)| {
+            Range::new(
+                    lines.position(
+                        crate::text::rel_to_abs_offset(span.start, state.script_start) as usize,
+                    ),
+                    lines.position(
+                        crate::text::rel_to_abs_offset(span.end, state.script_start) as usize
+                    ),
+                )
+        })
+        .collect();
+    let highlights: Vec<_> = crate::text::deduplicate_range_indices(&ranges)
+        .into_iter()
+        .map(|index| DocumentHighlight {
+            range: ranges[index],
+            kind: Some(DocumentHighlightKind::TEXT),
+        })
+        .collect();
+    (!highlights.is_empty()).then_some(highlights)
+}
 
 /// Finds all symbol-map entries in the current file that share the same
 /// `(decl_span, owner_sym_id)` key — used for local bindings.

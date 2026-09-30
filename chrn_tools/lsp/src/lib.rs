@@ -39,6 +39,7 @@
 //! * Hover (keywords, builtin types, intrinsic functions, variables, structs, enums, aliases, modules)
 //! * Go-to-definition (cross-module)
 //! * Find references (cross-module)
+//! * Document highlights (occurrences of the selected symbol in the current file)
 //! * Rename (cross-module)
 //! * Completion (keywords, core-library exports, module members, in-scope identifiers)
 //! * Semantic tokens (keyword / type / function / variable / operator highlighting)

@@ -51,6 +51,7 @@ for varthing1 {}
 
 // comptime directs & runtime directives distinction?
 // Maybe modle finder collects comptime syntax only?
+// TODO: (It doesn't highlight here)
 // #chrn[MAX_NUMERIC_BITS(256), MAX_THING(2)]
 
 // Thinking about removing the big int usage and just making caps or integers.
@@ -71,13 +72,18 @@ for varthing1 {}
 // let x = []
 // Incorrectly seeing this as right because arrays simply hold a `TypeId` of integer, but the correct
 // type is `Array<Integer>`. Need resolution to see these as different.
-let array = [[2, 2], 4]
+let array = [[2, 2], [4]]
 
-// This passes incorrectly
+// Reports nothing
 // let array = [[2, 2], 4, evil::evil::evil::evil::core::IsWhitespace]
-@end
-let s = "hi"
-let octal = 0o23
+// Reports nothing
+// let octal = 0o23 + []
+
+// ignore this
+// let chrn = "chern"
+// Sure this could be added but why? I THOUGHT this was a DSL to be the unification boundary
+// among unifications to be the last unification? Boundary.
+// let s = (f"Hi I'm %. I have no %", chrn, chrn[2])
 let hex = 2
 // let x = [2,3,4,45,5,5,,5,,5,5,5]
 // @end

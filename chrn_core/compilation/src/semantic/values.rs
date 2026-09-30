@@ -38,7 +38,7 @@ pub enum Value {
     Char(char),
     Func(SymbolId),
     Tuple(Vec<Value>),
-    Array(Vec<Value>),
+    List(Vec<Value>),
     InternedStr(InternedId),
     RuntimeStr(String),
     Unknown,
@@ -56,7 +56,7 @@ impl Value {
             Value::RuntimeStr(_) => ValueKind::RuntimeStr,
             Value::Func(_) => ValueKind::Func,
             Value::Unknown => ValueKind::Unknown,
-            Value::Array(_) => ValueKind::Array,
+            Value::List(_) => ValueKind::List,
         }
     }
 
@@ -82,7 +82,7 @@ pub enum ValueKind {
     Tuple,
     InternedStr,
     RuntimeStr,
-    Array,
+    List,
     Unknown,
 }
 
@@ -103,7 +103,7 @@ impl ValueKind {
             // Maybe this should stay an Option
             ValueKind::Bool => Some(TypeBoundaryFlags::BOOL),
             ValueKind::InternedStr | ValueKind::RuntimeStr => Some(TypeBoundaryFlags::STR),
-            ValueKind::Array | ValueKind::Tuple => Some(TypeBoundaryFlags::COLLECTION),
+            ValueKind::List | ValueKind::Tuple => Some(TypeBoundaryFlags::COLLECTION),
             // Should an `Unknown` boundary exist? That seems like it would complicate things
             ValueKind::Func | ValueKind::Unknown => None,
         }
@@ -123,7 +123,7 @@ impl ChrnClassifiable for ValueKind {
             ValueKind::Bool => ChrnClassified::Bool,
             ValueKind::InternedStr | ValueKind::RuntimeStr => ChrnClassified::Str,
             ValueKind::Unknown => ChrnClassified::Unknown,
-            ValueKind::Array => ChrnClassified::Array,
+            ValueKind::List => ChrnClassified::List,
             ValueKind::Func => ChrnClassified::Func,
         }
     }

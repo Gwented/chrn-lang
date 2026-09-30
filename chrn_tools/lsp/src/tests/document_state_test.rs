@@ -3,7 +3,134 @@ use crate::tests::session::{Session, TempWorkspace, hover_text, position_of};
 use chrn_utils::id_types::{SourceRegionId, SymbolId};
 use chrn_utils::source_map::source_span::SourceSpan;
 use std::sync::Arc;
-use tower_lsp::lsp_types::{GotoDefinitionResponse, Position, Range};
+use tower_lsp::lsp_types::{
+    DocumentHighlight, DocumentHighlightKind, GotoDefinitionResponse, OneOf, Position, Range,
+};
+
+fn expected_highlights(text: &str, name: &str, occurrences: &[usize]) -> Vec<DocumentHighlight> {
+    occurrences
+        .iter()
+        .map(|&occurrence| {
+            let start = position_of(text, name, occurrence);
+            DocumentHighlight {
+                range: Range::new(
+                    start,
+                    Position::new(
+                        start.line,
+                        start.character + name.encode_utf16().count() as u32,
+                    ),
+                ),
+                kind: Some(DocumentHighlightKind::TEXT),
+            }
+        })
+        .collect()
+}
+
+#[tokio::test(start_paused = true)]
+async fn test_document_highlight_tracks_semantic_occurrences_in_embedded_text() {
+    let workspace = TempWorkspace::new("highlight_embedded");
+    let text = "header: 😀\n@def\nlet x = 3\nlet first = x + x\nlet second = /* 😀 */ x + 1\nlet label = \"x\" // x\n@end\nx: serialized data\n";
+    let uri = workspace.write("main.chrn", text);
+    let mut session = Session::new().await;
+    assert_eq!(
+        session
+            .initialize_result()
+            .capabilities
+            .document_highlight_provider,
+        Some(OneOf::Left(true)),
+    );
+    let diagnostics = session.open(&uri, text).await;
+    assert!(diagnostics.is_empty(), "{diagnostics:?}");
+
+    let expected = expected_highlights(text, "x", &[0, 1, 2, 3]);
+    assert_eq!(expected[3].range.start, Position::new(4, 22));
+    for occurrence in [0, 2, 3] {
+        assert_eq!(
+            session
+                .document_highlight(&uri, position_of(text, "x", occurrence))
+                .await,
+            Some(expected.clone()),
+        );
+    }
+    for occurrence in [4, 5, 6] {
+        assert_eq!(
+            session
+                .document_highlight(&uri, position_of(text, "x", occurrence))
+                .await,
+            None,
+            "strings, comments, and serialized data have no symbol highlights",
+        );
+    }
+    assert_eq!(
+        session.document_highlight(&uri, Position::new(2, 3)).await,
+        None
+    );
+
+    let updated = text.replace("let first = x + x", "let first = 4 + 5");
+    session.change_full(&uri, &updated).await;
+    assert_eq!(
+        session
+            .document_highlight(&uri, position_of(&updated, "x", 0))
+            .await,
+        Some(expected_highlights(&updated, "x", &[0, 1])),
+        "highlights follow the current document after an edit",
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn test_document_highlight_distinguishes_field_owners_and_config_members() {
+    let workspace = TempWorkspace::new("highlight_field_owners");
+    let text = "var->\nModel: First\nnest->\nstruct First { field: i32 }\nstruct Second { field: i32 }\ncomplex->\nfor Model { field {} }\nfor Second { field {} }\n";
+    let uri = workspace.write("main.chrn", text);
+    let mut session = Session::new().await;
+    let diagnostics = session.open(&uri, text).await;
+    assert!(diagnostics.is_empty(), "{diagnostics:?}");
+    for (occurrence, matches) in [(0, [0, 2]), (2, [0, 2]), (1, [1, 3]), (3, [1, 3])] {
+        assert_eq!(
+            session
+                .document_highlight(&uri, position_of(text, "field", occurrence))
+                .await,
+            Some(expected_highlights(text, "field", &matches)),
+            "a field and its config member share identity only within their owner",
+        );
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn test_document_highlight_keeps_imported_symbol_ranges_in_current_file() {
+    let workspace = TempWorkspace::new("highlight_imported");
+    let dependency = "export let READ = 1\nlet local = READ\n";
+    let dependency_uri = workspace.write("dep.chrn", dependency);
+    let text = format!(
+        "import \"{}\" as deps\nlet first = deps::READ\nlet second = deps:: /* READ */ READ\n",
+        dependency_uri.to_file_path().unwrap().display(),
+    );
+    let uri = workspace.write("main.chrn", &text);
+    let mut session = Session::new().await;
+    let diagnostics = session.open(&dependency_uri, dependency).await;
+    assert!(diagnostics.is_empty(), "{diagnostics:?}");
+    let diagnostics = session.open(&uri, &text).await;
+    assert!(diagnostics.is_empty(), "{diagnostics:?}");
+    assert_eq!(
+        session
+            .document_highlight(&uri, position_of(&text, "READ", 2))
+            .await,
+        Some(expected_highlights(&text, "READ", &[0, 2])),
+        "cached foreign declarations and references are excluded",
+    );
+    assert_eq!(
+        session
+            .document_highlight(&uri, position_of(&text, "READ", 1))
+            .await,
+        None,
+    );
+    assert_eq!(
+        session
+            .document_highlight(&dependency_uri, position_of(dependency, "READ", 1))
+            .await,
+        Some(expected_highlights(dependency, "READ", &[0, 1])),
+    );
+}
 
 #[tokio::test(start_paused = true)]
 async fn test_import_resolution_uses_unsaved_open_dependency_text_during_debounce() {

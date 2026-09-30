@@ -96,17 +96,18 @@ async fn completion_at_line_comment_end_is_suppressed() {
 
     let mut comment_end = position_of(text, "note", 0);
     comment_end.character += "note".len() as u32;
-    let Some(CompletionResponse::Array(items)) =
-        session.completion(&uri, comment_end, None).await
+    let Some(CompletionResponse::Array(items)) = session.completion(&uri, comment_end, None).await
     else {
         panic!("comment completion returns an item array");
     };
-    assert!(items.is_empty(), "line comment offered completions: {items:?}");
+    assert!(
+        items.is_empty(),
+        "line comment offered completions: {items:?}"
+    );
 
     for needle in ["value", "after"] {
         let position = position_of(text, needle, 0);
-        let Some(CompletionResponse::Array(items)) =
-            session.completion(&uri, position, None).await
+        let Some(CompletionResponse::Array(items)) = session.completion(&uri, position, None).await
         else {
             panic!("completion after the string or comment returns an item array");
         };
@@ -363,6 +364,79 @@ async fn condition_function_completion_respects_client_snippet_support() {
         assert_eq!(item.kind, Some(CompletionItemKind::FUNCTION));
         assert_eq!(item.insert_text.as_deref(), Some(expected_text));
         assert_eq!(item.insert_text_format, expected_format);
+    }
+}
+
+/// Container completions expose their type arguments and insert empty slots.
+/// Map has separate key and value tab stops; plain clients receive no snippet syntax.
+#[tokio::test(start_paused = true)]
+async fn container_completion_inserts_type_arguments_for_prefixes_and_exact_names() {
+    let workspace = TempWorkspace::new("container_type_completion");
+    for supports_snippets in [false, true] {
+        let mut session = Session::new_with_snippet_support(supports_snippets).await;
+        for (name, prefix, label, snippet, plain) in [
+            ("List", "Lis", "List<..>", "List<$0>", "List<>"),
+            ("Set", "Se", "Set<..>", "Set<$0>", "Set<>"),
+            ("Tuple", "Tup", "Tuple<..>", "Tuple<$0>", "Tuple<>"),
+            ("Map", "Ma", "Map<.., ..>", "Map<$1, $2>$0", "Map<, >"),
+        ] {
+            for typed in [prefix, name] {
+                let text = format!("nest->\nstruct Record {{ value: {typed} }}\n");
+                let uri = workspace.write(&format!("main_{typed}.chrn"), &text);
+                session.open(&uri, &text).await;
+                assert_eq!(
+                    session
+                        .backend()
+                        .docs
+                        .read()
+                        .get(uri.as_str())
+                        .unwrap()
+                        .as_str(),
+                    text
+                );
+                let start = position_of(&text, typed, 0);
+                let mut position = start;
+                position.character += typed.len() as u32;
+                let Some(CompletionResponse::Array(items)) =
+                    session.completion(&uri, position, None).await
+                else {
+                    panic!("{typed}: type completion returns an item array");
+                };
+                let matching: Vec<_> = items
+                    .iter()
+                    .filter(|item| item.label.starts_with(name))
+                    .collect();
+                let [item] = matching.as_slice() else {
+                    panic!("{typed}: expected one {name} completion, got {items:?}");
+                };
+                let expected_text = if supports_snippets { snippet } else { plain };
+                assert_eq!(
+                    item.label, label,
+                    "{typed}: display the type argument shape"
+                );
+                assert_eq!(item.kind, Some(CompletionItemKind::STRUCT));
+                assert_eq!(item.filter_text.as_deref(), Some(name));
+                assert_eq!(item.insert_text.as_deref(), Some(expected_text));
+                assert_eq!(
+                    item.insert_text_format,
+                    supports_snippets.then_some(InsertTextFormat::SNIPPET)
+                );
+                if let Some(edit) = &item.text_edit {
+                    let expected_range = Range::new(start, position);
+                    match edit {
+                        CompletionTextEdit::Edit(edit) => {
+                            assert_eq!(edit.range, expected_range);
+                            assert_eq!(edit.new_text, expected_text);
+                        }
+                        CompletionTextEdit::InsertAndReplace(edit) => {
+                            assert_eq!(edit.insert, expected_range);
+                            assert_eq!(edit.replace, expected_range);
+                            assert_eq!(edit.new_text, expected_text);
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

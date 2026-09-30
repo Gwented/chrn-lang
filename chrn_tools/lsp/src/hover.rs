@@ -835,7 +835,7 @@ fn format_value(v: &Value, interner: &Intern) -> String {
         }
         Value::RuntimeStr(s) => format!("\"{s}\""),
         Value::Func(_) => "Function".to_string(),
-        Value::Array(elems) => {
+        Value::List(elems) => {
             let mut parts: Vec<String> = elems
                 .iter()
                 .take(5)

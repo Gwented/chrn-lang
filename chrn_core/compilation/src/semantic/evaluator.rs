@@ -45,7 +45,7 @@ pub fn is_compatible_unary(op: UnaryOp, operand: &Value) -> bool {
             | Value::InternedStr(_)
             | Value::RuntimeStr(_)
             | Value::Func(_)
-            | Value::Array(_)
+            | Value::List(_)
             | Value::Unknown => false,
         },
         UnaryOp::Negate => match operand {

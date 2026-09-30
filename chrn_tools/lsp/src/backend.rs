@@ -23,6 +23,7 @@
 //! | `textDocument/hover`           | [`crate::hover::compute_hover`]         |
 //! | `textDocument/definition`      | [`crate::state::DocumentState::get_definition_location`] |
 //! | `textDocument/references`      | [`crate::references::compute_references`] |
+//! | `textDocument/documentHighlight` | [`crate::references::compute_document_highlights`] |
 //! | `textDocument/rename`          | [`crate::rename::compute_rename`]       |
 //! | `textDocument/completion`      | inline in `Backend::completion` |
 //! | `textDocument/semanticTokens/full` | inline in `Backend::semantic_tokens_full` |
@@ -1571,7 +1572,6 @@ impl LanguageServer for Backend {
             Ordering::Relaxed,
         );
         let server_capabilities = tower_lsp::lsp_types::ServerCapabilities {
-            // Advertise incremental sync so clients (neovim) send ranged edits.
             text_document_sync: Some(tower_lsp::lsp_types::TextDocumentSyncCapability::Kind(
                 tower_lsp::lsp_types::TextDocumentSyncKind::INCREMENTAL,
             )),
@@ -1579,6 +1579,7 @@ impl LanguageServer for Backend {
             definition_provider: Some(tower_lsp::lsp_types::OneOf::Left(true)),
             rename_provider: Some(tower_lsp::lsp_types::OneOf::Left(true)),
             references_provider: Some(tower_lsp::lsp_types::OneOf::Left(true)),
+            document_highlight_provider: Some(tower_lsp::lsp_types::OneOf::Left(true)),
             completion_provider: Some(tower_lsp::lsp_types::CompletionOptions {
                 resolve_provider: Some(false),
                 trigger_characters: Some(vec![
@@ -1850,6 +1851,26 @@ impl LanguageServer for Backend {
 
         let refs = crate::references::compute_references(&uri, pos, &self.doc_cache);
         Ok(refs)
+    }
+
+    async fn document_highlight(
+        &self,
+        params: tower_lsp::lsp_types::DocumentHighlightParams,
+    ) -> jsonrpc::Result<Option<Vec<tower_lsp::lsp_types::DocumentHighlight>>> {
+        let uri = params.text_document_position_params.text_document.uri;
+        let position = params.text_document_position_params.position;
+        let Some(text) = self.get_document_text(uri.as_ref()) else {
+            return Ok(None);
+        };
+        let Some(state_arc) = self.get_analyzed_state(&uri, text).await else {
+            return Ok(None);
+        };
+        let Some(state) = state_arc.try_read_for(STATE_LOCK_TIMEOUT) else {
+            return Ok(None);
+        };
+        Ok(crate::references::compute_document_highlights(
+            position, &state,
+        ))
     }
 
     async fn semantic_tokens_full(
@@ -2452,7 +2473,24 @@ impl LanguageServer for Backend {
 
         for (label, kind) in SUGGESTIONS {
             if (prefix.is_empty() || label.starts_with(prefix)) && seen.insert(label.to_string()) {
-                items.push(completion_item(label.to_string(), *kind, module_suffix));
+                let mut item = completion_item(label.to_string(), *kind, module_suffix);
+                let generic = match *label {
+                    "List" | "Set" | "Tuple" => Some(("<..>", "<$0>", "<>")),
+                    "Map" => Some(("<.., ..>", "<$1, $2>$0", "<, >")),
+                    _ => None,
+                };
+                if let Some((shape, snippet, plain)) = generic {
+                    item.label.push_str(shape);
+                    item.filter_text = Some(label.to_string());
+                    item.insert_text = Some(format!(
+                        "{label}{}",
+                        if snippet_support { snippet } else { plain }
+                    ));
+                    if snippet_support {
+                        item.insert_text_format = Some(InsertTextFormat::SNIPPET);
+                    }
+                }
+                items.push(item);
             }
         }
 
