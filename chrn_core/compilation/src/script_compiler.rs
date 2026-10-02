@@ -27,8 +27,8 @@ use crate::{
     lookup::scopes::{
         self,
         scopes_concepts::{
-            AssociatedScopeKind, BuiltinIdRepository, BuiltinIdRepositoryBuilder,
-            IntrinsicRegistry, Scope, ScopeInfo, ScopeType,
+            AssociatedScopeKind, BuiltinIdRepository, IntrinsicRegistry, Scope, ScopeInfo,
+            ScopeType,
         },
     },
     module::module_concepts::{Bind, Import, ImportKind, Module, ModuleState},

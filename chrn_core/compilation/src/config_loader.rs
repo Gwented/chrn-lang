@@ -88,10 +88,9 @@ pub enum ConfigLoaderOutput {
     /// A region that at some point got an error to where
     /// Loading failed too early so no part of the region was read.
     UnrecoverableErr(ConfigLoadError),
-    // If err != nil { return err }
 }
 
-//NOTE: This forces paths to be given, but if the chern file itself doesn't have a path given
+//NOTE: This forces paths to be given, but if the chrn file itself doesn't have a path given
 //then the language doesn't work anyways. May leave as is.
 impl<R: Read> ConfigLoader<'_, R> {
     /// Uses `PathId` for error location reporting purposes

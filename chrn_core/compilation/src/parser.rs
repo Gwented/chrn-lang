@@ -49,7 +49,7 @@ use lang::keywords::Keyword;
 pub fn parse(
     cfg: &mut ChrnConfig,
     region: &SourceRegion,
-    tokens: &[SpannedToken],
+    toks: &[SpannedToken],
     interner: &Intern,
 ) -> (AstInfo, SourceDiagnosticSummary) {
     cfg.perf_tracker_mut().start(region.path_id);
@@ -59,7 +59,7 @@ pub fn parse(
     // sections crossed, which would probably not be worth over-complicating the API for.
     //
     // Assumes 12 toks : item
-    let speculated_items = tokens.len() / 12;
+    let speculated_items = toks.len() / 12;
 
     // Output it's own summary? Does AstInfo hold a summary?
     let mut ast_info = AstInfo::with_capacities(speculated_items, 0);
@@ -70,7 +70,7 @@ pub fn parse(
         //WARN: UNUSED
         chrn_utils::MAX_EXPR_NODES as usize,
     );
-    let mut ctx = ParserContext::new(cfg, region, tokens);
+    let mut ctx = ParserContext::new(cfg, region, toks);
 
     // Skipping possible @def first since it is recognized as it's own token
     if ctx.peek_tok() == Token::Def {
@@ -200,6 +200,8 @@ pub fn parse(
                         interner,
                     );
 
+                    let env = SemanticEnv::SectVar;
+                    let branch = SectionBranch::Var;
                     while !ctx.peek_kind().is_terminator() {
                         if let Token::Keyword(kw) = ctx.peek_tok()
                             && kw.is_sect()
@@ -212,7 +214,9 @@ pub fn parse(
                             Err(_) => continue,
                         };
 
-                        if let Ok(type_def) = parse_typedef(&mut ctx, is_priv, &budget, interner) {
+                        if let Ok(type_def) =
+                            parse_typedef(&mut ctx, &budget, env, branch.into(), is_priv, interner)
+                        {
                             let item = Item::Decl(AbstractDecl::TypeDef(type_def));
                             ast_info.push_item(SectionKind::Var, item);
                         }
@@ -391,6 +395,8 @@ pub fn parse(
                 }
             },
             Token::HashSymbol => {
+                // Not sure if this is reachable
+                // ---
                 if !state.is_neutral() {
                     // Neural
                     todo!("Not neural");
@@ -418,7 +424,6 @@ pub fn parse(
                 );
             }
             Token::EOF | Token::End => break,
-            //TODO: Neutral routing
             t => {
                 // Interesting name..
                 let (branch, allowed_msg) = if state.is_neutral() {
@@ -498,7 +503,15 @@ fn parse_alias_stmt(
     )?;
 
     let conds = if ctx.peek_kind() == TokenKind::OBracket {
-        handle_conds(ctx, budget, interner).unwrap_or_default()
+        //TODO: Fix envs
+        handle_conds(
+            ctx,
+            budget,
+            SemanticEnv::Alias,
+            NeutralBranch::Alias.into(),
+            interner,
+        )
+        .unwrap_or_default()
     } else {
         Vec::new()
     };
@@ -580,8 +593,10 @@ fn check_import(ctx: &mut ParserContext, interner: &Intern) -> Result<(), Token>
 // Field.
 fn parse_typedef(
     ctx: &mut ParserContext,
-    is_priv: bool,
     budget: &ParserBudget,
+    env: SemanticEnv,
+    branch: Branch,
+    is_priv: bool,
     interner: &Intern,
 ) -> Result<AbstractTypeDef, Token> {
     let name_span = ctx.peek_span();
@@ -620,7 +635,8 @@ fn parse_typedef(
     let ty = parse_type_expr(ctx, budget, interner)?;
 
     let conds = if ctx.peek_kind() == TokenKind::OBracket {
-        handle_conds(ctx, budget, interner).unwrap_or_default()
+        //TODO: envs
+        handle_conds(ctx, budget, env, branch, interner).unwrap_or_default()
     } else {
         Vec::new()
     };
@@ -656,6 +672,7 @@ fn parse_nest_sect(
         interner,
     )?;
 
+    let env = SemanticEnv::SectNest;
     //TODO: Can likely be done simpler but keep for simplicity
     let item = match kw {
         Keyword::Struct => {
@@ -691,7 +708,14 @@ fn parse_nest_sect(
             let conds = if ctx.peek_kind() == TokenKind::OBracket {
                 // Uses unwrap_or_default() in many places so that the rest can be parsed if present for
                 // better errors
-                handle_conds(ctx, budget, interner).unwrap_or_default()
+                handle_conds(
+                    ctx,
+                    budget,
+                    env,
+                    SectionBranch::Nest(NestBranch::StructType).into(),
+                    interner,
+                )
+                .unwrap_or_default()
             } else {
                 Vec::new()
             };
@@ -745,7 +769,14 @@ fn parse_nest_sect(
             let variants = handle_enum_variants(ctx, enum_name, budget, interner)?;
 
             let glob_conds = if ctx.peek_kind() == TokenKind::OBracket {
-                handle_conds(ctx, budget, interner).unwrap_or_default()
+                handle_conds(
+                    ctx,
+                    budget,
+                    env,
+                    SectionBranch::Nest(NestBranch::EnumType).into(),
+                    interner,
+                )
+                .unwrap_or_default()
             } else {
                 Vec::new()
             };
@@ -1110,7 +1141,13 @@ fn parse_option_assignment(
     )?;
 
     let sp_array_expr = if ctx.peek_tok() == Token::OBracket {
-        parse_array(ctx, budget, interner)?
+        parse_array(
+            ctx,
+            budget,
+            SemanticEnv::SectComplex,
+            SectionBranch::Complex.into(),
+            interner,
+        )?
     } else {
         // Assumes it's a single value assignment if no OBracket is present
         let only_element = parse_expr(ctx, 0, budget, interner)?;
@@ -1130,68 +1167,37 @@ fn parse_option_assignment(
 }
 
 // Should this just return elements similar to how call_args does?
-/// Parses assuming that '[' is the starting point.
-/// Parses ',' delimited elements "[1,2,3,4,]"
+/// Wrapper over `parse_enclosing` for `[1,2,3,]` parsing
 fn parse_array(
     ctx: &mut ParserContext,
     budget: &ParserBudget,
+    env: SemanticEnv,
+    branch: Branch,
     interner: &Intern,
 ) -> Result<SpannedContainer<AstExpr>, Token> {
+    let closure = |ctx: &mut ParserContext<'_>,
+                   interner: &Intern|
+     -> Result<SpannedContainer<AstExpr>, Token> {
+        parse_expr(ctx, 0, budget, interner)
+    };
+
     let start = ctx.peek_span().start;
-    ctx.expect_verbose(
-        TokenKind::OBracket,
-        "Expected '[' to declare array, found ",
-        "",
-        InitialEvidence::new(
-            SemanticEnv::Expr,
-            SemanticSituation::MissingStartDelimiter,
-            //TODO: PASS IN
-            SectionBranch::Complex.into(),
-        ),
+
+    let elems = parse_enclosing(
+        ctx,
+        &closure,
+        DelimiterContext::with_comma(TokenKind::OBracket, TokenKind::CBracket),
+        //TODO: Pass in
+        env,
+        branch,
         interner,
     )?;
 
-    let mut elements: Vec<SpannedContainer<AstExpr>> = Vec::new();
-
-    while !ctx.peek_tok().kind().is_terminator() && ctx.peek_tok() != Token::CBracket {
-        let sp_expr = parse_expr(ctx, 0, budget, interner)?;
-        elements.push(sp_expr);
-
-        if ctx.peek_tok() == Token::CBracket {
-            break;
-        }
-
-        ctx.expect_verbose(
-            TokenKind::Comma,
-            "Expected a comma to separate elements, found ",
-            "",
-            InitialEvidence::new(
-                SemanticEnv::Expr,
-                SemanticSituation::ArgList,
-                //TODO: PASS IN
-                SectionBranch::Complex.into(),
-            ),
-            interner,
-        )?;
-    }
-
-    let end = ctx.peek_span().end;
+    // LBracket is used not the last element
+    let end = ctx.peek_behind(1).span.end;
     let span = SourceSpan::new(ctx.region.region_id, start, end);
 
-    ctx.expect_verbose(
-        TokenKind::CBracket,
-        "Expected ']' to close array, found ",
-        "",
-        InitialEvidence::new(
-            SemanticEnv::Expr,
-            SemanticSituation::UnclosedDelimiter,
-            //TODO: PASS IN
-            SectionBranch::Complex.into(),
-        ),
-        interner,
-    )?;
-
-    let array_expr = ArrayExpr::new(elements);
+    let array_expr = ArrayExpr::new(elems);
 
     Ok(SpannedContainer::new(AstExpr::Array(array_expr), span))
 }
@@ -1432,7 +1438,13 @@ fn parse_primary(
         Token::Poison
     })?;
     match ctx.peek_tok() {
-        Token::OBracket => parse_array(ctx, budget, interner),
+        Token::OBracket => parse_array(
+            ctx,
+            budget,
+            SemanticEnv::SectComplex,
+            SectionBranch::Complex.into(),
+            interner,
+        ),
         Token::OParen => {
             ctx.advance_tok();
             let expr = parse_expr(ctx, 0, budget, interner)?;
@@ -1989,7 +2001,14 @@ fn handle_struct_fields(
     let mut check_end = true;
 
     while !ctx.peek_tok().kind().is_terminator() && ctx.peek_tok() != Token::CCurlyBracket {
-        let ty = match parse_typedef(ctx, false, budget, interner) {
+        let ty = match parse_typedef(
+            ctx,
+            budget,
+            SemanticEnv::SectNest,
+            SectionBranch::Nest(NestBranch::StructType).into(),
+            true,
+            interner,
+        ) {
             Ok(t) => t,
             Err(_) => {
                 check_end = false;
@@ -2098,7 +2117,14 @@ fn parse_variant(
     };
 
     let conds = if ctx.peek_kind() == TokenKind::OBracket {
-        handle_conds(ctx, budget, interner).unwrap_or_default()
+        handle_conds(
+            ctx,
+            budget,
+            SemanticEnv::SectNest,
+            SectionBranch::Nest(NestBranch::EnumType).into(),
+            interner,
+        )
+        .unwrap_or_default()
     } else {
         Vec::new()
     };
@@ -2155,7 +2181,7 @@ fn parse_inline_directive(
     Ok(abs_directive)
 }
 
-//TODO: Directive "#{directive}[{Identifier} = {Expr/TypeExpr}, {Expr/TypeExpr}, ..]" parsing
+//TODO: Parsing "#{directive_ident}[{ident}({Expr/TypeExpr}, ..), {ident}({Expr/TypeExpr}), ..]"
 fn parse_directive_preprocess(
     ctx: &mut ParserContext,
     budget: &ParserBudget,
@@ -2204,6 +2230,13 @@ fn parse_directive_preprocess(
     let env = SemanticEnv::SectNeutral;
     let branch = Branch::Directive;
 
+    //NOTE: Maybe allow budget since supposed to be general
+    let closure = |ctx: &mut ParserContext<'_>,
+                   interner: &Intern|
+     -> Result<SpannedContainer<AstExpr>, Token> {
+        parse_expr(ctx, 0, budget, interner)
+    };
+
     // Guaranteed to have > 0 element
     while ctx.peek_tok().kind() != self_delim_ctx.closing() {
         let opt_name_span = ctx.peek_span();
@@ -2221,18 +2254,19 @@ fn parse_directive_preprocess(
             interner,
         )?;
 
-        let exprs = parse_exprs_enclosing(
+        let start = ctx.peek().span.start;
+        let exprs = parse_enclosing(
             ctx,
+            &closure,
             DelimiterContext::new(TokenKind::OParen, TokenKind::Comma, TokenKind::CParen),
             env,
             branch,
-            budget,
             interner,
         )?;
 
-        let start = exprs[0].span.start;
-        //TODO: What about a function that takes in &[T] where T has a span and > 0 elements?
-        let end = exprs[exprs.len() - 1].span.end;
+        // This is using a different array spanning than parse_array. It uses elements!
+        // That's not a good thing.
+        let end = ctx.peek_behind(1).span.end;
         let array_span = SourceSpan::new(ctx.region.region_id, start, end);
 
         let array = AstExpr::Array(ArrayExpr::new(exprs));
@@ -2265,46 +2299,69 @@ fn parse_directive_preprocess(
     Ok(AbstractDirectivePreprocess::new(sp_direct_name_id, inputs))
 }
 
-/// General parsing of an open and closing delimiter expr context, with arg separators.
+/// General parsing of an open and closing delimiter context, with arg separators.
+/// Expects to start at the starting delimiter.
+///
+/// `closure` allows for the caller to decide what `T` should be returned.
 ///
 /// Behavior:
 /// - Returns empty `Vec` if `closing` is seen directly `opening` like "[] <-"
 /// - Allows for trailing comma
-fn parse_exprs_enclosing(
+fn parse_enclosing<T, F>(
     ctx: &mut ParserContext,
+    closure: &F,
     delim_ctx: DelimiterContext,
-    //TEST:
     env: SemanticEnv,
     branch: Branch,
-    budget: &ParserBudget,
     interner: &Intern,
     // Maybe this can just take in a function, and type T returned from function.
-) -> Result<Vec<SpannedContainer<AstExpr>>, Token> {
+) -> Result<Vec<T>, Token>
+where
+    F: Fn(&mut ParserContext, &Intern) -> Result<T, Token>,
+{
     ctx.expect_verbose(
         delim_ctx.opening(),
-        // Single quotes
+        //WARN: Single quotes
         &format!("Expected opening '{}', found ", delim_ctx.opening()),
         "",
         InitialEvidence::new(
             //TODO: Should pass ctx
-            SemanticEnv::SectNeutral,
+            env,
             SemanticSituation::MissingStartDelimiter,
-            Branch::Directive,
+            branch,
         ),
         interner,
     )?;
 
-    let mut exprs = Vec::new();
+    let mut items = Vec::new();
 
     if ctx.peek_tok().kind() == delim_ctx.closing() {
-        return Ok(exprs);
+        ctx.advance_tok();
+        return Ok(items);
     }
 
-    while !ctx.peek_tok().kind().is_terminator() && ctx.peek_tok().kind() != delim_ctx.closing() {
-        exprs.push(parse_expr(ctx, 0, budget, interner)?);
-        if ctx.peek_tok().kind() == delim_ctx.arg_sep() {
+    while !ctx.peek_kind().is_terminator() && ctx.peek_kind() != delim_ctx.closing() {
+        items.push(closure(ctx, interner)?);
+
+        if ctx.peek_kind() == delim_ctx.arg_sep()
+            && ctx.peek_ahead(1).tok.kind() == delim_ctx.closing()
+        {
             ctx.advance_tok();
+            break;
+        } else if ctx.peek_kind() == delim_ctx.closing() {
+            break;
         }
+
+        ctx.expect_verbose(
+            delim_ctx.arg_sep(),
+            &format!(
+                "Expected `{}` to separate elements, found ",
+                delim_ctx.arg_sep()
+            ),
+            "",
+            InitialEvidence::new(env, SemanticSituation::ArgList, branch),
+            interner,
+        )?;
     }
 
     ctx.expect_verbose(
@@ -2314,22 +2371,25 @@ fn parse_exprs_enclosing(
         InitialEvidence::new(env, SemanticSituation::UnclosedDelimiter, branch),
         interner,
     )?;
-    Ok(exprs)
+    Ok(items)
 }
 
 // Alias is this only one that uses this so_+@$_$@
+// ({ident}, {ident}, ..)
 fn parse_alias_decl(
     ctx: &mut ParserContext,
     budget: &ParserBudget,
     interner: &Intern,
 ) -> Result<Vec<AbstractParam>, Token> {
+    let delim_ctx = DelimiterContext::with_comma(TokenKind::OParen, TokenKind::CParen);
+
     let mut params: Vec<AbstractParam> = Vec::new();
 
     // I guess this could get a loop count at least?
     //
     // Doesn't need terminator check since the loop would need to be continued on purpose through
     // user-intent for this to not just error
-    while ctx.peek_kind() != TokenKind::CParen {
+    while ctx.peek_kind() != delim_ctx.closing() {
         let param = match ctx.peek_tok() {
             Token::Id(name_id) => {
                 let span = ctx.advance_span();
@@ -2348,7 +2408,6 @@ fn parse_alias_decl(
                 )?;
 
                 let ty_expr = parse_type_expr(ctx, budget, interner)?;
-
                 AbstractParam::new(name_id, span, ty_expr)
             }
             Token::EOF => return Err(Token::Poison),
@@ -2372,12 +2431,12 @@ fn parse_alias_decl(
 
         params.push(param);
 
-        if ctx.peek_kind() == TokenKind::CParen {
+        if ctx.peek_kind() == delim_ctx.closing() {
             break;
         }
 
         _ = ctx.expect_verbose(
-            TokenKind::Comma,
+            delim_ctx.arg_sep(),
             "Expected ',' to separate arguments, found ",
             "",
             InitialEvidence::new(
@@ -2391,7 +2450,7 @@ fn parse_alias_decl(
     }
 
     ctx.expect_verbose(
-        TokenKind::CParen,
+        delim_ctx.closing(),
         "Expected ')' to close declaration, found ",
         "",
         InitialEvidence::new(
@@ -2409,66 +2468,17 @@ fn parse_alias_decl(
 fn handle_conds(
     ctx: &mut ParserContext,
     budget: &ParserBudget,
+    env: SemanticEnv,
+    branch: Branch,
     interner: &Intern,
 ) -> Result<Vec<SpannedContainer<AstExpr>>, Token> {
-    let mut conds: Vec<SpannedContainer<AstExpr>> = Vec::new();
-    // This count cannot end the definition since it would prevent arguments from being viewed
-    ctx.expect_verbose(
-        TokenKind::OBracket,
-        "Expected a '[' to define conditions, found ",
-        "",
-        InitialEvidence::new(
-            SemanticEnv::SectNest,
-            SemanticSituation::MissingStartDelimiter,
-            //TODO: PASS IN
-            Branch::Cond,
-        ),
-        interner,
-    )?;
-
-    if ctx.peek_kind() == TokenKind::CBracket {
-        ctx.advance_tok();
-        return Ok(conds);
-    }
-
-    // Doesn't need terminator check since the loop would need to be continued on purpose through
-    // user-intent for this to not just error (I think)
-    while ctx.peek_tok() != Token::CBracket {
-        let cond = parse_expr(ctx, 0, budget, interner)?;
-        conds.push(cond);
-
-        if ctx.peek_tok() == Token::CBracket {
-            break;
-        }
-
-        ctx.expect_verbose(
-            TokenKind::Comma,
-            "Expected ',' to separate arguments, found ",
-            "",
-            InitialEvidence::new(
-                SemanticEnv::ArgList,
-                SemanticSituation::ArgList,
-                //TODO: PASS IN
-                Branch::ArgList,
-            ),
-            interner,
-        )?;
-    }
-
-    _ = ctx.expect_verbose(
-        TokenKind::CBracket,
-        "Unclosed delimiter ']', found ",
-        "",
-        InitialEvidence::new(
-            SemanticEnv::ArgList,
-            SemanticSituation::UnclosedDelimiter,
-            //TODO: PASS IN
-            Branch::ArgList,
-        ),
-        interner,
-    );
-
-    Ok(conds)
+    let delim_ctx = DelimiterContext::with_comma(TokenKind::OBracket, TokenKind::CBracket);
+    let closure = |ctx: &mut ParserContext<'_>,
+                   interner: &Intern|
+     -> Result<SpannedContainer<AstExpr>, Token> {
+        parse_expr(ctx, 0, budget, interner)
+    };
+    parse_enclosing(ctx, &closure, delim_ctx, env, branch, interner)
 }
 
 //TEST:
@@ -2483,6 +2493,13 @@ fn parse_id(
     evidence: InitialEvidence,
     interner: &Intern,
 ) -> Result<SpannedContainer<InternedId>, Token> {
+    debug_assert!(
+        matches!(
+            expected,
+            TokenKind::Id | TokenKind::Str | TokenKind::Integer | TokenKind::Float
+        ),
+        "`parse_ident` misuage"
+    );
     let name_span = ctx.peek_span();
 
     let expected_name = if let Some(s) = expected_name {

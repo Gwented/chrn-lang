@@ -76,6 +76,53 @@ fn section_items(ast: &AstInfo, kind: SectionKind) -> Vec<AstId> {
         .unwrap_or_default()
 }
 
+#[test]
+fn parse_preprocess_directive_argument_delimiters() {
+    for (arguments, expected) in [
+        ("()", vec![]),
+        ("(2)", vec!["2"]),
+        ("(2,)", vec!["2"]),
+        ("(2,3)", vec!["2", "3"]),
+        ("(2,3,)", vec!["2", "3"]),
+    ] {
+        let text = format!("#chrn[values{arguments}]\nlet after = 7");
+        let (ast, diags, interner) = parse_text_with_diags(&text);
+        assert!(
+            diags.is_empty(),
+            "{arguments}: unexpected diagnostics: {diags:?}"
+        );
+        assert_eq!(ast.preprocess_directives.len(), 1, "{arguments}");
+        let directive = &ast.preprocess_directives[0];
+        assert_eq!(interner.search(directive.sp_name_id.inner), "chrn");
+        assert_eq!(directive.inputs.len(), 1, "{arguments}");
+        let option = &directive.inputs[0];
+        assert_eq!(interner.search(option.name_id), "values");
+        let AstExpr::Array(array) = &option.array_expr.inner else {
+            panic!(
+                "{arguments}: expected argument Array, got {:?}",
+                option.array_expr.inner
+            );
+        };
+        assert_eq!(array.elements.len(), expected.len(), "{arguments}");
+        for (element, expected) in array.elements.iter().zip(expected) {
+            match &element.inner {
+                AstExpr::Integer(id, IntegerNotation::Decimal) => {
+                    assert_eq!(interner.search(*id), expected, "{arguments}");
+                }
+                other => panic!("{arguments}: expected decimal Integer({expected}), got {other:?}"),
+            }
+        }
+        let items = section_items(&ast, SectionKind::Neutral);
+        assert_eq!(items.len(), 1, "{arguments}");
+        let after = ast.get_var(items[0]);
+        assert_eq!(interner.search(after.name_id), "after");
+        match &after.spanned_expr.inner {
+            AstExpr::Integer(id, IntegerNotation::Decimal) => assert_eq!(interner.search(*id), "7"),
+            other => panic!("{arguments}: expected preserved Integer(7), got {other:?}"),
+        }
+    }
+}
+
 // =============================================================================
 // Neutral-section tests
 // =============================================================================

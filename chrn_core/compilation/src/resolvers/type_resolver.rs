@@ -4113,9 +4113,9 @@ impl<'res> TypeResolver<'res> {
                 //TODO: Make list here all types, but not the type id
                 let array_type_id = if let Some(inner_type_id) = type_id_opt {
                     let info = BuiltinTypeInfo::new(BuiltinType::List(inner_type_id));
-                    //WARN: This seems a little wrong
                     let ty_info = TypeInfo::new(
                         Type::BuiltinTypeInfo(info),
+                        //WARN: This seems a little wrong
                         self.compiler.intrinsic_registry.core_mod_id,
                     );
                     self.compiler.push_ty(ty_info)

@@ -14,8 +14,7 @@ use crate::{
     lookup::scopes::scopes_concepts::{Scope, ScopeInfo, ScopeLookupPattern, ScopeType},
     parser::ast::ast_concepts::{
         AbstractAlias, AbstractConfig, AbstractConfigKind, AbstractDecl, AbstractEnum,
-        AbstractImpl, AbstractStruct, AbstractTypeDef, AbstractVar, AstConfigMemberMetadataKind,
-        Item,
+        AbstractImpl, AbstractStruct, AbstractTypeDef, AbstractVar, Item,
     },
     resolvers::{resolver_env::RegistrationEnv, resolver_state::ResolverState},
     script_compiler::ScriptCompiler,
