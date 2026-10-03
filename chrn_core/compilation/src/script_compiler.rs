@@ -64,12 +64,6 @@ use crate::{
 // Should this be in utils?
 /// Script compiler that holds all essential data for incremental updates through resolution
 pub struct ScriptCompiler {
-    /// Optional bind statement that is obtained from the main module
-    // Maybe the module should keep it's bind info rather than give it to the compiler so that the
-    // information isn't lossy and contextual
-    // Maybe, the compiler should know main, but the compiler shouldn't know the bind.
-    // But main is intrinsically mods[0] so doesn't really matter.
-    pub bind: Option<Bind>,
     /// All modules found during compilation
     pub mods: Arena<Module, ModuleId>,
     /// Contains every module's stored types
@@ -110,7 +104,7 @@ impl ScriptCompiler {
     //FIX: Arbitrary ordering of pushes tied to the actual order of the enums. Should not be tied
     //to anything, similar to the interner's constants.
     /// Loads core library and builds script specific compiler with parameters given
-    pub fn init(bind: Option<Bind>, mods: Arena<Module, ModuleId>) -> ScriptCompiler {
+    pub fn init(mods: Arena<Module, ModuleId>) -> ScriptCompiler {
         // WARN: This is a little dangerous because it is a contract saying, this MUST load core as
         // the next scope. As long as load_core is called first, this remains truthful.
         let core_mod_id = mods.make_id();
@@ -137,7 +131,6 @@ impl ScriptCompiler {
         let scope_capacity = mod_count + 1 + ns_counts.scopes;
 
         let mut compiler = ScriptCompiler {
-            bind,
             mods,
             // + 1 for `Type::Unknown` since it's not in either array
             types: Arena::with_capacity(

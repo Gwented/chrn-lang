@@ -211,8 +211,6 @@ pub fn extract_modules(
     debug_assert_eq!(main_mod.self_id.id, 0);
     let mut summary = SourceDiagnosticSummary::default();
 
-    let main_bind = main_mod.bind.clone();
-
     // This ONLY contains verified modules.
     // Modules are only pushed when their all their imports are processed.
     let mut valid_mods: Arena<Module, ModuleId> = Arena::with_capacity(main_mod.imports.len());
@@ -471,7 +469,7 @@ pub fn extract_modules(
     // Still concerning
     cfg.perf_tracker_mut().stop(ChrnPerfStage::ModuleGraph);
 
-    let compiler = ScriptCompiler::init(main_bind, valid_mods);
+    let compiler = ScriptCompiler::init(valid_mods);
 
     // The store's arrays are dense and indexed by `ModuleId`, so they must cover every module the
     // compiler holds -- the implicit `core` module injected by `init` included, not just the user

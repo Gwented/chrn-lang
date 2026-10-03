@@ -16,7 +16,7 @@ use lang::types::builtins::BuiltinType;
 
 /// A compiler holding only the implicit `core` module, which is all `infer_type_from_val` needs.
 fn core_only_compiler() -> ScriptCompiler {
-    ScriptCompiler::init(None, Arena::new())
+    ScriptCompiler::init(Arena::new())
 }
 
 /// Returns the symbol id of the first core function alongside its declared return type.

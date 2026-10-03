@@ -21,7 +21,7 @@ fn nested_config_without_a_member_type_still_offers_member_options() {
         None,
         0,
     );
-    let compiler = ScriptCompiler::init(None, chrn_utils::arena::Arena::new());
+    let compiler = ScriptCompiler::init(chrn_utils::arena::Arena::new());
     let candidate = ConfigCompletionCandidate {
         open: 0,
         close: 1,
@@ -317,7 +317,7 @@ fn config_option_completion_inserts_assignment_syntax() {
         None,
         0,
     );
-    let compiler = ScriptCompiler::init(None, chrn_utils::arena::Arena::new());
+    let compiler = ScriptCompiler::init(chrn_utils::arena::Arena::new());
     let candidate = ConfigCompletionCandidate {
         open: 0,
         close: 1,

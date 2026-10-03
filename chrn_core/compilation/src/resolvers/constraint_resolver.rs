@@ -34,7 +34,7 @@ use crate::{
         compilation_unit::CompilationUnit,
         hir::{
             hir_concepts::Type,
-            hir_directives::{Directive, DirectiveInline, DirectivePreprocessValue},
+            hir_directives::{Directive, DirectiveInline, DirectivePreprocessField},
             hir_impls::{ConfigMember, ConfigMemberMetadataKind, ConfigRootKind},
             hir_symbols::MemberSymbolKind,
         },

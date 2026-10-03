@@ -1,4 +1,5 @@
 pub mod containers;
+pub mod cursors;
 pub mod trackers;
 
 //TEST: IGNORE THIS

@@ -90,7 +90,7 @@ pub(super) fn mock_single_module_compiler_with_config(
     // Should use compiler store now
     let mut arena = Arena::<SourceRegion, SourceRegionId>::new();
     arena.push(source_region);
-    let compiler = ScriptCompiler::init(None, Arena::<Module, ModuleId>::from(vec![module]));
+    let compiler = ScriptCompiler::init(Arena::<Module, ModuleId>::from(vec![module]));
 
     (arena, interner, settings, compiler)
 }
@@ -162,7 +162,7 @@ pub(super) fn mock_multiple_module_compiler(
     for region in regions {
         arena.push(region);
     }
-    let compiler = ScriptCompiler::init(None, Arena::<Module, ModuleId>::from(modules));
+    let compiler = ScriptCompiler::init(Arena::<Module, ModuleId>::from(modules));
 
     (arena, interner, settings, compiler)
 }

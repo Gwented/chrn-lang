@@ -295,7 +295,7 @@ impl DocumentState {
         // `ScriptCompiler::init` takes an `Arena<Module, ModuleId>`.  The compiler
         // assigns `ModuleId`s sequentially in push order, so converting from a
         // `Vec<Module>` (via `Arena::from`) preserves the index → id invariant.
-        let mut compiler = ScriptCompiler::init(bind, Arena::from(all_mods));
+        let mut compiler = ScriptCompiler::init(Arena::from(all_mods));
 
         let mut all_asts = Vec::with_capacity(compiler.mods.len());
         for _ in 0..compiler.mods.len() {

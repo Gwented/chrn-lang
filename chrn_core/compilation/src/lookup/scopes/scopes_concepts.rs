@@ -285,9 +285,14 @@ impl ChrnClassifiable for AssociatedScopeKind {
 }
 
 pub struct IntrinsicRegistry {
+    /// `ModuleId` for intrinsically loaded core
     pub core_mod_id: ModuleId,
+    /// This is here in case it ever is made dynamic. Currently it MUST be 0.
+    pub main_mod_id: ModuleId,
+    /// `ScopeId` for iff a `complex` section is used, which is lazily loaded, hence the `Option`.
     pub complex_scope_id: Option<ScopeId>,
     // TEST:
+    /// All `BuiltinType` `SymbolId`s
     pub builtin_repo: Option<BuiltinIdRepository>,
 }
 
@@ -299,6 +304,7 @@ impl IntrinsicRegistry {
     ) -> IntrinsicRegistry {
         IntrinsicRegistry {
             core_mod_id,
+            main_mod_id: ModuleId::new(0),
             complex_scope_id,
             builtin_repo,
         }
@@ -322,7 +328,7 @@ pub struct BuiltinIdRepository {
     pub u128: SymbolId,
     pub f128: SymbolId,
     pub sized: SymbolId,
-    pub r#unsized: SymbolId,
+    pub unsized_: SymbolId,
     pub str: SymbolId,
     pub char: SymbolId,
     pub nil: SymbolId,
@@ -354,7 +360,7 @@ impl BuiltinIdRepository {
             BuiltinTypeKind::U128 => Some(self.u128),
             BuiltinTypeKind::F128 => Some(self.f128),
             BuiltinTypeKind::Sized => Some(self.sized),
-            BuiltinTypeKind::Unsized => Some(self.r#unsized),
+            BuiltinTypeKind::Unsized => Some(self.unsized_),
             BuiltinTypeKind::Str => Some(self.str),
             BuiltinTypeKind::Char => Some(self.char),
             BuiltinTypeKind::Nil => Some(self.nil),
@@ -462,7 +468,7 @@ impl BuiltinIdRepositoryBuilder {
             sized: self
                 .sized
                 .expect("sized must be set in BuiltinIdRepository"),
-            r#unsized: self
+            unsized_: self
                 .unsized_
                 .expect("unsized must be set in BuiltinIdRepository"),
             str: self.str.expect("str must be set in BuiltinIdRepository"),

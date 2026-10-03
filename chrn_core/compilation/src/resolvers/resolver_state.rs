@@ -1,13 +1,5 @@
 use bitflags::bitflags;
 
-// #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-// pub enum ResolverState {
-//     Namespace,
-//     Member,
-//     Type,
-//     Constraint,
-// }
-
 //TEST: May or may not have stages depend on parts of other stages so these are bitflags not enums
 bitflags! {
     /// State that matches to a resolver to allow for external users to track and compare states
@@ -54,5 +46,46 @@ impl ResolverState {
         };
 
         *self = out;
+    }
+}
+
+//TEST:
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CompilerStage {
+    ModuleGraph,
+    Lexer,
+    Parser,
+    NameResolver,
+    MemberResolver,
+    TypeResolver,
+    ConstraintResolver,
+    Complete,
+}
+
+impl CompilerStage {
+    pub fn prev_stage(self) -> Option<CompilerStage> {
+        let prev = match self {
+            CompilerStage::ModuleGraph => return None,
+            CompilerStage::Lexer => CompilerStage::ModuleGraph,
+            CompilerStage::Parser => CompilerStage::Lexer,
+            CompilerStage::NameResolver => CompilerStage::Parser,
+            CompilerStage::MemberResolver => CompilerStage::NameResolver,
+            CompilerStage::TypeResolver => CompilerStage::MemberResolver,
+            CompilerStage::ConstraintResolver => CompilerStage::TypeResolver,
+            CompilerStage::Complete => CompilerStage::ConstraintResolver,
+        };
+        Some(prev)
+    }
+    pub fn next_stage(self) -> CompilerStage {
+        match self {
+            CompilerStage::ModuleGraph => CompilerStage::Lexer,
+            CompilerStage::Lexer => CompilerStage::Parser,
+            CompilerStage::Parser => CompilerStage::NameResolver,
+            CompilerStage::NameResolver => CompilerStage::NameResolver,
+            CompilerStage::MemberResolver => CompilerStage::MemberResolver,
+            CompilerStage::TypeResolver => CompilerStage::TypeResolver,
+            CompilerStage::ConstraintResolver => CompilerStage::ConstraintResolver,
+            CompilerStage::Complete => CompilerStage::Complete,
+        }
     }
 }

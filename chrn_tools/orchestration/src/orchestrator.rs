@@ -18,17 +18,14 @@ use compilation::{
     script_compiler::{
         ScriptCompiler, reporter::Reporter, script_compiler_store::ScriptCompilerStore,
     },
-    semantic::{
-        compilation_unit::CompilationUnit,
-        hir::hir_directives::{DirectivePreprocess, lexer_processor},
-    },
+    semantic::{compilation_unit::CompilationUnit, hir::hir_directives::lexer_processor},
 };
 
 use crate::script_compiler_cache::ScriptCompilerCache;
 
 // Ok...
 // TODO: This should, um
-/// Runs every compiler step associated with config/script
+/// Runs every compiler step associated with chrn script/config file
 pub fn run_all(
     reporter: &mut Reporter,
     compiler: &mut ScriptCompiler,
@@ -65,16 +62,17 @@ pub fn run_all(
             };
 
         //TEST:
-        // if let Some(toks) = &toks_opt {
-        //     for idx in hash_indices {
-        //         dbg!(lexer_processor::produce_directives(
-        //             toks,
-        //             idx,
-        //             &compiler_store.interner
-        //         ));
-        //     }
-        //     // panic!("Or at least your spare time");
-        // }
+        if let Some(toks) = &toks_opt {
+            for idx in hash_indices {
+                //TODO: directive being tagged with whether its for the compiler or module declared in.
+                //Would then be pushed into either. Need something that goes through directives then
+                //processes ones that correlate to the current stage.
+                let Some(pre_direct) = lexer_processor::process_directive(toks, idx) else {
+                    continue;
+                };
+                dbg!(pre_direct);
+            }
+        }
 
         let ast_info_opt = if let Some(toks) = &toks_opt {
             let (ast_info_opt, diag_summary) =
@@ -99,10 +97,10 @@ pub fn run_all(
     //         continue;
     //     };
     //     panic!("Stop");
-    //     // would be done differently since linear
-    //     // for direct in &info.preprocess_directives {
-    //     //     lexer_processor::produce_directives(toks, hash_idx, interner)
-    //     // }
+    // would be done differently since linear
+    // for direct in &info.preprocess_directives {
+    //     lexer_processor::produce_directives(toks, hash_idx, interner)
+    // }
     // }
 
     // if reporter.diag_summary().has_err() {
@@ -251,11 +249,10 @@ pub fn run_lexer(
     Some(out)
 }
 
-/// * reporter: To store diagnostics
-/// * current_mod_id: Current `ModuleId`
-/// * toks: Tokens associated with the given module
 /// * compiler: Compiler associated with the current module
 /// * compiler_cache: Optional caching structure
+/// * current_mod_id: Current `ModuleId`
+/// * toks: Tokens associated with the given module
 pub fn run_parser(
     compiler: &ScriptCompiler,
     // Also needs mutable for lexer

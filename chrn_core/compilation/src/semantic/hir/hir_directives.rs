@@ -58,7 +58,7 @@ impl Directive {
 impl ChrnClassifiable for Directive {
     fn to_classified(&self) -> ChrnClassified {
         match self {
-            Directive::Preprocess(d) => d.self_kind.to_classified(),
+            Directive::Preprocess(d) => d.kind.to_classified(),
             Directive::Inline(d) => d.to_classified(),
         }
     }

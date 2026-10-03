@@ -40,7 +40,7 @@ use crate::{
 
 /// Builds the core module the same way `ScriptCompiler::init` does, with no user modules
 fn core_only_compiler() -> ScriptCompiler {
-    ScriptCompiler::init(None, Arena::new())
+    ScriptCompiler::init(Arena::new())
 }
 
 #[test]
@@ -467,7 +467,7 @@ fn startup_reservations_include_user_module_symbols() {
         vec![import],
         None,
     );
-    let compiler = ScriptCompiler::init(None, Arena::from(vec![module]));
+    let compiler = ScriptCompiler::init(Arena::from(vec![module]));
     let ns_counts = core_instantiation_reservations();
 
     // A module binds its own name plus one identifier per import -- the alias when given, the file

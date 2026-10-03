@@ -18,6 +18,18 @@ pub struct SpannedToken {
     pub leading_trivia_indices: Range<u32>,
 }
 
+//TEST: Just so the directives can be processed. Not sure if this should actually be used in the
+//token enum or kept at all
+pub struct TokenInt {
+    pub interned_id: InternedId,
+    pub notation: IntegerNotation,
+}
+
+pub struct TokenFloat {
+    pub interned_id: InternedId,
+    pub notation: FloatNotation,
+}
+
 // WHAT
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Token {
