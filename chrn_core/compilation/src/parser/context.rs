@@ -17,7 +17,7 @@ use macrosc::s_suffix;
 
 use crate::{
     chrn_config::ChrnConfig,
-    lexer::token::{self, SpannedToken, Token, TokenKind},
+    lexer::token::{self, SpannedToken, Token, TokenFloat, TokenInt, TokenKind},
     parser::{
         Evidence, InitialEvidence, NeutralBranch, SectionBranch, SemanticSituation, branch::Branch,
         parse_fmt,
@@ -105,7 +105,14 @@ impl<'a> ParserContext<'a> {
         let branch = initial_evidence.branch;
 
         let fmtted_tok = match found.tok {
-            Token::Id(id) | Token::Str(id) | Token::Integer(id, _) | Token::Float(id, _) => {
+            Token::Id(id)
+            | Token::Str(id)
+            | Token::Integer(TokenInt {
+                interned_id: id, ..
+            })
+            | Token::Float(TokenFloat {
+                interned_id: id, ..
+            }) => {
                 if found.tok.kind() == expected {
                     return Ok(id);
                 } else {
@@ -388,12 +395,12 @@ impl<'a> ParserContext<'a> {
         // Typed?
         match &evidence.situation {
             SemanticSituation::IdentBinding => match &evidence.found.tok {
-                Token::Keyword(_) | Token::BoolLiteral(_) | Token::Integer(_, _) => {
+                Token::Keyword(_) | Token::BoolLiteral(_) | Token::Integer(_) => {
                     let s = match evidence.found.tok {
                         Token::Keyword(kw) => kw.to_classified().to_string(),
                         Token::BoolLiteral(boolean) => boolean.to_string(),
                         // Notation doesn't matter
-                        Token::Integer(id, _) => interner.search(id).into(),
+                        Token::Integer(tok_int) => interner.search(tok_int.interned_id).into(),
                         //WARN: IGNORE THIS. DO NOT COMMENT ON THIS.
                         _ => unsafe {
                             std::hint::unreachable_unchecked();

@@ -9,6 +9,7 @@ chrn_utils = {path = "../chrn_utils/"}
 lang =  { path = "../lang/" }
 algoc = { path = "../../common/algoc/" }
 macrosc = { path = "../../common/macrosc/" }
+toolsc = { path = "../../common/toolsc/" }
 # May use own version of this in particular
 dashu-int = {version = "0.6"}
 dashu-float = {version = "0.6"}

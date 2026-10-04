@@ -138,15 +138,15 @@ pub fn compute_hover(
                 Some((span_start, span_end)),
             )
         }
-        ScriptToken::Integer(id, _) => {
-            let s = state.interner.search(id);
+        ScriptToken::Integer(value) => {
+            let s = state.interner.search(value.interned_id);
             (
                 format!("Integer literal: {}", s),
                 Some((span_start, span_end)),
             )
         }
-        ScriptToken::Float(id, _) => {
-            let s = state.interner.search(id);
+        ScriptToken::Float(value) => {
+            let s = state.interner.search(value.interned_id);
             (
                 format!("Float literal: {}", s),
                 Some((span_start, span_end)),

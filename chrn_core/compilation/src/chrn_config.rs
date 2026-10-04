@@ -7,7 +7,7 @@
 pub mod chrn_logger;
 pub mod chrn_perf;
 
-use crate::chrn_config::{chrn_logger::ChrnConfigLogger, chrn_perf::ChrnPerf};
+use crate::chrn_config::{chrn_logger::ChrnLogger, chrn_perf::ChrnPerf};
 
 //TEST: No longer has use but is useful to keep in case of any future use
 /// Alters `chrn` compiler behavior
@@ -15,9 +15,9 @@ use crate::chrn_config::{chrn_logger::ChrnConfigLogger, chrn_perf::ChrnPerf};
 pub struct ChrnConfig {
     // This is purposefully nested so that it owns the specific methods for logging as to not convolute
     // `ChrnConfig`
-    /// `struct` that contains a single boolean which determines whether or not debug logging will
+    /// Contains a single boolean which determines whether or not debug logging will
     /// be done.
-    logger: ChrnConfigLogger,
+    logger: ChrnLogger,
     // Box?
     perf_tracker: ChrnPerf,
     max_numeric_bits: u32,
@@ -25,7 +25,7 @@ pub struct ChrnConfig {
 
 impl ChrnConfig {
     pub const fn new(
-        logger: ChrnConfigLogger,
+        logger: ChrnLogger,
         perf_tracker: ChrnPerf,
         max_numeric_bits: u32,
     ) -> ChrnConfig {
@@ -36,7 +36,7 @@ impl ChrnConfig {
         }
     }
 
-    pub const fn logger(&self) -> &ChrnConfigLogger {
+    pub const fn logger(&self) -> &ChrnLogger {
         &self.logger
     }
 
@@ -46,6 +46,10 @@ impl ChrnConfig {
 
     pub const fn perf_tracker_mut(&mut self) -> &mut ChrnPerf {
         &mut self.perf_tracker
+    }
+
+    pub const fn set_max_numeric_bits(&mut self, max_numeric_bits: u32) {
+        self.max_numeric_bits = max_numeric_bits;
     }
 
     pub const fn max_numeric_bits(&self) -> u32 {
@@ -69,7 +73,7 @@ impl Default for ChrnConfig {
 
 /// Builder for `ChrnConfig`
 pub struct ChrnConfigBuilder {
-    logger: Option<ChrnConfigLogger>,
+    logger: Option<ChrnLogger>,
     perf_tracker: Option<ChrnPerf>,
     max_numeric_bits: Option<u32>,
 }
@@ -79,7 +83,7 @@ impl ChrnConfigBuilder {
         let logger = if let Some(inner) = self.logger {
             inner
         } else {
-            ChrnConfigLogger::new(false)
+            ChrnLogger::new(false)
         };
 
         let perf_tracker = if let Some(perf) = self.perf_tracker {
@@ -102,7 +106,7 @@ impl ChrnConfigBuilder {
     }
 
     pub const fn add_logger(mut self) -> Self {
-        self.logger = Some(ChrnConfigLogger::new(true));
+        self.logger = Some(ChrnLogger::new(true));
         self
     }
 

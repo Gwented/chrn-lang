@@ -1958,7 +1958,7 @@ impl LanguageServer for Backend {
                         SemanticTokenType::String.as_u32()
                     }
                     ScriptToken::BoolLiteral(_) => SemanticTokenType::String.as_u32(),
-                    ScriptToken::Integer(_, _) | ScriptToken::Float(_, _) => {
+                    ScriptToken::Integer(_) | ScriptToken::Float(_) => {
                         SemanticTokenType::Number.as_u32()
                     }
                     ScriptToken::Id(id) => {

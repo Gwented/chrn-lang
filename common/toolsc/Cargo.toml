@@ -1,0 +1,6 @@
+[package]
+name = "toolsc"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]

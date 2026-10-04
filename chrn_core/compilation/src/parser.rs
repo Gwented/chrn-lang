@@ -15,7 +15,7 @@ mod parser_state;
 
 use crate::chrn_config::ChrnConfig;
 use crate::chrn_config::chrn_perf::ChrnPerfStage;
-use crate::lexer::token::{SpannedToken, Token, TokenKind};
+use crate::lexer::token::{SpannedToken, Token, TokenInt, TokenKind};
 use crate::lookup::scopes::scopes_concepts::ScopeLookupPattern;
 use crate::parser::ast::ast_concepts::{
     AbstractAlias, AbstractConfig, AbstractConfigKind, AbstractDecl, AbstractDirectiveInline,
@@ -1501,17 +1501,17 @@ fn parse_primary(
             let span = ctx.advance_span();
             Ok(SpannedContainer::new(AstExpr::Var(name_id), span))
         }
-        Token::Integer(name_id, notation) => {
+        Token::Integer(tok_int) => {
             let span = ctx.advance_span();
             Ok(SpannedContainer::new(
-                AstExpr::Integer(name_id, notation),
+                AstExpr::Integer(tok_int.interned_id, tok_int.notation),
                 span,
             ))
         }
-        Token::Float(name_id, notation) => {
+        Token::Float(tok_float) => {
             let span = ctx.advance_span();
             Ok(SpannedContainer::new(
-                AstExpr::Float(name_id, notation),
+                AstExpr::Float(tok_float.interned_id, tok_float.notation),
                 span,
             ))
         }
@@ -1718,7 +1718,10 @@ fn parse_type_expr(
 
             Ok(SpannedContainer::new(ty_expr, span))
         }
-        Token::Str(id) | Token::Integer(id, _) => {
+        Token::Str(id)
+        | Token::Integer(TokenInt {
+            interned_id: id, ..
+        }) => {
             let tok = ctx.advance_tok();
 
             let fmt_tok = parse_fmt::fmt_tok(tok, interner);

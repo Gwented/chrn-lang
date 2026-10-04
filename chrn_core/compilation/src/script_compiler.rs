@@ -32,7 +32,7 @@ use crate::{
         },
     },
     module::module_concepts::{Bind, Import, ImportKind, Module, ModuleState},
-    resolvers::resolver_state::ResolverState,
+    resolvers::resolver_state::CompilerStage,
     script_compiler::helpers::{
         compiler_helpers,
         core_helpers::{self, CoreFunc},
@@ -61,7 +61,7 @@ use crate::{
     walk_type_id_deferred,
 };
 
-// Should this be in utils?
+// TODO: Rename me
 /// Script compiler that holds all essential data for incremental updates through resolution
 pub struct ScriptCompiler {
     /// All modules found during compilation
@@ -93,7 +93,7 @@ pub struct ScriptCompiler {
     /// Information regarding intrinsic data such as core's `ModuleId`
     pub intrinsic_registry: IntrinsicRegistry,
     /// Current stage the compiler is in
-    pub resolver_state: ResolverState,
+    pub comp_stage: CompilerStage,
 }
 
 // NOTE: May turn this into an innate option type inside of HIR
@@ -161,7 +161,7 @@ impl ScriptCompiler {
             directives: Arena::with_capacity(compiler_helpers::DIRECTIVES_DATASET.len()),
             //TEST:
             intrinsic_registry,
-            resolver_state: ResolverState::NAMESPACE,
+            comp_stage: CompilerStage::Namespace,
         };
         // Should this lazy load the section intrinsics though?
         let builtin_repo = compiler.load_core();

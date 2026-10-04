@@ -6,10 +6,11 @@ use crate::{
     chrn_config::ChrnConfig,
     lexer::{token::SpannedToken, trivia::Trivia},
     parser::ast::ast_concepts::AstInfo,
-    semantic::compilation_unit::CompilationUnit,
+    semantic::{
+        compilation_unit::CompilationUnit,
+        hir::hir_directives::{DirectivePreprocessFieldKind, DirectivePreprocessStore},
+    },
 };
-
-// NOTE:
 
 /// Stores all essential data collected through compilation stages
 ///
@@ -21,11 +22,14 @@ use crate::{
 #[derive(Debug)]
 pub struct ScriptCompilerStore {
     /// Settings given to chrn compilation instance
+    // This probably shouldn't hold the directives and more so remain as the behavioral change where
+    // the store or whatever external has resposibility
     pub cfg: ChrnConfig,
-    /// Region arena found after building module graph
+    //TEST:
+    /// Directives that are to be applied to `ChrnConfig` when their stage to be processed comes.
+    pub directive_store: DirectivePreprocessStore,
     pub region_arena: Arena<SourceRegion, SourceRegionId>,
-    // Beautiful
-    /// Interner 😭
+    /// Interner
     pub interner: Intern,
     /// These are `Option` types due to modules being stored in a dense array
     pub toks: Vec<Option<Vec<SpannedToken>>>,
@@ -39,7 +43,7 @@ pub struct ScriptCompilerStore {
 }
 
 impl ScriptCompilerStore {
-    pub fn new(
+    pub const fn new(
         cfg: ChrnConfig,
         region_arena: Arena<SourceRegion, SourceRegionId>,
         interner: Intern,
@@ -50,6 +54,7 @@ impl ScriptCompilerStore {
     ) -> ScriptCompilerStore {
         ScriptCompilerStore {
             cfg,
+            directive_store: DirectivePreprocessStore::new(),
             region_arena,
             interner,
             toks,

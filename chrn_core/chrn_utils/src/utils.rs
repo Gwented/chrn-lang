@@ -1,5 +1,4 @@
 pub mod containers;
-pub mod cursors;
 pub mod trackers;
 
 //TEST: IGNORE THIS
@@ -16,6 +15,11 @@ impl SharedU32 {
     pub const fn new(left: u16, right: u16) -> SharedU32 {
         let shared_inner = ((left as u32) << 16) | (right as u32);
         SharedU32 { shared_inner }
+    }
+
+    /// Instiates as 0
+    pub const fn zeroed() -> SharedU32 {
+        SharedU32 { shared_inner: 0 }
     }
 
     pub const fn from_u32(shared_inner: u32) -> SharedU32 {

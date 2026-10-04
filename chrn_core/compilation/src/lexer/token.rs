@@ -20,14 +20,34 @@ pub struct SpannedToken {
 
 //TEST: Just so the directives can be processed. Not sure if this should actually be used in the
 //token enum or kept at all
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TokenInt {
     pub interned_id: InternedId,
     pub notation: IntegerNotation,
 }
 
+impl TokenInt {
+    pub const fn new(interned_id: InternedId, notation: IntegerNotation) -> Self {
+        Self {
+            interned_id,
+            notation,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TokenFloat {
     pub interned_id: InternedId,
     pub notation: FloatNotation,
+}
+
+impl TokenFloat {
+    pub const fn new(interned_id: InternedId, notation: FloatNotation) -> Self {
+        Self {
+            interned_id,
+            notation,
+        }
+    }
 }
 
 // WHAT
@@ -42,8 +62,8 @@ pub enum Token {
     BoolLiteral(bool),
     Id(InternedId),
     Str(InternedId),
-    Integer(InternedId, IntegerNotation),
-    Float(InternedId, FloatNotation),
+    Integer(TokenInt),
+    Float(TokenFloat),
     Invalid(InternedId),
     Char(char),
     OParen,
@@ -94,8 +114,8 @@ impl Token {
         match self {
             Token::Id(_) => TokenKind::Id,
             Token::Str(_) => TokenKind::Str,
-            Token::Integer(_, _) => TokenKind::Integer,
-            Token::Float(_, _) => TokenKind::Float,
+            Token::Integer(_) => TokenKind::Integer,
+            Token::Float(_) => TokenKind::Float,
             Token::Char(_) => TokenKind::Char,
             Token::OBracket => TokenKind::OBracket,
             Token::CBracket => TokenKind::CBracket,

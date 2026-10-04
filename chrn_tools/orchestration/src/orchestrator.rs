@@ -13,12 +13,18 @@ use compilation::{
         member_resolver::MemberResolver,
         name_resolver::NamespaceResolver,
         resolver_env::{RegistrationEnv, ResolverEnv},
+        resolver_state::CompilerStage,
         type_resolver::TypeResolver,
     },
     script_compiler::{
         ScriptCompiler, reporter::Reporter, script_compiler_store::ScriptCompilerStore,
     },
-    semantic::{compilation_unit::CompilationUnit, hir::hir_directives::lexer_processor},
+    semantic::{
+        compilation_unit::CompilationUnit,
+        hir::hir_directives::{
+            self, DirectivePreprocessEffect, DirectivePreprocessField, lexer_processor,
+        },
+    },
 };
 
 use crate::script_compiler_cache::ScriptCompilerCache;
@@ -63,16 +69,36 @@ pub fn run_all(
 
         //TEST:
         if let Some(toks) = &toks_opt {
-            for idx in hash_indices {
+            for hash_idx in hash_indices {
                 //TODO: directive being tagged with whether its for the compiler or module declared in.
                 //Would then be pushed into either. Need something that goes through directives then
                 //processes ones that correlate to the current stage.
-                let Some(pre_direct) = lexer_processor::process_directive(toks, idx) else {
+                let Some(pre_direct) = lexer_processor::process_directive(toks, hash_idx) else {
                     continue;
                 };
-                dbg!(pre_direct);
+
+                //FIXME: Maybe cap directives allowed in a file for securituriatueitueriygu
+                for field in pre_direct.fields {
+                    match field.effect {
+                        // Only main can apply compiler effects for now
+                        DirectivePreprocessEffect::Compiler if mod_id.id == 0 => {
+                            //Not sure if fields should to be pushed here.
+                            compiler_store.directive_store.push(field.kind);
+                        }
+                        DirectivePreprocessEffect::Compiler => {}
+                    }
+                }
             }
         }
+
+        //TODO:: Probably not the best way to do this!
+        //Lexer
+        hir_directives::apply_directives(
+            CompilerStage::Lexer,
+            &mut compiler_store.directive_store,
+            &mut compiler_store.cfg,
+            &compiler_store.interner,
+        );
 
         let ast_info_opt = if let Some(toks) = &toks_opt {
             let (ast_info_opt, diag_summary) =
@@ -82,6 +108,14 @@ pub fn run_all(
         } else {
             None
         };
+
+        // Parser
+        hir_directives::apply_directives(
+            CompilerStage::Parser,
+            &mut compiler_store.directive_store,
+            &mut compiler_store.cfg,
+            &compiler_store.interner,
+        );
 
         // Compiler store stores these as persistent state in the case of any indexing needing to be
         // done.
@@ -134,6 +168,14 @@ pub fn run_all(
         reporter.merge_summary_safe(summary);
         mod_symbols.push(Some(current_comp_units));
     }
+
+    // Parser
+    hir_directives::apply_directives(
+        CompilerStage::Namespace,
+        &mut compiler_store.directive_store,
+        &mut compiler_store.cfg,
+        &compiler_store.interner,
+    );
 
     // Ownership transfer
     compiler_store.compilation_syms = mod_symbols;

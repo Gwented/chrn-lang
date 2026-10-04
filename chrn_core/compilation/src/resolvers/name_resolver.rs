@@ -16,7 +16,7 @@ use crate::{
         AbstractAlias, AbstractConfig, AbstractConfigKind, AbstractDecl, AbstractEnum,
         AbstractImpl, AbstractStruct, AbstractTypeDef, AbstractVar, Item,
     },
-    resolvers::{resolver_env::RegistrationEnv, resolver_state::ResolverState},
+    resolvers::{resolver_env::RegistrationEnv, resolver_state::CompilerStage},
     script_compiler::ScriptCompiler,
     semantic::{
         compilation_unit::CompilationUnit,
@@ -58,8 +58,8 @@ impl NamespaceResolver<'_> {
         // borrowed mutably
         //
         // Remove the compiler internal?
-        debug_assert_eq!(ResolverState::NAMESPACE, compiler.resolver_state);
-        compiler.resolver_state.advance();
+        debug_assert_eq!(CompilerStage::Namespace, compiler.comp_stage);
+        compiler.comp_stage.advance();
 
         NamespaceResolver {
             cfg,

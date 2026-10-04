@@ -9,8 +9,6 @@ pub mod lexer_output;
 pub mod notations;
 pub mod token;
 pub mod trivia;
-// TODO: Maybe give this diagnostics
-//  I don't know buddy
 
 use chrn_utils::{
     id_types::{PathId, SourceRegionId},
@@ -24,7 +22,7 @@ use crate::{
     lexer::{
         lexer_output::LexerOutput,
         notations::{FloatNotation, IntegerNotation, Notation},
-        token::{SpannedToken, Token},
+        token::{SpannedToken, Token, TokenFloat, TokenInt},
         trivia::{Trivia, TriviaKind},
     },
 };
@@ -68,6 +66,7 @@ impl Lexer<'_> {
         cfg: &'a mut ChrnConfig,
     ) -> Lexer<'a> {
         // Trivia is very dense most of the time hence it weighs more
+        // 1 trivia : 25 bytes
         let speculated_trivia = src.len() / 25;
         Lexer {
             current_region_id,
@@ -836,7 +835,7 @@ impl Lexer<'_> {
         match num_notation {
             Notation::Integer(n) => {
                 SpannedToken {
-                    tok: Token::Integer(id, n),
+                    tok: Token::Integer(TokenInt::new(id, n)),
                     // NOTE: Same read_id reasoning
                     span,
                     leading_trivia_indices: self.trivia_start_idx as u32
@@ -844,7 +843,7 @@ impl Lexer<'_> {
                 }
             }
             Notation::Float(n) => SpannedToken {
-                tok: Token::Float(id, n),
+                tok: Token::Float(TokenFloat::new(id, n)),
                 span,
                 leading_trivia_indices: self.trivia_start_idx as u32..self.trivia_end_idx as u32,
             },

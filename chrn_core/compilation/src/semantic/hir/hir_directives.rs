@@ -13,7 +13,7 @@ use lang::{
 //Might be a little too much here
 
 /// General directives not specific to anything
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Directive {
     /// Directives that need special attention to be processed
     Preprocess(DirectivePreprocess),

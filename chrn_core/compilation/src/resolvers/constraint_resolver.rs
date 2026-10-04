@@ -28,13 +28,13 @@ use crate::{
         StructTag, TypeDefTag, VarTag,
     },
     lookup::schema_lookup::{self, SchemaResult},
-    resolvers::{resolver_env::ResolverEnv, resolver_state::ResolverState},
+    resolvers::{resolver_env::ResolverEnv, resolver_state::CompilerStage},
     script_compiler::ScriptCompiler,
     semantic::{
         compilation_unit::CompilationUnit,
         hir::{
             hir_concepts::Type,
-            hir_directives::{Directive, DirectiveInline, DirectivePreprocessField},
+            hir_directives::{Directive, DirectiveInline, DirectivePreprocessFieldKind},
             hir_impls::{ConfigMember, ConfigMemberMetadataKind, ConfigRootKind},
             hir_symbols::MemberSymbolKind,
         },
@@ -59,8 +59,8 @@ impl<'a> ConstraintResolver<'a> {
         interner: &'a Intern,
         compiler: &'a mut ScriptCompiler,
     ) -> ConstraintResolver<'a> {
-        debug_assert_eq!(ResolverState::CONSTRAINT, compiler.resolver_state);
-        compiler.resolver_state.advance();
+        debug_assert_eq!(CompilerStage::Constraint, compiler.comp_stage);
+        compiler.comp_stage.advance();
         ConstraintResolver {
             cfg,
             interner,

@@ -4,7 +4,7 @@
 #
 # If this seems random that's because it is.
 [workspace]
-members = ["algoc","colorc", "filesc", "macrosc"]
+members = ["algoc","colorc", "filesc", "macrosc", "toolsc"]
 resolver = "3"
 
 [workspace.package]

@@ -50,9 +50,12 @@ for varthing1 {}
 // know to ignore it?
 
 // comptime directs & runtime directives distinction?
-// Maybe modle finder collects comptime syntax only?
 // TODO: (It doesn't highlight here)
-#chrn[MAX_NUMERIC_BITS(256), MAX_THING(2)
+
+// Also need to send diagnostics at some point semantically. Double check or send externally.
+//
+// Could point to the original limit being set given a max limit exceeded error if pressent.
+#chrn[MAX_NUMERIC_BITS(300, 30, 2, 90, 3, 1, 0b0)]
 // #chrn[MAX_NUMERIC_BITS(256), MAX_THING(2)
 
 // Thinking about removing the big int usage and just making caps or integers.

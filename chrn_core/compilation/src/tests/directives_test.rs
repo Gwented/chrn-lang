@@ -13,7 +13,7 @@ use lang::directive_consts::BUILTIN_DIRECTIVE_STRS;
 ///   - adding the interned string constant (and preloading it)
 ///   - adding the arm to try_from_interned_str
 ///   - adding to BUILTIN_DIRECTIVE_STRS
-#[test]
+// #[test]
 // fn all_builtin_directive_strs_are_recognized() {
 //     let interner = Intern::init();
 //     for &directive_str in BUILTIN_DIRECTIVE_STRS.iter() {

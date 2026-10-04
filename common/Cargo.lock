@@ -20,3 +20,7 @@ dependencies = [
 [[package]]
 name = "macrosc"
 version = "0.1.0"
+
+[[package]]
+name = "toolsc"
+version = "0.1.0"

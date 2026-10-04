@@ -1,7 +1,7 @@
 use chrn_utils::intern::Intern;
 use lang::chrn_classifier::ChrnClassifiable;
 
-use crate::lexer::token::Token;
+use crate::lexer::token::{Token, TokenFloat, TokenInt};
 
 /// Helper to reduce boiler-plate of formatting a given token
 pub(super) fn fmt_tok(tok: Token, interner: &Intern) -> String {
@@ -10,8 +10,14 @@ pub(super) fn fmt_tok(tok: Token, interner: &Intern) -> String {
         Token::End => "`@end`".to_string(),
         Token::Id(name_id)
         | Token::Str(name_id)
-        | Token::Integer(name_id, _)
-        | Token::Float(name_id, _) => {
+        | Token::Integer(TokenInt {
+            interned_id: name_id,
+            ..
+        })
+        | Token::Float(TokenFloat {
+            interned_id: name_id,
+            ..
+        }) => {
             let ident = interner.search(name_id);
             format!("\"{ident}\"")
         }

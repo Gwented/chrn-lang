@@ -1,13 +1,14 @@
 //! Parser intended to process preprocess-directives that MUST be seen before the
 //! parsing stage to be meaningful.
-use chrn_utils::{id_types::InternedId, utils::cursors::CursorBasic};
+use chrn_utils::id_types::InternedId;
+use toolsc::cursors::BasicCursor;
 
 use crate::{
-    lexer::token::{SpannedToken, Token, TokenKind},
+    lexer::token::{SpannedToken, Token, TokenFloat, TokenInt, TokenKind},
     parser::parser_helpers::DelimiterContext,
     semantic::hir::hir_directives::{
-        DirectivePreprocess, DirectivePreprocessField, DirectivePreprocessKind,
-        DirectivePreprocessSchema,
+        DirectivePreprocess, DirectivePreprocessField, DirectivePreprocessFieldSchema,
+        DirectivePreprocessKind,
     },
 };
 
@@ -27,7 +28,7 @@ pub fn process_directive(toks: &[SpannedToken], hash_idx: usize) -> Option<Direc
     _ = toks.get(hash_idx + 3)?;
 
     // At directive ident
-    let mut cursor = CursorBasic::with_pos(toks, hash_idx + 1);
+    let mut cursor = BasicCursor::with_pos(toks, hash_idx + 1);
 
     // Ident of directive
     let id = expect_id(&mut cursor, TokenKind::Id)?;
@@ -35,26 +36,22 @@ pub fn process_directive(toks: &[SpannedToken], hash_idx: usize) -> Option<Direc
 
     let delim_ctx = DelimiterContext::with_comma(TokenKind::OBracket, TokenKind::CBracket);
 
-    let vals = collect_directive_fields(&mut cursor, kind, delim_ctx);
-    // dbg!(&vals);
-    // panic!();
-    let mut directive = DirectivePreprocess::new(kind, vals);
+    let fields = collect_directive_fields(&mut cursor, kind, delim_ctx);
+    let directive = DirectivePreprocess::new(kind, fields);
 
-    // for sp_tok in &toks[hash_idx..] {
-    //     dbg!(sp_tok);
-    // }
     Some(directive)
 }
 
 // #{ident}[{ident}({val}), {ident}({val}), ..]
+//TODO: Should maybe have basic duplicate field prevention
 fn collect_directive_fields(
-    cursor: &mut CursorBasic<SpannedToken>,
+    cursor: &mut BasicCursor<SpannedToken>,
     kind: DirectivePreprocessKind,
     delim_ctx: DelimiterContext,
 ) -> Vec<DirectivePreprocessField> {
-    let mut vals: Vec<DirectivePreprocessField> = Vec::new();
+    let mut fields: Vec<DirectivePreprocessField> = Vec::new();
     if !expect_tok(cursor, TokenKind::OBracket) {
-        return vals;
+        return fields;
     };
 
     let val_delim_ctx = DelimiterContext::with_comma(TokenKind::OParen, TokenKind::CParen);
@@ -64,7 +61,7 @@ fn collect_directive_fields(
     {
         // Not sure what to call this
         let Some(field_ident) = expect_id(cursor, TokenKind::Id) else {
-            return vals;
+            return fields;
         };
 
         if cursor.peek_owned().tok.kind() == delim_ctx.arg_sep()
@@ -77,28 +74,24 @@ fn collect_directive_fields(
         }
 
         let Some(schema) = kind.get_field(field_ident) else {
-            return vals;
+            return fields;
         };
 
-        collect_directive_field_vals(cursor, schema, &mut vals, val_delim_ctx);
+        collect_directive_field_vals(cursor, schema, &mut fields, val_delim_ctx);
 
         //break?
         if !expect_tok(cursor, TokenKind::Comma) {
-            return vals;
+            break;
         }
     }
 
-    // TEST: It doesn't actually depend on this working so maybe it's fine? The parser would still
-    // report.
-    // if !expect_tok(toks, pos, delim_ctx.closing()) {
-    //     return vals;
-    // };
-    vals
+    fields
 }
 
 fn collect_directive_field_vals(
-    cursor: &mut CursorBasic<SpannedToken>,
-    schema: &DirectivePreprocessSchema,
+    cursor: &mut BasicCursor<SpannedToken>,
+    schema: &DirectivePreprocessFieldSchema,
+    //TODO: Should probably have Vec<Field> inside the directive since, this, is, not ,, accurate
     fields: &mut Vec<DirectivePreprocessField>,
     delim_ctx: DelimiterContext,
 ) {
@@ -109,11 +102,12 @@ fn collect_directive_field_vals(
     while !cursor.peek_owned().tok.kind().is_terminator()
         && cursor.peek_owned().tok != Token::CParen
     {
-        let tok = cursor.peek_owned().tok;
-        // May be permissive
-        let Some(val) = schema.try_tok_as_val(&tok) else {
+        let tok = cursor.advance_owned().tok;
+        let Some(field_kind) = schema.try_tok_as_field_kind(&tok) else {
             return;
         };
+
+        fields.push(DirectivePreprocessField::new(field_kind));
 
         if cursor.peek_owned().tok.kind() == delim_ctx.arg_sep()
             && cursor.peek_ahead_owned(1).tok.kind() == delim_ctx.closing()
@@ -124,9 +118,7 @@ fn collect_directive_field_vals(
             break;
         }
 
-        fields.push(val);
-
-        if !expect_tok(cursor, TokenKind::Comma) {
+        if !expect_tok(cursor, delim_ctx.arg_sep()) {
             return;
         }
     }
@@ -137,10 +129,17 @@ fn collect_directive_field_vals(
 }
 
 /// Returns `true` if `expected` == found
-fn expect_id(cursor: &mut CursorBasic<SpannedToken>, expected: TokenKind) -> Option<InternedId> {
+fn expect_id(cursor: &mut BasicCursor<SpannedToken>, expected: TokenKind) -> Option<InternedId> {
     let found = cursor.advance_owned();
     let res = match found.tok {
-        Token::Id(id) | Token::Str(id) | Token::Integer(id, _) | Token::Float(id, _) => {
+        Token::Id(id)
+        | Token::Str(id)
+        | Token::Integer(TokenInt {
+            interned_id: id, ..
+        })
+        | Token::Float(TokenFloat {
+            interned_id: id, ..
+        }) => {
             if found.tok.kind() == expected {
                 return Some(id);
             } else {
@@ -153,7 +152,7 @@ fn expect_id(cursor: &mut CursorBasic<SpannedToken>, expected: TokenKind) -> Opt
 }
 
 /// Returns `true` if `expected` == found
-fn expect_tok(cursor: &mut CursorBasic<SpannedToken>, expected: TokenKind) -> bool {
+fn expect_tok(cursor: &mut BasicCursor<SpannedToken>, expected: TokenKind) -> bool {
     let res = cursor.advance_owned().tok.kind() == expected;
     res
 }

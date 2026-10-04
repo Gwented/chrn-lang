@@ -17,7 +17,7 @@ use crate::{
     chrn_config::{ChrnConfig, chrn_perf::ChrnPerfStage},
     id_tag_decls::{EnumTag, FieldTag, StructTag, VariantTag},
     lookup::scopes::scopes_concepts::{AssociatedScopeKind, ScopeLookupPattern, ScopeType},
-    resolvers::{resolver_env::ResolverEnv, resolver_state::ResolverState, typechecker},
+    resolvers::{resolver_env::ResolverEnv, resolver_state::CompilerStage, typechecker},
     script_compiler::{ScriptCompiler, compiler_consts},
     semantic::{
         checker_helpers::DuplicateTracker,
@@ -54,8 +54,8 @@ impl MemberResolver<'_> {
         interner: &'a Intern,
         compiler: &'a mut ScriptCompiler,
     ) -> MemberResolver<'a> {
-        debug_assert_eq!(ResolverState::MEMBER, compiler.resolver_state);
-        compiler.resolver_state.advance();
+        debug_assert_eq!(CompilerStage::Member, compiler.comp_stage);
+        compiler.comp_stage.advance();
         MemberResolver {
             cfg,
             interner,

@@ -51,7 +51,7 @@ use crate::parser::ast::ast_concepts::{
 use crate::parser::ast::ast_exprs::{AstExpr, PathSegment};
 use crate::parser::ast::ast_stmts::AstStmt;
 use crate::resolvers::resolver_env::ResolverEnv;
-use crate::resolvers::resolver_state::ResolverState;
+use crate::resolvers::resolver_state::CompilerStage;
 use crate::resolvers::type_resolver::cfg_ctx::{
     ConfigMemberComplexContext, ConfigMemberContextKind, ConfigMemberOverrideContext,
     ConfigRootComplexContext, ConfigRootContextKind, ConfigRootOverrideContext,
@@ -108,8 +108,8 @@ impl<'res> TypeResolver<'res> {
         interner: &'res mut Intern,
         compiler: &'res mut ScriptCompiler,
     ) -> TypeResolver<'res> {
-        debug_assert_eq!(ResolverState::TYPE, compiler.resolver_state);
-        compiler.resolver_state.advance();
+        debug_assert_eq!(CompilerStage::Type, compiler.comp_stage);
+        compiler.comp_stage.advance();
         TypeResolver {
             cfg,
             ty_ctx: TypeContext::new(),

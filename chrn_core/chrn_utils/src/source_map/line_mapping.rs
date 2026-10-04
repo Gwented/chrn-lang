@@ -113,37 +113,6 @@ impl LineGroupManager {
     }
 }
 
-//TODO: This, but diagnostics have a set of special instructions that display this graphic.
-//So, there would be an "add_graphic(AnnotationGraphic::HelpTransform(args))" where the args are
-//specific to the enum. The renderer can just decide if graphics should be ignored.
-/// Error message type:
-/// X -> X()
-///      +++
-// The X should be red and the right X should have green + signs under the params
-// This is specific right now but will turn to more generic just pointing to transformation
-// Maybe prefix?
-pub fn help_transform(from: &str, to: &str, can_color: bool) -> String {
-    todo!()
-    // let (red, nc) = color_type::get_red(can_color);
-    // let (green, _) = color_type::get_green(can_color);
-    //
-    // let from_spaces = " ".repeat(UnicodeWidthStr::width(from));
-    //
-    // let arrow = format!(" -> ");
-    // let arrow_spaces = " ".repeat(arrow.len());
-    //
-    // let fmtted_to = format!("{green}{to}{nc}");
-    //
-    // let to_width = UnicodeWidthStr::width(to);
-    //
-    // let add_amt = "+".repeat(to_width);
-    // let add = format!("{green}{add_amt}{nc}");
-    //
-    // let diag = format!("\t{red}{from}{nc}{arrow}{fmtted_to}\n\t{from_spaces}{arrow_spaces}{add}");
-    //
-    // diag
-}
-
 /// Goes from the start to the end of the span collecting all line data so that any sort of later
 /// complex error handling does not need any re-computation, and has a high level view of all lines
 /// in the given span. New lines are never in a line's span unless the line only contains a single
@@ -156,11 +125,6 @@ pub fn form_ln_view(src_bytes: &[u8], span: &SourceSpan) -> LineView {
     let span_start = span.start as usize;
     let span_end = span.end as usize;
 
-    // dbg!(span_start, span_end);
-    // panic!();
-
-    // dbg!(str::from_utf8(src_bytes), span);
-    // panic!();
     let actual_span_start = get_ln_start_byte(src_bytes, span_start);
 
     let full_span = SourceSpan::new(span.region_id, actual_span_start as u32, span.end);
