@@ -1,14 +1,26 @@
+//! Preprocessed directives are to be processed independently from what a stage like the lexer or
+//! parser may do with the information. A failed preprocessed directive should only show it's
+//! failure from compilation stages, never from the actual system applying directives.
+
 use chrn_utils::{
     id_types::InternedId,
     intern::{self, Intern},
     utils::SharedU32,
 };
+mod consts;
+mod directive_preprocess_args;
 use lang::chrn_classifier::{ChrnClassifiable, ChrnClassified};
 
 use crate::{
     chrn_config::ChrnConfig,
     lexer::token::{Token, TokenInt, TokenKind},
     resolvers::resolver_state::CompilerStage,
+    semantic::hir::hir_directives::directive_preprocess::{
+        consts::MAX_NUMERIC_BITS_SCHEMA,
+        directive_preprocess_args::{
+            DirectivePreprocessArg, DirectivePreprocessArgConstraint, DirectivePreprocessArgLayout,
+        },
+    },
 };
 /// General directives not specific to anything
 #[derive(Debug, Clone, PartialEq)]
@@ -56,43 +68,46 @@ pub enum DirectivePreprocessEffect {
 }
 
 impl DirectivePreprocessEffect {
-    pub fn from_preprocess_kind(kind: DirectivePreprocessFieldKind) -> DirectivePreprocessEffect {
+    pub fn from_preprocess_field(kind: DirectivePreprocessFieldKind) -> DirectivePreprocessEffect {
         match kind {
             DirectivePreprocessFieldKind::MaxNumericBits(_) => DirectivePreprocessEffect::Compiler,
         }
     }
 }
 
-static MAX_NUMERIC_BITS_SCHEMA: DirectivePreprocessFieldSchema =
-    DirectivePreprocessFieldSchema::new(
-        // Maybe shouldn't be identifier mainly at least
-        DirectivePreprocessFieldSchemaKind::MaxNumericBits,
-        DirectivePreprocessInput::Token(TokenKind::Integer),
-        DirectivePreprocessEffect::Compiler,
-        CompilerStage::Lexer,
-    );
+pub enum DirectivePreprocessFieldConstraint {
+    /// Type of value that can be used
+    Input(DirectivePreprocessExpectInput),
+}
 
-// Lorax!
+// Input to be compared
 /// Input constraints for `PreprocessDirectiveField`
 #[derive(Debug, PartialEq, Clone, Copy)]
-pub enum DirectivePreprocessInput {
+pub enum DirectivePreprocessExpectInput {
     Token(TokenKind),
 }
 
-impl DirectivePreprocessInput {
+// Input stored
+/// Input constraints for `PreprocessDirectiveField`
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub enum DirectivePreprocessInput<'a> {
+    Token(&'a Token),
+}
+
+impl DirectivePreprocessExpectInput {
     /// Returns `true` if `given` is allowed by `self`
-    pub fn allows(&self, given: &DirectivePreprocessInput) -> bool {
+    pub fn allows(&self, given: &DirectivePreprocessExpectInput) -> bool {
         match (self, given) {
             (
-                DirectivePreprocessInput::Token(self_tok),
-                DirectivePreprocessInput::Token(given_tok),
+                DirectivePreprocessExpectInput::Token(self_tok),
+                DirectivePreprocessExpectInput::Token(given_tok),
             ) => self_tok == given_tok,
         }
     }
 
     /// Converts `TokenKind` to `DirectivePreprocessInput`
-    pub fn from_tok_kind(kind: TokenKind) -> DirectivePreprocessInput {
-        DirectivePreprocessInput::Token(kind)
+    pub fn from_tok_kind(kind: TokenKind) -> DirectivePreprocessExpectInput {
+        DirectivePreprocessExpectInput::Token(kind)
     }
 }
 
@@ -102,7 +117,7 @@ pub enum DirectivePreprocessFieldSchemaKind {
 }
 
 impl DirectivePreprocessFieldSchemaKind {
-    pub fn name_id(self) -> InternedId {
+    pub const fn name_id(self) -> InternedId {
         match self {
             DirectivePreprocessFieldSchemaKind::MaxNumericBits => {
                 InternedId::new(intern::INTERNED_MAX_NUMERIC_BITS)
@@ -111,12 +126,13 @@ impl DirectivePreprocessFieldSchemaKind {
     }
 }
 
-// Wow
+//TODO: Schemas have an `ArgLayout`, layouts have `[Arg]` which is position sensitive and
+//contains what constraints the current argument should align with.
 pub struct DirectivePreprocessFieldSchema {
     /// Identifier of `self`
     pub kind: DirectivePreprocessFieldSchemaKind,
-    /// This
-    pub input: DirectivePreprocessInput,
+    /// Layout of args expected by the schema
+    pub arg_layout: DirectivePreprocessArgLayout,
     /// What compilation level this schema applies its effects to
     pub effect: DirectivePreprocessEffect,
     /// Stage when the compiler has enough information for this option to be processed
@@ -126,45 +142,69 @@ pub struct DirectivePreprocessFieldSchema {
 impl DirectivePreprocessFieldSchema {
     pub const fn new(
         kind: DirectivePreprocessFieldSchemaKind,
-        input: DirectivePreprocessInput,
+        arg_layout: DirectivePreprocessArgLayout,
         effect: DirectivePreprocessEffect,
         ready_stage: CompilerStage,
     ) -> Self {
         Self {
             kind,
-            input,
+            arg_layout,
             effect,
             ready_stage,
         }
     }
 
     //TODO: Naming unclear
-    /// Attempts to convert `Token` into `DirectivePreprocessValue` given the constraints of `self`
-    pub fn try_tok_as_field_kind(&self, tok: &Token) -> Option<DirectivePreprocessFieldKind> {
-        let tok_input = DirectivePreprocessInput::from_tok_kind(tok.kind());
-        if !self.input.allows(&tok_input) {
+    /// Attempts to convert `Token` into `DirectivePreprocessFieldKind` given the constraints
+    /// of `self`
+    pub fn try_as_field_kind(
+        &self,
+        inputs: &[(DirectivePreprocessExpectInput, DirectivePreprocessInput)],
+        // arg: &DirectivePreprocessArg,
+    ) -> Option<DirectivePreprocessFieldKind> {
+        if inputs.len() != self.arg_layout.arg_len() {
             return None;
         }
-        self.val_from_tok(tok)
+
+        for (i, arg) in self.arg_layout.args().iter().enumerate() {
+            let input_arg = &inputs[i].0;
+            for constraint in arg.constraints {
+                if !constraint.allows(input_arg) {
+                    return None;
+                };
+            }
+        }
+        // TODO: Clear from here all green clean governed
+        let actual_inputs: Vec<DirectivePreprocessInput> = inputs.iter().map(|i| i.1).collect();
+        self.field_kind_from_inputs(&actual_inputs)
     }
 
     //TEST:
-    fn val_from_tok(&self, tok: &Token) -> Option<DirectivePreprocessFieldKind> {
+    fn field_kind_from_inputs(
+        &self,
+        inputs: &[DirectivePreprocessInput],
+    ) -> Option<DirectivePreprocessFieldKind> {
         match self.kind {
-            // Feels like this should be another kind rather than identifier-based
-            DirectivePreprocessFieldSchemaKind::MaxNumericBits => match tok {
-                Token::Integer(tok_int) => {
-                    DirectivePreprocessFieldKind::MaxNumericBits(*tok_int).into()
+            DirectivePreprocessFieldSchemaKind::MaxNumericBits => {
+                //WARN: Not sure if this should just return none if something fundamentally wrong
+                //was given
+                // debug_assert_eq!(inputs.len(), 1);
+                if inputs.len() != self.arg_layout.arg_len() {
+                    return None;
                 }
-                _ => None,
-            },
+                match inputs[0] {
+                    DirectivePreprocessInput::Token(tok) => {
+                        let Token::Integer(tok_int) = tok else {
+                            return None;
+                        };
+                        DirectivePreprocessFieldKind::MaxNumericBits(*tok_int).into()
+                    }
+                    _ => None,
+                }
+            }
         }
     }
 }
-
-//TEST:
-static DIRECTIVE_CHRN_FIELDS: [DirectivePreprocessFieldSchemaKind; 1] =
-    [DirectivePreprocessFieldSchemaKind::MaxNumericBits];
 
 impl DirectivePreprocessKind {
     /// Attempts to get the field of `ident` out of `self.kind`
@@ -227,9 +267,11 @@ impl DirectivePreprocessFieldKind {
     }
 }
 
-//TODO: Just iterating for now but will use more optimized form
+// This could just be one bit-wise where it only asks if a stage exists rather than keeping count,
+// but still trying out this form.
 #[derive(Debug)]
 pub struct DirectivePreprocessStore {
+    // WARN: Maybe just rm mod_graph because it will probably remain unreachable. Forever.
     mod_graph_lexer: SharedU32,
     /// Left: Lexer | Right: Parser
     parser_name_resolver: SharedU32,
@@ -237,6 +279,7 @@ pub struct DirectivePreprocessStore {
     memb_ty_resolver: SharedU32,
     /// Left: TypeResolver | Right: ConstraintResolver
     constraint_resolver: u16,
+    /// Directives
     directives: Vec<DirectivePreprocessFieldKind>,
 }
 
@@ -261,11 +304,13 @@ impl DirectivePreprocessStore {
         }
     }
 
+    /// Pushes into `directives`, ensuring the stage count is incremented
     pub fn push(&mut self, kind: DirectivePreprocessFieldKind) {
         self.increment_from_kind(&kind);
         self.directives.push(kind);
     }
 
+    /// Performs a swap remove, ensuring the stage count is decremented.
     pub fn swap_remove(&mut self, idx: usize) -> DirectivePreprocessFieldKind {
         let kind = self.directives.swap_remove(idx);
         self.decrement_from_kind(&kind);
@@ -274,8 +319,6 @@ impl DirectivePreprocessStore {
 
     //TEST:
     fn increment_from_kind(&mut self, kind: &DirectivePreprocessFieldKind) {
-        // Maybe we just swap comp stage to enum
-        // Would need bit iter otherwise
         match kind.schema().ready_stage {
             CompilerStage::ModuleGraph => unreachable!(),
             CompilerStage::Lexer => self.mod_graph_lexer.add_right(1),
@@ -292,7 +335,7 @@ impl DirectivePreprocessStore {
         // Maybe we just swap comp stage to enum
         match kind.schema().ready_stage {
             CompilerStage::ModuleGraph => todo!(),
-            CompilerStage::Lexer => todo!(),
+            CompilerStage::Lexer => self.mod_graph_lexer.sub_right(1),
             CompilerStage::Parser => self.parser_name_resolver.sub_left(1),
             CompilerStage::Namespace => todo!(),
             CompilerStage::Member => todo!(),
@@ -302,66 +345,75 @@ impl DirectivePreprocessStore {
         }
     }
 
-    pub fn has_mod_graph(&self) -> bool {
-        self.mod_graph_lexer.left() > 0
+    pub fn lexer_count(&self) -> u16 {
+        self.mod_graph_lexer.right()
     }
 
-    pub fn has_lexer(&self) -> bool {
-        self.mod_graph_lexer.right() > 0
+    pub fn parser_count(&self) -> u16 {
+        self.parser_name_resolver.left()
     }
 
-    pub fn has_parser(&self) -> bool {
-        self.parser_name_resolver.left() > 0
+    pub fn namespace_count(&self) -> u16 {
+        self.parser_name_resolver.right()
     }
 
-    pub fn has_namespace(&self) -> bool {
-        self.parser_name_resolver.right() > 0
+    pub fn memb_count(&self) -> u16 {
+        self.memb_ty_resolver.left()
     }
 
-    pub fn has_memb(&self) -> bool {
-        self.memb_ty_resolver.left() > 0
+    pub fn ty_count(&self) -> u16 {
+        self.memb_ty_resolver.right()
     }
 
-    pub fn has_ty(&self) -> bool {
-        self.memb_ty_resolver.right() > 0
+    pub fn constraint_count(&self) -> u16 {
+        self.constraint_resolver
     }
 
-    pub fn has_constraint(&self) -> bool {
-        self.constraint_resolver > 0
-    }
-
-    pub fn has_stage(&self, stage: CompilerStage) -> bool {
+    /// Returns count of how many of the given `stage` exists
+    pub fn stage_count(&self, stage: CompilerStage) -> u16 {
         match stage {
-            CompilerStage::ModuleGraph => self.has_mod_graph(),
-            CompilerStage::Lexer => self.has_lexer(),
-            CompilerStage::Parser => self.has_parser(),
-            CompilerStage::Namespace => self.has_namespace(),
-            CompilerStage::Member => self.has_memb(),
-            CompilerStage::Type => self.has_ty(),
-            CompilerStage::Constraint => self.has_constraint(),
-            CompilerStage::Complete => true,
+            CompilerStage::ModuleGraph => unreachable!(),
+            CompilerStage::Lexer => self.lexer_count(),
+            CompilerStage::Parser => self.parser_count(),
+            CompilerStage::Namespace => self.namespace_count(),
+            CompilerStage::Member => self.memb_count(),
+            CompilerStage::Type => self.ty_count(),
+            CompilerStage::Constraint => self.constraint_count(),
+            CompilerStage::Complete => 0,
         }
+    }
+
+    /// Returns `Some` amount of the stage given
+    pub fn has_stage(&self, stage: CompilerStage) -> bool {
+        self.stage_count(stage) > 0
     }
 }
 
 //TEST: :(
+/// Iterates through `directive_store` and applies it's effects where possible, given `stage`.
+/// If a directive is processed successfully or fails, it is discarded.
 pub fn apply_directives(
     stage: CompilerStage,
     directive_store: &mut DirectivePreprocessStore,
     cfg: &mut ChrnConfig,
     interner: &Intern,
 ) {
-    if !directive_store.has_stage(stage) {
+    let count = directive_store.stage_count(stage);
+    if count == 0 {
         return;
     }
 
     // Small vecccc
     let mut to_rm: Vec<usize> = Vec::new();
+    let mut found = 0;
 
     for (i, kind) in directive_store.directives.iter().enumerate() {
-        if kind.schema().ready_stage != stage {
+        if found == count {
+            break;
+        } else if kind.schema().ready_stage != stage {
             continue;
         }
+        found += 1;
         match kind {
             DirectivePreprocessFieldKind::MaxNumericBits(tok_int) => {
                 let s = interner.search(tok_int.interned_id);

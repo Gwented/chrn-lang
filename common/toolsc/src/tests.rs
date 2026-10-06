@@ -1,1 +1,1 @@
-mod cursor_basic_test;
+mod basic_cursor_test;

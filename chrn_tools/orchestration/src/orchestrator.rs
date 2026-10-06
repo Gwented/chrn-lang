@@ -21,9 +21,7 @@ use compilation::{
     },
     semantic::{
         compilation_unit::CompilationUnit,
-        hir::hir_directives::{
-            self, DirectivePreprocessEffect, DirectivePreprocessField, lexer_processor,
-        },
+        hir::hir_directives::{self, DirectivePreprocessEffect, lexer_processor},
     },
 };
 
@@ -44,9 +42,7 @@ pub fn run_all(
     // Doing this first since if modules were identified during the parsing stage any
     // syntax error within another module would not be reportable since the parser failed.
 
-    // Need to separate namespace resolution and type resolver because if the modules namespaces
-    // aren't resolved first, then type resolution isn't possible since it could be using types
-    // from elsewhere, which are not known yet.
+    //TODO: Maybe break the lexer and parser apart
     for i in 0..compiler.mods.len() {
         //TEST: The error messages get worse when they are allowed  to be read with a broken region
         let mod_id = ModuleId::new(i as u32);

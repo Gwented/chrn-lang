@@ -7,8 +7,8 @@ use crate::{
     lexer::token::{SpannedToken, Token, TokenFloat, TokenInt, TokenKind},
     parser::parser_helpers::DelimiterContext,
     semantic::hir::hir_directives::{
-        DirectivePreprocess, DirectivePreprocessField, DirectivePreprocessFieldSchema,
-        DirectivePreprocessKind,
+        DirectivePreprocess, DirectivePreprocessExpectInput, DirectivePreprocessField,
+        DirectivePreprocessFieldSchema, DirectivePreprocessInput, DirectivePreprocessKind,
     },
 };
 
@@ -50,24 +50,26 @@ fn collect_directive_fields(
     delim_ctx: DelimiterContext,
 ) -> Vec<DirectivePreprocessField> {
     let mut fields: Vec<DirectivePreprocessField> = Vec::new();
-    if !expect_tok(cursor, TokenKind::OBracket) {
+    // OBracket
+    if !expect_tok(cursor, delim_ctx.opening()) {
         return fields;
     };
 
+    // Syntax for the array of values inside directives
     let val_delim_ctx = DelimiterContext::with_comma(TokenKind::OParen, TokenKind::CParen);
 
     while !cursor.peek_owned().tok.kind().is_terminator()
-        && cursor.peek_owned().tok != Token::CBracket
+        && cursor.peek_owned().tok.kind() != delim_ctx.closing()
     {
         // Not sure what to call this
         let Some(field_ident) = expect_id(cursor, TokenKind::Id) else {
-            return fields;
+            break;
         };
 
         if cursor.peek_owned().tok.kind() == delim_ctx.arg_sep()
             && cursor.peek_ahead_owned(1).tok.kind() == delim_ctx.closing()
         {
-            cursor.advance_owned();
+            cursor.skip(1);
             break;
         } else if cursor.peek_owned().tok.kind() == delim_ctx.closing() {
             break;
@@ -77,55 +79,95 @@ fn collect_directive_fields(
             return fields;
         };
 
-        collect_directive_field_vals(cursor, schema, &mut fields, val_delim_ctx);
+        // #d[f(x,y)]
+        let Some(field) = collect_directive_field_vals(cursor, schema, val_delim_ctx) else {
+            return fields;
+        };
+        fields.push(field);
 
-        //break?
-        if !expect_tok(cursor, TokenKind::Comma) {
+        // comma
+        if !expect_tok(cursor, delim_ctx.arg_sep()) {
             break;
         }
     }
+    // Doesn't check CBracket because it makes no meaningful difference
 
     fields
 }
 
+//TODO: Idea here is we do [(arg1, input1), (arg2, input2), (argn, inputn)] and for each
+//we store the input if the arg passes the constraint. When done, we should have all valid inputs
+//and feed that to the schema, which produces whatever it should produce for it's schema given
+//the items.
 fn collect_directive_field_vals(
     cursor: &mut BasicCursor<SpannedToken>,
-    schema: &DirectivePreprocessFieldSchema,
-    //TODO: Should probably have Vec<Field> inside the directive since, this, is, not ,, accurate
-    fields: &mut Vec<DirectivePreprocessField>,
+    field_schema: &DirectivePreprocessFieldSchema,
     delim_ctx: DelimiterContext,
-) {
-    if !expect_tok(cursor, TokenKind::OParen) {
-        return;
+) -> Option<DirectivePreprocessField> {
+    if !expect_tok(cursor, delim_ctx.opening()) {
+        return None;
     };
 
-    while !cursor.peek_owned().tok.kind().is_terminator()
-        && cursor.peek_owned().tok != Token::CParen
-    {
-        let tok = cursor.advance_owned().tok;
-        let Some(field_kind) = schema.try_tok_as_field_kind(&tok) else {
-            return;
-        };
+    // Simplify pleaseee
+    let mut inputs: Vec<(DirectivePreprocessExpectInput, DirectivePreprocessInput)> = Vec::new();
 
-        fields.push(DirectivePreprocessField::new(field_kind));
+    //WARN: HANDLE SEMANTICS PLEASE
+    // So field schemas can enforce their max arg count
+    let mut arg_count = 0;
+    //TEST: Overly complicated
+
+    //NOTE: If we have an actual parameterized directive field, f(x,y), we probably want to return
+    //as a failure rather than keep half of something invalid
+    for _ in field_schema.arg_layout.args() {
+        if arg_count + 1 > field_schema.arg_layout.arg_len() {
+            return None;
+        }
+
+        // Advancing ref so the lifetime lives long enough for the resolved input
+        let tok = &cursor.advance_ref().tok;
+        if tok.kind().is_terminator() || tok.kind() == delim_ctx.closing() {
+            break;
+        }
+
+        let expect = DirectivePreprocessExpectInput::Token(tok.kind());
+        let input = DirectivePreprocessInput::Token(tok);
+
+        // if !arg.allows(&input) {
+        //     return None;
+        // }
+
+        arg_count += 1;
+        inputs.push((expect, input));
+
+        // // Tok needs to be put up against constraints
+        // let Some(field_kind) = field_schema.try_tok_as_field_kind(&tok, arg) else {
+        //     return;
+        // };
+
+        //TODO: Fields have arguments therefore we need an aregument abresuaotrction for pre fields
 
         if cursor.peek_owned().tok.kind() == delim_ctx.arg_sep()
             && cursor.peek_ahead_owned(1).tok.kind() == delim_ctx.closing()
         {
-            cursor.advance_owned();
+            cursor.skip(1);
             break;
         } else if cursor.peek_owned().tok.kind() == delim_ctx.closing() {
             break;
         }
 
         if !expect_tok(cursor, delim_ctx.arg_sep()) {
-            return;
+            return None;
         }
     }
 
-    if !expect_tok(cursor, TokenKind::OParen) {
-        return;
+    // Terminates here because assuming everything later will be fine by letting this through as
+    // though it were a success is not valid.
+    if !expect_tok(cursor, delim_ctx.closing()) {
+        return None;
     };
+
+    let kind = field_schema.try_as_field_kind(&inputs)?;
+    Some(DirectivePreprocessField::new(kind))
 }
 
 /// Returns `true` if `expected` == found
