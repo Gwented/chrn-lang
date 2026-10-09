@@ -306,12 +306,6 @@ fn symbol_hover(
                 format!("{} **{}**", namespace_kind, interner.search(sym.name_id))
             }
         },
-        SymbolKind::Directive(_) => {
-            let name = interner.search(sym.name_id);
-            Document::directive_docs(sym.name_id)
-                .map(|d| d.compose())
-                .unwrap_or_else(|| format!("`#{}`", name))
-        }
         SymbolKind::ExternType(extern_ty) => extern_type_hover(interner, extern_ty),
     };
 

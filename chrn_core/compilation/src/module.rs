@@ -232,7 +232,7 @@ pub fn extract_modules(
     //
     // If the import from the popped module has not been seen before, mark it as seen so that it is
     // not processed again, create it's module, then push it to the end of the queue so that it's
-    // imports can be viewed and processed as modules.
+    // imports can also be processed as modules.
     while let Some(mut importer_mod) = pending_mods.pop_front() {
         let importer_region_id = importer_mod
             .region_id
@@ -386,25 +386,23 @@ pub fn extract_modules(
 
         // This is only met if max modules have been exceeded.
         if should_break_outer {
-            if should_break_outer {
-                let valid_mods_len = valid_mods.len();
-                //SAFETY:
-                // Goes through valid module and checks if any module id from one of their imports
-                // correspond to an invalid module. All modules from this iteration, including the
-                // importer, are dropped.
-                //
-                // This loop is required because if say module0 imported module1, module1 was a
-                // valid module, but then module2 reaches the capacity, that would mean module0
-                // already set it's imported associated with module1 as a valid source module. This
-                // corrects that by setting it to an error source, which DOESN'T really matter since
-                // the caller should be terminating after this anyways but if it ever weren't done
-                // this would prevent said bug.
-                for valid_mod in valid_mods.iter_mut() {
-                    for imp in valid_mod.imports.iter_mut() {
-                        if let ImportKind::Source(sp_path_id, m_id) = &imp.kind {
-                            if m_id.id as usize >= valid_mods_len {
-                                imp.kind = ImportKind::ErrorSource(sp_path_id.clone());
-                            }
+            let valid_mods_len = valid_mods.len();
+            //SAFETY:
+            // Goes through valid module and checks if any module id from one of their imports
+            // correspond to an invalid module. All modules from this iteration, including the
+            // importer, are dropped.
+            //
+            // This loop is required because if say module0 imported module1, module1 was a
+            // valid module, but then module2 reaches the capacity, that would mean module0
+            // already set it's imported associated with module1 as a valid source module. This
+            // corrects that by setting it to an error source, which DOESN'T really matter since
+            // the caller should be terminating after this anyways but if it ever weren't done
+            // this would prevent said bug.
+            for valid_mod in valid_mods.iter_mut() {
+                for imp in valid_mod.imports.iter_mut() {
+                    if let ImportKind::Source(sp_path_id, m_id) = &imp.kind {
+                        if m_id.id as usize >= valid_mods_len {
+                            imp.kind = ImportKind::ErrorSource(sp_path_id.clone());
                         }
                     }
                 }
@@ -475,7 +473,7 @@ pub fn extract_modules(
     // compiler holds -- the implicit `core` module injected by `init` included, not just the user
     // modules in `valid_mods`.
     let store_capacity = compiler.mods.len();
-    let compiler_store = ScriptCompilerStore::new(
+    let comp_store = ScriptCompilerStore::new(
         cfg,
         graph.region_arena,
         interner,
@@ -485,7 +483,7 @@ pub fn extract_modules(
         Vec::with_capacity(store_capacity),
     );
 
-    (compiler, compiler_store, summary)
+    (compiler, comp_store, summary)
 }
 
 /// Takes an import and attempts to turn it into a module

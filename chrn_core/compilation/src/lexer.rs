@@ -106,6 +106,7 @@ impl Lexer<'_> {
         loop {
             self.handle_trivia();
 
+            //TODO: Maybe deal with this NUL byte, but, um
             if self.peek() == b'\0' || self.invalid_toks > MAX_INVALID_TOKS {
                 // Over-indexes if not subtracted
                 // Could be an empty file so needs saturation
@@ -575,6 +576,8 @@ impl Lexer<'_> {
         // dbg!(toks.len());
 
         self.cfg.perf_tracker_mut().stop(ChrnPerfStage::Lexer);
+        // dbg!(&toks);
+        // panic!();
 
         let mut trivia: Vec<Trivia> = Vec::with_capacity(self.trivia.len());
         trivia.append(&mut self.trivia);
@@ -860,7 +863,7 @@ impl Lexer<'_> {
         while self.pos < self.src_bytes.len() {
             match self.peek() {
                 b'\\' => {
-                    let escape_start = self.pos - 1;
+                    let escape_start = self.pos;
                     self.advance();
 
                     if let Some(_) = self.read_escape() {

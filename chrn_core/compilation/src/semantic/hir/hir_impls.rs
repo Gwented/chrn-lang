@@ -1,7 +1,7 @@
 use chrn_utils::{
     id_types::{
-        AstId, ConfigRootId, ExprId, ImplId, ImplMemberId, InternedId, MemberId, SymbolId, TypeId,
-        id_tags::TaggedId,
+        AstId, ConfigRootId, DirectiveId, ExprId, ImplId, ImplMemberId, InternedId, MemberId,
+        SymbolId, TypeId, id_tags::TaggedId,
     },
     source_map::source_span::SourceSpan,
     utils::containers::SpannedContainer,
@@ -44,6 +44,7 @@ impl ImplHir {
 #[derive(Debug)]
 pub enum ImplHirKind {
     Config(ConfigRootId),
+    Directive(DirectiveId),
 }
 
 #[derive(Debug)]

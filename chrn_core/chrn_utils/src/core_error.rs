@@ -7,6 +7,7 @@ use crate::{
     intern::Intern,
     source_map::{source_diagnostic::SourceDiagnostic, source_region::SourceRegion},
 };
+//FIX: These are from past misconceptions
 
 // Turn generic? (For reasons)
 /// General error enum for the entirety of the codebase to use. Everything can be converted back

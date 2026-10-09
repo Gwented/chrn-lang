@@ -182,10 +182,7 @@ pub fn check_cfg_root(compiler: &ScriptCompiler, sym_id: SymbolId) -> bool {
         {
             true
         }
-        SymbolKind::Namespace
-        | SymbolKind::Variable(_)
-        | SymbolKind::Directive(_)
-        | SymbolKind::ExternType(_) => false,
+        SymbolKind::Namespace | SymbolKind::Variable(_) | SymbolKind::ExternType(_) => false,
     }
 }
 
@@ -197,10 +194,7 @@ pub fn check_cfg_memb_override(compiler: &ScriptCompiler, sym_id: SymbolId) -> b
     match sym.kind {
         // Only override section symbols can access a namespace in it's config root.
         SymbolKind::Namespace => true,
-        SymbolKind::Variable(_)
-        | SymbolKind::Type(_)
-        | SymbolKind::Directive(_)
-        | SymbolKind::ExternType(_) => false,
+        SymbolKind::Variable(_) | SymbolKind::Type(_) | SymbolKind::ExternType(_) => false,
     }
 }
 
@@ -224,6 +218,6 @@ pub fn check_cfg_memb_complex(compiler: &ScriptCompiler, sym_id: SymbolId) -> bo
         }
         // Only override section symbols can access a namespace in it's config root.
         SymbolKind::Namespace => true,
-        SymbolKind::Variable(_) | SymbolKind::Directive(_) | SymbolKind::ExternType(_) => false,
+        SymbolKind::Variable(_) | SymbolKind::ExternType(_) => false,
     }
 }

@@ -80,9 +80,7 @@ pub fn find_type_id(
 
                         return Some(type_id);
                     }
-                    SymbolKind::ExternType(_)
-                    | SymbolKind::Namespace
-                    | SymbolKind::Directive(_) => {
+                    SymbolKind::ExternType(_) | SymbolKind::Namespace => {
                         return None;
                     }
                 }

@@ -19,7 +19,7 @@ pub mod utils;
 pub const MAX_LOOPS: u32 = 10000004;
 
 /// Max modules that can be in memory at once
-pub const MAX_MODULES: u16 = 800; // Ignoring what was here before. Hallucinated.
+pub const MAX_MODULES: u16 = 800;
 
 /// Max recursive descent that can be done
 pub const MAX_RECURSIVE_DEPTH: u16 = 1024;

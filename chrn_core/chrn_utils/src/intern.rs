@@ -363,15 +363,13 @@ impl Intern {
             stored_strs: Vec::with_capacity(INTERNER_PRELOAD_SIZE),
             path_map: HashMap::new(),
             stored_paths: Vec::new(),
-            pos: 0,
+            pos: INTERNER_PRELOAD_SIZE,
         };
 
         // Pre-loading every language required string literal
         for (s, id) in PRELOADED_STRINGS {
             interner.register(s, id);
         }
-
-        interner.pos = interner.stored_strs.len();
 
         interner
     }

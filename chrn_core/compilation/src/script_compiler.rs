@@ -148,7 +148,6 @@ impl ScriptCompiler {
                     + core_helpers::CORE_BOUNDARIES_DATASET.len()
                     + core_helpers::CORE_FUNCS_DATASET.len()
                     + mod_addition
-                    + compiler_helpers::DIRECTIVES_DATASET.len()
                     + ns_counts.symbols,
             ),
             sym_members: Arena::new(),
@@ -425,6 +424,7 @@ impl ScriptCompiler {
     pub fn get_cfg_root(&self, impl_id: TaggedId<ImplId, ConfigRootTag>) -> &ConfigRoot {
         match &self.impls[impl_id.inner()].kind {
             ImplHirKind::Config(cfg_id) => &self.cfgs[*cfg_id],
+            _ => unreachable!(),
         }
     }
 
@@ -435,6 +435,7 @@ impl ScriptCompiler {
         match &self.impls[impl_id.inner()] {
             impl_hir => match &impl_hir.kind {
                 ImplHirKind::Config(cfg_id) => &mut self.cfgs[*cfg_id],
+                _ => unreachable!(),
             },
         }
     }
@@ -462,14 +463,6 @@ impl ScriptCompiler {
     //         },
     //     }
     // }
-    pub(super) fn get_directive(&self, sym_id: TaggedId<SymbolId, DirectiveTag>) -> &Directive {
-        match &self.syms[sym_id.inner()] {
-            sym_info => match &sym_info.kind {
-                SymbolKind::Directive(directive_id) => &self.directives[*directive_id],
-                _ => unreachable!(),
-            },
-        }
-    }
 
     /// Assumes the member symbol given is a field
     pub fn get_field(&self, memb_id: TaggedId<MemberId, FieldTag>) -> &FieldRepre {
@@ -608,7 +601,7 @@ impl ScriptCompiler {
                     VariableState::ReservedTypeSlot(type_id) => type_id,
                     VariableState::Known(val_id) => self.values[val_id].type_id,
                 },
-                SymbolKind::ExternType(_) | SymbolKind::Namespace | SymbolKind::Directive(_) => {
+                SymbolKind::ExternType(_) | SymbolKind::Namespace => {
                     unreachable!()
                 }
             },
@@ -625,9 +618,7 @@ impl ScriptCompiler {
                     VariableState::ReservedTypeSlot(type_id) => Some(type_id),
                     VariableState::Known(val_id) => Some(self.values[val_id].type_id),
                 },
-                SymbolKind::ExternType(_) | SymbolKind::Directive(_) | SymbolKind::Namespace => {
-                    None
-                }
+                SymbolKind::ExternType(_) | SymbolKind::Namespace => None,
             },
         }
     }
@@ -680,7 +671,7 @@ impl ScriptCompiler {
                 VariableMetadata::Generated => None,
             },
             // SymbolKind::Config(cfg_id) => Some(self.cfgs[*cfg_id].name_span),
-            SymbolKind::ExternType(_) | SymbolKind::Namespace | SymbolKind::Directive(_) => None,
+            SymbolKind::ExternType(_) | SymbolKind::Namespace => None,
         }
     }
 
@@ -919,38 +910,40 @@ impl ScriptCompiler {
         let directive_id = compiler_consts::directive_to_id_const(&directive);
         debug_assert_eq!(directive_id.id, self.directives.len() as u32);
 
-        let sym = Symbol::new(
-            interned_id,
-            sym_id,
-            None,
-            SymbolOrigin::Compiler,
-            false,
-            None,
-            ScopeType::Compiler,
-            SymbolKind::Directive(directive_id),
-        );
-
-        self.syms.push(sym);
+        //TEST:
+        // let sym = Symbol::new(
+        //     interned_id,
+        //     sym_id,
+        //     None,
+        //     SymbolOrigin::Compiler,
+        //     false,
+        //     None,
+        //     ScopeType::Compiler,
+        //     SymbolKind::Directive(directive_id),
+        // );
+        //
+        // self.syms.push(sym);
         self.directives.push(Directive::Inline(directive));
     }
 
     fn register_directive_const(&mut self, interned_id: InternedId, directive: DirectiveInline) {
-        let sym_id = self.syms.make_id();
+        // let sym_id = self.syms.make_id();
         let directive_id = compiler_consts::directive_to_id_const(&directive);
         debug_assert_eq!(directive_id.id, self.directives.len() as u32);
 
-        let sym = Symbol::new(
-            interned_id,
-            sym_id,
-            None,
-            SymbolOrigin::Compiler,
-            false,
-            None,
-            ScopeType::Compiler,
-            SymbolKind::Directive(directive_id),
-        );
+        //TEST:
+        // let sym = Symbol::new(
+        //     interned_id,
+        //     sym_id,
+        //     None,
+        //     SymbolOrigin::Compiler,
+        //     false,
+        //     None,
+        //     ScopeType::Compiler,
+        //     SymbolKind::Directive(directive_id),
+        // );
 
-        self.syms.push(sym);
+        // self.syms.push(sym);
         self.directives.push(Directive::Inline(directive));
     }
 

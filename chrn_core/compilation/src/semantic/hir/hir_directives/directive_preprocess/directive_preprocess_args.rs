@@ -1,7 +1,4 @@
-use crate::{
-    lexer::token::Token,
-    semantic::hir::hir_directives::{DirectivePreprocessExpectInput, DirectivePreprocessFieldKind},
-};
+use crate::semantic::hir::hir_directives::DirectivePreprocessExpectInput;
 
 // In the case of metadata
 /// `Arg` arena which contains metadata

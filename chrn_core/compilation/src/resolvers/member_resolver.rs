@@ -89,7 +89,8 @@ impl MemberResolver<'_> {
                     self.resolve_struct(sym_id, &mut ident_tracker, env)
                 }
                 CompilationUnit::Enum(sym_id) => self.resolve_enum(sym_id, &mut ident_tracker, env),
-                CompilationUnit::TypeDef(_)
+                CompilationUnit::DirectivePreprocess(_)
+                | CompilationUnit::TypeDef(_)
                 | CompilationUnit::Alias(_)
                 | CompilationUnit::Var(_)
                 | CompilationUnit::ConfigRoot(_) => (),

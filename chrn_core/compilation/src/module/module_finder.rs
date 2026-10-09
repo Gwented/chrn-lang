@@ -176,7 +176,7 @@ impl ModuleFinder<'_> {
         let end_cursor = self.pos - 1;
 
         let path_span = SourceSpan::new(
-            self.current_region.region_id,
+            self.current_region.self_id,
             // To include start quote
             start_cursor as u32,
             // To include end quote
@@ -254,7 +254,7 @@ impl ModuleFinder<'_> {
             let id = self.read_id(interner);
             SpannedContainer::new(
                 id,
-                SourceSpan::new(self.current_region.region_id, start, self.pos as u32),
+                SourceSpan::new(self.current_region.self_id, start, self.pos as u32),
             )
             .into()
         } else {
@@ -356,7 +356,7 @@ impl ModuleFinder<'_> {
         let end_cursor = self.pos - 1;
 
         let path_span = SourceSpan::new(
-            self.current_region.region_id,
+            self.current_region.self_id,
             start_cursor as u32,
             end_cursor as u32,
         );

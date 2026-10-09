@@ -80,6 +80,7 @@ impl<'a> ConstraintResolver<'a> {
                 CompilationUnit::Alias(sym_id) => self.resolve_alias(sym_id, env),
                 CompilationUnit::Var(sym_id) => self.resolve_var(sym_id, env),
                 CompilationUnit::ConfigRoot(impl_id) => self.resolve_cfg_root(impl_id, env),
+                CompilationUnit::DirectivePreprocess(_) => todo!(),
             }
         }
 

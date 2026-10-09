@@ -7,8 +7,8 @@ use crate::{
     lexer::token::{SpannedToken, Token, TokenFloat, TokenInt, TokenKind},
     parser::parser_helpers::DelimiterContext,
     semantic::hir::hir_directives::{
-        DirectivePreprocess, DirectivePreprocessExpectInput, DirectivePreprocessField,
-        DirectivePreprocessFieldSchema, DirectivePreprocessInput, DirectivePreprocessKind,
+        DirectivePreprocessExpectInput, DirectivePreprocessField, DirectivePreprocessFieldSchema,
+        DirectivePreprocessHir, DirectivePreprocessInput, DirectivePreprocessKind,
     },
 };
 
@@ -20,7 +20,7 @@ use crate::{
 /// Syntax: {directive_ident}[{directive_field}({val}, ..), ..]
 ///
 /// NOTE: Will panic if expected invariants are broken
-pub fn process_directive(toks: &[SpannedToken], hash_idx: usize) -> Option<DirectivePreprocess> {
+pub fn process_directive(toks: &[SpannedToken], hash_idx: usize) -> Option<DirectivePreprocessHir> {
     debug_assert!(hash_idx < toks.len());
     debug_assert_eq!(toks[hash_idx].tok, Token::HashSymbol);
 
@@ -30,6 +30,7 @@ pub fn process_directive(toks: &[SpannedToken], hash_idx: usize) -> Option<Direc
     // At directive ident
     let mut cursor = BasicCursor::with_pos(toks, hash_idx + 1);
 
+    let name_span = cursor.peek_ref().span;
     // Ident of directive
     let id = expect_id(&mut cursor, TokenKind::Id)?;
     let kind = DirectivePreprocessKind::try_from_interned_str(id)?;
@@ -37,7 +38,7 @@ pub fn process_directive(toks: &[SpannedToken], hash_idx: usize) -> Option<Direc
     let delim_ctx = DelimiterContext::with_comma(TokenKind::OBracket, TokenKind::CBracket);
 
     let fields = collect_directive_fields(&mut cursor, kind, delim_ctx);
-    let directive = DirectivePreprocess::new(kind, fields);
+    let directive = DirectivePreprocessHir::new(name_span, kind, fields);
 
     Some(directive)
 }

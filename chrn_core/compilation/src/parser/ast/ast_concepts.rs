@@ -22,7 +22,7 @@ use crate::{
 /// Ast.
 #[derive(Debug)]
 pub struct AstInfo {
-    /// Array that holds all 5 `chrn` sections.
+    /// Array that holds all 4 `chrn` sections.
     /// order: `neutral`, `var`, `nest`, `complex`, `override`
     pub sections: [Option<AbstractSection>; 4],
     pub items: Arena<Item, AstId>,
@@ -123,6 +123,16 @@ impl AstInfo {
         }
     }
 
+    pub fn get_directive(&self, ast_id: AstId) -> &AbstractDirectivePreprocess {
+        match &self.items[ast_id] {
+            Item::Impl(abs_impl) => match abs_impl {
+                AbstractImpl::Directive(abs_direct) => abs_direct,
+                _ => unreachable!(),
+            },
+            Item::Decl(_) => unreachable!(),
+        }
+    }
+
     /// The only actual configs that can be accessed are config roots from the ast so this
     /// guaranteed to output a config root.
     pub fn get_cfg_root(&self, ast_id: AstId) -> &AbstractConfig {
@@ -130,6 +140,7 @@ impl AstInfo {
             item => match item {
                 Item::Impl(abs_impl) => match abs_impl {
                     AbstractImpl::Config(abs_cfg) => abs_cfg,
+                    _ => unreachable!(),
                 },
                 _ => unreachable!(),
             },
@@ -176,15 +187,15 @@ impl AstInfo {
     }
 }
 
+/// Ast item
 #[derive(Debug)]
 pub enum Item {
-    // Should these have spans? Do we REALLY want      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    // No, we do not.
     Decl(AbstractDecl),
     Impl(AbstractImpl),
 }
 
 // Better name...
+/// Named ast declaration
 #[derive(Debug)]
 pub enum AbstractDecl {
     TypeDef(AbstractTypeDef),
@@ -206,15 +217,18 @@ impl AbstractDecl {
     }
 }
 
+/// Ast item that does alters an existent representation.
+/// Most notably does not have an identifier.
 #[derive(Debug)]
 pub enum AbstractImpl {
     Config(AbstractConfig),
+    Directive(AbstractDirectivePreprocess),
 }
 
 #[derive(Debug)]
 pub struct AbstractSection {
-    pub(crate) nodes: Vec<AstId>,
     pub(crate) kind: SectionKind,
+    pub(crate) nodes: Vec<AstId>,
 }
 
 impl AbstractSection {
@@ -326,7 +340,7 @@ impl BinaryOp {
 impl ChrnClassifiable for BinaryOp {
     fn to_classified(&self) -> ChrnClassified {
         match self {
-            BinaryOp::Add => ChrnClassified::OpAdd,
+            BinaryOp::Add => ChrnClassified::Plus,
             BinaryOp::Sub => ChrnClassified::Hyphen,
             BinaryOp::Mult => ChrnClassified::OpMult,
             BinaryOp::Div => ChrnClassified::OpDivide,
@@ -392,15 +406,15 @@ impl AbstractDirectiveInline {
 #[derive(Debug)]
 pub struct AbstractDirectivePreprocess {
     pub sp_name_id: SpannedContainer<InternedId>,
-    pub inputs: Vec<AbstractOptionAssignment>,
+    pub fields: Vec<AbstractOptionAssignment>,
 }
 
 impl AbstractDirectivePreprocess {
     pub fn new(
         sp_name_id: SpannedContainer<InternedId>,
-        inputs: Vec<AbstractOptionAssignment>,
+        fields: Vec<AbstractOptionAssignment>,
     ) -> Self {
-        Self { sp_name_id, inputs }
+        Self { sp_name_id, fields }
     }
 }
 

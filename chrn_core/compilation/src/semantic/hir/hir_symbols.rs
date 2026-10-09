@@ -87,8 +87,6 @@ pub enum SymbolKind {
     /// namespace. This guarantees that the `Symbol` has an assigned `AssociatedScopeKind`
     Namespace,
     // WARN: Maybe remove the symbol kind
-    /// Represents a directive symbol
-    Directive(DirectiveId),
     /// Is a symbol instead of `Type` since they have no usage overlap.
     ExternType(ExternPlatformType),
 }
@@ -104,7 +102,6 @@ impl SymbolKind {
                 AssociatedScopeKind::Module(_) => ChrnClassified::Module,
                 AssociatedScopeKind::Scope(_) => ChrnClassified::Namespace,
             },
-            SymbolKind::Directive(_) => ChrnClassified::Directive,
             SymbolKind::ExternType(_) => ChrnClassified::ExternType,
         }
     }
@@ -113,7 +110,6 @@ impl SymbolKind {
             SymbolKind::Type(_) => SymbolKindFlat::Type,
             SymbolKind::Variable(_) => SymbolKindFlat::Variable,
             SymbolKind::Namespace => SymbolKindFlat::Namespace,
-            SymbolKind::Directive(_) => SymbolKindFlat::Directive,
             SymbolKind::ExternType(_) => SymbolKindFlat::ExternType,
         }
     }

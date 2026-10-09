@@ -426,7 +426,6 @@ fn startup_reservations_match_loaded_data() {
     let expected_symbol_count = CORE_BUILTIN_TYPES_DATASET.len()
         + CORE_BOUNDARIES_DATASET.len()
         + CORE_FUNCS_DATASET.len()
-        + DIRECTIVES_DATASET.len()
         + expected_module_symbol_count
         + ns_counts.symbols;
     assert_eq!(compiler.syms.len(), expected_symbol_count);
@@ -494,7 +493,6 @@ fn startup_reservations_include_user_module_symbols() {
     let expected_symbol_count = CORE_BUILTIN_TYPES_DATASET.len()
         + CORE_BOUNDARIES_DATASET.len()
         + CORE_FUNCS_DATASET.len()
-        + DIRECTIVES_DATASET.len()
         + expected_module_symbol_count
         + ns_counts.symbols;
 

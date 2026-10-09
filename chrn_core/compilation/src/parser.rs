@@ -33,6 +33,7 @@ use crate::parser::evidence::{Evidence, InitialEvidence, SemanticEnv, SemanticSi
 use crate::parser::parser_budget::ParserBudget;
 use crate::parser::parser_helpers::DelimiterContext;
 use crate::parser::parser_state::ParserState;
+use crate::semantic::hir::hir_directives::DirectivePreprocessHir;
 use crate::semantic::hir::hir_impls::ConfigRootMetadataKind;
 use chrn_utils::id_types::InternedId;
 use chrn_utils::intern::Intern;
@@ -44,8 +45,8 @@ use lang::chrn_classifier::{ChrnClassifiable, ChrnClassified};
 use lang::keywords::Keyword;
 
 // The CST.
-/// Returns a tuple of `AstInfo` and `SourceDiagnosticSummary`, where `AstInfo` may or may not be unfinished,
-/// depending on if the summary's error count > 0
+/// Returns a tuple of `AstInfo` and `SourceDiagnosticSummary`, where `AstInfo` may or may not
+/// be unfinished depending on if the summary's error count > 0
 pub fn parse(
     cfg: &mut ChrnConfig,
     region: &SourceRegion,
@@ -403,8 +404,13 @@ pub fn parse(
                 }
                 ctx.advance_tok();
 
+                let sect_kind = SectionKind::Neutral;
+
                 if let Ok(direct) = parse_directive_preprocess(&mut ctx, &budget, interner) {
-                    ast_info.preprocess_directives.push(direct);
+                    let item = Item::Impl(AbstractImpl::Directive(direct));
+                    //NOTE: Not sure where to put it but just comp unit for now
+                    ast_info.push_item(sect_kind, item);
+                    // ast_info.preprocess_directives.push(direct);
                 }
             }
             Token::Invalid(id) => {
@@ -987,7 +993,7 @@ fn parse_ambiguous_expr(
         let inputs = parse_generic_inputs(ctx, budget, interner)?;
         let end = ctx.peek_behind(1).span.end;
 
-        let span = SourceSpan::new(ctx.region.region_id, start, end);
+        let span = SourceSpan::new(ctx.region.self_id, start, end);
         let generic = AbstractGeneric::new(name_id, inputs);
 
         let sp_path_seg = vec![SpannedContainer::new(PathSegment::Generic(generic), span)];
@@ -1175,8 +1181,8 @@ fn parse_array(
     branch: Branch,
     interner: &Intern,
 ) -> Result<SpannedContainer<AstExpr>, Token> {
-    let closure = |ctx: &mut ParserContext<'_>,
-                   interner: &Intern|
+    let getter = |ctx: &mut ParserContext<'_>,
+                  interner: &Intern|
      -> Result<SpannedContainer<AstExpr>, Token> {
         parse_expr(ctx, 0, budget, interner)
     };
@@ -1185,7 +1191,7 @@ fn parse_array(
 
     let elems = parse_enclosing(
         ctx,
-        &closure,
+        &getter,
         DelimiterContext::with_comma(TokenKind::OBracket, TokenKind::CBracket),
         //TODO: Pass in
         env,
@@ -1195,7 +1201,7 @@ fn parse_array(
 
     // LBracket is used not the last element
     let end = ctx.peek_behind(1).span.end;
-    let span = SourceSpan::new(ctx.region.region_id, start, end);
+    let span = SourceSpan::new(ctx.region.self_id, start, end);
 
     let array_expr = ArrayExpr::new(elems);
 
@@ -1309,7 +1315,7 @@ fn parse_expr(
             let rhs = parse_expr(ctx, bp + 1, budget, interner)?;
 
             let end = rhs.span.end;
-            let span = SourceSpan::new(ctx.region.region_id, start, end);
+            let span = SourceSpan::new(ctx.region.self_id, start, end);
 
             lhs = SpannedContainer::new(
                 AstExpr::BinaryExpr {
@@ -1328,7 +1334,7 @@ fn parse_expr(
 
             let rhs = parse_expr(ctx, bp + 1, budget, interner)?;
 
-            let span = SourceSpan::new(ctx.region.region_id, lhs.span.start, rhs.span.end);
+            let span = SourceSpan::new(ctx.region.self_id, lhs.span.start, rhs.span.end);
             lhs = SpannedContainer::new(
                 AstExpr::BinaryExpr {
                     op,
@@ -1359,7 +1365,7 @@ fn parse_postfix(
 
             let args = parse_call_args(ctx, budget, interner)?;
             let span = SourceSpan::new(
-                ctx.region.region_id,
+                ctx.region.self_id,
                 lhs.span.start,
                 ctx.peek_behind(1).span.end,
             );
@@ -1371,7 +1377,7 @@ fn parse_postfix(
 
             let args = parse_call_args(ctx, budget, interner)?;
             let span = SourceSpan::new(
-                ctx.region.region_id,
+                ctx.region.self_id,
                 call_start.start,
                 ctx.peek_behind(1).span.end,
             );
@@ -1395,7 +1401,7 @@ fn parse_postfix(
             )?;
 
             let span = SourceSpan::new(
-                ctx.region.region_id,
+                ctx.region.self_id,
                 lhs.span.start,
                 ctx.peek_behind(1).span.end,
             );
@@ -1474,7 +1480,7 @@ fn parse_primary(
             let expr = parse_expr(ctx, 0, budget, interner)?;
 
             let span = SourceSpan::new(
-                ctx.region.region_id,
+                ctx.region.self_id,
                 ident_span.start,
                 ctx.peek_behind(1).span.end,
             );
@@ -1488,7 +1494,7 @@ fn parse_primary(
             let access_path = parse_static_path(ctx, budget, interner)?;
             let end = ctx.peek_behind(1).span.end;
 
-            let static_span = SourceSpan::new(ctx.region.region_id, start, end);
+            let static_span = SourceSpan::new(ctx.region.self_id, start, end);
             let sp_expr = SpannedContainer::new(AstExpr::StaticAccess(access_path), static_span);
 
             Ok(sp_expr)
@@ -1618,7 +1624,7 @@ fn parse_unary(
             let start = ctx.advance_span().start;
             let expr = parse_unary(ctx, budget, interner)?;
 
-            let span = SourceSpan::new(ctx.region.region_id, start, expr.span.end);
+            let span = SourceSpan::new(ctx.region.self_id, start, expr.span.end);
             let unary = Unary::new(UnaryOp::Negate, Box::new(expr));
 
             Ok(SpannedContainer::new(AstExpr::Unary(unary), span))
@@ -1627,7 +1633,7 @@ fn parse_unary(
             let start = ctx.advance_span().start;
 
             let expr = parse_unary(ctx, budget, interner)?;
-            let span = SourceSpan::new(ctx.region.region_id, start, expr.span.end);
+            let span = SourceSpan::new(ctx.region.self_id, start, expr.span.end);
 
             let unary = Unary::new(UnaryOp::Not, Box::new(expr));
 
@@ -1637,7 +1643,7 @@ fn parse_unary(
             let start = ctx.advance_span().start;
 
             let expr = parse_unary(ctx, budget, interner)?;
-            let span = SourceSpan::new(ctx.region.region_id, start, expr.span.end);
+            let span = SourceSpan::new(ctx.region.self_id, start, expr.span.end);
 
             let unary = Unary::new(UnaryOp::BitNot, Box::new(expr));
 
@@ -1682,7 +1688,7 @@ fn parse_type_expr(
             let generic = AbstractGeneric::new(name_id, args);
 
             let end = ctx.peek_behind(1).span.end;
-            let span = SourceSpan::new(ctx.region.region_id, start, end);
+            let span = SourceSpan::new(ctx.region.self_id, start, end);
 
             if ctx.peek_tok() == Token::StaticAccess {
                 ctx.advance_tok();
@@ -1693,7 +1699,7 @@ fn parse_type_expr(
                 ty_path.append(&mut rest);
 
                 let path_end = ctx.peek_behind(1).span.end;
-                let path_span = SourceSpan::new(ctx.region.region_id, start, path_end);
+                let path_span = SourceSpan::new(ctx.region.self_id, start, path_end);
 
                 Ok(SpannedContainer::new(TypeExpr::Path(ty_path), path_span))
             } else {
@@ -1708,7 +1714,7 @@ fn parse_type_expr(
             let ty_path = parse_static_path(ctx, budget, interner)?;
             let end = ctx.peek_behind(1).span.end;
 
-            let span = SourceSpan::new(ctx.region.region_id, start, end);
+            let span = SourceSpan::new(ctx.region.self_id, start, end);
 
             Ok(SpannedContainer::new(TypeExpr::Path(ty_path), span))
         }
@@ -1875,7 +1881,7 @@ fn parse_static_path(
 
             let generic = AbstractGeneric::new(base_id, args);
 
-            let span = SourceSpan::new(ctx.region.region_id, start, end);
+            let span = SourceSpan::new(ctx.region.self_id, start, end);
             let segment = SpannedContainer::new(PathSegment::Generic(generic), span);
 
             static_path.push(segment);
@@ -2192,6 +2198,10 @@ fn parse_directive_preprocess(
 ) -> Result<AbstractDirectivePreprocess, Token> {
     let self_delim_ctx = DelimiterContext::with_comma(TokenKind::OBracket, TokenKind::CBracket);
 
+    //TODO: change naming of opt for abs
+    let env = SemanticEnv::SectNeutral;
+    let branch = Branch::Directive;
+
     let name_span = ctx.peek_span();
     let name_id = ctx.expect_id_verbose(
         TokenKind::Id,
@@ -2199,10 +2209,10 @@ fn parse_directive_preprocess(
         "",
         //TODO: Need overall env passing in
         InitialEvidence::new(
-            SemanticEnv::SectNest,
+            env,
             SemanticSituation::DirectiveParsing,
             //TODO: Tag
-            Branch::Directive,
+            branch,
         ),
         interner,
     )?;
@@ -2216,9 +2226,9 @@ fn parse_directive_preprocess(
         "",
         InitialEvidence::new(
             //TODO: Should pass ctx
-            SemanticEnv::SectNeutral,
+            env,
             SemanticSituation::MissingStartDelimiter,
-            Branch::Directive,
+            branch,
         ),
         interner,
     )?;
@@ -2229,13 +2239,9 @@ fn parse_directive_preprocess(
         return Ok(AbstractDirectivePreprocess::new(sp_direct_name_id, inputs));
     }
 
-    //TODO: change naming of opt for abs
-    let env = SemanticEnv::SectNeutral;
-    let branch = Branch::Directive;
-
     //NOTE: Maybe allow budget since supposed to be general
-    let closure = |ctx: &mut ParserContext<'_>,
-                   interner: &Intern|
+    let getter = |ctx: &mut ParserContext<'_>,
+                  interner: &Intern|
      -> Result<SpannedContainer<AstExpr>, Token> {
         parse_expr(ctx, 0, budget, interner)
     };
@@ -2260,7 +2266,7 @@ fn parse_directive_preprocess(
         let start = ctx.peek().span.start;
         let exprs = parse_enclosing(
             ctx,
-            &closure,
+            &getter,
             DelimiterContext::new(TokenKind::OParen, TokenKind::Comma, TokenKind::CParen),
             env,
             branch,
@@ -2270,7 +2276,7 @@ fn parse_directive_preprocess(
         // This is using a different array spanning than parse_array. It uses elements!
         // That's not a good thing.
         let end = ctx.peek_behind(1).span.end;
-        let array_span = SourceSpan::new(ctx.region.region_id, start, end);
+        let array_span = SourceSpan::new(ctx.region.self_id, start, end);
 
         let array = AstExpr::Array(ArrayExpr::new(exprs));
 
@@ -2305,14 +2311,14 @@ fn parse_directive_preprocess(
 /// General parsing of an open and closing delimiter context, with arg separators.
 /// Expects to start at the starting delimiter.
 ///
-/// `closure` allows for the caller to decide what `T` should be returned.
+/// `getter` allows for the caller to decide what `T` should be returned.
 ///
 /// Behavior:
 /// - Returns empty `Vec` if `closing` is seen directly `opening` like "[] <-"
 /// - Allows for trailing comma
 fn parse_enclosing<T, F>(
     ctx: &mut ParserContext,
-    closure: &F,
+    getter: &F,
     delim_ctx: DelimiterContext,
     env: SemanticEnv,
     branch: Branch,
@@ -2344,7 +2350,7 @@ where
     }
 
     while !ctx.peek_kind().is_terminator() && ctx.peek_kind() != delim_ctx.closing() {
-        items.push(closure(ctx, interner)?);
+        items.push(getter(ctx, interner)?);
 
         if ctx.peek_kind() == delim_ctx.arg_sep()
             && ctx.peek_ahead(1).tok.kind() == delim_ctx.closing()
@@ -2476,12 +2482,12 @@ fn handle_conds(
     interner: &Intern,
 ) -> Result<Vec<SpannedContainer<AstExpr>>, Token> {
     let delim_ctx = DelimiterContext::with_comma(TokenKind::OBracket, TokenKind::CBracket);
-    let closure = |ctx: &mut ParserContext<'_>,
-                   interner: &Intern|
+    let getter = |ctx: &mut ParserContext<'_>,
+                  interner: &Intern|
      -> Result<SpannedContainer<AstExpr>, Token> {
         parse_expr(ctx, 0, budget, interner)
     };
-    parse_enclosing(ctx, &closure, delim_ctx, env, branch, interner)
+    parse_enclosing(ctx, &getter, delim_ctx, env, branch, interner)
 }
 
 //TEST:
@@ -2501,7 +2507,7 @@ fn parse_id(
             expected,
             TokenKind::Id | TokenKind::Str | TokenKind::Integer | TokenKind::Float
         ),
-        "`parse_ident` misuage"
+        "`parse_id` misuage"
     );
     let name_span = ctx.peek_span();
 
@@ -2512,7 +2518,7 @@ fn parse_id(
             TokenKind::Id => "identifier",
             TokenKind::Str => "string literal",
             TokenKind::Integer | TokenKind::Float => "number",
-            _ => panic!("`parse_ident` misusage"),
+            _ => panic!("`parse_id` misusage"),
         }
     };
 

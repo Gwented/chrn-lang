@@ -58,7 +58,7 @@ for varthing1 {}
 
 // Ensure no panics on sudden end exist
 //#chrn[MAX_NUMERIC_BITS(300, 30, 2, 90, 3)]
-#chrn[MAX_NUMERIC_BITS(0, "hi")]
+#chr[MAX_NUMERIC_BITS(0b0111)]
 
 // Thinking about removing the big int usage and just making caps or integers.
 // So, we can pick "--max-int-bits=" where the eq value must be a known bit range like 256, 512, etc.
@@ -76,9 +76,8 @@ for varthing1 {}
 // let x = core::f16::NEG_INF + 2
 
 // let x = []
-// Incorrectly seeing this as right because arrays simply hold a `TypeId` of integer, but the correct
-// type is `Array<Integer>`. Need resolution to see these as different.
 let array = [[2, 2], [4, 4], ]
+#chrn[i()]
 
 // Reports nothing
 // let array = [[2, 2], 4, evil::evil::evil::evil::core::IsWhitespace]

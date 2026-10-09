@@ -245,7 +245,7 @@ pub enum DiagnosticLevel {
 /// Generic structure for providing a reporting summary
 #[derive(Debug, Default)]
 pub struct SourceDiagnosticSummary {
-    /// Left is warn, right is err
+    /// Warn | Error
     warn_and_err_count: SharedU32,
     // We lost.
     pub diags: Vec<SourceDiagnostic>,
@@ -267,7 +267,7 @@ impl SourceDiagnosticSummary {
     }
 
     // Boolean on whether or not to accept the terminality?
-    /// Terminalness does NOT carry over because summaries operate under a different context.
+    /// Terminalness does NOT carry over because summaries may operate under a different context.
     /// If that is desired then externally do so.
     pub fn merge(&mut self, mut other: SourceDiagnosticSummary) {
         self.diags.append(&mut other.diags);

@@ -5,7 +5,8 @@
 use chrn_utils::{
     id_types::InternedId,
     intern::{self, Intern},
-    utils::SharedU32,
+    source_map::source_span::SourceSpan,
+    utils::{SharedU32, containers::SpannedContainer},
 };
 mod consts;
 mod directive_preprocess_args;
@@ -16,24 +17,39 @@ use crate::{
     lexer::token::{Token, TokenInt, TokenKind},
     resolvers::resolver_state::CompilerStage,
     semantic::hir::hir_directives::directive_preprocess::{
-        consts::MAX_NUMERIC_BITS_SCHEMA,
-        directive_preprocess_args::{
-            DirectivePreprocessArg, DirectivePreprocessArgConstraint, DirectivePreprocessArgLayout,
-        },
+        consts::MAX_NUMERIC_BITS_SCHEMA, directive_preprocess_args::DirectivePreprocessArgLayout,
     },
 };
+
 /// General directives not specific to anything
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct DirectivePreprocess {
-    /// Which directive it's values should correspond to
+    /// Spanned identifier of `self`
+    pub kind: DirectivePreprocessKind,
+    pub fields: SpannedContainer<SpannedContainer<DirectivePreprocessField>>,
+}
+
+/// General directives not specific to anything
+#[derive(Debug, Clone)]
+pub struct DirectivePreprocessHir {
+    pub name_span: SourceSpan,
+    /// Which directive it's fields should correspond to
     pub kind: DirectivePreprocessKind,
     /// Fields which correspond to `self.kind` metadata
     pub fields: Vec<DirectivePreprocessField>,
 }
 
-impl DirectivePreprocess {
-    pub fn new(kind: DirectivePreprocessKind, fields: Vec<DirectivePreprocessField>) -> Self {
-        Self { kind, fields }
+impl DirectivePreprocessHir {
+    pub fn new(
+        name_span: SourceSpan,
+        kind: DirectivePreprocessKind,
+        fields: Vec<DirectivePreprocessField>,
+    ) -> Self {
+        Self {
+            name_span,
+            kind,
+            fields,
+        }
     }
 
     pub const fn try_from_interned_str(interned_id: InternedId) -> Option<Self> {
@@ -50,15 +66,33 @@ pub enum DirectivePreprocessKind {
     Chrn,
 }
 
-// impl DirectivePreprocessKind {
-//     pub fn fields(&self) -> &[DirectivePreprocessFieldSchemaKind] {
-//         match self {
-//             DirectivePreprocessKind::Chrn => {
-//
-//             },
-//         }
-//     }
-// }
+impl DirectivePreprocessKind {
+    pub const fn name_id(&self) -> InternedId {
+        let id = match self {
+            DirectivePreprocessKind::Chrn => intern::INTERNED_CHRN,
+        };
+        InternedId::new(id)
+    }
+
+    /// Attempts to get the field of `ident` out of `self.kind`
+    pub const fn get_field(&self, ident: InternedId) -> Option<&DirectivePreprocessFieldSchema> {
+        match self {
+            DirectivePreprocessKind::Chrn => match ident.id {
+                intern::INTERNED_MAX_NUMERIC_BITS => Some(&MAX_NUMERIC_BITS_SCHEMA),
+                _ => None,
+            },
+        }
+    }
+
+    /// Attempts to convert to `Self` using `InternedId`
+    pub fn try_from_interned_str(interned_id: InternedId) -> Option<Self> {
+        let kind = match interned_id.id {
+            intern::INTERNED_CHRN => DirectivePreprocessKind::Chrn,
+            _ => return None,
+        };
+        Some(kind)
+    }
+}
 
 /// Policy for what a directive applies it's effect to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -199,31 +233,9 @@ impl DirectivePreprocessFieldSchema {
                         };
                         DirectivePreprocessFieldKind::MaxNumericBits(*tok_int).into()
                     }
-                    _ => None,
                 }
             }
         }
-    }
-}
-
-impl DirectivePreprocessKind {
-    /// Attempts to get the field of `ident` out of `self.kind`
-    pub const fn get_field(&self, ident: InternedId) -> Option<&DirectivePreprocessFieldSchema> {
-        match self {
-            DirectivePreprocessKind::Chrn => match ident.id {
-                intern::INTERNED_MAX_NUMERIC_BITS => Some(&MAX_NUMERIC_BITS_SCHEMA),
-                _ => None,
-            },
-        }
-    }
-
-    /// Attempts to convert to `Self` using `InternedId`
-    pub fn try_from_interned_str(interned_id: InternedId) -> Option<Self> {
-        let kind = match interned_id.id {
-            intern::INTERNED_CHRN => DirectivePreprocessKind::Chrn,
-            _ => return None,
-        };
-        Some(kind)
     }
 }
 
@@ -348,25 +360,43 @@ impl DirectivePreprocessStore {
     pub fn lexer_count(&self) -> u16 {
         self.mod_graph_lexer.right()
     }
+    pub fn set_lexer_count(&mut self, val: u16) {
+        self.mod_graph_lexer.set_right(val)
+    }
 
     pub fn parser_count(&self) -> u16 {
         self.parser_name_resolver.left()
+    }
+    pub fn set_parser_count(&mut self, val: u16) {
+        self.parser_name_resolver.set_left(val)
     }
 
     pub fn namespace_count(&self) -> u16 {
         self.parser_name_resolver.right()
     }
+    pub fn set_namespace_count(&mut self, val: u16) {
+        self.parser_name_resolver.set_right(val)
+    }
 
     pub fn memb_count(&self) -> u16 {
         self.memb_ty_resolver.left()
+    }
+    pub fn set_memb_count(&mut self, val: u16) {
+        self.memb_ty_resolver.set_left(val)
     }
 
     pub fn ty_count(&self) -> u16 {
         self.memb_ty_resolver.right()
     }
+    pub fn set_ty_count(&mut self, val: u16) {
+        self.memb_ty_resolver.set_right(val)
+    }
 
     pub fn constraint_count(&self) -> u16 {
         self.constraint_resolver
+    }
+    pub fn set_constraint_count(&mut self, val: u16) {
+        self.constraint_resolver = val;
     }
 
     /// Returns count of how many of the given `stage` exists
@@ -391,7 +421,8 @@ impl DirectivePreprocessStore {
 
 //TEST: :(
 /// Iterates through `directive_store` and applies it's effects where possible, given `stage`.
-/// If a directive is processed successfully or fails, it is discarded.
+/// Whether a directive is processed successfully or not doesn't matter, both are discarded, the
+/// only difference is that the success is applied.
 pub fn apply_directives(
     stage: CompilerStage,
     directive_store: &mut DirectivePreprocessStore,
@@ -403,8 +434,10 @@ pub fn apply_directives(
         return;
     }
 
-    // Small vecccc
-    let mut to_rm: Vec<usize> = Vec::new();
+    //TEST: Make sure I work
+    // Stores all indices marked for removal when the loop is done.
+    let mut to_rm: Vec<usize> = Vec::with_capacity(count as usize);
+    // Counts how many were found so the loop doesn't have to go through all elements by default.
     let mut found = 0;
 
     for (i, kind) in directive_store.directives.iter().enumerate() {
@@ -414,12 +447,12 @@ pub fn apply_directives(
             continue;
         }
         found += 1;
+        to_rm.push(i);
         match kind {
             DirectivePreprocessFieldKind::MaxNumericBits(tok_int) => {
                 let s = interner.search(tok_int.interned_id);
                 //This can only fail from overflow
                 let Ok(new_bits) = u32::from_str_radix(s, tok_int.notation.radix()) else {
-                    to_rm.push(i);
                     continue;
                 };
                 cfg.set_max_numeric_bits(new_bits);
@@ -427,7 +460,7 @@ pub fn apply_directives(
         }
     }
 
-    for idx in to_rm {
+    for idx in to_rm.iter().rev().copied() {
         directive_store.swap_remove(idx);
     }
 }

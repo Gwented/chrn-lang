@@ -6,10 +6,7 @@ use crate::{
     chrn_config::ChrnConfig,
     lexer::{token::SpannedToken, trivia::Trivia},
     parser::ast::ast_concepts::AstInfo,
-    semantic::{
-        compilation_unit::CompilationUnit,
-        hir::hir_directives::{DirectivePreprocessFieldKind, DirectivePreprocessStore},
-    },
+    semantic::{compilation_unit::CompilationUnit, hir::hir_directives::DirectivePreprocessStore},
 };
 
 /// Stores all essential data collected through compilation stages

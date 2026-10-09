@@ -1,9 +1,7 @@
 use crate::id_types::{PathId, SourceRegionId};
 
 // Should these have identifiers?
-/// Structure depicting what the `chrn` language considers a region.
-///
-/// As of right now, a region is as big as `MAX_REGION_SIZE`
+/// Represents a `chrn` region.
 #[derive(Debug)]
 pub struct SourceRegion {
     /// Absolute starting line number of this region.
@@ -11,7 +9,7 @@ pub struct SourceRegion {
     /// Absolute starting column start of this region.
     pub abs_col_start: u32,
     /// Index of `self`
-    pub region_id: SourceRegionId,
+    pub self_id: SourceRegionId,
     /// Bytes assocaited with this region, which specifically point to the script portion
     ///
     /// This is relative
@@ -39,7 +37,7 @@ impl SourceRegion {
         abs_ln_num_start: u32,
         abs_col_start: u32,
         src_bytes: Vec<u8>,
-        region_id: SourceRegionId,
+        self_id: SourceRegionId,
         path_id: PathId,
         script_start: usize,
         serial_start: Option<usize>,
@@ -51,7 +49,7 @@ impl SourceRegion {
             abs_col_start,
             src_bytes,
             path_id,
-            region_id,
+            self_id,
             script_start,
             serial_start,
             //TODO: Could be env var

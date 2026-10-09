@@ -1,6 +1,6 @@
 use chrn_utils::{
     err_codes::ErrorCode,
-    id_types::{AstId, ImplId, SymbolId, TypeId, id_tags::TaggedId},
+    id_types::{AstId, DirectiveId, ImplId, SymbolId, TypeId, id_tags::TaggedId},
     intern::Intern,
     source_map::source_diagnostic::{
         DiagnosticLevel, SourceDiagnostic, SourceDiagnosticSink, SourceDiagnosticSummary,
@@ -10,11 +10,15 @@ use chrn_utils::{
 
 use crate::{
     chrn_config::{ChrnConfig, chrn_perf::ChrnPerfStage},
-    id_tag_decls::{AliasTag, ConfigRootTag, EnumTag, StructTag, TypeDefTag, VarTag},
+    id_tag_decls::{
+        AliasTag, ConfigRootTag, DirectivePreprocessTag, DirectiveTag, EnumTag, StructTag,
+        TypeDefTag, VarTag,
+    },
     lookup::scopes::scopes_concepts::{Scope, ScopeInfo, ScopeLookupPattern, ScopeType},
     parser::ast::ast_concepts::{
-        AbstractAlias, AbstractConfig, AbstractConfigKind, AbstractDecl, AbstractEnum,
-        AbstractImpl, AbstractStruct, AbstractTypeDef, AbstractVar, Item,
+        AbstractAlias, AbstractConfig, AbstractConfigKind, AbstractDecl,
+        AbstractDirectivePreprocess, AbstractEnum, AbstractImpl, AbstractStruct, AbstractTypeDef,
+        AbstractVar, Item,
     },
     resolvers::{resolver_env::RegistrationEnv, resolver_state::CompilerStage},
     script_compiler::ScriptCompiler,
@@ -22,6 +26,7 @@ use crate::{
         compilation_unit::CompilationUnit,
         hir::{
             hir_concepts::{Type, TypeInfo},
+            hir_directives::{DirectivePreprocessHir, DirectivePreprocessKind},
             hir_impls::{
                 ConfigRoot, ConfigRootCommon, ConfigRootKind, ConfigRootMetadataKind, ImplHir,
                 ImplHirKind,
@@ -31,6 +36,7 @@ use crate::{
                 VariableMetadata, VariableState,
             },
         },
+        preset_reporter::{self, preset_err::PresetErr},
     },
 };
 
@@ -112,12 +118,20 @@ impl NamespaceResolver<'_> {
                         ),
                     },
                     Item::Impl(abs_impl) => {
-                        let impl_id = match abs_impl {
-                            AbstractImpl::Config(abs_cfg) => {
-                                self.register_config_root(abs_cfg, ast_id, scope_type, env)
+                        match abs_impl {
+                            AbstractImpl::Config(abs_cfg) => CompilationUnit::ConfigRoot(
+                                self.register_config_root(abs_cfg, ast_id, scope_type, env),
+                            ),
+                            AbstractImpl::Directive(abs_direct) => {
+                                // May or may not be broadly applicable to inline and preprocess
+                                let Some(direct) = self.register_directive_preprocess(
+                                    abs_direct, ast_id, scope_type, env,
+                                ) else {
+                                    continue;
+                                };
+                                CompilationUnit::DirectivePreprocess(direct)
                             }
-                        };
-                        CompilationUnit::ConfigRoot(impl_id)
+                        }
                     }
                 };
 
@@ -134,10 +148,66 @@ impl NamespaceResolver<'_> {
         (comp_units, summary)
     }
 
-    /// Registers `ConfigRoot` as a symbol
+    /// Registers `DirectivePreprocess` as a directive
     ///
     /// Does not insert identifier into scope if it collides with an existent identifier. Still
-    /// registers as a symbol.
+    /// registers.
+    fn register_directive_preprocess(
+        &mut self,
+        abs_direct: &AbstractDirectivePreprocess,
+        ast_id: AstId,
+        scope_type: ScopeType,
+        env: &RegistrationEnv,
+        //TEST: Is option because we have no representation for a directive that is invalid.
+        //May change, but doesn't matter because user-defined directives will not exist.
+        //Also returning `None` instead of the usual `Err(())` as a test of, idk
+    ) -> Option<TaggedId<ImplId, DirectivePreprocessTag>> {
+        debug_assert!(matches!(scope_type, ScopeType::Neutral));
+
+        // Pushing the scope loads all symbols needed by override
+        _ = self.compiler.push_scope(scope_type, env.current_mod);
+
+        let impl_id = self.compiler.impls.make_id();
+        let tagged = impl_id.into_tagged::<DirectivePreprocessTag>();
+        let direct_id = self.compiler.directives.make_id();
+
+        //WARN: Not sure if this should be delayed to align with everything else which cannot be
+        //validated this early.
+        let Some(kind) =
+            DirectivePreprocessKind::try_from_interned_str(abs_direct.sp_name_id.inner)
+        else {
+            // Error code me
+            // Also search similar pleasies thanksies
+            let preset_err = PresetErr::UnknownDirective(abs_direct.sp_name_id.clone());
+            preset_reporter::report_preset(
+                self.compiler,
+                &mut self.summary,
+                preset_err,
+                env.region,
+                self.cfg,
+                self.interner,
+            );
+            return None;
+        };
+
+        let direct = DirectivePreprocessHir::new(abs_direct.sp_name_id.span, kind, Vec::new());
+
+        let impl_hir = ImplHir::new(
+            impl_id,
+            ImplHirKind::Directive(direct_id),
+            scope_type,
+            Some(ast_id),
+        );
+
+        self.compiler.directives.push(direct.into());
+        self.compiler.impls.push(impl_hir);
+        Some(tagged)
+    }
+
+    /// Registers `ConfigRoot` as an `ImplHir`
+    ///
+    /// Does not insert identifier into scope if it collides with an existent identifier. Still
+    /// registers.
     fn register_config_root(
         &mut self,
         abs_cfg: &AbstractConfig,
@@ -200,7 +270,7 @@ impl NamespaceResolver<'_> {
     /// Registers `AbstractTypeDef` as a symbol
     ///
     /// Does not insert identifier into scope if it collides with an existent identifier. Still
-    /// registers as a symbol.
+    /// registers.
     fn register_typedef(
         &mut self,
         abs_typedef: &AbstractTypeDef,
@@ -273,7 +343,7 @@ impl NamespaceResolver<'_> {
     /// Registers `AbstractStruct` as a symbol
     ///
     /// Does not insert identifier into scope if it collides with an existent identifier. Still
-    /// registers as a symbol.
+    /// registers.
     fn register_struct(
         &mut self,
         abs_struct: &AbstractStruct,
@@ -329,7 +399,7 @@ impl NamespaceResolver<'_> {
     /// Registers `AbstractEnum` as a symbol
     ///
     /// Does not insert identifier into scope if it collides with an existent identifier. Still
-    /// registers as a symbol.
+    /// registers.
     fn register_enum(
         &mut self,
         abs_enum: &AbstractEnum,
@@ -386,7 +456,7 @@ impl NamespaceResolver<'_> {
     /// Registers `AbstractAlias` as a symbol
     ///
     /// Does not insert identifier into scope if it collides with an existent identifier. Still
-    /// registers as a symbol.
+    /// registers.
     fn register_alias(
         &mut self,
         abs_alias: &AbstractAlias,
@@ -460,7 +530,7 @@ impl NamespaceResolver<'_> {
     /// Registers `AbstractVar` as a symbol
     ///
     /// Does not insert identifier into scope if it collides with an existent identifier. Still
-    /// registers as a symbol.
+    /// registers.
     fn register_var(
         &mut self,
         abs_var: &AbstractVar,

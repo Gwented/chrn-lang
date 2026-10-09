@@ -20,7 +20,7 @@ fn parse_text(text: &str) -> (AstInfo, Intern) {
         get_module_region(&arena, module)
     };
     let toks = Lexer::new(
-        region.region_id,
+        region.self_id,
         region.path_id,
         &region.src_bytes,
         region.script_start,
@@ -40,7 +40,7 @@ fn parse_text_with_diags(text: &str) -> (AstInfo, Vec<SourceDiagnostic>, Intern)
         get_module_region(&arena, module)
     };
     let toks = Lexer::new(
-        region.region_id,
+        region.self_id,
         region.path_id,
         &region.src_bytes,
         region.script_start,
@@ -91,11 +91,19 @@ fn parse_preprocess_directive_argument_delimiters() {
             diags.is_empty(),
             "{arguments}: unexpected diagnostics: {diags:?}"
         );
-        assert_eq!(ast.preprocess_directives.len(), 1, "{arguments}");
-        let directive = &ast.preprocess_directives[0];
+        let directives: Vec<_> = ast
+            .items()
+            .iter()
+            .filter_map(|item| match item {
+                Item::Impl(AbstractImpl::Directive(directive)) => Some(directive),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(directives.len(), 1, "{arguments}");
+        let directive = directives[0];
         assert_eq!(interner.search(directive.sp_name_id.inner), "chrn");
-        assert_eq!(directive.inputs.len(), 1, "{arguments}");
-        let option = &directive.inputs[0];
+        assert_eq!(directive.fields.len(), 1, "{arguments}");
+        let option = &directive.fields[0];
         assert_eq!(interner.search(option.name_id), "values");
         let AstExpr::Array(array) = &option.array_expr.inner else {
             panic!(
@@ -113,8 +121,8 @@ fn parse_preprocess_directive_argument_delimiters() {
             }
         }
         let items = section_items(&ast, SectionKind::Neutral);
-        assert_eq!(items.len(), 1, "{arguments}");
-        let after = ast.get_var(items[0]);
+        assert_eq!(items.len(), 2, "{arguments}");
+        let after = ast.get_var(items[1]);
         assert_eq!(interner.search(after.name_id), "after");
         match &after.spanned_expr.inner {
             AstExpr::Integer(id, IntegerNotation::Decimal) => assert_eq!(interner.search(*id), "7"),
@@ -1849,6 +1857,7 @@ fn all_spans_are_non_empty() {
         let span = match item {
             Item::Decl(decl) => decl.span(),
             Item::Impl(AbstractImpl::Config(cfg)) => cfg_name_span(cfg),
+            Item::Impl(AbstractImpl::Directive(directive)) => directive.sp_name_id.span,
         };
         assert!(
             span.start < span.end,

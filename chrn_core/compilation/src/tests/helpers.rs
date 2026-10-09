@@ -549,7 +549,7 @@ fn build_asts(
         };
 
         let toks = Lexer::new(
-            region.region_id,
+            region.self_id,
             region.path_id,
             &region.src_bytes,
             region.script_start,

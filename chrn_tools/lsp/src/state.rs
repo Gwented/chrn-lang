@@ -322,7 +322,7 @@ impl DocumentState {
                 compilation::parser::parse(&mut chrn_cfg, region, &self.tokens, &self.interner)
             } else {
                 let lex_output = Lexer::new(
-                    region.region_id,
+                    region.self_id,
                     region.path_id,
                     &region.src_bytes,
                     region.script_start,
@@ -700,36 +700,13 @@ impl DocumentState {
                         }
                     }
                     Item::Impl(AbstractImpl::Config(cfg)) => collector.cfg_refs(cfg),
+                    // TODO: Collect preprocess directive references once resolution is implemented.
+                    Item::Impl(AbstractImpl::Directive(_)) => {}
                 }
             }
         }
 
-        // 5. Compiler-origin symbols (directives) — match by name against Id tokens
-        // Pre-index directive symbols by name_id for O(1) lookup. Matching on
-        // `SymbolKind::Directive` rather than `sym_origin` keeps other compiler-
-        // generated symbols (builtin namespace members such as `i8::MAX`, extern
-        // namespaces) out of the map, since they are not reachable as bare tokens.
-        let directive_symbols: HashMap<u32, SymbolId> = compiler
-            .syms
-            .iter()
-            .filter(|sym| matches!(sym.kind, SymbolKind::Directive(_)))
-            .map(|sym| (sym.name_id.id, sym.self_id))
-            .collect();
-
-        // Track spans already in `map` to avoid shadowing user-defined symbols
-        // with same name as a directive (e.g. `let warn = 5`).
-        let covered_starts: HashSet<u32> = map.iter().map(|(s, _)| s.start).collect();
-
-        for st in &self.tokens {
-            if let ScriptToken::Id(id) = st.tok {
-                if covered_starts.contains(&st.span.start) {
-                    continue;
-                }
-                if let Some(&sym_id) = directive_symbols.get(&id.id) {
-                    map.push((st.span, SemanticEntity::Symbol(sym_id)));
-                }
-            }
-        }
+        // TODO: Index directive identities once the new directive registry supports navigation.
 
         self.set_symbol_map(map);
     }
@@ -1008,7 +985,7 @@ impl DocumentState {
     /// Resolves a symbol to the AST it was declared in, its declaration node, and
     /// the path of the file that AST came from.
     ///
-    /// Compiler-origin symbols (directives) have `ast_id = None` and return `None`:
+    /// Compiler-origin symbols have `ast_id = None` and return `None`:
     /// they are built-in names without a user-visible definition site.
     fn symbol_site(&self, sym_id: SymbolId) -> Option<(&AstInfo, AstId, &Path)> {
         let compiler = self.compiler.as_ref()?;
@@ -1916,7 +1893,7 @@ impl<'a> RefCollector<'a> {
                     .map(PathCursor::Type)
                     .unwrap_or(PathCursor::Opaque)
             }
-            SymbolKind::Directive(_) | SymbolKind::ExternType(_) => {
+            SymbolKind::ExternType(_) => {
                 self.map.push((span, SemanticEntity::Symbol(sym_id)));
                 PathCursor::Opaque
             }

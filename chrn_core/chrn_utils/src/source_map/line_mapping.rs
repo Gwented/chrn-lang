@@ -316,7 +316,9 @@ fn get_ln_num(src_bytes: &[u8], start: usize) -> usize {
 /// Returns character width count within the given start and end (inclusive, exclusive)
 pub fn get_chars_width(s: &str, start: usize, end: usize) -> usize {
     // if start > end {
-    //     dbg!(&s[end..=start]);
+    // dbg!(&s[end..=start]);
+    // dbg!(start, end);
+    // dbg!(s, s.len());
     // }
     s[start..end]
         .chars()

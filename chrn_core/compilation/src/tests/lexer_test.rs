@@ -49,7 +49,7 @@ fn lex_tok_test() {
         .expect_success();
 
     let toks = Lexer::new(
-        metadata.region_id,
+        metadata.self_id,
         metadata.path_id,
         &metadata.src_bytes,
         metadata.script_start,
@@ -106,7 +106,7 @@ fn lex_tok_test_rev() {
     assert_eq!(region.serial_start, Some(26));
 
     let toks = Lexer::new(
-        region.region_id,
+        region.self_id,
         region.path_id,
         &region.src_bytes,
         region.script_start,
@@ -217,7 +217,7 @@ fn char_literal_test() {
         .load_config()
         .expect_success();
     let toks = Lexer::new(
-        metadata.region_id,
+        metadata.self_id,
         metadata.path_id,
         &metadata.src_bytes,
         metadata.script_start,
@@ -250,7 +250,7 @@ fn char_literal_test() {
         .expect_success();
 
     let toks = Lexer::new(
-        metadata.region_id,
+        metadata.self_id,
         metadata.path_id,
         &metadata.src_bytes,
         metadata.script_start,
@@ -283,7 +283,7 @@ fn char_literal_test() {
         .expect_success();
 
     let toks = Lexer::new(
-        metadata.region_id,
+        metadata.self_id,
         metadata.path_id,
         &metadata.src_bytes,
         metadata.script_start,
@@ -313,7 +313,7 @@ fn char_literal_test() {
         .load_config()
         .expect_success();
     let toks = Lexer::new(
-        metadata.region_id,
+        metadata.self_id,
         metadata.path_id,
         &metadata.src_bytes,
         metadata.script_start,
@@ -343,7 +343,7 @@ fn char_literal_test() {
         .load_config()
         .expect_success();
     let toks = Lexer::new(
-        metadata.region_id,
+        metadata.self_id,
         metadata.path_id,
         &metadata.src_bytes,
         metadata.script_start,
@@ -374,7 +374,7 @@ fn char_literal_test() {
         .load_config()
         .expect_success();
     let toks = Lexer::new(
-        metadata.region_id,
+        metadata.self_id,
         metadata.path_id,
         &metadata.src_bytes,
         metadata.script_start,
@@ -404,7 +404,7 @@ fn char_literal_test() {
         .load_config()
         .expect_success();
     let toks = Lexer::new(
-        metadata.region_id,
+        metadata.self_id,
         metadata.path_id,
         &metadata.src_bytes,
         metadata.script_start,
@@ -434,7 +434,7 @@ fn char_literal_test() {
         .load_config()
         .expect_success();
     let toks = Lexer::new(
-        metadata.region_id,
+        metadata.self_id,
         metadata.path_id,
         &metadata.src_bytes,
         metadata.script_start,

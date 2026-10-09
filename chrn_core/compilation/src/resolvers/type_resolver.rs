@@ -35,9 +35,9 @@ use crate::chrn_config::ChrnConfig;
 use crate::chrn_config::chrn_perf::ChrnPerfStage;
 use crate::constraints::ArgConstraint;
 use crate::id_tag_decls::{
-    AliasTag, ConfigMemberTag, ConfigRootTag, EnumTag, ExternTypeTag, FieldTag,
-    MultiTypeAssignmentTag, OptionAssignmentMemberTag, OptionAssignmentRootTag, StructTag,
-    TypeDefTag, VarTag,
+    AliasTag, ConfigMemberTag, ConfigRootTag, DirectivePreprocessTag, EnumTag, ExternTypeTag,
+    FieldTag, MultiTypeAssignmentTag, OptionAssignmentMemberTag, OptionAssignmentRootTag,
+    StructTag, TypeDefTag, VarTag,
 };
 use crate::lookup::member_lookup::{self, MemberLookupPattern, MemberLookupResult};
 use crate::lookup::scopes::scopes_concepts::{
@@ -170,6 +170,9 @@ impl<'res> TypeResolver<'res> {
                 CompilationUnit::Var(sym_id) => self.resolve_var(sym_id, env),
                 CompilationUnit::ConfigRoot(impl_id) => {
                     self.resolve_cfg_root(impl_id, &mut ident_tracker, env)
+                }
+                CompilationUnit::DirectivePreprocess(impl_id) => {
+                    self.resolve_preprocess_directive(impl_id, &mut ident_tracker, env)
                 }
             }
             ident_tracker.clear();
@@ -466,6 +469,21 @@ impl<'res> TypeResolver<'res> {
         summary
     }
 
+    fn resolve_preprocess_directive(
+        &mut self,
+        parent_impl_id: TaggedId<ImplId, DirectivePreprocessTag>,
+        ident_tracker: &mut DuplicateTracker<SpannedContainer<InternedId>>,
+        env: &ResolverEnv,
+    ) {
+        let impl_hir = &self.compiler.impls[parent_impl_id.inner()];
+        let scope_type = impl_hir.scope_origin;
+        let ast_id = impl_hir.ast_id.expect("Should be user impls only");
+        let abs_direct = env.ast_info.get_directive(ast_id);
+
+        let initial_scope = AssociatedScopeKind::Module(env.current_mod);
+        todo!()
+    }
+
     // The lifetime used here is needed so that the vectors that are pushed into during the recursive
     // maintaining of seen identifiers know that their shortest lifetime is more than long enough to
     // where the borrow cheker is satisfied.
@@ -682,11 +700,11 @@ impl<'res> TypeResolver<'res> {
                     let span = if let Some(first) = abs_multi.to_assign.get(0) {
                         let start = first.span.start;
                         let end = abs_multi.assign_to[abs_multi.assign_to.len() - 1].span.end;
-                        SourceSpan::new(env.region.region_id, start, end)
+                        SourceSpan::new(env.region.self_id, start, end)
                     } else {
                         let start = abs_multi.assign_to[0].span.start;
                         let end = abs_multi.assign_to[abs_multi.assign_to.len() - 1].span.end;
-                        SourceSpan::new(env.region.region_id, start, end)
+                        SourceSpan::new(env.region.self_id, start, end)
                     };
 
                     //TODO: Would like a help message with this specifying that namespaces are
@@ -869,8 +887,7 @@ impl<'res> TypeResolver<'res> {
 
                                     let start = sp_path_segs[0].span.start;
                                     let end = sp_path_segs[sp_path_segs.len() - 1].span.end;
-                                    let path_span =
-                                        SourceSpan::new(env.region.region_id, start, end);
+                                    let path_span = SourceSpan::new(env.region.self_id, start, end);
 
                                     preset_reporter::create_diag_builder_preset(
                                         &self.compiler,
@@ -907,8 +924,7 @@ impl<'res> TypeResolver<'res> {
 
                                     let start = sp_path_segs[0].span.start;
                                     let end = sp_path_segs[sp_path_segs.len() - 1].span.end;
-                                    let path_span =
-                                        SourceSpan::new(env.region.region_id, start, end);
+                                    let path_span = SourceSpan::new(env.region.self_id, start, end);
 
                                     // Needs to be done otherwise typedefs, given "x: State" will emit the
                                     // type as `x` rather than `State`
@@ -1404,7 +1420,7 @@ impl<'res> TypeResolver<'res> {
                             let core_msg = "Assigns nothing";
                             let start = abs_multi.assign_to[0].span.start;
                             let end = abs_multi.assign_to[abs_multi.assign_to.len() - 1].span.end;
-                            let span = SourceSpan::new(env.region.region_id, start, end);
+                            let span = SourceSpan::new(env.region.self_id, start, end);
 
                             let builder = SourceDiagnostic::builder(
                                 None,
@@ -1454,7 +1470,7 @@ impl<'res> TypeResolver<'res> {
 
                         let start = abs_multi.to_assign[0].span.start;
                         let end = abs_multi.assign_to[abs_multi.assign_to.len() - 1].span.end;
-                        let span = SourceSpan::new(env.region.region_id, start, end);
+                        let span = SourceSpan::new(env.region.self_id, start, end);
 
                         let builder = SourceDiagnostic::builder(
                             //TODO: Member and root specific version maybe since this is getting pretty
@@ -1508,7 +1524,7 @@ impl<'res> TypeResolver<'res> {
                     ) {
                         let start = abs_multi.assign_to[0].span.start;
                         let end = abs_multi.assign_to[abs_multi.assign_to.len() - 1].span.end;
-                        let span = SourceSpan::new(env.region.region_id, start, end);
+                        let span = SourceSpan::new(env.region.self_id, start, end);
 
                         let preset_err = PresetErr::SymbolMismatch {
                             expected_kind: SymbolKindFlat::ExternType,
@@ -2152,10 +2168,7 @@ impl<'res> TypeResolver<'res> {
                 //
                 // These are unreachable because their symbols are never delayed in resolution.
                 // Only expressions have a complex instantiation process.
-                SymbolKind::ExternType(_)
-                | SymbolKind::Type(_)
-                | SymbolKind::Namespace
-                | SymbolKind::Directive(_) => {
+                SymbolKind::ExternType(_) | SymbolKind::Type(_) | SymbolKind::Namespace => {
                     unreachable!("Not possible")
                 }
             }
@@ -3255,7 +3268,6 @@ impl<'res> TypeResolver<'res> {
                             // Local scopes can't reach these right now
                             SymbolKind::Type(type_id) => todo!(),
                             SymbolKind::Namespace => todo!(),
-                            SymbolKind::Directive(directive_id) => todo!(),
                             SymbolKind::ExternType(_) => todo!(),
                         };
 
@@ -3439,7 +3451,7 @@ impl<'res> TypeResolver<'res> {
                         }
                         // NOTE: Symbols can't resolve to an extern type, it's something built-in
                         // to. Same for directive.
-                        SymbolKind::ExternType(_) | SymbolKind::Directive(_) => {
+                        SymbolKind::ExternType(_) => {
                             // Ok buddy
                             unreachable!("YOU LIED")
                         }

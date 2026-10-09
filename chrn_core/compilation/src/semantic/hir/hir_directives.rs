@@ -13,10 +13,10 @@ use lang::{
 //Might be a little too much here
 
 /// General directives not specific to anything
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub enum Directive {
     /// Directives that need special attention to be processed
-    Preprocess(DirectivePreprocess),
+    Preprocess(DirectivePreprocessHir),
     // Better name than comptime
     /// Directives that can be applied in a local context
     Inline(DirectiveInline),
@@ -39,7 +39,7 @@ impl Directive {
             return Some(Directive::Inline(found));
         };
         // Not final
-        if let Some(found) = DirectivePreprocess::try_from_interned_str(interned_id) {
+        if let Some(found) = DirectivePreprocessHir::try_from_interned_str(interned_id) {
             return Some(Directive::Preprocess(found));
         };
         None
@@ -61,6 +61,12 @@ impl ChrnClassifiable for Directive {
             Directive::Preprocess(d) => d.kind.to_classified(),
             Directive::Inline(d) => d.to_classified(),
         }
+    }
+}
+
+impl From<DirectivePreprocessHir> for Directive {
+    fn from(v: DirectivePreprocessHir) -> Self {
+        Directive::Preprocess(v)
     }
 }
 

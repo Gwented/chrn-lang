@@ -540,7 +540,6 @@ fn symbol_completion_kind(compiler: &ScriptCompiler, sym: &Symbol) -> Completion
             scopes_concepts::AssociatedScopeKind::Module(_) => CompletionItemKind::MODULE,
             scopes_concepts::AssociatedScopeKind::Scope(_) => CompletionItemKind::VARIABLE,
         },
-        SymbolKind::Directive(_) => CompletionItemKind::KEYWORD,
         // Core exposes extern names as terminal type symbols even though it does
         // not yet attach a `TypeId` to them.
         SymbolKind::ExternType(_) => CompletionItemKind::CLASS,
@@ -1525,9 +1524,6 @@ fn classify_id_token(
                         }
                         None => return None,
                     },
-                    SymbolKind::Directive(_) => {
-                        return Some(SemanticTokenType::Regexp.as_u32());
-                    }
                     SymbolKind::ExternType(_) => {
                         return Some(SemanticTokenType::Type.as_u32());
                     }
@@ -2216,9 +2212,7 @@ impl LanguageServer for Backend {
                         CompletionNamespace::Module(mod_id) if mod_id == ModuleId::new(0) => {
                             for sym_id in reachable_module_symbols(compiler, mod_id) {
                                 let sym = &compiler.syms[sym_id];
-                                if sym.scope_origin == scopes_concepts::ScopeType::Var
-                                    || matches!(sym.kind, SymbolKind::Directive(_))
-                                {
+                                if sym.scope_origin == scopes_concepts::ScopeType::Var {
                                     continue;
                                 }
                                 push_symbol(sym_id);
@@ -2258,9 +2252,7 @@ impl LanguageServer for Backend {
                         // in builtin-type namespace scopes) are never offered here.
                         for sym_id in reachable_module_symbols(compiler, module.self_id) {
                             let sym = &compiler.syms[sym_id];
-                            if sym.scope_origin == scopes_concepts::ScopeType::Var
-                                || matches!(sym.kind, SymbolKind::Directive(_))
-                            {
+                            if sym.scope_origin == scopes_concepts::ScopeType::Var {
                                 continue;
                             }
                             let sym_name = state.interner.search(sym.name_id);
@@ -2451,24 +2443,7 @@ impl LanguageServer for Backend {
                 }
             }
 
-            // Compiler-origin directives (`#warn`, `#ignore`, `#scient`, …), read from
-            // the symbol registry rather than hard-coded.
-            // `Arena` is not an iterator; iterate over the inner `items` vec.
-            for sym in &compiler.syms.items {
-                if matches!(sym.kind, SymbolKind::Directive(_)) {
-                    let name = state.interner.search(sym.name_id);
-                    let label = format!("#{name}");
-                    if (prefix.is_empty() || label.starts_with(prefix))
-                        && seen.insert(label.clone())
-                    {
-                        items.push(completion_item(
-                            label,
-                            symbol_completion_kind(compiler, sym),
-                            module_suffix,
-                        ));
-                    }
-                }
-            }
+            // TODO: Offer directives from their new registry once its tooling API is defined.
         }
 
         for (label, kind) in SUGGESTIONS {
