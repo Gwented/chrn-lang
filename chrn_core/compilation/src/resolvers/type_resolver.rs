@@ -66,6 +66,7 @@ use crate::semantic::checker_helpers::{DuplicateIdentResult, DuplicateTracker};
 use crate::semantic::compilation_unit::CompilationUnit;
 use crate::semantic::evaluator::{BinaryOpResult, UnaryOpResult};
 use crate::semantic::hir::hir_concepts::{BuiltinTypeInfo, Type, TypeInfo};
+use crate::semantic::hir::hir_directives::DirectivePreprocessSchema;
 use crate::semantic::hir::hir_exprs::{
     ExprHir, Param, PossibleMember, ResolvedExpr, ResolvedExprMetadata,
 };
@@ -481,7 +482,48 @@ impl<'res> TypeResolver<'res> {
         let abs_direct = env.ast_info.get_directive(ast_id);
 
         let initial_scope = AssociatedScopeKind::Module(env.current_mod);
-        todo!()
+
+        if DirectivePreprocessSchema::try_from_interned_id(abs_direct.sp_name_id.inner).is_none() {
+            let preset_err = PresetErr::UnknownDirective(abs_direct.sp_name_id.clone());
+            preset_reporter::report_preset(
+                self.compiler,
+                &mut self.summary,
+                preset_err,
+                env.region,
+                self.cfg,
+                self.interner,
+            );
+            return;
+        };
+
+        let array_expr_id = match self.register_expr(
+            None,
+            &abs_direct.array_expr,
+            None,
+            initial_scope,
+            scope_type,
+            env,
+        ) {
+            Ok(id) => id,
+            Err(preset_err) => {
+                preset_reporter::report_preset(
+                    self.compiler,
+                    &mut self.summary,
+                    preset_err,
+                    env.region,
+                    self.cfg,
+                    self.interner,
+                );
+                // No valid symbol exists so nothing can actually be done here. Could typecheck the
+                // options since they're always valid to check but not now.
+                return;
+            }
+        };
+
+        let direct = self.compiler.get_directive_preprocess_mut(parent_impl_id);
+
+        debug_assert_eq!(direct.array_expr_id, None);
+        direct.array_expr_id = Some(array_expr_id);
     }
 
     // The lifetime used here is needed so that the vectors that are pushed into during the recursive

@@ -70,9 +70,10 @@ pub enum PresetErr {
         conflicting: TypeBoundaryFlags,
         spans: Vec<SourceSpan>,
     },
-    /// SpannedArg failed at, Error Symbol span
+    /// Spanned Directive failed at, Error Symbol span
     UnsupportedDirective {
         sp_directive: SpannedContainer<Directive>,
+        classified_direct: ChrnClassified,
         sym_span: SourceSpan,
     },
     /// SpannedArg,

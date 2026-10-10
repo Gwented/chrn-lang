@@ -80,6 +80,7 @@ pub(crate) fn create_diag_builder_preset(
         // Need to know which spans exactly now
         PresetErr::UnsupportedDirective {
             sp_directive,
+            classified_direct,
             sym_span,
         } => {
             let directive_boundaries = sp_directive.inner.boundaries().to_fmt_vec();
@@ -95,8 +96,7 @@ pub(crate) fn create_diag_builder_preset(
 
             let core_msg = format!(
                 "Type must satisfy {} to use `#{}`",
-                boundaries_str,
-                sp_directive.inner.to_classified()
+                boundaries_str, classified_direct,
             );
 
             SourceDiagnostic::builder(

@@ -337,7 +337,7 @@ pub static PRELOADED_STRINGS: [(&str, u32); INTERNER_PRELOAD_SIZE] = [
     ("UTF32_BYTES", INTERNED_UTF32_BYTES),
     ("UTF32_BITS", INTERNED_UTF32_BITS),
     ("chrn", INTERNED_CHRN),
-    ("MAX_NUMERIC_BITS", INTERNED_MAX_NUMERIC_BITS),
+    ("max_numeric_bits", INTERNED_MAX_NUMERIC_BITS),
 ];
 
 /// Interner used for the chrn language

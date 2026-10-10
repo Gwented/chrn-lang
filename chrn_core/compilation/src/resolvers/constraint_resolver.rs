@@ -15,7 +15,7 @@ use chrn_utils::{
     utils::containers::{SpannedContainer, SpannedContainerRef},
 };
 use lang::{
-    chrn_classifier::ChrnClassified,
+    chrn_classifier::{ChrnClassifiable, ChrnClassified},
     config_schemas::{self, ConfigSchema, ConfigSchemaKind},
     types::{boundaries::TypeBoundaryFlags, builtins::BuiltinType},
 };
@@ -24,17 +24,21 @@ use crate::{
     chrn_config::{ChrnConfig, chrn_perf::ChrnPerfStage},
     constraints::ArgConstraint,
     id_tag_decls::{
-        AliasTag, ConfigRootTag, EnumTag, OptionAssignmentMemberTag, OptionAssignmentRootTag,
-        StructTag, TypeDefTag, VarTag,
+        AliasTag, ConfigRootTag, DirectivePreprocessTag, EnumTag, OptionAssignmentMemberTag,
+        OptionAssignmentRootTag, StructTag, TypeDefTag, VarTag,
     },
     lookup::schema_lookup::{self, SchemaResult},
+    parser::ast::ast_exprs::AstExpr,
     resolvers::{resolver_env::ResolverEnv, resolver_state::CompilerStage},
     script_compiler::ScriptCompiler,
     semantic::{
         compilation_unit::CompilationUnit,
         hir::{
             hir_concepts::Type,
-            hir_directives::{Directive, DirectiveInline, DirectivePreprocessFieldKind},
+            hir_directives::{
+                Directive, DirectiveInline, DirectivePreprocessKind, DirectivePreprocessSchema,
+            },
+            hir_exprs::{ExprHir, ResolvedExpr},
             hir_impls::{ConfigMember, ConfigMemberMetadataKind, ConfigRootKind},
             hir_symbols::MemberSymbolKind,
         },
@@ -80,7 +84,9 @@ impl<'a> ConstraintResolver<'a> {
                 CompilationUnit::Alias(sym_id) => self.resolve_alias(sym_id, env),
                 CompilationUnit::Var(sym_id) => self.resolve_var(sym_id, env),
                 CompilationUnit::ConfigRoot(impl_id) => self.resolve_cfg_root(impl_id, env),
-                CompilationUnit::DirectivePreprocess(_) => todo!(),
+                CompilationUnit::DirectivePreprocess(impl_id) => {
+                    self.resolve_preprocess_directive(impl_id, env)
+                }
             }
         }
 
@@ -90,6 +96,34 @@ impl<'a> ConstraintResolver<'a> {
         let mut summary = SourceDiagnosticSummary::default();
         summary.append_summary(&mut self.summary);
         summary
+    }
+
+    fn resolve_preprocess_directive(
+        &mut self,
+        parent_impl_id: TaggedId<ImplId, DirectivePreprocessTag>,
+        env: &ResolverEnv,
+    ) {
+        // Should have Option<ExprIdThingy> where ExprIdThingy has Option<DirectivePreprocess>
+        let direct = self.compiler.get_directive_preprocess(parent_impl_id);
+        let Some(array_expr_id) = direct.array_expr_id else {
+            return;
+        };
+
+        let array_expr = &self.compiler.exprs[array_expr_id];
+        let ExprHir::Array(elems) = &array_expr.expr_hir else {
+            unreachable!()
+        };
+        let schema = DirectivePreprocessSchema::try_from_interned_id(direct.sp_name_id.inner)
+            .expect("`TypeResolver` did not check correctly");
+
+        if elems.len() != schema.arg_layout.arg_len() {
+            todo!("WRonkg");
+        }
+        for arg in schema.arg_layout.args() {
+            dbg!(arg);
+            todo!()
+        }
+        todo!()
     }
 
     // Needs:
@@ -1536,6 +1570,7 @@ impl<'a> ConstraintResolver<'a> {
                                     spanned_directive.inner.clone().into(),
                                     spanned_directive.span,
                                 ),
+                                classified_direct: spanned_directive.inner.to_classified(),
                                 sym_span: active_span,
                             }));
                         }

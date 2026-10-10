@@ -85,7 +85,7 @@ fn parse_preprocess_directive_argument_delimiters() {
         ("(2,3)", vec!["2", "3"]),
         ("(2,3,)", vec!["2", "3"]),
     ] {
-        let text = format!("#chrn[values{arguments}]\nlet after = 7");
+        let text = format!("#chrn{arguments}\nlet after = 7");
         let (ast, diags, interner) = parse_text_with_diags(&text);
         assert!(
             diags.is_empty(),
@@ -102,13 +102,10 @@ fn parse_preprocess_directive_argument_delimiters() {
         assert_eq!(directives.len(), 1, "{arguments}");
         let directive = directives[0];
         assert_eq!(interner.search(directive.sp_name_id.inner), "chrn");
-        assert_eq!(directive.fields.len(), 1, "{arguments}");
-        let option = &directive.fields[0];
-        assert_eq!(interner.search(option.name_id), "values");
-        let AstExpr::Array(array) = &option.array_expr.inner else {
+        let AstExpr::Array(array) = &directive.array_expr.inner else {
             panic!(
                 "{arguments}: expected argument Array, got {:?}",
-                option.array_expr.inner
+                directive.array_expr.inner
             );
         };
         assert_eq!(array.elements.len(), expected.len(), "{arguments}");

@@ -9,7 +9,6 @@ pub mod chrn_perf;
 
 use crate::chrn_config::{chrn_logger::ChrnLogger, chrn_perf::ChrnPerf};
 
-//TEST: No longer has use but is useful to keep in case of any future use
 /// Alters `chrn` compiler behavior
 #[derive(Debug)]
 pub struct ChrnConfig {

@@ -33,7 +33,6 @@ use crate::parser::evidence::{Evidence, InitialEvidence, SemanticEnv, SemanticSi
 use crate::parser::parser_budget::ParserBudget;
 use crate::parser::parser_helpers::DelimiterContext;
 use crate::parser::parser_state::ParserState;
-use crate::semantic::hir::hir_directives::DirectivePreprocessHir;
 use crate::semantic::hir::hir_impls::ConfigRootMetadataKind;
 use chrn_utils::id_types::InternedId;
 use chrn_utils::intern::Intern;
@@ -2190,13 +2189,13 @@ fn parse_inline_directive(
     Ok(abs_directive)
 }
 
-//TODO: Parsing "#{directive_ident}[{ident}({Expr/TypeExpr}, ..), {ident}({Expr/TypeExpr}), ..]"
+//TODO: Parsing "#{ident}({arg1}, ..)"
 fn parse_directive_preprocess(
     ctx: &mut ParserContext,
     budget: &ParserBudget,
     interner: &Intern,
 ) -> Result<AbstractDirectivePreprocess, Token> {
-    let self_delim_ctx = DelimiterContext::with_comma(TokenKind::OBracket, TokenKind::CBracket);
+    let self_delim_ctx = DelimiterContext::with_comma(TokenKind::OParen, TokenKind::CParen);
 
     //TODO: change naming of opt for abs
     let env = SemanticEnv::SectNeutral;
@@ -2218,26 +2217,6 @@ fn parse_directive_preprocess(
     )?;
 
     let sp_direct_name_id = SpannedContainer::new(name_id, name_span);
-    let mut inputs: Vec<AbstractOptionAssignment> = Vec::new();
-
-    ctx.expect_verbose(
-        self_delim_ctx.opening(),
-        "Expected '[' to declare directive, found ",
-        "",
-        InitialEvidence::new(
-            //TODO: Should pass ctx
-            env,
-            SemanticSituation::MissingStartDelimiter,
-            branch,
-        ),
-        interner,
-    )?;
-
-    //#{ident}[] <-
-    if ctx.peek_tok().kind() == self_delim_ctx.closing() {
-        ctx.advance_tok();
-        return Ok(AbstractDirectivePreprocess::new(sp_direct_name_id, inputs));
-    }
 
     //NOTE: Maybe allow budget since supposed to be general
     let getter = |ctx: &mut ParserContext<'_>,
@@ -2246,66 +2225,24 @@ fn parse_directive_preprocess(
         parse_expr(ctx, 0, budget, interner)
     };
 
-    // Guaranteed to have > 0 element
-    while ctx.peek_tok().kind() != self_delim_ctx.closing() {
-        let opt_name_span = ctx.peek_span();
-        let opt_name_id = ctx.expect_id_verbose(
-            TokenKind::Id,
-            // Not sure about this name
-            "Expected identifier for directive option, found ",
-            "",
-            InitialEvidence::new(
-                //TODO: Should pass ctx
-                env,
-                SemanticSituation::MissingStartDelimiter,
-                branch,
-            ),
-            interner,
-        )?;
-
-        let start = ctx.peek().span.start;
-        let exprs = parse_enclosing(
-            ctx,
-            &getter,
-            DelimiterContext::new(TokenKind::OParen, TokenKind::Comma, TokenKind::CParen),
-            env,
-            branch,
-            interner,
-        )?;
-
-        // This is using a different array spanning than parse_array. It uses elements!
-        // That's not a good thing.
-        let end = ctx.peek_behind(1).span.end;
-        let array_span = SourceSpan::new(ctx.region.self_id, start, end);
-
-        let array = AstExpr::Array(ArrayExpr::new(exprs));
-
-        let opt = AbstractOptionAssignment::new(
-            opt_name_id,
-            opt_name_span,
-            SpannedContainer::new(array, array_span),
-        );
-
-        inputs.push(opt);
-
-        if ctx.peek_tok().kind() == self_delim_ctx.arg_sep() {
-            ctx.advance_tok();
-        }
-    }
-
-    ctx.expect_verbose(
-        self_delim_ctx.closing(),
-        "Expected ']' to declare directive, found ",
-        "",
-        InitialEvidence::new(
-            SemanticEnv::SectNeutral,
-            SemanticSituation::UnclosedDelimiter,
-            Branch::Directive,
-        ),
+    let start = ctx.peek().span.start;
+    let exprs = parse_enclosing(
+        ctx,
+        &getter,
+        DelimiterContext::new(TokenKind::OParen, TokenKind::Comma, TokenKind::CParen),
+        env,
+        branch,
         interner,
     )?;
+    let end = ctx.peek_behind(1).span.end;
+    let span = SourceSpan::new(ctx.region.self_id, start, end);
 
-    Ok(AbstractDirectivePreprocess::new(sp_direct_name_id, inputs))
+    let sp_array_expr = SpannedContainer::new(AstExpr::Array(ArrayExpr::new(exprs)), span);
+
+    Ok(AbstractDirectivePreprocess::new(
+        sp_direct_name_id,
+        sp_array_expr,
+    ))
 }
 
 /// General parsing of an open and closing delimiter context, with arg separators.

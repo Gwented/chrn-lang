@@ -5,10 +5,10 @@ pub mod lexer_processor;
 pub use directive_inline::*;
 pub use directive_preprocess::*;
 
-use chrn_utils::{id_types::InternedId, intern};
+use chrn_utils::id_types::InternedId;
 use lang::{
     chrn_classifier::{ChrnClassifiable, ChrnClassified},
-    types::{boundaries::TypeBoundaryFlags, builtins::BuiltinType},
+    types::boundaries::TypeBoundaryFlags,
 };
 //Might be a little too much here
 
@@ -39,9 +39,9 @@ impl Directive {
             return Some(Directive::Inline(found));
         };
         // Not final
-        if let Some(found) = DirectivePreprocessHir::try_from_interned_str(interned_id) {
-            return Some(Directive::Preprocess(found));
-        };
+        // if let Some(found) = DirectivePreprocessHir::try_from_interned_str(interned_id) {
+        //     return Some(Directive::Preprocess(found));
+        // };
         None
     }
 
@@ -55,14 +55,14 @@ impl Directive {
     }
 }
 
-impl ChrnClassifiable for Directive {
-    fn to_classified(&self) -> ChrnClassified {
-        match self {
-            Directive::Preprocess(d) => d.kind.to_classified(),
-            Directive::Inline(d) => d.to_classified(),
-        }
-    }
-}
+// impl ChrnClassifiable for Directive {
+//     fn to_classified(&self) -> ChrnClassified {
+//         match self {
+//             Directive::Preprocess(d) => d.kind.to_classified(),
+//             Directive::Inline(d) => d.to_classified(),
+//         }
+//     }
+// }
 
 impl From<DirectivePreprocessHir> for Directive {
     fn from(v: DirectivePreprocessHir) -> Self {

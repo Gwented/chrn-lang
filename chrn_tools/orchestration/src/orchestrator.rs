@@ -74,15 +74,13 @@ pub fn run_all(
                 };
 
                 //FIXME: Maybe cap directives allowed in a file for securituriatueitueriygu
-                for field in pre_direct.fields {
-                    match field.effect {
-                        // Only main can apply compiler effects for now
-                        DirectivePreprocessEffect::Compiler if mod_id.id == 0 => {
-                            //Not sure if fields should to be pushed here.
-                            compiler_store.directive_store.push(field.kind);
-                        }
-                        DirectivePreprocessEffect::Compiler => {}
+                match pre_direct.effect {
+                    // Only main can apply compiler effects for now
+                    DirectivePreprocessEffect::Compiler if mod_id.id == 0 => {
+                        //Not sure if fields should to be pushed here.
+                        compiler_store.directive_store.push(pre_direct.kind);
                     }
+                    DirectivePreprocessEffect::Compiler => {}
                 }
             }
         }

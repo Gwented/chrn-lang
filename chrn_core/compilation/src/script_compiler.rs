@@ -20,9 +20,9 @@ use lang::types::{boundaries::TypeBoundaryFlags, builtins::BuiltinType};
 
 use crate::{
     id_tag_decls::{
-        AliasTag, ConfigMemberTag, ConfigRootTag, DirectiveTag, EnumTag, FieldTag, FuncTag,
-        MultiTypeAssignmentTag, OptionAssignmentMemberTag, OptionAssignmentRootTag, StructTag,
-        TypeDefTag, VarTag, VariantTag,
+        AliasTag, ConfigMemberTag, ConfigRootTag, DirectivePreprocessTag, DirectiveTag, EnumTag,
+        FieldTag, FuncTag, MultiTypeAssignmentTag, OptionAssignmentMemberTag,
+        OptionAssignmentRootTag, StructTag, TypeDefTag, VarTag, VariantTag,
     },
     lookup::scopes::{
         self,
@@ -44,7 +44,9 @@ use crate::{
     semantic::{
         hir::{
             hir_concepts::{BuiltinTypeInfo, Table, Type, TypeInfo},
-            hir_directives::{Directive, DirectiveInline},
+            hir_directives::{
+                Directive, DirectiveInline, DirectivePreprocess, DirectivePreprocessHir,
+            },
             hir_exprs::{ExprHir, ResolvedExpr, ResolvedExprMetadata},
             hir_impls::{
                 ConfigMember, ConfigRoot, ImplHir, ImplHirKind, ImplMemberKind,
@@ -452,17 +454,35 @@ impl ScriptCompiler {
     //     }
     // }
     //
-    // pub(super) fn get_directive_preprocess(
-    //     &self,
-    //     sym_id: TaggedId<SymbolId, DirectiveTag>,
-    // ) -> &Directive {
-    //     match &self.syms[sym_id.inner()] {
-    //         sym_info => match &sym_info.kind {
-    //             SymbolKind::Directive(directive_id) => &self.directives[*directive_id],
-    //             _ => unreachable!(),
-    //         },
-    //     }
-    // }
+    pub(super) fn get_directive_preprocess(
+        &self,
+        impl_id: TaggedId<ImplId, DirectivePreprocessTag>,
+    ) -> &DirectivePreprocessHir {
+        match &self.impls[impl_id.inner()] {
+            sym_info => match &sym_info.kind {
+                ImplHirKind::Directive(directive_id) => match &self.directives[*directive_id] {
+                    Directive::Preprocess(direct) => direct,
+                    _ => unreachable!(),
+                },
+                _ => unreachable!(),
+            },
+        }
+    }
+
+    pub(super) fn get_directive_preprocess_mut(
+        &mut self,
+        impl_id: TaggedId<ImplId, DirectivePreprocessTag>,
+    ) -> &mut DirectivePreprocessHir {
+        match &self.impls[impl_id.inner()] {
+            sym_info => match &sym_info.kind {
+                ImplHirKind::Directive(directive_id) => match &mut self.directives[*directive_id] {
+                    Directive::Preprocess(direct) => direct,
+                    _ => unreachable!(),
+                },
+                _ => unreachable!(),
+            },
+        }
+    }
 
     /// Assumes the member symbol given is a field
     pub fn get_field(&self, memb_id: TaggedId<MemberId, FieldTag>) -> &FieldRepre {

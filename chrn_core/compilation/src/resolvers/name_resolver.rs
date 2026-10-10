@@ -26,7 +26,9 @@ use crate::{
         compilation_unit::CompilationUnit,
         hir::{
             hir_concepts::{Type, TypeInfo},
-            hir_directives::{DirectivePreprocessHir, DirectivePreprocessKind},
+            hir_directives::{
+                DirectivePreprocessHir, DirectivePreprocessKind, DirectivePreprocessSchema,
+            },
             hir_impls::{
                 ConfigRoot, ConfigRootCommon, ConfigRootKind, ConfigRootMetadataKind, ImplHir,
                 ImplHirKind,
@@ -164,33 +166,13 @@ impl NamespaceResolver<'_> {
     ) -> Option<TaggedId<ImplId, DirectivePreprocessTag>> {
         debug_assert!(matches!(scope_type, ScopeType::Neutral));
 
-        // Pushing the scope loads all symbols needed by override
         _ = self.compiler.push_scope(scope_type, env.current_mod);
 
         let impl_id = self.compiler.impls.make_id();
         let tagged = impl_id.into_tagged::<DirectivePreprocessTag>();
         let direct_id = self.compiler.directives.make_id();
 
-        //WARN: Not sure if this should be delayed to align with everything else which cannot be
-        //validated this early.
-        let Some(kind) =
-            DirectivePreprocessKind::try_from_interned_str(abs_direct.sp_name_id.inner)
-        else {
-            // Error code me
-            // Also search similar pleasies thanksies
-            let preset_err = PresetErr::UnknownDirective(abs_direct.sp_name_id.clone());
-            preset_reporter::report_preset(
-                self.compiler,
-                &mut self.summary,
-                preset_err,
-                env.region,
-                self.cfg,
-                self.interner,
-            );
-            return None;
-        };
-
-        let direct = DirectivePreprocessHir::new(abs_direct.sp_name_id.span, kind, Vec::new());
+        let direct = DirectivePreprocessHir::new(abs_direct.sp_name_id.clone(), None);
 
         let impl_hir = ImplHir::new(
             impl_id,

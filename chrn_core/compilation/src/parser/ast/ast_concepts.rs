@@ -406,15 +406,19 @@ impl AbstractDirectiveInline {
 #[derive(Debug)]
 pub struct AbstractDirectivePreprocess {
     pub sp_name_id: SpannedContainer<InternedId>,
-    pub fields: Vec<AbstractOptionAssignment>,
+    /// Expects `ArrayExpr`
+    pub array_expr: SpannedContainer<AstExpr>,
 }
 
 impl AbstractDirectivePreprocess {
     pub fn new(
         sp_name_id: SpannedContainer<InternedId>,
-        fields: Vec<AbstractOptionAssignment>,
+        array_expr: SpannedContainer<AstExpr>,
     ) -> Self {
-        Self { sp_name_id, fields }
+        Self {
+            sp_name_id,
+            array_expr,
+        }
     }
 }
 

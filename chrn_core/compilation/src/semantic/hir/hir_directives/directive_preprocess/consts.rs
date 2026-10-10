@@ -2,8 +2,8 @@ use crate::{
     lexer::token::TokenKind,
     resolvers::resolver_state::CompilerStage,
     semantic::hir::hir_directives::{
-        DirectivePreprocessEffect, DirectivePreprocessExpectInput, DirectivePreprocessFieldSchema,
-        DirectivePreprocessFieldSchemaKind,
+        DirectivePreprocessEffect, DirectivePreprocessExpectInput, DirectivePreprocessSchema,
+        DirectivePreprocessSchemaKind,
         directive_preprocess::directive_preprocess_args::{
             DirectivePreprocessArg, DirectivePreprocessArgConstraint, DirectivePreprocessArgLayout,
         },
@@ -19,10 +19,10 @@ pub(super) static MAX_NUMERIC_BITS_ARGS: [DirectivePreprocessArg; 1] = [
     )]),
 ];
 
-pub(super) static MAX_NUMERIC_BITS_SCHEMA: DirectivePreprocessFieldSchema =
-    DirectivePreprocessFieldSchema::new(
+pub(super) static MAX_NUMERIC_BITS_SCHEMA: DirectivePreprocessSchema =
+    DirectivePreprocessSchema::new(
         // Maybe shouldn't be identifier mainly at least
-        DirectivePreprocessFieldSchemaKind::MaxNumericBits,
+        DirectivePreprocessSchemaKind::MaxNumericBits,
         //TODO: ArgConstraint concept but here.
         //What if there was a concept of match Fixed | Dynamic where instead of pushing specific
         //argument placements inside dynamic, we make it fixed. But then what if fixed wants dynamic
@@ -32,7 +32,3 @@ pub(super) static MAX_NUMERIC_BITS_SCHEMA: DirectivePreprocessFieldSchema =
         DirectivePreprocessEffect::Compiler,
         CompilerStage::Lexer,
     );
-
-//TEST:
-static DIRECTIVE_CHRN_FIELDS: [DirectivePreprocessFieldSchemaKind; 1] =
-    [DirectivePreprocessFieldSchemaKind::MaxNumericBits];

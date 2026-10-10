@@ -7,8 +7,8 @@ use crate::{
     lexer::token::{SpannedToken, Token, TokenFloat, TokenInt, TokenKind},
     parser::parser_helpers::DelimiterContext,
     semantic::hir::hir_directives::{
-        DirectivePreprocessExpectInput, DirectivePreprocessField, DirectivePreprocessFieldSchema,
-        DirectivePreprocessHir, DirectivePreprocessInput, DirectivePreprocessKind,
+        DirectivePreprocess, DirectivePreprocessExpectInput, DirectivePreprocessHir,
+        DirectivePreprocessInput, DirectivePreprocessKind, DirectivePreprocessSchema,
     },
 };
 
@@ -17,94 +17,34 @@ use crate::{
 /// Expects to start at `#` in a stream of tokens, then attempts to parse it as a
 /// preprocessed directive.
 ///
-/// Syntax: {directive_ident}[{directive_field}({val}, ..), ..]
+/// Syntax: #[{directive}({val}, ..), ..]
 ///
 /// NOTE: Will panic if expected invariants are broken
-pub fn process_directive(toks: &[SpannedToken], hash_idx: usize) -> Option<DirectivePreprocessHir> {
+pub fn process_directive(toks: &[SpannedToken], hash_idx: usize) -> Option<DirectivePreprocess> {
     debug_assert!(hash_idx < toks.len());
     debug_assert_eq!(toks[hash_idx].tok, Token::HashSymbol);
 
-    // At least #{ident}[] 3 toks ahead
+    //TEST: Is this true?
+    // At least #{ident}() 3 toks ahead
     _ = toks.get(hash_idx + 3)?;
 
-    // At directive ident
+    // At ident
     let mut cursor = BasicCursor::with_pos(toks, hash_idx + 1);
 
-    let name_span = cursor.peek_ref().span;
-    // Ident of directive
     let id = expect_id(&mut cursor, TokenKind::Id)?;
-    let kind = DirectivePreprocessKind::try_from_interned_str(id)?;
+    let field_schema = DirectivePreprocessSchema::try_from_interned_id(id)?;
 
-    let delim_ctx = DelimiterContext::with_comma(TokenKind::OBracket, TokenKind::CBracket);
-
-    let fields = collect_directive_fields(&mut cursor, kind, delim_ctx);
-    let directive = DirectivePreprocessHir::new(name_span, kind, fields);
+    let val_delim_ctx = DelimiterContext::with_comma(TokenKind::OParen, TokenKind::CParen);
+    let directive = make_directive(&mut cursor, field_schema, val_delim_ctx)?;
 
     Some(directive)
 }
 
-// #{ident}[{ident}({val}), {ident}({val}), ..]
-//TODO: Should maybe have basic duplicate field prevention
-fn collect_directive_fields(
+fn make_directive(
     cursor: &mut BasicCursor<SpannedToken>,
-    kind: DirectivePreprocessKind,
+    field_schema: &DirectivePreprocessSchema,
     delim_ctx: DelimiterContext,
-) -> Vec<DirectivePreprocessField> {
-    let mut fields: Vec<DirectivePreprocessField> = Vec::new();
-    // OBracket
-    if !expect_tok(cursor, delim_ctx.opening()) {
-        return fields;
-    };
-
-    // Syntax for the array of values inside directives
-    let val_delim_ctx = DelimiterContext::with_comma(TokenKind::OParen, TokenKind::CParen);
-
-    while !cursor.peek_owned().tok.kind().is_terminator()
-        && cursor.peek_owned().tok.kind() != delim_ctx.closing()
-    {
-        // Not sure what to call this
-        let Some(field_ident) = expect_id(cursor, TokenKind::Id) else {
-            break;
-        };
-
-        if cursor.peek_owned().tok.kind() == delim_ctx.arg_sep()
-            && cursor.peek_ahead_owned(1).tok.kind() == delim_ctx.closing()
-        {
-            cursor.skip(1);
-            break;
-        } else if cursor.peek_owned().tok.kind() == delim_ctx.closing() {
-            break;
-        }
-
-        let Some(schema) = kind.get_field(field_ident) else {
-            return fields;
-        };
-
-        // #d[f(x,y)]
-        let Some(field) = collect_directive_field_vals(cursor, schema, val_delim_ctx) else {
-            return fields;
-        };
-        fields.push(field);
-
-        // comma
-        if !expect_tok(cursor, delim_ctx.arg_sep()) {
-            break;
-        }
-    }
-    // Doesn't check CBracket because it makes no meaningful difference
-
-    fields
-}
-
-//TODO: Idea here is we do [(arg1, input1), (arg2, input2), (argn, inputn)] and for each
-//we store the input if the arg passes the constraint. When done, we should have all valid inputs
-//and feed that to the schema, which produces whatever it should produce for it's schema given
-//the items.
-fn collect_directive_field_vals(
-    cursor: &mut BasicCursor<SpannedToken>,
-    field_schema: &DirectivePreprocessFieldSchema,
-    delim_ctx: DelimiterContext,
-) -> Option<DirectivePreprocessField> {
+) -> Option<DirectivePreprocess> {
     if !expect_tok(cursor, delim_ctx.opening()) {
         return None;
     };
@@ -161,14 +101,12 @@ fn collect_directive_field_vals(
         }
     }
 
-    // Terminates here because assuming everything later will be fine by letting this through as
-    // though it were a success is not valid.
     if !expect_tok(cursor, delim_ctx.closing()) {
         return None;
     };
 
-    let kind = field_schema.try_as_field_kind(&inputs)?;
-    Some(DirectivePreprocessField::new(kind))
+    let kind = field_schema.try_as_directive_preprocess(&inputs)?;
+    Some(DirectivePreprocess::new(kind))
 }
 
 /// Returns `true` if `expected` == found
