@@ -414,7 +414,7 @@ pub fn parse(
             }
             Token::Invalid(id) => {
                 ctx.advance_tok();
-                let err_str = interner.search(id);
+                let err_str = interner.extract_str_from_interned_id(id);
                 let msg = format!("Invalid token {err_str}");
                 let env = if state.is_neutral() {
                     SemanticEnv::SearchingNeutral
@@ -622,7 +622,7 @@ fn parse_typedef(
         interner,
     )?;
 
-    let err_name = interner.search(name_id);
+    let err_name = interner.extract_str_from_interned_id(name_id);
 
     ctx.expect_verbose(
         TokenKind::Colon,
@@ -693,7 +693,7 @@ fn parse_nest_sect(
                 interner,
             )?;
 
-            let struct_name = interner.search(sp_name_id.inner);
+            let struct_name = interner.extract_str_from_interned_id(sp_name_id.inner);
 
             ctx.expect_verbose(
                 TokenKind::OCurlyBracket,
@@ -757,7 +757,7 @@ fn parse_nest_sect(
                 interner,
             )?;
 
-            let enum_name = interner.search(sp_name_id.inner);
+            let enum_name = interner.extract_str_from_interned_id(sp_name_id.inner);
 
             ctx.expect_verbose(
                 TokenKind::OCurlyBracket,
@@ -1846,15 +1846,15 @@ fn parse_static_path(
     budget: &ParserBudget,
     interner: &Intern,
 ) -> Result<Vec<SpannedContainer<PathSegment>>, Token> {
-    let speculated = ctx
-        .toks
-        .iter()
-        .skip(1)
-        .take(5)
-        .filter(|t| t.tok == Token::StaticAccess)
-        .count();
+    // let speculated = ctx
+    //     .toks
+    //     .iter()
+    //     .skip(1)
+    //     .take(5)
+    //     .filter(|t| t.tok == Token::StaticAccess)
+    //     .count();
     // + 1 for guaranteed first tok
-    let mut static_path: Vec<SpannedContainer<PathSegment>> = Vec::with_capacity(speculated + 1);
+    let mut static_path: Vec<SpannedContainer<PathSegment>> = Vec::with_capacity(1);
 
     loop {
         let is_generic = ctx.peek_ahead(1).tok == Token::OAngleBracket;
@@ -2225,7 +2225,7 @@ fn parse_directive_preprocess(
         parse_expr(ctx, 0, budget, interner)
     };
 
-    let start = ctx.peek().span.start;
+    let start = ctx.cursor.peek_ref().span.start;
     let exprs = parse_enclosing(
         ctx,
         &getter,

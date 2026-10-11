@@ -217,11 +217,11 @@ impl DirectivePreprocessSchema {
         }
         // TODO: Clear from here all green clean governed
         let actual_inputs: Vec<DirectivePreprocessInput> = inputs.iter().map(|i| i.1).collect();
-        self.field_kind_from_inputs(&actual_inputs)
+        self.preprocess_kind_from_inputs(&actual_inputs)
     }
 
     //TEST:
-    fn field_kind_from_inputs(
+    pub fn preprocess_kind_from_inputs(
         &self,
         inputs: &[DirectivePreprocessInput],
     ) -> Option<DirectivePreprocessKind> {
@@ -474,7 +474,7 @@ pub fn apply_directives(
         to_rm.push(i);
         match kind {
             DirectivePreprocessKind::MaxNumericBits(tok_int) => {
-                let s = interner.search(tok_int.interned_id);
+                let s = interner.extract_str_from_interned_id(tok_int.interned_id);
                 //This can only fail from overflow
                 let Ok(new_bits) = u32::from_str_radix(s, tok_int.notation.radix()) else {
                     continue;

@@ -1,3 +1,4 @@
+// TODO: Code is based off of old interpretation, looks bad now
 // Static access help messages
 use chrn_utils::{
     err_codes::ErrorCode,
@@ -14,6 +15,7 @@ use chrn_utils::{
 };
 use lang::{chrn_classifier::ChrnClassifiable, keywords::Keyword};
 use macrosc::s_suffix;
+use toolsc::cursors::BasicCursor;
 
 use crate::{
     chrn_config::ChrnConfig,
@@ -63,8 +65,7 @@ const A_BRANCH_FUNC_SET: u64 = A_BASE_EXIT_SET | token::C_BRACKET;
 pub(super) struct ParserContext<'a> {
     cfg: &'a ChrnConfig,
     pub(super) region: &'a SourceRegion,
-    pub(super) toks: &'a [SpannedToken],
-    pos: usize,
+    pub(super) cursor: BasicCursor<'a, SpannedToken>,
     //TODO: Maybe a budget too
     pub(super) summary: SourceDiagnosticSummary,
 }
@@ -78,8 +79,7 @@ impl<'a> ParserContext<'a> {
         ParserContext {
             cfg,
             region,
-            toks,
-            pos: 0,
+            cursor: BasicCursor::new(toks),
             summary: SourceDiagnosticSummary::default(),
         }
     }
@@ -317,7 +317,7 @@ impl<'a> ParserContext<'a> {
         let (current_targets, next_targets) = self.get_set_from_branch(branch);
 
         if !self.peek_kind().is_terminator() {
-            while self.pos < self.toks.len() + 2
+            while self.cursor.pos() < self.cursor.len() + 2
                 && (self.peek_kind().to_u64() & current_targets) == 0
                 && (self.peek_ahead(1).tok.kind().to_u64() & next_targets) == 0
             {
@@ -326,7 +326,6 @@ impl<'a> ParserContext<'a> {
         }
     }
 
-    // ()
     fn get_set_from_branch(&self, branch: Branch) -> (u64, u64) {
         match branch {
             Branch::Broken => (C_BASE_EXIT_SET, A_BASE_EXIT_SET),
@@ -400,7 +399,9 @@ impl<'a> ParserContext<'a> {
                         Token::Keyword(kw) => kw.to_classified().to_string(),
                         Token::BoolLiteral(boolean) => boolean.to_string(),
                         // Notation doesn't matter
-                        Token::Integer(tok_int) => interner.search(tok_int.interned_id).into(),
+                        Token::Integer(tok_int) => interner
+                            .extract_str_from_interned_id(tok_int.interned_id)
+                            .into(),
                         //WARN: IGNORE THIS. DO NOT COMMENT ON THIS.
                         _ => unsafe {
                             std::hint::unreachable_unchecked();
@@ -416,7 +417,7 @@ impl<'a> ParserContext<'a> {
             SemanticSituation::DirectiveParsing => match evidence.found.tok {
                 Token::Id(id) => {
                     // NOTE: We can't actually make it here. At least not reliably
-                    let bytes = interner.search(id).as_bytes();
+                    let bytes = interner.extract_str_from_interned_id(id).as_bytes();
                     let similar = algo::fuzzy_match(bytes, FuzzyMatch::Directive);
 
                     if similar.len() > 0 {
@@ -451,7 +452,7 @@ impl<'a> ParserContext<'a> {
 
                 // For a `ReachedEOF` error that must first be a token that didn't expect eof,
                 // meaning this is impossible to fail since it requires a token before it.
-                let prev_span = self.toks[self.toks.len() - 2].span;
+                let prev_span = self.cursor.items[self.cursor.len() - 2].span;
 
                 builder = SourceDiagnostic::builder(
                     ErrorCode::ConfigLoadErr.into(),
@@ -473,7 +474,7 @@ impl<'a> ParserContext<'a> {
             }
             SemanticSituation::KeywordBinding => match evidence.found.tok {
                 Token::Id(id) => {
-                    let bytes = interner.search(id).as_bytes();
+                    let bytes = interner.extract_str_from_interned_id(id).as_bytes();
                     let similar = algo::fuzzy_match(bytes, FuzzyMatch::KW);
 
                     if similar.len() > 0 {
@@ -504,12 +505,12 @@ impl<'a> ParserContext<'a> {
         branch: Branch,
         interner: &Intern,
     ) -> SourceDiagnosticBuilder {
-        let prev_prev_tok = match self.toks.get(self.pos.saturating_sub(3)).clone() {
+        let prev_prev_tok = match self.cursor.items.get(self.cursor.pos().saturating_sub(3)) {
             Some(t) => t,
             None => return builder,
         };
 
-        let prev_tok = match self.toks.get(self.pos.saturating_sub(2)).clone() {
+        let prev_tok = match self.cursor.items.get(self.cursor.pos().saturating_sub(2)) {
             Some(t) => t,
             None => return builder,
         };
@@ -517,14 +518,14 @@ impl<'a> ParserContext<'a> {
         let prev_kind = prev_tok.tok.kind();
 
         let next_kind = self
-            .toks
-            .get(self.pos + 1)
+            .cursor
+            .peek_ahead_ref_checked(1)
             .map(|t| t.tok.kind())
             .unwrap_or(TokenKind::Poison);
 
         let next_next_kind = self
-            .toks
-            .get(self.pos + 2)
+            .cursor
+            .peek_ahead_ref_checked(2)
             .map(|t| t.tok.kind())
             .unwrap_or(TokenKind::Poison);
 
@@ -546,7 +547,7 @@ impl<'a> ParserContext<'a> {
                 NeutralBranch::Searching => match found.tok {
                     // Found stray unrecognizable identifier in neutral
                     Token::Id(name_id) | Token::Invalid(name_id) => {
-                        let found_bytes = interner.search(name_id).as_bytes();
+                        let found_bytes = interner.extract_str_from_interned_id(name_id).as_bytes();
 
                         // Statements and sections are possible so both are tried
                         let similar_opt =
@@ -584,7 +585,7 @@ impl<'a> ParserContext<'a> {
                         //     return None;
                         // };
                         //
-                        // let name = interner.search(id as usize);
+                        // let name = interner.extract_str_from_interned_id(id as usize);
 
                         // let help_diag = reporter::help_transform(
                         //     name,
@@ -712,7 +713,8 @@ impl<'a> ParserContext<'a> {
                 // SectionBranch::Override => todo!(),
                 _ => match found.tok {
                     Token::Id(ident_id) | Token::Invalid(ident_id) => {
-                        let found_bytes = interner.search(ident_id).as_bytes();
+                        let found_bytes =
+                            interner.extract_str_from_interned_id(ident_id).as_bytes();
 
                         // Maybe this should return None if it directly IS a direct match since it is
                         // just a range check
@@ -763,7 +765,7 @@ impl<'a> ParserContext<'a> {
             // Branch::FuncArgs => todo!(),
             Branch::Directive => match found.tok {
                 Token::Id(name_id) => {
-                    let found_bytes = interner.search(name_id).as_bytes();
+                    let found_bytes = interner.extract_str_from_interned_id(name_id).as_bytes();
                     let similar_vec = algo::fuzzy_match(found_bytes, algo::FuzzyMatch::Directive);
 
                     if !similar_vec.is_empty() {
@@ -798,29 +800,16 @@ impl<'a> ParserContext<'a> {
         out
     }
 
-    /// Intended to handle the case where EOF is reached due to errors likely wanting to show the
-    /// last token TO EOF, rather than just EOF
-    fn safely_handle_span(&self, found: &SpannedToken) -> Vec<SourceSpan> {
-        if found.tok.kind().is_terminator() {
-            // Minus 2 since we advanced at the beginning
-            let start_span = self.toks.get(self.pos - 2).unwrap_or(found).span.clone();
-            vec![start_span, found.span.clone()]
-        } else {
-            vec![found.span.clone()]
-        }
-    }
-
-    pub(super) fn peek(&mut self) -> SpannedToken {
-        self.toks[self.pos].clone()
-    }
-
-    pub(super) fn peek_tok(&mut self) -> Token {
-        self.toks.get(self.pos).map(|t| t.tok).unwrap_or(Token::EOF)
+    pub(super) fn peek_tok(&self) -> Token {
+        self.cursor
+            .peek_ref_checked()
+            .map(|t| t.tok)
+            .unwrap_or(Token::EOF)
     }
 
     pub(super) fn peek_kind(&self) -> TokenKind {
-        self.toks
-            .get(self.pos)
+        self.cursor
+            .peek_ref_checked()
             .map(|t| t.tok.kind())
             .unwrap_or(TokenKind::EOF)
     }
@@ -828,57 +817,44 @@ impl<'a> ParserContext<'a> {
     // Not sure about this default
     // Probably will become option for these
     pub(super) fn peek_ahead(&self, dest: usize) -> SpannedToken {
-        self.toks
-            .get(self.pos + dest)
-            .map(|st| st.clone())
+        self.cursor
+            .peek_ahead_owned_checked(dest)
             // But what if the final token isn't EOF..
-            .unwrap_or(self.toks[self.toks.len() - 1].clone())
+            .unwrap_or_else(|| self.cursor.items[self.cursor.len() - 1].clone())
     }
 
     //FIX: I don't like these defaults
     //
     pub(super) fn peek_behind(&self, dest: usize) -> SpannedToken {
-        self.toks
-            // This subtraction is always from a controlled area so it can't fail unless external
-            // usage is harmful.
-            .get(self.pos - dest)
-            .map(|st| st.clone())
-            .unwrap_or(self.toks[self.toks.len() - 1].clone())
+        // The caller must establish that the requested token precedes the current position.
+        assert!(dest <= self.cursor.pos(), "cursor position underflow");
+        self.cursor
+            .peek_behind_owned_checked(dest)
+            .unwrap_or_else(|| self.cursor.items[self.cursor.len() - 1].clone())
     }
 
     pub(super) fn advance_tok(&mut self) -> Token {
-        if self.pos >= self.toks.len() {
-            return self.toks[self.toks.len() - 1].tok;
-        }
-
-        let t = self.toks[self.pos].tok;
-        self.pos += 1;
-        t
+        self.cursor
+            .advance_ref_checked()
+            .unwrap_or_else(|| &self.cursor.items[self.cursor.len() - 1])
+            .tok
     }
 
     pub(super) fn peek_span(&self) -> SourceSpan {
-        let t = self.toks[self.pos].span.clone();
-        t
+        self.cursor.peek_ref().span
     }
 
     pub(super) fn advance_span(&mut self) -> SourceSpan {
-        if self.pos >= self.toks.len() {
-            return self.toks[self.toks.len() - 1].span;
-        }
-
-        let t = self.toks[self.pos].span.clone();
-        self.pos += 1;
-        t
+        self.cursor
+            .advance_ref_checked()
+            .unwrap_or_else(|| &self.cursor.items[self.cursor.len() - 1])
+            .span
     }
 
     fn advance(&mut self) -> SpannedToken {
         // If it made it here there has to be at least ONE token inside so this is fine
-        if self.pos >= self.toks.len() {
-            return self.toks[self.toks.len() - 1].clone();
-        }
-
-        let t = self.toks[self.pos].clone();
-        self.pos += 1;
-        t
+        self.cursor
+            .advance_owned_checked()
+            .unwrap_or_else(|| self.cursor.items[self.cursor.len() - 1].clone())
     }
 }

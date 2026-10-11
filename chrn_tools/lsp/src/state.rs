@@ -909,7 +909,7 @@ impl DocumentState {
                 let region = &self.region_arena[region_id];
                 let label = self
                     .interner
-                    .search_path(region.path_id)
+                    .extract_path_from_path_id(region.path_id)
                     .file_name()
                     .and_then(|name| name.to_str())
                     .unwrap_or("imported module")
@@ -979,7 +979,7 @@ impl DocumentState {
     /// that returns the identifier text as a `String`.
     pub fn get_identifier_at_offset(&self, byte_offset: usize) -> Option<String> {
         self.get_symbol_at_offset(byte_offset)
-            .map(|(id, _, _)| self.interner.search(id).to_string())
+            .map(|(id, _, _)| self.interner.extract_str_from_interned_id(id).to_string())
     }
 
     /// Resolves a symbol to the AST it was declared in, its declaration node, and
@@ -998,14 +998,14 @@ impl DocumentState {
         let ast = self.asts[owner_id].as_ref()?;
         let module = &compiler.mods[ModuleId::new(owner_id as u32)];
         let region = &self.region_arena[module.region_id?];
-        Some((ast, ast_id, self.interner.search_path(region.path_id)))
+        Some((ast, ast_id, self.interner.extract_path_from_path_id(region.path_id)))
     }
 
     /// Path of the file backing `mod_id`'s source region.
     fn module_path(&self, mod_id: ModuleId) -> Option<&Path> {
         let compiler = self.compiler.as_ref()?;
         let region = &self.region_arena[compiler.mods[mod_id].region_id?];
-        Some(self.interner.search_path(region.path_id))
+        Some(self.interner.extract_path_from_path_id(region.path_id))
     }
 
     /// Resolves a [`SemanticEntity`] to its definition site, borrowing the path

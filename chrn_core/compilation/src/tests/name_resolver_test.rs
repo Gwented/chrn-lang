@@ -128,7 +128,7 @@ nest->
     let find_sym = |name: &str| -> SymbolId {
         let name_id = res
             .interner
-            .try_search_str(name)
+            .get_interned_id_from_str(name)
             .unwrap_or_else(|| panic!("symbol name `{name}` should be interned"));
         res.compiler
             .syms

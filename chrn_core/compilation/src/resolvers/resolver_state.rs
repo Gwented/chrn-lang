@@ -112,7 +112,6 @@ pub enum CompilerStage {
     Complete,
 }
 
-//WARN: These are unsafe...
 impl CompilerStage {
     /// Gets what would be the next state
     pub fn next_state(self) -> Self {

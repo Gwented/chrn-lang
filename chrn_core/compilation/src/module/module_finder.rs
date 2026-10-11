@@ -16,6 +16,7 @@ use chrn_utils::{
     },
 };
 use lang::keywords;
+use toolsc::cursors::BasicCursor;
 
 use crate::chrn_config::ChrnConfig;
 use crate::module::module_concepts::Bind;
@@ -26,19 +27,12 @@ use crate::module::{Import, ImportKind};
 /// This is not recursive in any way, it's just a mini parser which uses the most minimal syntax
 /// possible to search `src_bytes` and identifiy imports and bind usage where possible.
 pub struct ModuleFinder<'a> {
-    /// Current module's bytes
-    // Maybe turn this into &str
-    src_bytes: &'a [u8],
+    /// Current module cursor
+    cursor: BasicCursor<'a, u8>,
     cfg: &'a ChrnConfig,
-    // reserved_mod_ids: &'a mut Vec<(PathId, ModuleId)>,
     summary: SourceDiagnosticSummary,
     /// Path origin so that errors can accurately report the path where the import was declared
     current_region: &'a SourceRegion,
-    pos: usize,
-    //TODO: Remove these when !
-    script_start: usize,
-    // NOT NEEDED BUT STAYING IN CASE
-    serial_start: usize,
 }
 
 impl ModuleFinder<'_> {
@@ -46,19 +40,12 @@ impl ModuleFinder<'_> {
         src_bytes: &'a [u8],
         cfg: &'a ChrnConfig,
         current_region: &'a SourceRegion,
-        script_start: usize,
-        serial_start: Option<usize>,
     ) -> ModuleFinder<'a> {
         ModuleFinder {
-            src_bytes,
+            cursor: BasicCursor::new(src_bytes),
             cfg,
             current_region,
             summary: SourceDiagnosticSummary::default(),
-            pos: 0,
-            script_start,
-            // If there is no serial start then it's a script file not a script block with @def ->
-            // @end
-            serial_start: serial_start.unwrap_or(src_bytes.len()),
         }
     }
 
@@ -74,7 +61,7 @@ impl ModuleFinder<'_> {
         loop {
             self.skip_until_important();
 
-            if self.pos >= self.src_bytes.len() && self.peek() == b'\0' {
+            if self.cursor.pos() >= self.cursor.len() && self.peek() == b'\0' {
                 break;
             }
 
@@ -86,13 +73,13 @@ impl ModuleFinder<'_> {
                 }
                 b'/' => {
                     if self.peek_ahead(1) == b'/' {
-                        self.skip(2);
+                        self.cursor.skip(2);
                         self.handle_comment();
                     } else if self.peek_ahead(1) == b'*' {
-                        self.skip(2);
+                        self.cursor.skip(2);
                         self.handle_multi_comment();
                     } else {
-                        self.advance();
+                        self.cursor.skip(1);
                     }
                 }
                 // Should probably just work with &str directly at this point
@@ -104,11 +91,11 @@ impl ModuleFinder<'_> {
                     // parser stays this way for a large set of unexplained reasons that may change.
                     let can_check = prev_ch.is_whitespace()
                         // Start should always be valid
-                        || self.pos == 0
+                        || self.cursor.pos() == 0
                         // Same as checking for start of file
-                        || (self.pos == keywords::EMBEDDING_CLAUSE_SIZE
+                        || (self.cursor.pos() == keywords::EMBEDDING_CLAUSE_SIZE
                             // Is + 1 because we haven't actually advanced
-                        && &self.src_bytes[0..keywords::EMBEDDING_CLAUSE_SIZE]
+                        && &self.cursor.items[0..keywords::EMBEDDING_CLAUSE_SIZE]
                             == b"@def");
 
                     if can_check {
@@ -133,11 +120,11 @@ impl ModuleFinder<'_> {
                         }
                     } else {
                         // skipping i/b
-                        self.advance();
+                        self.cursor.skip(1);
                     }
                 }
                 _ => {
-                    self.advance();
+                    self.cursor.skip(1);
                 }
             }
         }
@@ -149,23 +136,23 @@ impl ModuleFinder<'_> {
 
     /// Assumes the starting point is at the start quote
     fn parse_import(&mut self, interner: &mut Intern) -> Result<Import, SourceDiagnostic> {
-        self.advance();
-        let start_cursor = self.pos;
+        self.cursor.skip(1);
+        let start_cursor = self.cursor.pos();
         // Boolean to track if a "\" was seen since only "/" can be used to separate
         let mut saw_backslash = false;
 
-        while self.pos < self.src_bytes.len() {
+        while self.cursor.pos() < self.cursor.len() {
             match self.peek() {
                 b'"' => {
-                    self.advance();
+                    self.cursor.skip(1);
                     break;
                 }
                 b'\\' => {
                     saw_backslash = true;
-                    self.advance();
+                    self.cursor.skip(1);
                 }
                 _ => {
-                    self.advance();
+                    self.cursor.skip(1);
                 }
             }
         }
@@ -173,7 +160,7 @@ impl ModuleFinder<'_> {
         // - 1 for same reason as in lexer. Before breaking the last quote is skipped, and since
         // span ends are exclusive, the end pos would be one after the end quote, so we need to go
         // back 1 to properly sit at the end quote
-        let end_cursor = self.pos - 1;
+        let end_cursor = self.cursor.pos() - 1;
 
         let path_span = SourceSpan::new(
             self.current_region.self_id,
@@ -200,7 +187,7 @@ impl ModuleFinder<'_> {
             return Err(src_diag);
         }
 
-        let path_buf = self.create_pathbuf(&self.src_bytes[start_cursor..end_cursor])?;
+        let path_buf = self.create_pathbuf(&self.cursor.items[start_cursor..end_cursor])?;
 
         let import_path = match path_buf.canonicalize() {
             Ok(p) => p,
@@ -245,16 +232,16 @@ impl ModuleFinder<'_> {
             }
         };
 
-        let name_id = interner.intern(&file_name);
+        let name_id = interner.intern_str(&file_name);
         let path_id = interner.intern_path(&import_path);
 
         let alias_id: Option<SpannedContainer<InternedId>> = if self.is_as() {
             self.skip_whitespace();
-            let start = self.pos as u32;
+            let start = self.cursor.pos() as u32;
             let id = self.read_id(interner);
             SpannedContainer::new(
                 id,
-                SourceSpan::new(self.current_region.self_id, start, self.pos as u32),
+                SourceSpan::new(self.current_region.self_id, start, self.cursor.pos() as u32),
             )
             .into()
         } else {
@@ -265,8 +252,8 @@ impl ModuleFinder<'_> {
         let import = Import::new(name_id, import_kind, alias_id);
 
         self.cfg.logger().log_dbg(|| {
-            let import_name = interner.search(name_id);
-            let region_path = interner.search_path(self.current_region.path_id);
+            let import_name = interner.extract_str_from_interned_id(name_id);
+            let region_path = interner.extract_path_from_path_id(self.current_region.path_id);
             format!(
                 "Created import `{import_name}` (region=\"{}\")",
                 region_path.display()
@@ -332,28 +319,28 @@ impl ModuleFinder<'_> {
 
     fn parse_bind(&mut self, interner: &mut Intern) -> Result<Bind, SourceDiagnostic> {
         // skipping "
-        self.advance();
-        let start_cursor = self.pos;
+        self.cursor.skip(1);
+        let start_cursor = self.cursor.pos();
 
         let mut saw_backslash = false;
 
-        while self.pos < self.src_bytes.len() {
+        while self.cursor.pos() < self.cursor.len() {
             match self.peek() {
                 b'"' => {
-                    self.advance();
+                    self.cursor.skip(1);
                     break;
                 }
                 b'\\' => {
                     saw_backslash = true;
-                    self.advance();
+                    self.cursor.skip(1);
                 }
                 _ => {
-                    self.advance();
+                    self.cursor.skip(1);
                 }
             }
         }
 
-        let end_cursor = self.pos - 1;
+        let end_cursor = self.cursor.pos() - 1;
 
         let path_span = SourceSpan::new(
             self.current_region.self_id,
@@ -378,7 +365,7 @@ impl ModuleFinder<'_> {
         }
 
         // WHY WAS THIS UNWRAP FOR SO LONG
-        let path_buf = self.create_pathbuf(&self.src_bytes[start_cursor..end_cursor])?;
+        let path_buf = self.create_pathbuf(&self.cursor.items[start_cursor..end_cursor])?;
 
         let bind_path = match path_buf.canonicalize() {
             Ok(p) => p,
@@ -403,8 +390,8 @@ impl ModuleFinder<'_> {
         let bind = Bind::new(bind_path_id, path_span);
 
         self.cfg.logger().log_dbg(|| {
-            let bind_path = interner.search_path(bind_path_id);
-            let region_path = interner.search_path(self.current_region.path_id);
+            let bind_path = interner.extract_path_from_path_id(bind_path_id);
+            let region_path = interner.extract_path_from_path_id(self.current_region.path_id);
             format!(
                 "Created bind which points to `{}` for region \"{}\"",
                 bind_path.display(),
@@ -416,30 +403,30 @@ impl ModuleFinder<'_> {
     }
 
     fn read_id(&mut self, interner: &mut Intern) -> InternedId {
-        let start = self.pos;
+        let start = self.cursor.pos();
 
-        while (self.pos < self.src_bytes.len() && self.peek_char().is_alphanumeric())
-            || (self.pos < self.src_bytes.len() && self.peek() == b'_')
+        while (self.cursor.pos() < self.cursor.len() && self.peek_char().is_alphanumeric())
+            || (self.cursor.pos() < self.cursor.len() && self.peek() == b'_')
         {
             self.advance_char();
         }
 
-        let end = self.pos;
+        let end = self.cursor.pos();
 
         // Enforces utf-8 but module paths themselves don't need to be valid utf-8, am I
         // hallucinating?
         // Yes, yes.
-        let id_str = str::from_utf8(&self.src_bytes[start..end])
+        let id_str = str::from_utf8(&self.cursor.items[start..end])
             .expect("Cannot fail due to loop only accepting valid UTF-8 characters.");
 
-        interner.intern(&id_str)
+        interner.intern_str(&id_str)
     }
     //FIX: Perf perf perf perf perfff
 
-    fn peek_behind_char(&mut self, dest: usize) -> char {
+    fn peek_behind_char(&self, dest: usize) -> char {
         // Inclusive since otherwise it would skip the current character and there would need to be
         // a saturating sub to make up for it
-        let chunk = &self.src_bytes[0..=self.pos];
+        let chunk = &self.cursor.items[0..=self.cursor.pos()];
 
         //TODO: Fix forced validation
         // This is a bug. Call it a bug.
@@ -450,27 +437,25 @@ impl ModuleFinder<'_> {
             .unwrap_or('\0')
     }
 
-    fn peek_behind(&mut self, dest: usize) -> u8 {
-        self.src_bytes
-            .get(self.pos - dest)
-            .copied()
-            .unwrap_or(b'\0')
+    fn peek_behind(&self, dest: usize) -> u8 {
+        assert!(dest <= self.cursor.pos(), "cursor position underflow");
+        self.cursor.peek_behind_owned_checked(dest).unwrap_or(b'\0')
     }
 
     fn skip_quotes(&mut self) {
-        while self.pos < self.src_bytes.len() {
+        while self.cursor.pos() < self.cursor.len() {
             match self.peek() {
                 b'\\' => {
-                    self.advance();
+                    self.cursor.skip(1);
 
                     self.read_escape();
                 }
                 b'"' => {
-                    self.advance();
+                    self.cursor.skip(1);
                     break;
                 }
                 _ => {
-                    self.advance();
+                    self.cursor.skip(1);
                 }
             }
         }
@@ -479,35 +464,35 @@ impl ModuleFinder<'_> {
     fn read_escape(&mut self) -> Option<char> {
         match self.peek() {
             b'n' => {
-                self.advance();
+                self.cursor.skip(1);
                 Some('\n')
             }
             b'r' => {
-                self.advance();
+                self.cursor.skip(1);
                 Some('\r')
             }
             b't' => {
-                self.advance();
+                self.cursor.skip(1);
                 Some('\t')
             }
             b'\\' => {
-                self.advance();
+                self.cursor.skip(1);
                 Some('\\')
             }
             b'0' => {
-                self.advance();
+                self.cursor.skip(1);
                 Some('\0')
             }
             b'\'' => {
-                self.advance();
+                self.cursor.skip(1);
                 Some('\'')
             }
             b'"' => {
-                self.advance();
+                self.cursor.skip(1);
                 Some('"')
             }
             b'x' => {
-                self.advance();
+                self.cursor.skip(1);
                 let mut val: u8 = 0;
                 let mut count = 0;
 
@@ -522,7 +507,7 @@ impl ModuleFinder<'_> {
                     };
 
                     val = (val << 4) | digit;
-                    self.advance();
+                    self.cursor.skip(1);
                     count += 1;
                 }
 
@@ -542,15 +527,15 @@ impl ModuleFinder<'_> {
     }
 
     fn is_import(&mut self) -> bool {
-        let start = self.pos;
+        let start = self.cursor.pos();
 
-        while self.pos < self.src_bytes.len() && self.peek().is_ascii_alphabetic() {
-            self.advance();
+        while self.cursor.pos() < self.cursor.len() && self.peek().is_ascii_alphabetic() {
+            self.cursor.skip(1);
         }
 
-        let end = self.pos;
+        let end = self.cursor.pos();
 
-        if &self.src_bytes[start..end] != b"import" {
+        if &self.cursor.items[start..end] != b"import" {
             return false;
         }
 
@@ -568,8 +553,10 @@ impl ModuleFinder<'_> {
     fn is_as(&mut self) -> bool {
         self.skip_whitespace();
 
-        if self.pos + 2 < self.src_bytes.len() && &self.src_bytes[self.pos..self.pos + 2] == b"as" {
-            self.skip(2);
+        if self.cursor.pos() + 2 < self.cursor.len()
+            && &self.cursor.items[self.cursor.pos()..self.cursor.pos() + 2] == b"as"
+        {
+            self.cursor.skip(2);
             return true;
         }
 
@@ -577,15 +564,15 @@ impl ModuleFinder<'_> {
     }
 
     fn is_bind(&mut self) -> bool {
-        let start = self.pos;
+        let start = self.cursor.pos();
 
-        while self.pos < self.src_bytes.len() && self.peek().is_ascii_alphabetic() {
-            self.advance();
+        while self.cursor.pos() < self.cursor.len() && self.peek().is_ascii_alphabetic() {
+            self.cursor.skip(1);
         }
 
-        let end = self.pos;
+        let end = self.cursor.pos();
 
-        if &self.src_bytes[start..end] != b"bind" {
+        if &self.cursor.items[start..end] != b"bind" {
             return false;
         }
 
@@ -600,43 +587,39 @@ impl ModuleFinder<'_> {
     }
 
     fn handle_comment(&mut self) {
-        while self.pos < self.src_bytes.len() && self.peek() != b'\n' {
-            self.advance();
+        while self.cursor.pos() < self.cursor.len() && self.peek() != b'\n' {
+            self.cursor.skip(1);
         }
     }
 
     fn handle_multi_comment(&mut self) {
         let mut depth = 1;
 
-        while self.pos < self.src_bytes.len() && depth > 0 {
+        while self.cursor.pos() < self.cursor.len() && depth > 0 {
             if self.peek() == b'/' && self.peek_ahead(1) == b'*' {
-                self.skip(1);
+                self.cursor.skip(1);
                 depth += 1;
             } else if self.peek() == b'*' && self.peek_ahead(1) == b'/' {
-                self.skip(2);
+                self.cursor.skip(2);
                 depth -= 1;
             } else {
-                self.advance();
+                self.cursor.skip(1);
             }
         }
     }
 
-    fn skip(&mut self, dest: usize) {
-        self.pos += dest;
-    }
-
     fn peek(&self) -> u8 {
-        self.src_bytes.get(self.pos).copied().unwrap_or(b'\0')
+        self.cursor.peek_owned_checked().unwrap_or(b'\0')
     }
 
-    fn peek_char(&mut self) -> char {
+    fn peek_char(&self) -> char {
         let b = self.peek();
 
         if b <= 127 {
             return b as char;
         }
 
-        let chunk = &self.src_bytes[self.pos..];
+        let chunk = &self.cursor.items[self.cursor.pos()..];
 
         // Should be a test for this this is suspicious
         // Lazy evaluation to avoid utf-8 checking entire self.bytes
@@ -648,40 +631,29 @@ impl ModuleFinder<'_> {
 
     fn advance_char(&mut self) -> char {
         let ch = self.peek_char();
-
-        self.pos += ch.len_utf8();
-
+        self.cursor.skip(ch.len_utf8());
         ch
     }
 
-    fn peek_ahead(&mut self, dest: usize) -> u8 {
-        self.src_bytes
-            .get(self.pos + dest)
-            .copied()
-            .unwrap_or(b'\0')
-    }
-
-    fn advance(&mut self) -> u8 {
-        let b = self.peek();
-        self.pos += 1;
-        b
+    fn peek_ahead(&self, dest: usize) -> u8 {
+        self.cursor.peek_ahead_owned_checked(dest).unwrap_or(b'\0')
     }
 
     fn skip_until_important(&mut self) {
         // Stopping at parts that may cause wrongful import reads
-        while self.pos <= self.src_bytes.len()
+        while self.cursor.pos() <= self.cursor.len()
             && self.peek() != b'i'
             && self.peek() != b'b'
             && self.peek() != b'"'
             && self.peek() != b'/'
         {
-            self.advance();
+            self.cursor.skip(1);
         }
     }
 
     fn skip_whitespace(&mut self) {
         while self.peek().is_ascii_whitespace() {
-            self.advance();
+            self.cursor.skip(1);
         }
 
         while self.peek_char().is_whitespace() {

@@ -171,7 +171,7 @@ fn write_diagnostic(
         push_yaml_str(out, &diag.core_msg);
         out.push('\n');
 
-        let path = interner.search_path(diag.path_id);
+        let path = interner.extract_path_from_path_id(diag.path_id);
         write_indent(out, key_level, config);
         push_yaml_str(out, "path");
         out.push_str(": ");
@@ -240,7 +240,7 @@ fn write_diagnostic_fields_minify(
     out.push_str(", ");
 
     // path
-    let path = interner.search_path(diag.path_id);
+    let path = interner.extract_path_from_path_id(diag.path_id);
     push_yaml_str(out, "path");
     out.push_str(": ");
     push_yaml_str(out, &path.display().to_string());

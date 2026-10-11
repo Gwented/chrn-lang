@@ -203,10 +203,10 @@ pub fn apply_binary_op_with_limit(
             },
             Value::InternedStr(lhs_inner) => match rhs {
                 Value::InternedStr(rhs_inner) => {
-                    let l_str = interner.search(*lhs_inner);
-                    let r_str = interner.search(*rhs_inner);
+                    let l_str = interner.extract_str_from_interned_id(*lhs_inner);
+                    let r_str = interner.extract_str_from_interned_id(*rhs_inner);
                     let new_str = l_str.to_string() + r_str;
-                    let new_interned_id = interner.intern(&new_str);
+                    let new_interned_id = interner.intern_str(&new_str);
                     Some(Value::InternedStr(new_interned_id))
                 }
                 _ => None,
@@ -277,8 +277,8 @@ pub fn apply_binary_op_with_limit(
             },
             Value::InternedStr(lhs_inner) => match rhs {
                 Value::InternedStr(rhs_inner) => {
-                    let l_str = interner.search(*lhs_inner);
-                    let r_str = interner.search(*rhs_inner);
+                    let l_str = interner.extract_str_from_interned_id(*lhs_inner);
+                    let r_str = interner.extract_str_from_interned_id(*rhs_inner);
                     Some(Value::Bool(l_str > r_str))
                 }
                 _ => None,
@@ -300,8 +300,8 @@ pub fn apply_binary_op_with_limit(
             },
             Value::InternedStr(lhs_inner) => match rhs {
                 Value::InternedStr(rhs_inner) => {
-                    let l_str = interner.search(*lhs_inner);
-                    let r_str = interner.search(*rhs_inner);
+                    let l_str = interner.extract_str_from_interned_id(*lhs_inner);
+                    let r_str = interner.extract_str_from_interned_id(*rhs_inner);
                     Some(Value::Bool(l_str < r_str))
                 }
                 _ => None,
@@ -323,8 +323,8 @@ pub fn apply_binary_op_with_limit(
             },
             Value::InternedStr(lhs_inner) => match rhs {
                 Value::InternedStr(rhs_inner) => {
-                    let l_str = interner.search(*lhs_inner);
-                    let r_str = interner.search(*rhs_inner);
+                    let l_str = interner.extract_str_from_interned_id(*lhs_inner);
+                    let r_str = interner.extract_str_from_interned_id(*rhs_inner);
                     Some(Value::Bool(l_str >= r_str))
                 }
                 _ => None,
@@ -346,8 +346,8 @@ pub fn apply_binary_op_with_limit(
             },
             Value::InternedStr(lhs_inner) => match rhs {
                 Value::InternedStr(rhs_inner) => {
-                    let l_str = interner.search(*lhs_inner);
-                    let r_str = interner.search(*rhs_inner);
+                    let l_str = interner.extract_str_from_interned_id(*lhs_inner);
+                    let r_str = interner.extract_str_from_interned_id(*rhs_inner);
                     Some(Value::Bool(l_str <= r_str))
                 }
                 _ => None,

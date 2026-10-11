@@ -18,12 +18,12 @@ pub(super) fn fmt_tok(tok: Token, interner: &Intern) -> String {
             interned_id: name_id,
             ..
         }) => {
-            let ident = interner.search(name_id);
+            let ident = interner.extract_str_from_interned_id(name_id);
             format!("\"{ident}\"")
         }
         Token::Keyword(kw) => format!("keyword `{}`", kw.to_classified().to_string()),
         Token::Invalid(name_id) => {
-            let invalid_msg = interner.search(name_id);
+            let invalid_msg = interner.extract_str_from_interned_id(name_id);
             let new_msg = format!("invalid token \"{invalid_msg}\"");
             new_msg
         }

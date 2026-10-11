@@ -34,7 +34,7 @@ fn first_core_func(compiler: &ScriptCompiler) -> (SymbolId, TypeId) {
 /// Type id of a resolved `let` variable's value, the end product of inference.
 fn type_of(compiler: &ScriptCompiler, interner: &Intern, name: &str) -> TypeId {
     let name_id = interner
-        .try_search_str(name)
+        .get_interned_id_from_str(name)
         .unwrap_or_else(|| panic!("Variable '{}' was not interned", name));
     let var_def = find_user_var(compiler, name_id);
 
@@ -487,7 +487,7 @@ fn infer_intrinsic_namespace_constant_test() {
             .into_state();
 
         let name_id = interner
-            .try_search_str("CONSTANT")
+            .get_interned_id_from_str("CONSTANT")
             .expect("`CONSTANT` should be interned");
         let var_def = find_user_var(&compiler, name_id);
 

@@ -19,6 +19,7 @@ use lang::{
     config_schemas::{self, ConfigSchema, ConfigSchemaKind},
     types::{boundaries::TypeBoundaryFlags, builtins::BuiltinType},
 };
+use macrosc::s_suffix;
 
 use crate::{
     chrn_config::{ChrnConfig, chrn_perf::ChrnPerfStage},
@@ -116,12 +117,45 @@ impl<'a> ConstraintResolver<'a> {
         let schema = DirectivePreprocessSchema::try_from_interned_id(direct.sp_name_id.inner)
             .expect("`TypeResolver` did not check correctly");
 
+        // Does not return as to not lose the more granular arg info
         if elems.len() != schema.arg_layout.arg_len() {
-            todo!("WRonkg");
+            let s_suffix = s_suffix!(schema.arg_layout.arg_len());
+            let core_msg = format!(
+                "Expected {} argument{s_suffix}, found {}",
+                schema.arg_layout.arg_len(),
+                elems.len()
+            );
+
+            let builder = SourceDiagnostic::builder(
+                ErrorCode::DirectiveErr.into(),
+                DiagnosticLevel::Error,
+                core_msg,
+                env.region.path_id,
+            )
+            .add_annotation(
+                array_expr.meta.expect_user(),
+                AnnotationKind::Primary,
+                None,
+            );
+            self.summary.push_diag(builder.build());
+            return;
         }
+        //TODO: Turn expr ids into inputs, which then get validated against the higher level info
+        //expected since `Token` isn't enough.
+
+        // To avoid diagnostic pollution given a long set of incorrect arguments.
+        let mut times_reported: u8 = 0;
+
         for arg in schema.arg_layout.args() {
             dbg!(arg);
+            if times_reported == 5 {
+                break;
+            }
             todo!()
+        }
+
+        if times_reported > 0 {
+            return;
         }
         todo!()
     }
@@ -307,7 +341,7 @@ impl<'a> ConstraintResolver<'a> {
 
                             // for thing in cfg_member.cfg_members.iter().cloned() {
                             //     let mem = self.compiler.get_cfg_member(thing);
-                            //     dbg!(self.interner.search(mem.name_id));
+                            //     dbg!(self.interner.extract_str_from_interned_id(mem.name_id));
                             //     dbg!(mem);
                             //     dbg!(thing);
                             //     todo!("Ok");
@@ -367,7 +401,7 @@ impl<'a> ConstraintResolver<'a> {
         {
             SchemaResult::Valid => Ok(()),
             res => {
-                let opt_name = self.interner.search(sp_opt_name_id.inner);
+                let opt_name = self.interner.extract_str_from_interned_id(sp_opt_name_id.inner);
                 let src_diag = match res {
                     SchemaResult::BoundaryMismatch {
                         err_idx,
@@ -467,7 +501,7 @@ impl<'a> ConstraintResolver<'a> {
                         );
 
                         if let Some(ty_name_id) = cfg_ty_name_id {
-                            let ty_name = self.interner.search(ty_name_id);
+                            let ty_name = self.interner.extract_str_from_interned_id(ty_name_id);
                             builder = builder.add_annotation(
                                 cfg_name_span,
                                 AnnotationKind::Secondary,
@@ -477,7 +511,7 @@ impl<'a> ConstraintResolver<'a> {
                         builder
                     }
                     SchemaResult::CannotSupportBoundaries => {
-                        let opt_name = self.interner.search(sp_opt_name_id.inner);
+                        let opt_name = self.interner.extract_str_from_interned_id(sp_opt_name_id.inner);
                         let core_msg = format!(
                             "Option `{opt_name}` requires that the config it is attached to has boundaries"
                         );
@@ -507,7 +541,7 @@ impl<'a> ConstraintResolver<'a> {
                         // )
                     }
                     SchemaResult::UnknownOptionName => {
-                        let opt_name = self.interner.search(sp_opt_name_id.inner);
+                        let opt_name = self.interner.extract_str_from_interned_id(sp_opt_name_id.inner);
                         let core_msg = format!(
                             "Option `{opt_name}` does not exist for schema `{}`",
                             schema.kind
@@ -1170,7 +1204,7 @@ impl<'a> ConstraintResolver<'a> {
         //
         // // if visited.contains(&field.type_id) {
         // //     if spanned_directive.arg.has_restrictions() {
-        // //         let name = self.interner.search(symbol.name_id );
+        // //         let name = self.interner.extract_str_from_interned_id(symbol.name_id );
         // //
         // //         let msg = format!(
         // //             "The type `{name}` cannot have `#{}` applied due to recursively relying on itself satisfying the argument",

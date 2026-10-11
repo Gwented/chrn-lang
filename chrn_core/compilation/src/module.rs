@@ -148,7 +148,7 @@ pub fn extract_main<R: Read>(
         }
     };
 
-    let main_name_id = interner.intern(file_name);
+    let main_name_id = interner.intern_str(file_name);
     let main_mod_id = ModuleId::new(0);
 
     // This is a Vector relationship stored where, the path id of an import is stored along with a
@@ -161,14 +161,8 @@ pub fn extract_main<R: Read>(
     // Maybe don't inherently declare here since it's a little odd to use a returned variable as
     // the main variable to then collect future diagnostics?
     // Maybe not?
-    let (main_bind, main_imports, mut finder_summary) = ModuleFinder::new(
-        &main_region.src_bytes,
-        cfg,
-        &main_region,
-        main_region.script_start,
-        main_region.serial_start,
-    )
-    .collect_imports(&mut interner);
+    let (main_bind, main_imports, mut finder_summary) =
+        ModuleFinder::new(&main_region.src_bytes, cfg, &main_region).collect_imports(&mut interner);
     summary.append_summary(&mut finder_summary);
 
     // Pushing main's region
@@ -355,13 +349,13 @@ pub fn extract_modules(
             if expected_len > MAX_MODS_USIZE {
                 // Checking if the last processed is in the queue
                 let last_processed_name = if let Some(module) = pending_mods.iter().last() {
-                    interner.search(module.name_id)
+                    interner.extract_str_from_interned_id(module.name_id)
                 // Checking if the last processed has been pushed into the final module list
                 } else if let Some(module) = valid_mods.iter().last() {
-                    interner.search(module.name_id)
+                    interner.extract_str_from_interned_id(module.name_id)
                 } else {
                     // All checks were exhausted so this was a failure at the entry point
-                    interner.search(importer_mod.name_id)
+                    interner.extract_str_from_interned_id(importer_mod.name_id)
                 };
 
                 let core_msg = format!("Exceeded max module count of {}", chrn_utils::MAX_MODULES);
@@ -414,7 +408,7 @@ pub fn extract_modules(
         }
 
         for found in mod_ident_tracker.found_dups.drain(..) {
-            let dup_ident = interner.search(found.dup.ident_id);
+            let dup_ident = interner.extract_str_from_interned_id(found.dup.ident_id);
 
             // An alias is already present so changes msg
             let add_help = !found.dup.is_alias;
@@ -521,7 +515,7 @@ fn resolve_module(
 
     //WARN: This can't fail, if the mod finder found it that means it normalized it, which means
     //it's a real path, which could be a dir I guess
-    let path = interner.search_path(sp_path_id.inner);
+    let path = interner.extract_path_from_path_id(sp_path_id.inner);
     let src = match file_ops::fopen(path) {
         Ok(f) => f,
         Err((_, err_msg)) => {
@@ -570,7 +564,7 @@ fn resolve_module(
                         summary.push_diag(diag);
                     }
                     ConfigLoadError::IO(e) => {
-                        let path = interner.search_path(sp_path_id.inner);
+                        let path = interner.extract_path_from_path_id(sp_path_id.inner);
                         let core_msg =
                             core_error::form_string_from_io_err(&e, path).unwrap_or(e.to_string());
                         let src_diag = SourceDiagnostic::builder(
@@ -593,7 +587,7 @@ fn resolve_module(
                         summary.push_diag(diag);
                     }
                     ConfigLoadError::IO(e) => {
-                        let path = interner.search_path(sp_path_id.inner);
+                        let path = interner.extract_path_from_path_id(sp_path_id.inner);
                         let core_msg =
                             core_error::form_string_from_io_err(&e, path).unwrap_or(e.to_string());
                         let src_diag = SourceDiagnostic::builder(
@@ -625,14 +619,8 @@ fn resolve_module(
         .registered_mod_ids
         .push((sp_path_id.inner, current_mod_id));
 
-    let (bind, sub_imports, finder_summary) = ModuleFinder::new(
-        &sub_region.src_bytes,
-        cfg,
-        &sub_region,
-        sub_region.script_start,
-        sub_region.serial_start,
-    )
-    .collect_imports(interner);
+    let (bind, sub_imports, finder_summary) =
+        ModuleFinder::new(&sub_region.src_bytes, cfg, &sub_region).collect_imports(interner);
     summary.merge(finder_summary);
 
     // As opposed to how modules are pushed, regions are pushed before recursively descending

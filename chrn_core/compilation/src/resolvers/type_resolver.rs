@@ -151,13 +151,14 @@ impl<'res> TypeResolver<'res> {
     /// Mutates inner `ScriptCompiler` and `TypeContext` given the `env`.
     ///
     /// * `env`: The current environment the resolver is operating in. This being passed in
-    /// explicitly allows for `TypeResolver` to maintain it's state throughout resolution while
+    /// allows for `TypeResolver` to maintain it's state throughout resolution while
     /// mutating off of given envs.
     pub fn resolve<'env>(&mut self, env: &'env ResolverEnv) -> SourceDiagnosticSummary {
         self.cfg.perf_tracker_mut().start(env.region.path_id);
+        let speculated_seen = if env.compilation_syms.len() > 0 { 4 } else { 0 };
         // Re-used hash-set for when identifiers are checked, like for configs, alias params, etc.
         let mut ident_tracker: DuplicateTracker<SpannedContainer<InternedId>> =
-            DuplicateTracker::with_capacities(4, 0);
+            DuplicateTracker::with_capacities(speculated_seen, 0);
 
         // Everything skipped is not a factor in this compilation step.
         for comp_unit in env.compilation_syms.iter().cloned() {
@@ -173,7 +174,7 @@ impl<'res> TypeResolver<'res> {
                     self.resolve_cfg_root(impl_id, &mut ident_tracker, env)
                 }
                 CompilationUnit::DirectivePreprocess(impl_id) => {
-                    self.resolve_preprocess_directive(impl_id, &mut ident_tracker, env)
+                    self.resolve_preprocess_directive(impl_id, env)
                 }
             }
             ident_tracker.clear();
@@ -418,8 +419,8 @@ impl<'res> TypeResolver<'res> {
         //     == self.compiler.mods[ModuleId::new((self.compiler.mods.len() - 2) as u32)].self_id
         // {
         //     for symbol in &self.compiler.syms {
-        //         if self.interner.search(symbol.name_id) == "B" {
-        //             let name = self.interner.search(symbol.name_id);
+        //         if self.interner.extract_str_from_interned_id(symbol.name_id) == "B" {
+        //             let name = self.interner.extract_str_from_interned_id(symbol.name_id);
         //             dbg!(name);
         //             match symbol.kind {
         //                 SymbolKind::Variable(var_id) => {
@@ -473,7 +474,6 @@ impl<'res> TypeResolver<'res> {
     fn resolve_preprocess_directive(
         &mut self,
         parent_impl_id: TaggedId<ImplId, DirectivePreprocessTag>,
-        ident_tracker: &mut DuplicateTracker<SpannedContainer<InternedId>>,
         env: &ResolverEnv,
     ) {
         let impl_hir = &self.compiler.impls[parent_impl_id.inner()];
@@ -917,7 +917,7 @@ impl<'res> TypeResolver<'res> {
                                         .compiler
                                         .get_name_id_from_type_id(type_id)
                                         .expect("NOT DONE YET");
-                                    let found_name = self.interner.search(found_type_name_id);
+                                    let found_name = self.interner.extract_str_from_interned_id(found_type_name_id);
 
                                     let preset_err =
                                         PresetErr::Lookup(LookupError::ImpossibleTypeMemberAccess(
@@ -1010,7 +1010,7 @@ impl<'res> TypeResolver<'res> {
                                 // I don't know if this is possible anymore
                                 MemberLookupResult::Unknown(type_id) => {
                                     // let var = self.compiler.get_var(found_sym_id);
-                                    // let name = self.interner.search(var.name_id);
+                                    // let name = self.interner.extract_str_from_interned_id(var.name_id);
 
                                     // dbg!(&self.compiler.types[var.type_id ]);
                                     todo!("RUST_BACKTRACE=1");
@@ -1173,7 +1173,7 @@ impl<'res> TypeResolver<'res> {
                 // the original field for all duplicates.
                 .find(|(other_i, cfg)| *other_i < i && current_cfg.inner == cfg.inner)
             {
-                let dup_name = self.interner.search(current_cfg.inner);
+                let dup_name = self.interner.extract_str_from_interned_id(current_cfg.inner);
 
                 let orig_span = original_cfg.span;
                 let current_cfg_span = current_cfg.span;
@@ -3470,7 +3470,7 @@ impl<'res> TypeResolver<'res> {
                             }
                         }
                         SymbolKind::Namespace => {
-                            let err_mod_name = self.interner.search(*name_id);
+                            let err_mod_name = self.interner.extract_str_from_interned_id(*name_id);
                             // TODO: Should send help, which should be done after re-doing how
                             // errors are rendered
                             let core_msg = format!(
@@ -3503,10 +3503,10 @@ impl<'res> TypeResolver<'res> {
 
                     Ok(expr_id)
                 } else {
-                    let ident = self.interner.search(*name_id);
+                    let ident = self.interner.extract_str_from_interned_id(*name_id);
 
                     let module = &self.compiler.mods[env.current_mod];
-                    let mod_name = self.interner.search(module.name_id);
+                    let mod_name = self.interner.extract_str_from_interned_id(module.name_id);
 
                     let and_local = if local_scope_id.is_some() {
                         " and local scopes"
@@ -3542,7 +3542,7 @@ impl<'res> TypeResolver<'res> {
                 // expression of just being a singular value type
                 let expr_hir = ExprHir::Val(val_id);
 
-                let s = self.interner.search(*name_id);
+                let s = self.interner.extract_str_from_interned_id(*name_id);
                 let max_bits = self.cfg.max_numeric_bits() as u64;
                 let kind = match ArbitraryIntKind::from_str_with_limit(s, *notation, max_bits) {
                     Ok(kind) => kind,
@@ -3588,7 +3588,7 @@ impl<'res> TypeResolver<'res> {
 
                 let expr_hir = ExprHir::Val(val_id);
 
-                let s = self.interner.search(*name_id);
+                let s = self.interner.extract_str_from_interned_id(*name_id);
                 let max_bits = self.cfg.max_numeric_bits() as u64;
                 let kind = match ArbitraryFloatKind::from_str_with_limit(s, max_bits) {
                     Ok(kind) => kind,
@@ -4278,7 +4278,7 @@ impl<'res> TypeResolver<'res> {
             } else {
                 let msg = format!(
                     "Could not find `{}` as a module or value",
-                    self.interner.search(name_id)
+                    self.interner.extract_str_from_interned_id(name_id)
                 );
 
                 return Err(PresetErr::General(todo!()));
@@ -4308,12 +4308,12 @@ impl<'res> TypeResolver<'res> {
             // Directly checking if a cycle was had
             if current == parent_sym_id {
                 let current_sym = &self.compiler.syms[parent_sym_id];
-                let current_name = self.interner.search(current_sym.name_id);
+                let current_name = self.interner.extract_str_from_interned_id(current_sym.name_id);
                 let current_ast_id = current_sym.ast_id.expect("Should be user symbols only");
 
                 let cycled_sym = &self.compiler.syms[found_sym_id];
                 let cycled_ast_id = cycled_sym.ast_id.expect("Should be user symbols only");
-                let cycled_name = self.interner.search(cycled_sym.name_id);
+                let cycled_name = self.interner.extract_str_from_interned_id(cycled_sym.name_id);
 
                 let cycled_span = env.ast_info.get_name_span(cycled_ast_id);
                 let current_span = env.ast_info.get_name_span(current_ast_id);

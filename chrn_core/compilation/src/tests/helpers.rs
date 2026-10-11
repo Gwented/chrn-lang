@@ -15,7 +15,7 @@ pub(super) fn mock_interner(str_amt: usize, path_amt: usize) -> Intern {
 
     for idx in 0..str_amt {
         let s = format!("dummyname{idx}");
-        interner.intern(&s);
+        interner.intern_str(&s);
     }
 
     for idx in 0..path_amt {
@@ -110,9 +110,9 @@ pub(super) fn mock_import(
         mod_id,
     );
     Import::new(
-        interner.intern(name),
+        interner.intern_str(name),
         kind,
-        alias_id.map(|a| SpannedContainer::new(interner.intern(&a), SourceSpan::default())),
+        alias_id.map(|a| SpannedContainer::new(interner.intern_str(&a), SourceSpan::default())),
     )
 }
 
@@ -133,7 +133,7 @@ pub(super) fn mock_single_module(
         .expect_success();
 
     let module = Module::new(
-        interner.intern(name),
+        interner.intern_str(name),
         ModuleState::Loaded,
         ModuleId::new(mod_id),
         None,
@@ -626,7 +626,7 @@ pub(super) fn find_user_var(compiler: &ScriptCompiler, name_id: InternedId) -> &
 /// Returns the constant value of a resolved `let` variable by name.
 pub(super) fn value_of(compiler: &ScriptCompiler, interner: &Intern, name: &str) -> Value {
     let name_id = interner
-        .try_search_str(name)
+        .get_interned_id_from_str(name)
         .unwrap_or_else(|| panic!("Variable '{}' was not interned", name));
     let var_def = find_user_var(compiler, name_id);
 

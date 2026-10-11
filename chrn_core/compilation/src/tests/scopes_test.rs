@@ -28,7 +28,7 @@ fn sym_in_scope(
     name: &str,
 ) -> (ScopeId, SymbolId) {
     let name_id = interner
-        .try_search_str(name)
+        .get_interned_id_from_str(name)
         .unwrap_or_else(|| panic!("'{name}' was not interned"));
     let scope_id = compiler
         .get_scope_id(scope_type, ModuleId::new(0))
@@ -129,7 +129,7 @@ fn scope_lookup_pref_found_test() {
             ";
 
     let (compiler, interner) = ns_resolve(text);
-    let thing_id = interner.try_search_str("Thing").unwrap();
+    let thing_id = interner.get_interned_id_from_str("Thing").unwrap();
 
     // A variable preference skips the struct found in `nest` and returns the variable
     // found later in `neutral`.
@@ -183,7 +183,7 @@ fn scope_lookup_pref_fallback_test() {
             ";
 
     let (compiler, interner) = ns_resolve(text);
-    let thing_id = interner.try_search_str("Thing").unwrap();
+    let thing_id = interner.get_interned_id_from_str("Thing").unwrap();
 
     let found = find_sym_id(
         &compiler,
@@ -206,7 +206,7 @@ fn scope_lookup_pref_fallback_test() {
             ";
 
     let (compiler, interner) = ns_resolve(text);
-    let thing_id = interner.try_search_str("Thing").unwrap();
+    let thing_id = interner.get_interned_id_from_str("Thing").unwrap();
 
     let found = find_sym_id(
         &compiler,
@@ -235,7 +235,7 @@ fn scope_lookup_no_preference_test() {
             ";
 
     let (compiler, interner) = ns_resolve(text);
-    let thing_id = interner.try_search_str("Thing").unwrap();
+    let thing_id = interner.get_interned_id_from_str("Thing").unwrap();
 
     let found = find_sym_id(
         &compiler,
@@ -260,7 +260,7 @@ fn namespaced_builtins() -> Vec<(String, TypeId)> {
         .filter(|(_, _, ns)| !ns.is_empty())
         .map(|(interned, builtin_ty, _)| {
             (
-                interner.search_idx(*interned as usize).to_string(),
+                interner.extract_str_from_idx(*interned as usize).to_string(),
                 TypeId::new(builtin_ty_to_id(builtin_ty.kind())),
             )
         })
@@ -363,7 +363,7 @@ fn scope_core_type_namespace_unreachable_test() {
     // `sized`/`unsized` are pointer-sized, so neither carries an intrinsic namespace
     for (interned, builtin_ty, ns) in &CORE_BUILTIN_TYPES_DATASET {
         let interner = Intern::init();
-        let name = interner.search_idx(*interned as usize);
+        let name = interner.extract_str_from_idx(*interned as usize);
 
         if !ns.is_empty() {
             continue;

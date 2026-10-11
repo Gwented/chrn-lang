@@ -343,13 +343,11 @@ pub static PRELOADED_STRINGS: [(&str, u32); INTERNER_PRELOAD_SIZE] = [
 /// Interner used for the chrn language
 #[derive(Debug)]
 pub struct Intern {
-    // Um
     id_map: HashMap<String, u32>,
     path_map: HashMap<PathBuf, u32>,
     // Is super solely for lib.rs tests
     pub(super) stored_strs: Vec<String>,
     stored_paths: Vec<PathBuf>,
-    // Maybe not
     pos: usize,
 }
 
@@ -381,7 +379,9 @@ impl Intern {
         self.stored_strs.push(s.to_string());
     }
 
-    pub fn intern(&mut self, s: &str) -> InternedId {
+    /// Stores string and returns it's assigned `InternedId`
+    /// If the string is already stored, returns the existent `InternedId`
+    pub fn intern_str(&mut self, s: &str) -> InternedId {
         if let Some(id) = self.id_map.get(s) {
             return InternedId::new(*id);
         }
@@ -397,28 +397,17 @@ impl Intern {
         InternedId::new(id)
     }
 
-    /// Method for `self` to intern all of `other`'s stored strings and paths
-    pub fn append(&mut self, other: &Intern) {
-        for i in INTERNER_PRELOAD_SIZE..other.stored_strs.len() {
-            let current = &other.stored_strs[i];
-            self.intern(current);
-        }
-
-        for i in 0..other.stored_paths.len() {
-            let current = &other.stored_paths[i];
-            self.intern_path(current);
-        }
-    }
-
-    pub fn intern_path(&mut self, s: &Path) -> PathId {
-        if let Some(id) = self.path_map.get(s) {
+    /// Stores path and returns it's assigned `PathId`
+    /// If the path is already stored, returns the existent `PathId`
+    pub fn intern_path(&mut self, p: &Path) -> PathId {
+        if let Some(id) = self.path_map.get(p) {
             return PathId::new(*id);
         }
 
         let id = self.stored_paths.len() as u32;
         self.pos += 1;
 
-        let new_path = s.to_path_buf();
+        let new_path = p.to_path_buf();
 
         self.path_map.insert(new_path.clone(), id);
         self.stored_paths.push(new_path);
@@ -426,27 +415,38 @@ impl Intern {
         PathId::new(id)
     }
 
-    pub fn search(&self, interned_id: InternedId) -> &str {
+    /// Appends `self` intern all of `other`'s stored strings and paths
+    pub fn append(&mut self, other: &Intern) {
+        for i in INTERNER_PRELOAD_SIZE..other.stored_strs.len() {
+            self.intern_str(&other.stored_strs[i]);
+        }
+
+        for i in 0..other.stored_paths.len() {
+            self.intern_path(&other.stored_paths[i]);
+        }
+    }
+
+    /// Looks up and returns the given `InternedId`'s associated string
+    /// Panics on failure
+    pub fn extract_str_from_interned_id(&self, interned_id: InternedId) -> &str {
         &self.stored_strs[interned_id.id as usize]
     }
 
-    pub fn search_idx(&self, idx: usize) -> &str {
-        &self.stored_strs[idx]
-    }
-
-    pub fn try_search_str(&self, s: &str) -> Option<InternedId> {
+    /// Looks up and returns the given `&str`'s associated string
+    pub fn get_interned_id_from_str(&self, s: &str) -> Option<InternedId> {
         self.id_map.get(s).map(|id| InternedId::new(*id))
     }
 
-    pub fn search_path(&self, path_id: PathId) -> &Path {
-        &self.stored_paths[path_id.id as usize]
+    // Should probably just be removed
+    /// Looks up and returns the given index's associated string
+    /// Panics on failure
+    pub fn extract_str_from_idx(&self, idx: usize) -> &str {
+        &self.stored_strs[idx]
     }
 
-    pub fn search_direct_path(&self, path: &Path) -> Option<&Path> {
-        if let Some(id) = self.path_map.get(path) {
-            return Some(self.search_path(PathId::new(*id)));
-        }
-
-        None
+    /// Looks up and returns the given `PathId`'s associated path
+    /// Panics on failure
+    pub fn extract_path_from_path_id(&self, path_id: PathId) -> &Path {
+        &self.stored_paths[path_id.id as usize]
     }
 }

@@ -233,7 +233,7 @@ fn type_resolver_simple_test() {
     let undeclared_sym = compiler
         .syms
         .iter()
-        .find(|s| interner.search(s.name_id) == "undeclared_type")
+        .find(|s| interner.extract_str_from_interned_id(s.name_id) == "undeclared_type")
         .expect("undeclared_type symbol should exist");
     let undeclared_type_id = match &undeclared_sym.kind {
         SymbolKind::Type(type_id) => *type_id,
@@ -255,7 +255,7 @@ fn type_resolver_simple_test() {
     let primitive_sym = compiler
         .syms
         .iter()
-        .find(|s| interner.search(s.name_id) == "primitive")
+        .find(|s| interner.extract_str_from_interned_id(s.name_id) == "primitive")
         .expect("primitive symbol should exist");
     let primitive_type_id = match &primitive_sym.kind {
         SymbolKind::Type(type_id) => *type_id,
@@ -292,7 +292,7 @@ fn type_resolver_simple_test() {
     let thing_sym = compiler
         .syms
         .iter()
-        .find(|s| interner.search(s.name_id) == "Thing")
+        .find(|s| interner.extract_str_from_interned_id(s.name_id) == "Thing")
         .expect("Thing symbol should exist");
     let thing_type_id = match &thing_sym.kind {
         SymbolKind::Type(type_id) => *type_id,
@@ -312,7 +312,7 @@ fn type_resolver_simple_test() {
     let primitive_sym = compiler
         .syms
         .iter()
-        .find(|s| interner.search(s.name_id) == "primitive")
+        .find(|s| interner.extract_str_from_interned_id(s.name_id) == "primitive")
         .expect("primitive symbol should exist");
     let primitive_type_id = match &primitive_sym.kind {
         SymbolKind::Type(type_id) => *type_id,
@@ -333,7 +333,7 @@ fn type_resolver_simple_test() {
     let declared_type_sym = compiler
         .syms
         .iter()
-        .find(|s| interner.search(s.name_id) == "declared_type")
+        .find(|s| interner.extract_str_from_interned_id(s.name_id) == "declared_type")
         .expect("declared_type symbol should exist");
     let declared_type_id = match &declared_type_sym.kind {
         SymbolKind::Type(type_id) => *type_id,
@@ -366,7 +366,7 @@ fn type_resolver_complex_test() {
     let constant_sym = compiler
         .syms
         .iter()
-        .find(|s| interner.search(s.name_id) == "CONSTANT")
+        .find(|s| interner.extract_str_from_interned_id(s.name_id) == "CONSTANT")
         .expect("CONSTANT symbol should exist");
     let var_id = match &constant_sym.kind {
         SymbolKind::Variable(var_id) => *var_id,
@@ -401,7 +401,7 @@ fn type_resolver_string_concat_basic_test() {
     match &val {
         Value::InternedStr(id) => {
             assert_eq!(
-                interner.search(*id),
+                interner.extract_str_from_interned_id(*id),
                 "Hello World",
                 "String concat should produce exact value"
             );
@@ -415,7 +415,7 @@ fn type_resolver_string_concat_type_test() {
     let (compiler, interner) = compile_and_resolve_single_module("let X = \"Hello\" + \" World\"");
 
     let name_id = interner
-        .try_search_str("X")
+        .get_interned_id_from_str("X")
         .expect("'X' should be interned");
     let var_def = find_user_var(&compiler, name_id);
     let val_id = match &var_def.state {
@@ -545,7 +545,7 @@ fn type_resolver_literal_types_match_arbitrary_type_id() {
     .expect_ok();
 
     let get_type = |name: &str| -> TypeId {
-        let name_id = res.interner.try_search_str(name).unwrap();
+        let name_id = res.interner.get_interned_id_from_str(name).unwrap();
         let var_def = find_user_var(&res.compiler, name_id);
         match &var_def.state {
             VariableState::Known(value_id) => res.compiler.values[*value_id].type_id,
@@ -570,7 +570,7 @@ fn root_option_expr_and_value<'a>(
         .iter()
         .find_map(|member| match member {
             ImplMemberKind::OptAssignmentRoot(option)
-                if resolution.interner.search(option.name_id) == option_name =>
+                if resolution.interner.extract_str_from_interned_id(option.name_id) == option_name =>
             {
                 Some(option)
             }
@@ -788,7 +788,7 @@ fn named_comparison_type(resolution: &Resolution, name: &str) -> TypeId {
         .compiler
         .syms
         .iter()
-        .find(|symbol| resolution.interner.search(symbol.name_id) == name)
+        .find(|symbol| resolution.interner.extract_str_from_interned_id(symbol.name_id) == name)
         .unwrap_or_else(|| panic!("missing type declaration {name}"));
     let SymbolKind::Type(type_id) = symbol.kind else {
         panic!("{name} must be a type declaration");

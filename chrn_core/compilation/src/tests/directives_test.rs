@@ -18,7 +18,7 @@ use lang::directive_consts::BUILTIN_DIRECTIVE_STRS;
 //     let interner = Intern::init();
 //     for &directive_str in BUILTIN_DIRECTIVE_STRS.iter() {
 //         let interned = interner
-//             .try_search_str(directive_str)
+//             .get_interned_id_from_str(directive_str)
 //             .unwrap_or_else(|| panic!("'{directive_str}' not preloaded in interner"));
 //         assert!(
 //             Directive::try_from_interned_str(interned).is_some(),
@@ -123,7 +123,7 @@ use lang::directive_consts::BUILTIN_DIRECTIVE_STRS;
 fn interner_preload_size_covers_all_directives() {
     let interner = Intern::init();
     for &s in BUILTIN_DIRECTIVE_STRS.iter() {
-        let id = interner.try_search_str(s).unwrap().id;
+        let id = interner.get_interned_id_from_str(s).unwrap().id;
         assert!(
             (id as usize) < intern::INTERNER_PRELOAD_SIZE,
             "Directive '{s}' has interned ID {id} but INTERNER_PRELOAD_SIZE is {} — \

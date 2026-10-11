@@ -58,7 +58,7 @@ pub(super) fn resolve_region_path(
 ) -> Option<String> {
     let arena = region_arena_opt?;
     let region = arena.get(region_id)?;
-    Some(interner.search_path(region.path_id).display().to_string())
+    Some(interner.extract_path_from_path_id(region.path_id).display().to_string())
 }
 
 /// Projects a span's `start`/`end` from region-relative offsets to

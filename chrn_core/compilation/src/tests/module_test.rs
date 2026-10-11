@@ -56,7 +56,7 @@ fn find_module_by_name<'a>(
     interner: &Intern,
     name: &str,
 ) -> Option<&'a Module> {
-    let name_id = interner.try_search_str(name)?;
+    let name_id = interner.get_interned_id_from_str(name)?;
     for i in 0..compiler.mods.len() {
         let m = &compiler.mods[ModuleId::new(i as u32)];
         if m.name_id == name_id {
@@ -139,14 +139,8 @@ fn modfinder_no_imports_or_bind() {
     .load_config()
     .expect_success();
 
-    let (bind, imports, diags) = ModuleFinder::new(
-        &region.src_bytes,
-        &cfg,
-        &region,
-        region.script_start,
-        region.serial_start,
-    )
-    .collect_imports(&mut interner);
+    let (bind, imports, diags) =
+        ModuleFinder::new(&region.src_bytes, &cfg, &region).collect_imports(&mut interner);
 
     assert!(bind.is_none(), "no bind expected, got {:?}", bind);
     assert!(
@@ -178,14 +172,8 @@ fn modfinder_single_import() {
         .load_config()
         .expect_success();
 
-    let (bind, imports, diags) = ModuleFinder::new(
-        &region.src_bytes,
-        &cfg,
-        &region,
-        region.script_start,
-        region.serial_start,
-    )
-    .collect_imports(&mut interner);
+    let (bind, imports, diags) =
+        ModuleFinder::new(&region.src_bytes, &cfg, &region).collect_imports(&mut interner);
 
     assert!(bind.is_none(), "no bind expected");
     assert!(
@@ -268,14 +256,8 @@ fn modfinder_multiple_imports() {
         .load_config()
         .expect_success();
 
-    let (bind, imports, diags) = ModuleFinder::new(
-        &region.src_bytes,
-        &cfg,
-        &region,
-        region.script_start,
-        region.serial_start,
-    )
-    .collect_imports(&mut interner);
+    let (bind, imports, diags) =
+        ModuleFinder::new(&region.src_bytes, &cfg, &region).collect_imports(&mut interner);
 
     assert!(bind.is_none());
     assert!(
@@ -316,14 +298,8 @@ fn modfinder_import_with_alias() {
         .load_config()
         .expect_success();
 
-    let (_, imports, diags) = ModuleFinder::new(
-        &region.src_bytes,
-        &cfg,
-        &region,
-        region.script_start,
-        region.serial_start,
-    )
-    .collect_imports(&mut interner);
+    let (_, imports, diags) =
+        ModuleFinder::new(&region.src_bytes, &cfg, &region).collect_imports(&mut interner);
 
     assert!(
         diags.diags.is_empty(),
@@ -336,7 +312,7 @@ fn modfinder_import_with_alias() {
         import.sp_alias_id.is_some(),
         "import should have an alias_id"
     );
-    let alias_name = interner.search(import.sp_alias_id.as_ref().unwrap().inner);
+    let alias_name = interner.extract_str_from_interned_id(import.sp_alias_id.as_ref().unwrap().inner);
     assert_eq!(alias_name, "my_mod", "alias should be 'my_mod'");
 
     _ = fs::remove_dir_all(&dir);
@@ -359,14 +335,8 @@ fn modfinder_bind() {
         .load_config()
         .expect_success();
 
-    let (bind, imports, diags) = ModuleFinder::new(
-        &region.src_bytes,
-        &cfg,
-        &region,
-        region.script_start,
-        region.serial_start,
-    )
-    .collect_imports(&mut interner);
+    let (bind, imports, diags) =
+        ModuleFinder::new(&region.src_bytes, &cfg, &region).collect_imports(&mut interner);
 
     assert!(diags.diags.is_empty(), "no diagnostics expected");
     assert!(imports.is_empty(), "no imports expected");
@@ -397,14 +367,8 @@ fn modfinder_backslash_error() {
         .load_config()
         .expect_success();
 
-    let (_bind, imports, diags) = ModuleFinder::new(
-        &region.src_bytes,
-        &cfg,
-        &region,
-        region.script_start,
-        region.serial_start,
-    )
-    .collect_imports(&mut interner);
+    let (_bind, imports, diags) =
+        ModuleFinder::new(&region.src_bytes, &cfg, &region).collect_imports(&mut interner);
 
     assert!(
         imports.is_empty(),
@@ -436,14 +400,8 @@ fn modfinder_import_inside_line_comment() {
         .load_config()
         .expect_success();
 
-    let (_bind, imports, diags) = ModuleFinder::new(
-        &region.src_bytes,
-        &cfg,
-        &region,
-        region.script_start,
-        region.serial_start,
-    )
-    .collect_imports(&mut interner);
+    let (_bind, imports, diags) =
+        ModuleFinder::new(&region.src_bytes, &cfg, &region).collect_imports(&mut interner);
 
     assert!(
         imports.is_empty(),
@@ -465,14 +423,8 @@ fn modfinder_import_inside_block_comment() {
         .load_config()
         .expect_success();
 
-    let (_bind, imports, diags) = ModuleFinder::new(
-        &region.src_bytes,
-        &cfg,
-        &region,
-        region.script_start,
-        region.serial_start,
-    )
-    .collect_imports(&mut interner);
+    let (_bind, imports, diags) =
+        ModuleFinder::new(&region.src_bytes, &cfg, &region).collect_imports(&mut interner);
 
     assert!(
         imports.is_empty(),
@@ -504,14 +456,8 @@ fn modfinder_duplicate_import_path_reuses_mod_id() {
         .expect_success();
 
     let sub_path_id = interner.intern_path(&sub_path);
-    let (_bind, imports, diags) = ModuleFinder::new(
-        &region.src_bytes,
-        &cfg,
-        &region,
-        region.script_start,
-        region.serial_start,
-    )
-    .collect_imports(&mut interner);
+    let (_bind, imports, diags) =
+        ModuleFinder::new(&region.src_bytes, &cfg, &region).collect_imports(&mut interner);
 
     assert!(
         diags.diags.is_empty(),
@@ -546,14 +492,8 @@ fn modfinder_nonexistent_path() {
         .load_config()
         .expect_success();
 
-    let (_bind, imports, diags) = ModuleFinder::new(
-        &region.src_bytes,
-        &cfg,
-        &region,
-        region.script_start,
-        region.serial_start,
-    )
-    .collect_imports(&mut interner);
+    let (_bind, imports, diags) =
+        ModuleFinder::new(&region.src_bytes, &cfg, &region).collect_imports(&mut interner);
 
     assert!(
         imports.is_empty(),
@@ -579,14 +519,8 @@ fn modfinder_import_inside_string_is_not_parsed() {
         .load_config()
         .expect_success();
 
-    let (_bind, imports, diags) = ModuleFinder::new(
-        &region.src_bytes,
-        &cfg,
-        &region,
-        region.script_start,
-        region.serial_start,
-    )
-    .collect_imports(&mut interner);
+    let (_bind, imports, diags) =
+        ModuleFinder::new(&region.src_bytes, &cfg, &region).collect_imports(&mut interner);
 
     assert!(
         imports.is_empty(),
@@ -622,7 +556,7 @@ fn extract_main_simple_script() {
         "main module should be Loaded"
     );
     assert_eq!(main_mod.self_id, ModuleId::new(0), "main gets mod_id 0");
-    let main_name = interner.search(main_mod.name_id);
+    let main_name = interner.extract_str_from_interned_id(main_mod.name_id);
     assert_eq!(
         main_name, "main",
         "module name should be 'main' (file stem)"

@@ -20,7 +20,7 @@ pub fn find_symbols_named<'a>(
     interner: &Intern,
     target_ident: &str,
 ) -> (Vec<&'a Symbol>, Vec<&'a MemberSymbolKind>) {
-    let target_name_id = match interner.try_search_str(target_ident) {
+    let target_name_id = match interner.get_interned_id_from_str(target_ident) {
         Some(id) => id,
         None => return (Vec::new(), Vec::new()),
     };
@@ -38,7 +38,7 @@ pub fn find_symbols_named_from_module<'a>(
     // seen_mods: Vec<PathId>,
 ) -> (Vec<&'a Symbol>, Vec<&'a MemberSymbolKind>) {
     // Should probably just, not take all by default (eventually)
-    // interner.try_search_str(idx)
+    // interner.get_interned_id_from_str(idx)
     // scopes::find_symbols_named_from_module_ref(compiler, interner, 0, ident)
     todo!()
 }

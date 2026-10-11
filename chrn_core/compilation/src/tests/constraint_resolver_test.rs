@@ -39,7 +39,7 @@ fn variable_declaration_test() {
     let last_val = &compiler.values[ValueId::new(generated as u32)];
     match &last_val.const_val {
         Some(Value::InternedStr(id)) => {
-            assert_eq!("Hallo", interner.search(*id));
+            assert_eq!("Hallo", interner.extract_str_from_interned_id(*id));
         }
         _ => panic!("Value mismatch, expected InternedStr(\"Hallo\")"),
     };
@@ -115,7 +115,7 @@ fn type_resolver_values_test() {
     let (compiler, interner) = compile_and_resolve_single_module(text);
 
     let find_val = |name: &str| -> &Value {
-        let name_id = interner.try_search_str(name).unwrap();
+        let name_id = interner.get_interned_id_from_str(name).unwrap();
         let var_def = find_user_var(&compiler, name_id);
         match &var_def.state {
             VariableState::Known(value_id) => compiler.values[*value_id]
@@ -134,7 +134,7 @@ fn type_resolver_values_test() {
         Value::ArbitraryInt(ArbitraryIntKind::I64(4))
     ));
     assert!(
-        matches!(find_val("CONSTANT_STR"), Value::InternedStr(id) if interner.search(*id) == "Hallo")
+        matches!(find_val("CONSTANT_STR"), Value::InternedStr(id) if interner.extract_str_from_interned_id(*id) == "Hallo")
     );
     assert!(
         matches!(find_val("CONSTANT_FLOAT"), Value::ArbitraryFloat(v) if *v == float_from_f64(0e-5))
@@ -561,7 +561,7 @@ fn const_dependency_circular_test() {
         assert!(result.is_err(), "Circular dependency should be rejected");
         let any_unknown = names.iter().any(|name| {
             let name_id = interner
-                .try_search_str(name)
+                .get_interned_id_from_str(name)
                 .unwrap_or_else(|| panic!("Variable '{name}' was not interned"));
             let var_def = find_user_var(&compiler, name_id);
             matches!(var_def.state, VariableState::ReservedTypeSlot(_))
@@ -572,7 +572,7 @@ fn const_dependency_circular_test() {
             names
                 .iter()
                 .map(|name| {
-                    let name_id = interner.try_search_str(name).unwrap();
+                    let name_id = interner.get_interned_id_from_str(name).unwrap();
                     let var_def = find_user_var(&compiler, name_id);
                     (name, &var_def.state)
                 })

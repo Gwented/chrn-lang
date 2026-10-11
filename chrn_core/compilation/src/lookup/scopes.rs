@@ -316,7 +316,7 @@ pub fn find_symbols_named<'a>(
     interner: &Intern,
 ) -> Vec<SymbolId> {
     let mut found_syms: Vec<SymbolId> = Vec::new();
-    let target_bytes = interner.search(target_name_id).as_bytes();
+    let target_bytes = interner.extract_str_from_interned_id(target_name_id).as_bytes();
 
     for sym in compiler.syms.iter() {
         if exact_match {
@@ -324,7 +324,7 @@ pub fn find_symbols_named<'a>(
                 found_syms.push(sym.self_id);
             }
         } else {
-            let sym_bytes = interner.search(sym.name_id).as_bytes();
+            let sym_bytes = interner.extract_str_from_interned_id(sym.name_id).as_bytes();
 
             if algoc::bytes::is_similar(sym_bytes, target_bytes) {
                 found_syms.push(sym.self_id);
@@ -374,7 +374,7 @@ pub fn find_symbols_named_from_module<'a>(
     target_mod_id: ModuleId,
     ident: &str,
 ) -> (Vec<SymbolId>, Vec<&'a MemberSymbolKind>) {
-    let target_name_id = match interner.try_search_str(ident) {
+    let target_name_id = match interner.get_interned_id_from_str(ident) {
         Some(id) => id,
         None => return (Vec::new(), Vec::new()),
     };
@@ -401,7 +401,7 @@ pub fn find_symbols_named_from_module_ref<'a>(
     target_mod_id: ModuleId,
     ident: &str,
 ) -> (Vec<&'a Symbol>, Vec<&'a MemberSymbolKind>) {
-    let target_name_id = match interner.try_search_str(ident) {
+    let target_name_id = match interner.get_interned_id_from_str(ident) {
         Some(id) => id,
         None => return (Vec::new(), Vec::new()),
     };

@@ -16,6 +16,7 @@ use chrn_utils::{
     source_map::source_span::SourceSpan,
 };
 use lang::keywords::{self, Keyword};
+use toolsc::cursors::BasicCursor;
 
 use crate::{
     chrn_config::{ChrnConfig, chrn_perf::ChrnPerfStage},
@@ -39,10 +40,8 @@ const NOTATION_SCIENTIFIC: u8 = 1 << 4;
 
 // Boolean for is_utf8? Asking since if this existed we. We would do something. (Lie)
 pub struct Lexer<'a> {
-    // Should be &str
-    src_bytes: &'a [u8],
+    cursor: BasicCursor<'a, u8>,
     script_start: usize,
-    pos: usize,
     current_region_id: SourceRegionId,
     current_path_id: PathId,
     cfg: &'a mut ChrnConfig,
@@ -71,9 +70,8 @@ impl Lexer<'_> {
         Lexer {
             current_region_id,
             current_path_id,
-            src_bytes: src,
+            cursor: BasicCursor::new(src),
             script_start,
-            pos: 0,
             trivia: Vec::with_capacity(speculated_trivia),
             cfg,
             invalid_toks: 0,
@@ -84,7 +82,7 @@ impl Lexer<'_> {
 
     // Maybe this should just return Result since it'd take extra work to know if there are invalid
     // tokens and if it failed in any form
-    /// Tokenizes `self.src_bytes`
+    /// Tokenizes the source bytes in `self.cursor`.
     ///
     /// Returns a type of `LexerOutput` instead of a summary or result because the lexer does not
     /// emit errors or warns.
@@ -94,7 +92,7 @@ impl Lexer<'_> {
     /// off the same token data.
     pub fn tokenize(&mut self, interner: &mut Intern) -> LexerOutput {
         // 40 bytes : 1 token
-        let speculated_toks = self.src_bytes.len() / 40;
+        let speculated_toks = self.cursor.len() / 40;
         let mut toks: Vec<SpannedToken> = Vec::with_capacity(speculated_toks);
         let mut hash_tok_indices: Vec<usize> = Vec::new();
 
@@ -116,7 +114,7 @@ impl Lexer<'_> {
                 //1 will be a breaking sub, and it won't actually have a feasible span.
                 //Trying something.
                 //Will probably just remove spanning from EOF.
-                let eof_pos = self.src_bytes.len().saturating_sub(1) as u32;
+                let eof_pos = self.cursor.len().saturating_sub(1) as u32;
 
                 toks.push(SpannedToken {
                     tok: Token::EOF,
@@ -140,19 +138,19 @@ impl Lexer<'_> {
                 }
                 //TODO: Tests for these types of lexed tokens that are multi-layered
                 ':' => {
-                    // WARN: EXCLUSIVE SPANNING: self.pos is now + 1 so that it captures ":" since
+                    // WARN: EXCLUSIVE SPANNING: self.cursor.pos() is now + 1 so that it captures ":" since
                     // the end is exclusive
-                    let start = self.pos as u32;
+                    let start = self.cursor.pos() as u32;
                     // New advance
 
                     //WARN: CHANGED TO SKIP
                     // :=
                     let tok = if self.peek_ahead(1) == b'=' {
-                        self.skip(2);
+                        self.cursor.skip(2);
                         Token::Walrus
                     } else if self.peek_ahead(1) == b':' {
                         // ::
-                        self.skip(2);
+                        self.cursor.skip(2);
                         Token::StaticAccess
                     } else {
                         // WARN: EXCLUSIVE SPANNING: ADVANCES HERE TO ENSURE END IS NOT EMPTY
@@ -162,13 +160,17 @@ impl Lexer<'_> {
 
                     toks.push(SpannedToken {
                         tok,
-                        span: SourceSpan::new(self.current_region_id, start, self.pos as u32),
+                        span: SourceSpan::new(
+                            self.current_region_id,
+                            start,
+                            self.cursor.pos() as u32,
+                        ),
                         leading_trivia_indices: self.trivia_start_idx as u32
                             ..self.trivia_end_idx as u32,
                     });
                 }
                 '(' => {
-                    let pos = self.pos as u32;
+                    let pos = self.cursor.pos() as u32;
                     toks.push(SpannedToken {
                         tok: Token::OParen,
                         span: SourceSpan::new(self.current_region_id, pos, pos + 1),
@@ -179,7 +181,7 @@ impl Lexer<'_> {
                     self.advance();
                 }
                 ')' => {
-                    let pos = self.pos as u32;
+                    let pos = self.cursor.pos() as u32;
                     toks.push(SpannedToken {
                         tok: Token::CParen,
                         span: SourceSpan::new(self.current_region_id, pos, pos + 1),
@@ -189,12 +191,12 @@ impl Lexer<'_> {
                     self.advance();
                 }
                 '<' => {
-                    let start = self.pos as u32;
+                    let start = self.cursor.pos() as u32;
 
                     //WARN: CHANGED TO SKIP
                     // <=
                     let tok = if self.peek_ahead(1) == b'=' {
-                        self.skip(2);
+                        self.cursor.skip(2);
                         Token::LessOrEq
                     } else {
                         self.advance();
@@ -203,18 +205,22 @@ impl Lexer<'_> {
 
                     toks.push(SpannedToken {
                         tok,
-                        span: SourceSpan::new(self.current_region_id, start, self.pos as u32),
+                        span: SourceSpan::new(
+                            self.current_region_id,
+                            start,
+                            self.cursor.pos() as u32,
+                        ),
                         leading_trivia_indices: self.trivia_start_idx as u32
                             ..self.trivia_end_idx as u32,
                     });
                 }
                 '>' => {
-                    let start = self.pos as u32;
+                    let start = self.cursor.pos() as u32;
 
                     // WARN: CHANGED TO SKIP
                     // >=
                     let tok = if self.peek_ahead(1) == b'=' {
-                        self.skip(2);
+                        self.cursor.skip(2);
                         Token::GreaterOrEq
                     } else {
                         self.advance();
@@ -223,13 +229,17 @@ impl Lexer<'_> {
 
                     toks.push(SpannedToken {
                         tok,
-                        span: SourceSpan::new(self.current_region_id, start, self.pos as u32),
+                        span: SourceSpan::new(
+                            self.current_region_id,
+                            start,
+                            self.cursor.pos() as u32,
+                        ),
                         leading_trivia_indices: self.trivia_start_idx as u32
                             ..self.trivia_end_idx as u32,
                     });
                 }
                 '[' => {
-                    let pos = self.pos as u32;
+                    let pos = self.cursor.pos() as u32;
                     toks.push(SpannedToken {
                         tok: Token::OBracket,
                         span: SourceSpan::new(self.current_region_id, pos, pos + 1),
@@ -240,7 +250,7 @@ impl Lexer<'_> {
                     self.advance();
                 }
                 ']' => {
-                    let pos = self.pos as u32;
+                    let pos = self.cursor.pos() as u32;
                     toks.push(SpannedToken {
                         tok: Token::CBracket,
                         span: SourceSpan::new(self.current_region_id, pos, pos + 1),
@@ -251,7 +261,7 @@ impl Lexer<'_> {
                     self.advance();
                 }
                 '{' => {
-                    let pos = self.pos as u32;
+                    let pos = self.cursor.pos() as u32;
                     toks.push(SpannedToken {
                         tok: Token::OCurlyBracket,
                         span: SourceSpan::new(self.current_region_id, pos, pos + 1),
@@ -262,7 +272,7 @@ impl Lexer<'_> {
                     self.advance();
                 }
                 '}' => {
-                    let pos = self.pos as u32;
+                    let pos = self.cursor.pos() as u32;
                     toks.push(SpannedToken {
                         tok: Token::CCurlyBracket,
                         span: SourceSpan::new(self.current_region_id, pos, pos + 1),
@@ -273,7 +283,7 @@ impl Lexer<'_> {
                     self.advance();
                 }
                 ',' => {
-                    let pos = self.pos as u32;
+                    let pos = self.cursor.pos() as u32;
                     toks.push(SpannedToken {
                         tok: Token::Comma,
                         span: SourceSpan::new(self.current_region_id, pos, pos + 1),
@@ -291,16 +301,16 @@ impl Lexer<'_> {
                             tok: Token::Def,
                             span: SourceSpan::new(
                                 self.current_region_id,
-                                self.pos as u32,
+                                self.cursor.pos() as u32,
                                 // WARN: EXCLUSVIE SPANNING: NO LONGER USES - 1 ON
                                 // ANNOTATION_CLAUSE_SIZE
-                                (self.pos + keywords::EMBEDDING_CLAUSE_SIZE) as u32,
+                                (self.cursor.pos() + keywords::EMBEDDING_CLAUSE_SIZE) as u32,
                             ),
                             leading_trivia_indices: self.trivia_start_idx as u32
                                 ..self.trivia_end_idx as u32,
                         });
 
-                        self.skip(keywords::EMBEDDING_CLAUSE_SIZE);
+                        self.cursor.skip(keywords::EMBEDDING_CLAUSE_SIZE);
                     } else if self.is_def_end() {
                         // in_def = false;
 
@@ -308,19 +318,17 @@ impl Lexer<'_> {
                             tok: Token::End,
                             span: SourceSpan::new(
                                 self.current_region_id,
-                                self.pos as u32,
+                                self.cursor.pos() as u32,
                                 // WARN: EXCLUSVIE SPANNING: NO LONGER USES - 1 ON
                                 // ANNOTATION_CLAUSE_SIZE
-                                (self.pos + keywords::EMBEDDING_CLAUSE_SIZE) as u32,
+                                (self.cursor.pos() + keywords::EMBEDDING_CLAUSE_SIZE) as u32,
                             ),
                             leading_trivia_indices: self.trivia_start_idx as u32
                                 ..self.trivia_end_idx as u32,
                         });
-
-                        // start_offset = self.pos + DEFINITION_SIZE;
                         break;
                     } else {
-                        let pos = self.pos as u32;
+                        let pos = self.cursor.pos() as u32;
                         toks.push(SpannedToken {
                             tok: Token::At,
                             span: SourceSpan::new(self.current_region_id, pos, pos + 1),
@@ -332,13 +340,13 @@ impl Lexer<'_> {
                     }
                 }
                 '.' => {
-                    let start = self.pos as u32;
+                    let start = self.cursor.pos() as u32;
 
                     //TODO: Maybe remove this concept
                     // ..=
                     let tok = if self.peek_ahead(1) == b'.' && self.peek_ahead(2) == b'=' {
                         //WARN: EXCLUSIVE SPANNING:
-                        self.skip(3);
+                        self.cursor.skip(3);
                         Token::DotRangeInclusive
                     } else {
                         self.advance();
@@ -347,7 +355,11 @@ impl Lexer<'_> {
 
                     toks.push(SpannedToken {
                         tok,
-                        span: SourceSpan::new(self.current_region_id, start, self.pos as u32),
+                        span: SourceSpan::new(
+                            self.current_region_id,
+                            start,
+                            self.cursor.pos() as u32,
+                        ),
                         leading_trivia_indices: self.trivia_start_idx as u32
                             ..self.trivia_end_idx as u32,
                     });
@@ -355,7 +367,7 @@ impl Lexer<'_> {
                 '#' => {
                     hash_tok_indices.push(toks.len());
 
-                    let pos = self.pos as u32;
+                    let pos = self.cursor.pos() as u32;
                     toks.push(SpannedToken {
                         tok: Token::HashSymbol,
                         span: SourceSpan::new(self.current_region_id, pos, pos + 1),
@@ -366,11 +378,11 @@ impl Lexer<'_> {
                     self.advance();
                 }
                 '&' => {
-                    let start = self.pos as u32;
+                    let start = self.cursor.pos() as u32;
 
                     // &&
                     let tok = if self.peek_ahead(1) == b'&' {
-                        self.skip(2);
+                        self.cursor.skip(2);
                         Token::And
                     } else {
                         self.advance();
@@ -379,18 +391,22 @@ impl Lexer<'_> {
 
                     toks.push(SpannedToken {
                         tok,
-                        span: SourceSpan::new(self.current_region_id, start, self.pos as u32),
+                        span: SourceSpan::new(
+                            self.current_region_id,
+                            start,
+                            self.cursor.pos() as u32,
+                        ),
                         leading_trivia_indices: self.trivia_start_idx as u32
                             ..self.trivia_end_idx as u32,
                     });
                 }
                 '|' => {
-                    let start = self.pos as u32;
+                    let start = self.cursor.pos() as u32;
 
                     // ||
                     let tok = if self.peek_ahead(1) == b'|' {
                         //WARN: EXCLUSIVE SPANNING:
-                        self.skip(2);
+                        self.cursor.skip(2);
                         Token::Or
                     } else {
                         self.advance();
@@ -399,7 +415,11 @@ impl Lexer<'_> {
 
                     toks.push(SpannedToken {
                         tok,
-                        span: SourceSpan::new(self.current_region_id, start, self.pos as u32),
+                        span: SourceSpan::new(
+                            self.current_region_id,
+                            start,
+                            self.cursor.pos() as u32,
+                        ),
                         leading_trivia_indices: self.trivia_start_idx as u32
                             ..self.trivia_end_idx as u32,
                     });
@@ -413,7 +433,7 @@ impl Lexer<'_> {
                     toks.push(self.read_char(interner));
                 }
                 '+' => {
-                    let pos = self.pos as u32;
+                    let pos = self.cursor.pos() as u32;
                     toks.push(SpannedToken {
                         tok: Token::Plus,
                         span: SourceSpan::new(self.current_region_id, pos, pos + 1),
@@ -424,11 +444,11 @@ impl Lexer<'_> {
                     self.advance();
                 }
                 '-' => {
-                    let start = self.pos as u32;
+                    let start = self.cursor.pos() as u32;
 
                     // ->
                     let token = if self.peek_ahead(1) == b'>' {
-                        self.skip(2);
+                        self.cursor.skip(2);
                         Token::SlimArrow
                     } else {
                         self.advance();
@@ -437,13 +457,17 @@ impl Lexer<'_> {
 
                     toks.push(SpannedToken {
                         tok: token,
-                        span: SourceSpan::new(self.current_region_id, start, self.pos as u32),
+                        span: SourceSpan::new(
+                            self.current_region_id,
+                            start,
+                            self.cursor.pos() as u32,
+                        ),
                         leading_trivia_indices: self.trivia_start_idx as u32
                             ..self.trivia_end_idx as u32,
                     });
                 }
                 '*' => {
-                    let pos = self.pos as u32;
+                    let pos = self.cursor.pos() as u32;
                     toks.push(SpannedToken {
                         tok: Token::Asterisk,
                         span: SourceSpan::new(self.current_region_id, pos, pos + 1),
@@ -454,7 +478,7 @@ impl Lexer<'_> {
                     self.advance();
                 }
                 '^' => {
-                    let pos = self.pos as u32;
+                    let pos = self.cursor.pos() as u32;
                     toks.push(SpannedToken {
                         tok: Token::Caret,
                         span: SourceSpan::new(self.current_region_id, pos, pos + 1),
@@ -466,7 +490,7 @@ impl Lexer<'_> {
                 }
                 // Trivia handles comment possbibilites
                 '/' => {
-                    let pos = self.pos as u32;
+                    let pos = self.cursor.pos() as u32;
                     toks.push(SpannedToken {
                         tok: Token::Slash,
                         span: SourceSpan::new(self.current_region_id, pos, pos + 1),
@@ -477,15 +501,15 @@ impl Lexer<'_> {
                     self.advance();
                 }
                 '=' => {
-                    let start = self.pos as u32;
+                    let start = self.cursor.pos() as u32;
 
                     // ==
                     let tok = if self.peek_ahead(1) == b'=' {
-                        self.skip(2);
+                        self.cursor.skip(2);
                         Token::EqualTo
                     } else if self.peek_ahead(1) == b'>' {
                         // =>
-                        self.skip(2);
+                        self.cursor.skip(2);
                         Token::NotSlimArrow
                     } else {
                         self.advance();
@@ -494,13 +518,17 @@ impl Lexer<'_> {
 
                     toks.push(SpannedToken {
                         tok,
-                        span: SourceSpan::new(self.current_region_id, start, self.pos as u32),
+                        span: SourceSpan::new(
+                            self.current_region_id,
+                            start,
+                            self.cursor.pos() as u32,
+                        ),
                         leading_trivia_indices: self.trivia_start_idx as u32
                             ..self.trivia_end_idx as u32,
                     });
                 }
                 '~' => {
-                    let pos = self.pos as u32;
+                    let pos = self.cursor.pos() as u32;
                     toks.push(SpannedToken {
                         tok: Token::Tilde,
                         span: SourceSpan::new(self.current_region_id, pos, pos + 1),
@@ -511,9 +539,9 @@ impl Lexer<'_> {
                     self.advance();
                 }
                 '!' => {
-                    let start = self.pos as u32;
+                    let start = self.cursor.pos() as u32;
                     let tok = if self.peek_ahead(1) == b'=' {
-                        self.skip(2);
+                        self.cursor.skip(2);
                         Token::NotEq
                     } else {
                         self.advance();
@@ -522,13 +550,17 @@ impl Lexer<'_> {
 
                     toks.push(SpannedToken {
                         tok,
-                        span: SourceSpan::new(self.current_region_id, start, self.pos as u32),
+                        span: SourceSpan::new(
+                            self.current_region_id,
+                            start,
+                            self.cursor.pos() as u32,
+                        ),
                         leading_trivia_indices: self.trivia_start_idx as u32
                             ..self.trivia_end_idx as u32,
                     });
                 }
                 '?' => {
-                    let pos = self.pos as u32;
+                    let pos = self.cursor.pos() as u32;
                     toks.push(SpannedToken {
                         tok: Token::QuestionMark,
                         span: SourceSpan::new(self.current_region_id, pos, pos + 1),
@@ -539,7 +571,7 @@ impl Lexer<'_> {
                     self.advance();
                 }
                 '%' => {
-                    let pos = self.pos as u32;
+                    let pos = self.cursor.pos() as u32;
                     toks.push(SpannedToken {
                         tok: Token::Percent,
                         span: SourceSpan::new(self.current_region_id, pos, pos + 1),
@@ -560,8 +592,8 @@ impl Lexer<'_> {
                             tok: Token::EOF,
                             span: SourceSpan::new(
                                 self.current_region_id,
-                                self.pos as u32,
-                                self.pos as u32 + 1,
+                                self.cursor.pos() as u32,
+                                self.cursor.pos() as u32 + 1,
                             ),
                             leading_trivia_indices: self.trivia_start_idx as u32
                                 ..self.trivia_end_idx as u32,
@@ -587,30 +619,30 @@ impl Lexer<'_> {
     /// Reads a string of characters based off of language expected heuristics
     /// May return an invalid token
     fn read_ident(&mut self, interner: &mut Intern) -> SpannedToken {
-        let mut start = self.pos;
+        let mut start = self.cursor.pos();
 
         // e# for escape
         let is_escaped = if self.peek() == b'e' && self.peek_ahead(1) == b'#' {
-            self.skip(2);
+            self.cursor.skip(2);
             // if "e#something" starts at "something"
-            start = self.pos;
+            start = self.cursor.pos();
             true
         } else {
             false
         };
 
-        while (self.pos < self.src_bytes.len() && self.peek_char().is_alphanumeric())
-            || (self.pos < self.src_bytes.len() && self.peek() == b'_')
+        while (self.cursor.pos() < self.cursor.len() && self.peek_char().is_alphanumeric())
+            || (self.cursor.pos() < self.cursor.len() && self.peek() == b'_')
         {
             self.advance_char();
         }
 
         // Advances at end so its end + 1 naturally, fitting exclusive span ends
-        let end = self.pos;
+        let end = self.cursor.pos();
         // Enforces utf-8 but module paths themselves don't need to be valid utf-8, am I
 
         // hallucinating?
-        let id_str = match str::from_utf8(&self.src_bytes[start..end]) {
+        let id_str = match str::from_utf8(&self.cursor.items[start..end]) {
             Ok(s) => s,
             Err(_) => {
                 return self.recover_invalid(start.into(), interner);
@@ -623,7 +655,7 @@ impl Lexer<'_> {
             return self.recover_invalid(Some(start - 2), interner);
         }
 
-        let interned_id = interner.intern(&id_str);
+        let interned_id = interner.intern_str(&id_str);
 
         // The start is different on escape so that it captures the "e#" can be shown in spanning
         let span_start = if is_escaped { start - 2 } else { start } as u32;
@@ -666,22 +698,22 @@ impl Lexer<'_> {
     ///
     /// May return an invalid token.
     fn read_num(&mut self, interner: &mut Intern) -> SpannedToken {
-        let start = self.pos;
+        let start = self.cursor.pos();
 
         let mut notation: u8 = 0;
 
         if self.peek() == b'0' && self.peek_ahead(1) == b'x' {
             notation |= NOTATION_HEX;
-            self.skip(2);
+            self.cursor.skip(2);
         } else if self.peek() == b'0' && self.peek_ahead(1) == b'b' {
             notation |= NOTATION_BIN;
-            self.skip(2);
+            self.cursor.skip(2);
         } else if self.peek() == b'0' && self.peek_ahead(1) == b'o' {
             notation |= NOTATION_OCTAL;
-            self.skip(2);
+            self.cursor.skip(2);
         }
 
-        while self.pos < self.src_bytes.len() {
+        while self.cursor.pos() < self.cursor.len() {
             let b = self.peek();
 
             if b == b'_' {
@@ -700,7 +732,7 @@ impl Lexer<'_> {
                         // Making sure of "1.2e+{num}" to avoid "1.2e+h"
                         if (next == b'+' || next == b'-') && self.peek_ahead(2).is_ascii_digit() {
                             notation |= NOTATION_SCIENTIFIC;
-                            self.skip(2);
+                            self.cursor.skip(2);
                         } else if next.is_ascii_digit() {
                             notation |= NOTATION_SCIENTIFIC;
                             self.advance();
@@ -750,7 +782,7 @@ impl Lexer<'_> {
                         // I HAVE AN AGENDA. WE DO NOT ALLOW 2. IT NEEDS 2.0
                         b'.' if self.peek_ahead(1).is_ascii_digit() => {
                             notation |= NOTATION_FLOAT;
-                            self.skip(2);
+                            self.cursor.skip(2);
                         }
                         b'e' => {
                             let next = self.peek_ahead(1);
@@ -759,7 +791,7 @@ impl Lexer<'_> {
                             if (next == b'+' || next == b'-') && self.peek_ahead(2).is_ascii_digit()
                             {
                                 notation |= NOTATION_FLOAT | NOTATION_SCIENTIFIC;
-                                self.skip(2);
+                                self.cursor.skip(2);
                             } else if next.is_ascii_digit() {
                                 notation |= NOTATION_FLOAT | NOTATION_SCIENTIFIC;
                                 self.advance();
@@ -773,14 +805,14 @@ impl Lexer<'_> {
             }
         }
 
-        let end = self.pos;
+        let end = self.cursor.pos();
 
-        let raw_str = match str::from_utf8(&self.src_bytes[start..end]) {
+        let raw_str = match str::from_utf8(&self.cursor.items[start..end]) {
             Ok(val) => val,
             Err(_) => {
                 self.increment_invalid_tok();
                 // NOTE: I don't actually think this is possible. Like at all.
-                let msg_id = interner.intern("<invalid ASCII in numeric>");
+                let msg_id = interner.intern_str("<invalid ASCII in numeric>");
                 return SpannedToken {
                     tok: Token::Invalid(msg_id),
                     span: SourceSpan::new(self.current_region_id, start as u32, end as u32),
@@ -798,7 +830,7 @@ impl Lexer<'_> {
 
                 if digits.is_empty() {
                     self.increment_invalid_tok();
-                    let msg_id = interner.intern("<empty numeric literal>");
+                    let msg_id = interner.intern_str("<empty numeric literal>");
                     return SpannedToken {
                         tok: Token::Invalid(msg_id),
                         span: SourceSpan::new(self.current_region_id, start as u32, end as u32),
@@ -830,7 +862,7 @@ impl Lexer<'_> {
                 (raw_str.replace('_', ""), n)
             };
 
-        let id = interner.intern(&id_str);
+        let id = interner.intern_str(&id_str);
 
         //WARN: NO END - 1 TO FIX EXCLUSIVE END
         let span = SourceSpan::new(self.current_region_id, start as u32, end as u32);
@@ -858,12 +890,12 @@ impl Lexer<'_> {
     // Please
     /// Reads bytes until an end quote is reached. May return an invalid token.
     fn read_quotes(&mut self, interner: &mut Intern) -> SpannedToken {
-        let start = self.pos;
+        let start = self.cursor.pos();
 
-        while self.pos < self.src_bytes.len() {
+        while self.cursor.pos() < self.cursor.len() {
             match self.peek() {
                 b'\\' => {
-                    let escape_start = self.pos;
+                    let escape_start = self.cursor.pos();
                     self.advance();
 
                     if let Some(_) = self.read_escape() {
@@ -883,9 +915,9 @@ impl Lexer<'_> {
 
         //WARN: IS - 1 BECAUSE THE QUOTE IS SKIPPED PAST
         //"Hello"\"e" -> removing the "e" "Hello\"" now it probably sets up for an exclusive end
-        let end = self.pos - 1;
+        let end = self.cursor.pos() - 1;
 
-        let quotes_res = str::from_utf8(&self.src_bytes[start..end]);
+        let quotes_res = str::from_utf8(&self.cursor.items[start..end]);
 
         // This is to keep the quotes captured
         //WARN: CHANGED END TO END + 1 SO THAT IT MATCHES END QUOTE CAPTURING BEHAVIOR FOR SPANNING
@@ -893,7 +925,7 @@ impl Lexer<'_> {
 
         match quotes_res {
             Ok(p) => {
-                let interned_id = interner.intern(p);
+                let interned_id = interner.intern_str(p);
                 SpannedToken {
                     tok: Token::Str(interned_id),
                     span,
@@ -903,7 +935,7 @@ impl Lexer<'_> {
             }
             Err(_) => {
                 self.increment_invalid_tok();
-                let msg_id = interner.intern("<invalid UTF-8 in string literal>");
+                let msg_id = interner.intern_str("<invalid UTF-8 in string literal>");
                 SpannedToken {
                     tok: Token::Invalid(msg_id),
                     span,
@@ -917,15 +949,15 @@ impl Lexer<'_> {
     //TODO: Check if this still works if quotes are unclosed WITHOUT the loader
     fn read_char(&mut self, interner: &mut Intern) -> SpannedToken {
         // Starts 1 after single quote
-        let start = self.pos;
+        let start = self.cursor.pos();
 
         let mut result_char: Option<char> = None;
         let mut char_count: usize = 0;
 
-        while self.pos < self.src_bytes.len() {
+        while self.cursor.pos() < self.cursor.len() {
             match self.peek() {
                 b'\\' => {
-                    let escape_start = self.pos - 1;
+                    let escape_start = self.cursor.pos() - 1;
                     self.advance();
 
                     match self.read_escape() {
@@ -959,7 +991,7 @@ impl Lexer<'_> {
         }
 
         //WARN: REMOVED END - 1 SINCE ITS EXCLUSIVE AND + 1 IS INTENDED
-        let end = self.pos;
+        let end = self.cursor.pos();
 
         // start - 1 to capture first single quote
         let span = SourceSpan::new(self.current_region_id, (start - 1) as u32, end as u32);
@@ -972,7 +1004,7 @@ impl Lexer<'_> {
             },
             None => {
                 self.increment_invalid_tok();
-                let id = interner.intern("empty character literal");
+                let id = interner.intern_str("empty character literal");
                 SpannedToken {
                     tok: Token::Invalid(id),
                     span,
@@ -1035,7 +1067,7 @@ impl Lexer<'_> {
                 if self.peek_ahead(1) != b'{' {
                     return None;
                 }
-                self.skip(2);
+                self.cursor.skip(2);
 
                 let mut val: u32 = 0;
                 let mut count: usize = 0;
@@ -1074,15 +1106,16 @@ impl Lexer<'_> {
     }
 
     fn peek(&self) -> u8 {
-        self.src_bytes.get(self.pos).copied().unwrap_or(b'\0')
+        self.cursor.peek_owned_checked().unwrap_or(b'\0')
     }
 
     fn is_def_start(&self) -> bool {
-        if self.pos + 3 >= self.src_bytes.len() {
+        if self.cursor.pos() + 3 >= self.cursor.len() {
             return false;
         }
 
-        let possible_start = &self.src_bytes[self.pos..self.pos + keywords::EMBEDDING_CLAUSE_SIZE];
+        let possible_start = &self.cursor.items
+            [self.cursor.pos()..self.cursor.pos() + keywords::EMBEDDING_CLAUSE_SIZE];
 
         if possible_start == "@def".as_bytes() {
             return true;
@@ -1092,11 +1125,11 @@ impl Lexer<'_> {
     }
 
     fn is_def_end(&mut self) -> bool {
-        if self.pos + 3 >= self.src_bytes.len() {
+        if self.cursor.pos() + 3 >= self.cursor.len() {
             return false;
         }
 
-        let possible_end = &self.src_bytes[self.pos..=self.pos + 3];
+        let possible_end = &self.cursor.items[self.cursor.pos()..=self.cursor.pos() + 3];
 
         if possible_end == "@end".as_bytes() {
             return true;
@@ -1107,27 +1140,31 @@ impl Lexer<'_> {
 
     fn recover_invalid(&mut self, start: Option<usize>, interner: &mut Intern) -> SpannedToken {
         self.increment_invalid_tok();
-        let start = if let Some(s) = start { s } else { self.pos };
+        let start = if let Some(s) = start {
+            s
+        } else {
+            self.cursor.pos()
+        };
 
         // This feels like attaching an if to a deeper problem, but at the same time I don't really
         // see the issue.
 
-        // Needs to check first because if self.pos > src_bytes.len(), that would mean that it's
+        // Needs to check first because if self.cursor.pos() > self.cursor.len(), that would mean that it's
         // advancing past the exclusive end for the initial advance.
-        if self.pos + 1 < self.src_bytes.len() {
+        if self.cursor.pos() + 1 < self.cursor.len() {
             // Advances first because if something like an invalid whitespace were found, it would
             // infinitely loop since no other path wants the whitespace, and `recover_invalid` also skips it.
             self.advance_char();
         }
 
-        while self.pos < self.src_bytes.len() && !self.peek_char().is_whitespace() {
+        while self.cursor.pos() < self.cursor.len() && !self.peek_char().is_whitespace() {
             self.advance_char();
         }
         //WARN: Same behavior as read_id
-        let end = self.pos;
-        let err_str = String::from_utf8_lossy(&self.src_bytes[start..end]);
+        let end = self.cursor.pos();
+        let err_str = String::from_utf8_lossy(&self.cursor.items[start..end]);
 
-        let id = interner.intern(&err_str);
+        let id = interner.intern_str(&err_str);
 
         SpannedToken {
             tok: Token::Invalid(id),
@@ -1140,14 +1177,14 @@ impl Lexer<'_> {
     }
 
     //FIX:
-    fn peek_char(&mut self) -> char {
+    fn peek_char(&self) -> char {
         let b = self.peek();
 
         if b <= 127 {
             return b as char;
         }
 
-        let chunk = &self.src_bytes[self.pos..];
+        let chunk = &self.cursor.items[self.cursor.pos()..];
 
         //TODO: Handle this please!
         //Not that bad since most peek_char consumption is going to be ascii.
@@ -1158,7 +1195,7 @@ impl Lexer<'_> {
     }
 
     fn handle_comment(&mut self) {
-        while self.pos < self.src_bytes.len() && self.peek() != b'\n' {
+        while self.cursor.pos() < self.cursor.len() && self.peek() != b'\n' {
             if self.peek() == b'\r' && self.peek_ahead(1) == b'\n' {
                 break;
             }
@@ -1170,12 +1207,12 @@ impl Lexer<'_> {
     fn handle_multi_comment(&mut self) {
         let mut depth = 1;
 
-        while self.pos < self.src_bytes.len() && depth > 0 {
+        while self.cursor.pos() < self.cursor.len() && depth > 0 {
             if self.peek() == b'/' && self.peek_ahead(1) == b'*' {
-                self.skip(2);
+                self.cursor.skip(2);
                 depth += 1;
             } else if self.peek() == b'*' && self.peek_ahead(1) == b'/' {
-                self.skip(2);
+                self.cursor.skip(2);
                 depth -= 1;
             } else {
                 self.advance();
@@ -1187,28 +1224,19 @@ impl Lexer<'_> {
         self.invalid_toks += 1;
     }
 
-    // May return byte
-    // WARN: This could be an issue. Many other places alike are present.
-    fn skip(&mut self, dest: usize) {
-        self.pos += dest;
-    }
-
-    fn peek_ahead(&mut self, dest: usize) -> u8 {
-        self.src_bytes
-            .get(self.pos + dest)
-            .copied()
-            .unwrap_or(b'\0')
+    fn peek_ahead(&self, dest: usize) -> u8 {
+        self.cursor.peek_ahead_owned_checked(dest).unwrap_or(b'\0')
     }
 
     fn advance(&mut self) -> u8 {
         let b = self.peek();
-        self.pos += 1;
+        self.cursor.skip(1);
         b
     }
 
     fn advance_char(&mut self) -> char {
         let ch = self.peek_char();
-        self.pos += ch.len_utf8();
+        self.cursor.skip(ch.len_utf8());
         ch
     }
 
@@ -1218,7 +1246,7 @@ impl Lexer<'_> {
         // This is (inclusive, exclusive)
         self.trivia_start_idx = self.trivia.len();
         loop {
-            let trivia_start = self.pos;
+            let trivia_start = self.cursor.pos();
             match self.peek_char() {
                 c if !c.is_control() && c.is_whitespace() => {
                     self.skip_whitespace();
@@ -1228,13 +1256,13 @@ impl Lexer<'_> {
                         SourceSpan::new(
                             self.current_region_id,
                             trivia_start as u32,
-                            self.pos as u32,
+                            self.cursor.pos() as u32,
                         ),
                     ));
                 }
                 '/' => {
                     if self.peek_ahead(1) == b'/' {
-                        self.skip(2);
+                        self.cursor.skip(2);
                         self.handle_comment();
 
                         self.trivia.push(Trivia::new(
@@ -1242,11 +1270,11 @@ impl Lexer<'_> {
                             SourceSpan::new(
                                 self.current_region_id,
                                 trivia_start as u32,
-                                self.pos as u32,
+                                self.cursor.pos() as u32,
                             ),
                         ));
                     } else if self.peek_ahead(1) == b'*' {
-                        self.skip(2);
+                        self.cursor.skip(2);
                         self.handle_multi_comment();
 
                         self.trivia.push(Trivia::new(
@@ -1254,7 +1282,7 @@ impl Lexer<'_> {
                             SourceSpan::new(
                                 self.current_region_id,
                                 trivia_start as u32,
-                                self.pos as u32,
+                                self.cursor.pos() as u32,
                             ),
                         ));
                     } else {
@@ -1262,14 +1290,14 @@ impl Lexer<'_> {
                     }
                 }
                 '\r' if self.peek_ahead(1) == b'\n' => {
-                    self.skip(2);
+                    self.cursor.skip(2);
 
                     self.trivia.push(Trivia::new(
                         TriviaKind::Newline,
                         SourceSpan::new(
                             self.current_region_id,
                             trivia_start as u32,
-                            self.pos as u32,
+                            self.cursor.pos() as u32,
                         ),
                     ));
                 }
@@ -1280,7 +1308,7 @@ impl Lexer<'_> {
                         SourceSpan::new(
                             self.current_region_id,
                             trivia_start as u32,
-                            self.pos as u32,
+                            self.cursor.pos() as u32,
                         ),
                     ));
                 }
@@ -1291,7 +1319,7 @@ impl Lexer<'_> {
                         SourceSpan::new(
                             self.current_region_id,
                             trivia_start as u32,
-                            self.pos as u32,
+                            self.cursor.pos() as u32,
                         ),
                     ));
                 }

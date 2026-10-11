@@ -227,7 +227,7 @@ fn core_builtin_type_id_alignment() {
             sym.name_id,
             InternedId::new(interned),
             "symbol name for {} does not match its interned id",
-            interner.search_idx(interned as usize)
+            interner.extract_str_from_idx(interned as usize)
         );
     }
 }
@@ -1159,14 +1159,14 @@ fn representative_char_and_str_constants_are_loaded() {
     )
     .unwrap();
     let newline_name = interner
-        .try_search_str("NEWLINE")
+        .get_interned_id_from_str("NEWLINE")
         .expect("NEWLINE should be a compiler-known identifier");
     let newline = registered_constant(&compiler, str_scope, newline_name);
     assert_eq!(newline.val.type_id, str_type_id);
     let Value::InternedStr(newline_value) = newline.val.const_val.as_ref().unwrap() else {
         panic!("str::NEWLINE should store an interned string")
     };
-    assert_eq!(interner.search_idx(newline_value.id as usize), "\n");
+    assert_eq!(interner.extract_str_from_idx(newline_value.id as usize), "\n");
     check_i64(str_scope, intern::INTERNED_UTF8_MAX_BYTES, 4);
 }
 
@@ -1189,7 +1189,7 @@ fn representative_float_attributes_are_loaded() {
 
     let check_f16_i64 = |name: &str, expected: i64| {
         let name_id = interner
-            .try_search_str(name)
+            .get_interned_id_from_str(name)
             .unwrap_or_else(|| panic!("{name} should be a compiler-known identifier"));
         let rc = registered_constant(&compiler, f16_scope, name_id);
         assert_eq!(rc.val.type_id, i64_type_id);
@@ -1200,7 +1200,7 @@ fn representative_float_attributes_are_loaded() {
     };
     let check_f16_f64 = |name: &str, expected: f64| {
         let name_id = interner
-            .try_search_str(name)
+            .get_interned_id_from_str(name)
             .unwrap_or_else(|| panic!("{name} should be a compiler-known identifier"));
         let rc = registered_constant(&compiler, f16_scope, name_id);
         assert_eq!(rc.val.type_id, f64_type_id);
@@ -1222,7 +1222,7 @@ fn representative_float_attributes_are_loaded() {
 
     let check_f32_i64 = |name: &str, expected: i64| {
         let name_id = interner
-            .try_search_str(name)
+            .get_interned_id_from_str(name)
             .unwrap_or_else(|| panic!("{name} should be a compiler-known identifier"));
         let rc = registered_constant(&compiler, f32_scope, name_id);
         assert_eq!(rc.val.type_id, i64_type_id);
@@ -1233,7 +1233,7 @@ fn representative_float_attributes_are_loaded() {
     };
     let check_f32_f64 = |name: &str, expected: f64| {
         let name_id = interner
-            .try_search_str(name)
+            .get_interned_id_from_str(name)
             .unwrap_or_else(|| panic!("{name} should be a compiler-known identifier"));
         let rc = registered_constant(&compiler, f32_scope, name_id);
         assert_eq!(rc.val.type_id, f64_type_id);
@@ -1254,7 +1254,7 @@ fn representative_float_attributes_are_loaded() {
 
     let check_f64_f64 = |name: &str, expected: f64| {
         let name_id = interner
-            .try_search_str(name)
+            .get_interned_id_from_str(name)
             .unwrap_or_else(|| panic!("{name} should be a compiler-known identifier"));
         let rc = registered_constant(&compiler, f64_scope, name_id);
         assert_eq!(rc.val.type_id, f64_type_id);
@@ -1268,7 +1268,7 @@ fn representative_float_attributes_are_loaded() {
     check_f64_f64("NEG_INF", f64::NEG_INFINITY);
     check_f64_f64("MIN_POSITIVE", f64::MIN_POSITIVE);
 
-    assert_eq!(interner.search_idx(intern::INTERNED_INF as usize), "INF");
+    assert_eq!(interner.extract_str_from_idx(intern::INTERNED_INF as usize), "INF");
 
     let ieee_layouts = [
         (BuiltinTypeKind::F16, 5, 11, 10, -24),
@@ -1293,7 +1293,7 @@ fn representative_float_attributes_are_loaded() {
             ("MIN_SUBNORMAL_EXPONENT", min_subnormal_exponent),
         ] {
             let name_id = interner
-                .try_search_str(name)
+                .get_interned_id_from_str(name)
                 .unwrap_or_else(|| panic!("{name} should be a compiler-known identifier"));
             let registered = registered_constant(&compiler, scope_id, name_id);
 

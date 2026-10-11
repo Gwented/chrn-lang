@@ -102,7 +102,7 @@ impl ChrnPerf {
                     }
                 }
             }
-            let path = interner.search_path(mod_perf_data.ident.path_id());
+            let path = interner.extract_path_from_path_id(mod_perf_data.ident.path_id());
             let mod_report = ModulePerfReport::new(path, mod_perf_data);
             mod_reports.push(mod_report);
         }

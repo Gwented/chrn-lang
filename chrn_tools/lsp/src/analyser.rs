@@ -356,7 +356,7 @@ pub(crate) fn resolve_document_modules(
         .and_then(|s| s.to_str())
         .unwrap_or("<unnamed>")
         .to_string();
-    let name_id = interner.intern(&name);
+    let name_id = interner.intern_str(&name);
 
     let mut reserved_mod_ids: Vec<(PathId, ModuleId)> = vec![(path_id, ModuleId::new(0))];
 
@@ -364,8 +364,6 @@ pub(crate) fn resolve_document_modules(
         &main_region.src_bytes,
         chrn_cfg,
         &main_region,
-        main_region.script_start,
-        main_region.serial_start,
     )
     .collect_imports(&mut interner);
 
@@ -413,7 +411,7 @@ pub(crate) fn resolve_document_modules(
         .filter_map(|m| {
             let region_id = m.region_id?;
             let region = &sub_regions[region_id.id as usize - 1];
-            let p = interner.search_path(region.path_id);
+            let p = interner.extract_path_from_path_id(region.path_id);
             Url::from_file_path(p).ok().map(|u| u.to_string())
         })
         .collect();
@@ -1219,7 +1217,7 @@ pub(crate) fn resolve_modules_lsp(
             // into `ErrorSource`. This mirrors `extract_modules`/`resolve_module`.
             seen.push(path_id);
 
-            let path_owned = interner.search_path(path_id).to_path_buf();
+            let path_owned = interner.extract_path_from_path_id(path_id).to_path_buf();
             let path = path_owned.as_path();
 
             // Try to get from doc_cache first
@@ -1310,7 +1308,7 @@ pub(crate) fn resolve_modules_lsp(
             let official_name_id = match import.sp_alias_id.as_ref().map(|sp| sp.inner) {
                 Some(alias_id) => alias_id,
                 None => match path.file_prefix().and_then(|n| n.to_str()) {
-                    Some(p) => interner.intern(p),
+                    Some(p) => interner.intern_str(p),
                     _ => {
                         importer_mod.imports[i].kind = ImportKind::ErrorSource(sp_path_id.clone());
                         let core_msg = format!(
@@ -1364,7 +1362,7 @@ pub(crate) fn resolve_modules_lsp(
                                 diags.push(diag);
                             }
                             ConfigLoadError::IO(e) => {
-                                let path = interner.search_path(path_id);
+                                let path = interner.extract_path_from_path_id(path_id);
                                 let core_msg = core_error::form_string_from_io_err(&e, path)
                                     .unwrap_or(e.to_string());
                                 let src_diag = SourceDiagnostic::builder(
@@ -1391,7 +1389,7 @@ pub(crate) fn resolve_modules_lsp(
                                 diags.push(diag);
                             }
                             ConfigLoadError::IO(e) => {
-                                let path = interner.search_path(path_id);
+                                let path = interner.extract_path_from_path_id(path_id);
                                 let core_msg = core_error::form_string_from_io_err(&e, path)
                                     .unwrap_or(e.to_string());
                                 let src_diag = SourceDiagnostic::builder(
@@ -1424,8 +1422,6 @@ pub(crate) fn resolve_modules_lsp(
                 &sub_region.src_bytes,
                 settings,
                 &sub_region,
-                sub_region.script_start,
-                sub_region.serial_start,
             )
             .collect_imports(interner);
 
@@ -1471,7 +1467,7 @@ pub(crate) fn resolve_modules_lsp(
         // span unless it is the root module's own name, in which case a note
         // replaces the secondary annotation.
         for (dup_ident, dup_is_alias, dup_span, original_span) in dup_records {
-            let dup_name = interner.search(dup_ident);
+            let dup_name = interner.extract_str_from_interned_id(dup_ident);
 
             // An alias is already present so changes msg
             let add_help = !dup_is_alias;

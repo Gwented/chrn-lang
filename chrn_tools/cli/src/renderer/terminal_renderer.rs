@@ -47,7 +47,7 @@ pub(crate) fn render_terminal_diags(
         None => {
             let mut rendered_diags: Vec<String> = Vec::new();
             for diag in diags {
-                let path = interner.search_path(diag.path_id);
+                let path = interner.extract_path_from_path_id(diag.path_id);
                 let path_header = style::create_path_header(path, cfg);
                 // Not really a header when it's using the message too
                 let level_header =
@@ -227,7 +227,7 @@ fn render_text(
 
         if !placed_path {
             let new_region = &region_arena[current_region_id];
-            let path = interner.search_path(new_region.path_id);
+            let path = interner.extract_path_from_path_id(new_region.path_id);
             let path_header_sep = style::create_path_header(path, render_cfg);
 
             // Since this boolean controls the first path placed and any intermediate paths placed,
@@ -264,7 +264,7 @@ fn render_text(
     // Meaning there were no line layouts which skips the loop, but this still needs it's pat
     // shown so this is done
     if prev_region_id_opt.is_none() {
-        let path = interner.search_path(diag.path_id);
+        let path = interner.extract_path_from_path_id(diag.path_id);
         let path_header_sep = style::create_path_header(path, render_cfg);
         layout_text.push_str(&format!("\n{path_header_sep}"));
     }

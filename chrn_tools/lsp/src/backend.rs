@@ -1330,7 +1330,7 @@ fn override_root_completion_items(
     roots
         .into_iter()
         .filter_map(|name_id| {
-            let name = state.interner.search(name_id);
+            let name = state.interner.extract_str_from_interned_id(name_id);
             (prefix.is_empty() || name.starts_with(prefix)).then(|| CompletionItem {
                 label: name.to_string(),
                 kind: Some(CompletionItemKind::VARIABLE),
@@ -1353,7 +1353,7 @@ pub(crate) fn config_completion_items(
             .iter_interned()
             .filter_map(|(_, sym_id)| {
                 let sym = &compiler.syms[sym_id];
-                let name = state.interner.search(sym.name_id);
+                let name = state.interner.extract_str_from_interned_id(sym.name_id);
                 (prefix.is_empty() || name.starts_with(prefix)).then(|| {
                     completion_item(
                         name.to_string(),
@@ -1388,7 +1388,7 @@ pub(crate) fn config_completion_items(
         if configured_members.contains(&name_id) {
             continue;
         }
-        let name = state.interner.search(name_id);
+        let name = state.interner.extract_str_from_interned_id(name_id);
         if prefix.is_empty() || name.starts_with(prefix) {
             items.push(CompletionItem {
                 label: name.to_string(),
@@ -1402,7 +1402,7 @@ pub(crate) fn config_completion_items(
         if configured_options.contains(&option.name_id) {
             continue;
         }
-        let name = state.interner.search(option.name_id);
+        let name = state.interner.extract_str_from_interned_id(option.name_id);
         if prefix.is_empty() || name.starts_with(prefix) {
             items.push(CompletionItem {
                 label: format!("{name} ="),
@@ -2195,7 +2195,7 @@ impl LanguageServer for Backend {
                 {
                     let mut push_symbol = |sym_id: SymbolId| {
                         let sym = &compiler.syms[sym_id];
-                        let name = state.interner.search(sym.name_id);
+                        let name = state.interner.extract_str_from_interned_id(sym.name_id);
                         if prefix.is_empty() || name.starts_with(prefix) {
                             items.push(symbol_completion_item(
                                 compiler,
@@ -2240,7 +2240,7 @@ impl LanguageServer for Backend {
 
         if let Some(target_name) = target_name {
             let mut items: Vec<CompletionItem> = Vec::new();
-            if let Some(target_id) = state.interner.try_search_str(target_name)
+            if let Some(target_id) = state.interner.get_interned_id_from_str(target_name)
                 && let Some(compiler) = &state.compiler
             {
                 if let Some(mod_id) = crate::state::visible_module(compiler, target_id) {
@@ -2255,7 +2255,7 @@ impl LanguageServer for Backend {
                             if sym.scope_origin == scopes_concepts::ScopeType::Var {
                                 continue;
                             }
-                            let sym_name = state.interner.search(sym.name_id);
+                            let sym_name = state.interner.extract_str_from_interned_id(sym.name_id);
                             if prefix.is_empty() || sym_name.starts_with(prefix) {
                                 items.push(symbol_completion_item(
                                     compiler,
@@ -2271,7 +2271,7 @@ impl LanguageServer for Backend {
                         // Other modules: show only exported symbols
                         for sym_id in &module.exports {
                             let sym = &compiler.syms[*sym_id];
-                            let sym_name = state.interner.search(sym.name_id);
+                            let sym_name = state.interner.extract_str_from_interned_id(sym.name_id);
                             if prefix.is_empty() || sym_name.starts_with(prefix) {
                                 items.push(symbol_completion_item(
                                     compiler,
@@ -2297,7 +2297,7 @@ impl LanguageServer for Backend {
                     let ns_scope = &compiler.scopes[scope_id];
                     for (_, memb_id) in ns_scope.scope.table.iter_interned() {
                         let member = &compiler.syms[memb_id];
-                        let member_name = state.interner.search(member.name_id);
+                        let member_name = state.interner.extract_str_from_interned_id(member.name_id);
                         if prefix.is_empty() || member_name.starts_with(prefix) {
                             items.push(symbol_completion_item(
                                 compiler,
@@ -2337,7 +2337,7 @@ impl LanguageServer for Backend {
                 .iter_interned()
                 .filter_map(|(_, sym_id)| {
                     let sym = &compiler.syms[sym_id];
-                    let name = state.interner.search(sym.name_id);
+                    let name = state.interner.extract_str_from_interned_id(sym.name_id);
                     (prefix.is_empty() || name.starts_with(prefix)).then(|| {
                         symbol_completion_item(
                             compiler,
@@ -2408,7 +2408,7 @@ impl LanguageServer for Backend {
                     }
                     for (_, sym_id) in scope.table.iter_interned() {
                         let sym = &compiler.syms[sym_id];
-                        let name = state.interner.search(sym.name_id);
+                        let name = state.interner.extract_str_from_interned_id(sym.name_id);
                         if (prefix.is_empty() || name.starts_with(prefix))
                             && seen.insert(name.to_string())
                         {
@@ -2429,7 +2429,7 @@ impl LanguageServer for Backend {
             let core_mod = &compiler.mods[compiler.intrinsic_registry.core_mod_id];
             for sym_id in &core_mod.exports {
                 let sym = &compiler.syms[*sym_id];
-                let name = state.interner.search(sym.name_id);
+                let name = state.interner.extract_str_from_interned_id(sym.name_id);
                 if (prefix.is_empty() || name.starts_with(prefix)) && seen.insert(name.to_string())
                 {
                     items.push(symbol_completion_item(

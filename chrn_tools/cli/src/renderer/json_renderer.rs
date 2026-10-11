@@ -178,7 +178,7 @@ fn write_diagnostic(
     out.push('\n');
 
     // "path" (always expanded)
-    let path = interner.search_path(diag.path_id);
+    let path = interner.extract_path_from_path_id(diag.path_id);
     write_indent(out, depth + 1);
     push_json_str(out, "path");
     out.push_str(": ");

@@ -490,7 +490,7 @@ fn lex_hex_literal_consumes_decimal_digits() {
                 interned_id: id,
                 notation: IntegerNotation::Hex,
             }) => {
-                assert_eq!(interner.search(*id), expected_digits);
+                assert_eq!(interner.extract_str_from_interned_id(*id), expected_digits);
             }
             other => {
                 panic!("expected Hex integer {expected_digits:?} for {src_str:?}, got {other:?}")
@@ -542,7 +542,7 @@ fn lex_radix_literal_terminates_on_invalid_digit_or_empty_malformed() {
             }) => {
                 assert_eq!(*not, notation, "notation mismatch for {src_str:?}");
                 assert_eq!(
-                    interner.search(*id),
+                    interner.extract_str_from_interned_id(*id),
                     expected_radix_digits,
                     "radix digits mismatch for {src_str:?}"
                 );
@@ -557,7 +557,7 @@ fn lex_radix_literal_terminates_on_invalid_digit_or_empty_malformed() {
                 notation: IntegerNotation::Decimal,
             }) => {
                 assert_eq!(
-                    interner.search(*id),
+                    interner.extract_str_from_interned_id(*id),
                     expected_decimal_digits,
                     "decimal digits mismatch for {src_str:?}"
                 );
@@ -596,7 +596,7 @@ fn lex_radix_literal_terminates_on_invalid_digit_or_empty_malformed() {
                 notation: IntegerNotation::Decimal,
             }) => {
                 assert_eq!(
-                    interner.search(*id),
+                    interner.extract_str_from_interned_id(*id),
                     expected_decimal_digits,
                     "decimal digits mismatch for {src_str:?}"
                 );
@@ -656,7 +656,7 @@ fn lex_float_literal_fraction_and_scientific_notation() {
                     "notation mismatch for {src_str:?}"
                 );
                 assert_eq!(
-                    interner.search(*id),
+                    interner.extract_str_from_interned_id(*id),
                     expected_str,
                     "interned string mismatch for {src_str:?}"
                 );
@@ -702,7 +702,7 @@ fn lex_trailing_dot_numeric_literal_is_integer_and_dot() {
                 interned_id: id,
                 notation: IntegerNotation::Decimal,
             }) => {
-                assert_eq!(interner.search(*id), "2");
+                assert_eq!(interner.extract_str_from_interned_id(*id), "2");
             }
             other => panic!("expected Integer(Decimal) for `2.`, got {other:?}"),
         }
@@ -726,12 +726,12 @@ fn lex_trailing_dot_numeric_literal_is_integer_and_dot() {
             Token::Integer(TokenInt {
                 interned_id: id,
                 notation: IntegerNotation::Decimal,
-            }) => assert_eq!(interner.search(*id), "2"),
+            }) => assert_eq!(interner.extract_str_from_interned_id(*id), "2"),
             other => panic!("expected Integer for `2.foo`, got {other:?}"),
         }
         assert_eq!(toks[1].tok, Token::Dot);
         match &toks[2].tok {
-            Token::Id(id) => assert_eq!(interner.search(*id), "foo"),
+            Token::Id(id) => assert_eq!(interner.extract_str_from_interned_id(*id), "foo"),
             other => panic!("expected Id for `foo`, got {other:?}"),
         }
         assert_eq!(toks[3].tok, Token::EOF);
@@ -749,7 +749,7 @@ fn lex_trailing_dot_numeric_literal_is_integer_and_dot() {
             Token::Integer(TokenInt {
                 interned_id: id,
                 notation: IntegerNotation::Decimal,
-            }) => assert_eq!(interner.search(*id), "2"),
+            }) => assert_eq!(interner.extract_str_from_interned_id(*id), "2"),
             other => panic!("expected Integer for `2`, got {other:?}"),
         }
         assert_eq!(toks[1].tok, Token::Dot);
@@ -758,7 +758,7 @@ fn lex_trailing_dot_numeric_literal_is_integer_and_dot() {
             Token::Integer(TokenInt {
                 interned_id: id,
                 notation: IntegerNotation::Decimal,
-            }) => assert_eq!(interner.search(*id), "5"),
+            }) => assert_eq!(interner.extract_str_from_interned_id(*id), "5"),
             other => panic!("expected Integer for `5`, got {other:?}"),
         }
         assert_eq!(toks[4].tok, Token::EOF);
@@ -793,13 +793,13 @@ fn lex_incomplete_scientific_notation_terminates_before_exponent() {
             Token::Integer(TokenInt {
                 interned_id: id,
                 notation: IntegerNotation::Decimal,
-            }) => assert_eq!(interner.search(*id), "1"),
+            }) => assert_eq!(interner.extract_str_from_interned_id(*id), "1"),
             other => panic!("expected Integer for `1e`, got {other:?}"),
         }
         assert_eq!(toks[0].span.start, 0);
         assert_eq!(toks[0].span.end, 1);
         match &toks[1].tok {
-            Token::Id(id) => assert_eq!(interner.search(*id), "e"),
+            Token::Id(id) => assert_eq!(interner.extract_str_from_interned_id(*id), "e"),
             other => panic!("expected Id(e) for `1e`, got {other:?}"),
         }
         assert_eq!(toks[2].tok, Token::EOF);
@@ -817,11 +817,11 @@ fn lex_incomplete_scientific_notation_terminates_before_exponent() {
             Token::Integer(TokenInt {
                 interned_id: id,
                 notation: IntegerNotation::Decimal,
-            }) => assert_eq!(interner.search(*id), "1"),
+            }) => assert_eq!(interner.extract_str_from_interned_id(*id), "1"),
             other => panic!("expected Integer for `1e+`, got {other:?}"),
         }
         match &toks[1].tok {
-            Token::Id(id) => assert_eq!(interner.search(*id), "e"),
+            Token::Id(id) => assert_eq!(interner.extract_str_from_interned_id(*id), "e"),
             other => panic!("expected Id(e) for `1e+`, got {other:?}"),
         }
         assert_eq!(toks[2].tok, Token::Plus);
@@ -840,13 +840,13 @@ fn lex_incomplete_scientific_notation_terminates_before_exponent() {
             Token::Float(TokenFloat {
                 interned_id: id,
                 notation: FloatNotation::Decimal,
-            }) => assert_eq!(interner.search(*id), "1.2"),
+            }) => assert_eq!(interner.extract_str_from_interned_id(*id), "1.2"),
             other => panic!("expected Float for `1.2e`, got {other:?}"),
         }
         assert_eq!(toks[0].span.start, 0);
         assert_eq!(toks[0].span.end, 3);
         match &toks[1].tok {
-            Token::Id(id) => assert_eq!(interner.search(*id), "e"),
+            Token::Id(id) => assert_eq!(interner.extract_str_from_interned_id(*id), "e"),
             other => panic!("expected Id(e) for `1.2e`, got {other:?}"),
         }
         assert_eq!(toks[2].tok, Token::EOF);
@@ -864,11 +864,11 @@ fn lex_incomplete_scientific_notation_terminates_before_exponent() {
             Token::Float(TokenFloat {
                 interned_id: id,
                 notation: FloatNotation::Decimal,
-            }) => assert_eq!(interner.search(*id), "1.2"),
+            }) => assert_eq!(interner.extract_str_from_interned_id(*id), "1.2"),
             other => panic!("expected Float for `1.2e+`, got {other:?}"),
         }
         match &toks[1].tok {
-            Token::Id(id) => assert_eq!(interner.search(*id), "e"),
+            Token::Id(id) => assert_eq!(interner.extract_str_from_interned_id(*id), "e"),
             other => panic!("expected Id(e) for `1.2e+`, got {other:?}"),
         }
         assert_eq!(toks[2].tok, Token::Plus);
@@ -901,13 +901,13 @@ fn lex_hex_literal_terminates_on_invalid_digit_or_empty_malformed() {
             Token::Integer(TokenInt {
                 interned_id: id,
                 notation: IntegerNotation::Hex,
-            }) => assert_eq!(interner.search(*id), "1"),
+            }) => assert_eq!(interner.extract_str_from_interned_id(*id), "1"),
             other => panic!("expected Hex integer for `0x1g`, got {other:?}"),
         }
         assert_eq!(toks[0].span.start, 0);
         assert_eq!(toks[0].span.end, 3);
         match &toks[1].tok {
-            Token::Id(id) => assert_eq!(interner.search(*id), "g"),
+            Token::Id(id) => assert_eq!(interner.extract_str_from_interned_id(*id), "g"),
             other => panic!("expected Id(g) for `0x1g`, got {other:?}"),
         }
         assert_eq!(toks[2].tok, Token::EOF);
@@ -925,7 +925,7 @@ fn lex_hex_literal_terminates_on_invalid_digit_or_empty_malformed() {
         assert_eq!(toks[0].span.start, 0);
         assert_eq!(toks[0].span.end, 2);
         match &toks[1].tok {
-            Token::Id(id) => assert_eq!(interner.search(*id), "g"),
+            Token::Id(id) => assert_eq!(interner.extract_str_from_interned_id(*id), "g"),
             other => panic!("expected Id(g) for `0xg`, got {other:?}"),
         }
         assert_eq!(toks[2].tok, Token::EOF);
@@ -996,7 +996,7 @@ fn lex_numeric_notation_maps_to_correct_token_and_notation_enum() {
                     "radix mismatch for {src_str:?}"
                 );
                 assert_eq!(
-                    interner.search(*id),
+                    interner.extract_str_from_interned_id(*id),
                     expected_digits,
                     "interned digits mismatch for {src_str:?}"
                 );
@@ -1039,7 +1039,7 @@ fn lex_numeric_notation_maps_to_correct_token_and_notation_enum() {
                     "notation enum mismatch for {src_str:?}"
                 );
                 assert_eq!(
-                    interner.search(*id),
+                    interner.extract_str_from_interned_id(*id),
                     expected_str,
                     "interned string mismatch for {src_str:?}"
                 );
@@ -1085,7 +1085,7 @@ fn lex_numeric_notation_maps_to_correct_token_and_notation_enum() {
 //     assert_eq!(2, toks.len());
 //     match toks[0].tok {
 //         Token::Integer(TokenInt { interned_id: id, notation: IntegerNotation::Hex }) => {
-//             assert_eq!("255", interner.search(id));
+//             assert_eq!("255", interner.extract_str_from_interned_id(id));
 //         }
 //         _ => panic!("Expected Integer with Hex, found {:?}", toks[0].tok),
 //     }
@@ -1112,7 +1112,7 @@ fn lex_numeric_notation_maps_to_correct_token_and_notation_enum() {
 //     assert_eq!(2, toks.len());
 //     match toks[0].tok {
 //         Token::Integer(TokenInt { interned_id: id, notation: IntegerNotation::Bin }) => {
-//             assert_eq!("10", interner.search(id));
+//             assert_eq!("10", interner.extract_str_from_interned_id(id));
 //         }
 //         _ => panic!("Expected Integer with Binary, found {:?}", toks[0].tok),
 //     }
@@ -1139,7 +1139,7 @@ fn lex_numeric_notation_maps_to_correct_token_and_notation_enum() {
 //     assert_eq!(2, toks.len());
 //     match toks[0].tok {
 //         Token::Integer(TokenInt { interned_id: id, notation: IntegerNotation::Octal }) => {
-//             assert_eq!("63", interner.search(id));
+//             assert_eq!("63", interner.extract_str_from_interned_id(id));
 //         }
 //         _ => panic!("Expected Integer with Octal, found {:?}", toks[0].tok),
 //     }
@@ -1166,7 +1166,7 @@ fn lex_numeric_notation_maps_to_correct_token_and_notation_enum() {
 //     assert_eq!(2, toks.len());
 //     match toks[0].tok {
 //         Token::Integer(TokenInt { interned_id: id, notation: IntegerNotation::Decimal }) => {
-//             assert_eq!("42", interner.search(id));
+//             assert_eq!("42", interner.extract_str_from_interned_id(id));
 //         }
 //         _ => panic!("Expected Integer of Decimal, found {:?}", toks[0].tok),
 //     }
@@ -1193,7 +1193,7 @@ fn lex_numeric_notation_maps_to_correct_token_and_notation_enum() {
 //     assert_eq!(2, toks.len());
 //     match toks[0].tok {
 //         Token::Float(TokenFloat { interned_id: id, notation: FloatNotation::Decimal }) => {
-//             assert_eq!("3.14", interner.search(id));
+//             assert_eq!("3.14", interner.extract_str_from_interned_id(id));
 //         }
 //         _ => panic!("Expected Float with Decimal, found {:?}", toks[0].tok),
 //     }
@@ -1220,7 +1220,7 @@ fn lex_numeric_notation_maps_to_correct_token_and_notation_enum() {
 //     assert_eq!(2, toks.len());
 //     match toks[0].tok {
 //         Token::Float(TokenFloat { interned_id: id, notation: FloatNotation::Decimal }) => {
-//             assert_eq!("1e+23", interner.search(id));
+//             assert_eq!("1e+23", interner.extract_str_from_interned_id(id));
 //         }
 //         _ => panic!("Expected Float with Decimal, found {:?}", toks[0].tok),
 //     }
@@ -1247,7 +1247,7 @@ fn lex_numeric_notation_maps_to_correct_token_and_notation_enum() {
 //     assert_eq!(2, toks.len());
 //     match toks[0].tok {
 //         Token::Float(TokenFloat { interned_id: id, notation: FloatNotation::Decimal }) => {
-//             assert_eq!("1e-23", interner.search(id));
+//             assert_eq!("1e-23", interner.extract_str_from_interned_id(id));
 //         }
 //         _ => panic!("Expected Float with Decimal, found {:?}", toks[0].tok),
 //     }
@@ -1274,7 +1274,7 @@ fn lex_numeric_notation_maps_to_correct_token_and_notation_enum() {
 //     assert_eq!(2, toks.len());
 //     match toks[0].tok {
 //         Token::Integer(TokenInt { interned_id: id, notation: IntegerNotation::Decimal }) => {
-//             assert_eq!("1000000", interner.search(id));
+//             assert_eq!("1000000", interner.extract_str_from_interned_id(id));
 //         }
 //         _ => panic!("Expected Integer with Decimal, found {:?}", toks[0].tok),
 //     }
@@ -1301,7 +1301,7 @@ fn lex_numeric_notation_maps_to_correct_token_and_notation_enum() {
 //     assert_eq!(2, toks.len());
 //     match toks[0].tok {
 //         Token::Integer(TokenInt { interned_id: id, notation: IntegerNotation::Hex }) => {
-//             assert_eq!("65535", interner.search(id));
+//             assert_eq!("65535", interner.extract_str_from_interned_id(id));
 //         }
 //         _ => panic!("Expected Integer with Hex, found {:?}", toks[0].tok),
 //     }
@@ -1329,7 +1329,7 @@ fn read_ident_includes_trailing_underscore() {
         .expect("expected an Id token for \"foo_\"");
 
     let (id, span) = id_tok;
-    let lexed = interner.search(id);
+    let lexed = interner.extract_str_from_interned_id(id);
     assert_eq!(lexed, "foo_", "underscore should be included in ident");
 
     // Span must cover exactly the four bytes "foo_".
@@ -1355,7 +1355,7 @@ fn read_ident_handles_bare_underscore() {
         })
         .expect("expected an Id token for \"_\"");
 
-    assert_eq!(interner.search(id.0), "_");
+    assert_eq!(interner.extract_str_from_interned_id(id.0), "_");
     assert_eq!(id.1.start, 0);
     assert_eq!(id.1.end, 1);
 }
@@ -1376,7 +1376,11 @@ fn read_ident_mixed_alphanumeric_and_underscore() {
     let names: Vec<(String, u32, u32)> = toks
         .iter()
         .filter_map(|st| match st.tok {
-            Token::Id(id) => Some((interner.search(id).to_string(), st.span.start, st.span.end)),
+            Token::Id(id) => Some((
+                interner.extract_str_from_interned_id(id).to_string(),
+                st.span.start,
+                st.span.end,
+            )),
             _ => None,
         })
         .collect();
@@ -1414,7 +1418,7 @@ fn read_ident_mixed_alphanumeric_and_underscore() {
 //     let Token::Id(id) = output.toks[2].tok else {
 //         unreachable!("token kind asserted above")
 //     };
-//     assert_eq!(interner.search(id), "right");
+//     assert_eq!(interner.extract_str_from_interned_id(id), "right");
 // }
 
 #[test]

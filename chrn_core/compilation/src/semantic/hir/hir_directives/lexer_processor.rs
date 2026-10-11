@@ -7,8 +7,8 @@ use crate::{
     lexer::token::{SpannedToken, Token, TokenFloat, TokenInt, TokenKind},
     parser::parser_helpers::DelimiterContext,
     semantic::hir::hir_directives::{
-        DirectivePreprocess, DirectivePreprocessExpectInput, DirectivePreprocessHir,
-        DirectivePreprocessInput, DirectivePreprocessKind, DirectivePreprocessSchema,
+        DirectivePreprocess, DirectivePreprocessExpectInput, DirectivePreprocessInput,
+        DirectivePreprocessSchema,
     },
 };
 
@@ -42,7 +42,7 @@ pub fn process_directive(toks: &[SpannedToken], hash_idx: usize) -> Option<Direc
 
 fn make_directive(
     cursor: &mut BasicCursor<SpannedToken>,
-    field_schema: &DirectivePreprocessSchema,
+    schema: &DirectivePreprocessSchema,
     delim_ctx: DelimiterContext,
 ) -> Option<DirectivePreprocess> {
     if !expect_tok(cursor, delim_ctx.opening()) {
@@ -59,8 +59,8 @@ fn make_directive(
 
     //NOTE: If we have an actual parameterized directive field, f(x,y), we probably want to return
     //as a failure rather than keep half of something invalid
-    for _ in field_schema.arg_layout.args() {
-        if arg_count + 1 > field_schema.arg_layout.arg_len() {
+    for _ in schema.arg_layout.args() {
+        if arg_count + 1 > schema.arg_layout.arg_len() {
             return None;
         }
 
@@ -105,7 +105,7 @@ fn make_directive(
         return None;
     };
 
-    let kind = field_schema.try_as_directive_preprocess(&inputs)?;
+    let kind = schema.try_as_directive_preprocess(&inputs)?;
     Some(DirectivePreprocess::new(kind))
 }
 
