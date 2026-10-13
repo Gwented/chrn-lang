@@ -98,6 +98,7 @@ pub struct TypeResolver<'a> {
     interner: &'a mut Intern,
     compiler: &'a mut ScriptCompiler,
     //TODO: Do we detach this?
+    //No
     ty_ctx: TypeContext,
     summary: SourceDiagnosticSummary,
 }
@@ -304,7 +305,8 @@ impl<'res> TypeResolver<'res> {
                     };
                 }
 
-                //FIX:
+                //FIX: Should NOT be taking and refilling this. Need to make ownership clear so that
+                //borrowing self doesn't mean we have to hand off ty_ctx.
                 // Giving self back the data
                 self.ty_ctx.sym_queue.extend(pending_syms);
 
@@ -351,6 +353,9 @@ impl<'res> TypeResolver<'res> {
                             }
                             //Doesn't need to update anything since it's a "Standing" expr which has no
                             //parent attached.
+                            //This does not increment the resolved count because `Standing`
+                            //exprs cannot be depended on, meaning having it contribute to looping
+                            //again would have no innate value.
                             PendingExprKind::Standing(_) => (),
                         }
                     }
@@ -524,6 +529,580 @@ impl<'res> TypeResolver<'res> {
 
         debug_assert_eq!(direct.array_expr_id, None);
         direct.array_expr_id = Some(array_expr_id);
+    }
+
+    fn resolve_var(&mut self, parent_sym_id: TaggedId<SymbolId, VarTag>, env: &ResolverEnv) {
+        // Maybe we should get ast id from the outside since this is a little awkward
+        let sym = &self.compiler.syms[parent_sym_id.inner()];
+        let ast_id = sym.ast_id.expect("Should be user symbols only");
+        let scope_type = sym.scope_origin;
+        let associated_scope = AssociatedScopeKind::Module(env.current_mod);
+
+        let abs_var = env.ast_info.get_var(ast_id);
+
+        // This can either be a check done during the type expr resolution itself to make sure
+        // annotation matches the actual type, or just checked after resoution.
+        // let type_id_opt = if let Some(ty_ann) = &abs_var.ty_ann {
+        //     match resolution_helpers::resolve_type_expr_ret_preset(
+        //         self.compiler,
+        //         associated_scope,
+        //         ty_ann,
+        //         scope_type,
+        //         ScopeLookupPattern::NoRestrictions,
+        //         self.interner,
+        //         env,
+        //     ) {
+        //         Ok(id) => id.into(),
+        //         Err(preset_err) => {
+        //             preset_reporter::report_preset(
+        //                 &self.compiler,
+        //                 &mut self.summary,
+        //                 preset_err,
+        //                 env.region,
+        //                 self.cfg,
+        //                 self.interner,
+        //             );
+        //             None
+        //         }
+        //     }
+        // } else {
+        //     None
+        // };
+
+        //NOTE: Pipeline where expressions are always returned, just that some may have
+        //unresolved parts, which are put into the queue, not the variable itself.
+        let expr_id = match self.register_expr(
+            parent_sym_id.inner().into(),
+            &abs_var.spanned_expr,
+            None,
+            associated_scope,
+            scope_type,
+            env,
+        ) {
+            Ok(expr_id) => expr_id,
+            Err(preset_err) => {
+                preset_reporter::report_preset(
+                    &self.compiler,
+                    &mut self.summary,
+                    preset_err,
+                    env.region,
+                    self.cfg,
+                    self.interner,
+                );
+
+                //TODO: use AstExpr::Error
+                return;
+            }
+        };
+
+        let expr = &self.compiler.exprs[expr_id];
+        let val = &self.compiler.values[expr.val_id];
+
+        let has_resolved_ty = !self.compiler.check_unknown(expr.type_id);
+        let has_const_val = val.const_val.is_some();
+
+        // The top expr is given as the value innately for the variable.
+        let val_id = expr.val_id;
+
+        // Sets the symbol's value to be the last expression's value so that later, if it's
+        // expression is resolved further, since it's already pointing the the same expression it
+        // will by proxy be updated
+
+        let var = self.compiler.get_var_mut(parent_sym_id);
+        var.state = VariableState::Known(val_id);
+
+        // If the symbol that was just examined is a pending symbol AND it was actually resolved,
+        // then it'll be marked as resolved
+        if let Some(pending_sym) = self.ty_ctx.sym_queue.get_mut(&parent_sym_id.inner()) {
+            // Three flags for resolver use
+            pending_sym.has_resolved_ty = has_resolved_ty;
+            pending_sym.has_const_val = has_const_val;
+
+            self.ty_ctx.needs_check = true;
+        }
+    }
+
+    fn resolve_typedef(
+        &mut self,
+        parent_sym_id: TaggedId<SymbolId, TypeDefTag>,
+        env: &ResolverEnv,
+    ) {
+        let sym = &self.compiler.syms[parent_sym_id.inner()];
+        let ast_id = sym.ast_id.expect("Should be user symbols only");
+        let scope_type = sym.scope_origin;
+        let associated_scope = AssociatedScopeKind::Module(env.current_mod);
+
+        let abs_typedef = env.ast_info.get_typedef(ast_id);
+
+        let type_id = match resolution_helpers::resolve_type_expr_ret_preset(
+            &mut self.compiler,
+            AssociatedScopeKind::Module(env.current_mod),
+            &abs_typedef.sp_ty_expr,
+            scope_type,
+            ScopeLookupPattern::NoRestrictions,
+            self.interner,
+            env,
+        ) {
+            Ok(type_id) => type_id,
+            Err(preset_err) => {
+                preset_reporter::report_preset(
+                    &self.compiler,
+                    &mut self.summary,
+                    preset_err,
+                    env.region,
+                    self.cfg,
+                    self.interner,
+                );
+                TypeId::new(compiler_consts::CORE_UNKNOWN)
+            }
+        };
+
+        let mut conds: Vec<ExprId> = Vec::with_capacity(abs_typedef.conds.len());
+        for spanned_expr in &abs_typedef.conds {
+            //FIX: Scope type is a little wrong here since it's a condition
+            match self.register_expr(
+                parent_sym_id.inner().into(),
+                spanned_expr,
+                None,
+                associated_scope,
+                scope_type,
+                env,
+            ) {
+                // For allowing for more diagnostics instead of just leaving the rest of the struct
+                // unfinished upon singular errors
+                Ok(c) => conds.push(c),
+                Err(preset_err) => {
+                    preset_reporter::report_preset(
+                        &self.compiler,
+                        &mut self.summary,
+                        preset_err,
+                        env.region,
+                        self.cfg,
+                        self.interner,
+                    );
+                }
+            }
+        }
+
+        let (directives, preset_errs) = self.handle_directives(&abs_typedef.directives, env);
+        preset_reporter::report_preset_vec(
+            &self.compiler,
+            &mut self.summary,
+            preset_errs,
+            env.region,
+            self.cfg,
+            self.interner,
+        );
+
+        let type_def = self.compiler.get_typedef_mut(parent_sym_id);
+
+        debug_assert_eq!(type_def.conds.len(), 0);
+        debug_assert_eq!(type_def.directives.len(), 0);
+
+        // Assinging from `Unknown` to it's actual type if found
+        //TODO: Constraints should check if this is unknown
+        type_def.type_id = type_id;
+        type_def.conds = conds;
+        // Maybe directives will stay defined here
+        type_def.directives = directives;
+    }
+
+    fn resolve_struct(&mut self, parent_sym_id: TaggedId<SymbolId, StructTag>, env: &ResolverEnv) {
+        let sym = &self.compiler.syms[parent_sym_id.inner()];
+        let ast_id = sym.ast_id.expect("Should be user symbols only");
+        let abs_struct = env.ast_info.get_struct(ast_id);
+        // Not sure of if this should stay a Field type or just be a TypeDef since their intent
+        // somewhat conflicts. For now, typedef is just consumed differently depending on if it's a
+        // field declared in var-> or not since var-> fields may be made possible to reference, but
+        // fields in structures can't. Will possibly just be unified in the future.
+
+        let associated_scope = AssociatedScopeKind::Module(env.current_mod);
+        let scope_type = sym.scope_origin;
+
+        let fields: Vec<TaggedId<MemberId, FieldTag>> =
+            self.compiler.get_struct(parent_sym_id).fields.clone();
+
+        for (i, current_memb_id) in fields.iter().enumerate() {
+            let abs_field = &abs_struct.fields[i];
+            let mut conds: Vec<ExprId> = Vec::with_capacity(abs_field.conds.len());
+
+            for cond in &abs_field.conds {
+                match self.register_expr(
+                    parent_sym_id.inner().into(),
+                    &cond,
+                    None,
+                    associated_scope,
+                    scope_type,
+                    env,
+                ) {
+                    Ok(c) => conds.push(c),
+                    Err(preset_err) => {
+                        preset_reporter::report_preset(
+                            &self.compiler,
+                            &mut self.summary,
+                            preset_err,
+                            env.region,
+                            self.cfg,
+                            self.interner,
+                        );
+                    }
+                };
+            }
+
+            let (directives, preset_errs) = self.handle_directives(&abs_field.directives, env);
+            preset_reporter::report_preset_vec(
+                &self.compiler,
+                &mut self.summary,
+                preset_errs,
+                env.region,
+                self.cfg,
+                self.interner,
+            );
+
+            let field = self.compiler.get_field_mut(*current_memb_id);
+
+            debug_assert_eq!(field.conds.len(), 0);
+            debug_assert_eq!(field.directives.len(), 0);
+
+            field.conds = conds;
+            field.directives = directives;
+        }
+
+        let mut glob_conds: Vec<ExprId> = Vec::with_capacity(abs_struct.glob_conds.len());
+
+        for cond in &abs_struct.glob_conds {
+            match self.register_expr(
+                parent_sym_id.inner().into(),
+                cond,
+                None,
+                associated_scope,
+                scope_type,
+                env,
+            ) {
+                Ok(c) => glob_conds.push(c),
+                Err(preset_err) => {
+                    preset_reporter::report_preset(
+                        &self.compiler,
+                        &mut self.summary,
+                        preset_err,
+                        env.region,
+                        self.cfg,
+                        self.interner,
+                    );
+                }
+            }
+        }
+
+        let (glob_directives, preset_errs) =
+            self.handle_directives(&abs_struct.glob_directives, env);
+
+        preset_reporter::report_preset_vec(
+            &self.compiler,
+            &mut self.summary,
+            preset_errs,
+            env.region,
+            self.cfg,
+            self.interner,
+        );
+
+        let struct_def = self.compiler.get_struct_mut(parent_sym_id);
+
+        debug_assert_eq!(struct_def.glob_conds.len(), 0);
+        debug_assert_eq!(struct_def.glob_directives.len(), 0);
+
+        struct_def.glob_conds = glob_conds;
+        struct_def.glob_directives = glob_directives;
+    }
+
+    fn resolve_enum(&mut self, parent_sym_id: TaggedId<SymbolId, EnumTag>, env: &ResolverEnv) {
+        let sym = &self.compiler.syms[parent_sym_id.inner()];
+        let ast_id = sym.ast_id.expect("Should be user symbols only");
+        let associated_scope = AssociatedScopeKind::Module(env.current_mod);
+        let scope_type = sym.scope_origin;
+
+        let abs_enum = env.ast_info.get_enum(ast_id);
+
+        // Clone needed so iteration doesn't make the compiler borrow itself twice
+        let variants = self.compiler.get_enum(parent_sym_id).variants.clone();
+
+        for (i, current_memb_id) in variants.iter().enumerate() {
+            let abs_variant = &abs_enum.variants[i];
+            let mut conds: Vec<ExprId> = Vec::with_capacity(abs_variant.conds.len());
+
+            for cond in &abs_variant.conds {
+                let cond_opt = match self.register_expr(
+                    parent_sym_id.inner().into(),
+                    &cond,
+                    None,
+                    associated_scope,
+                    scope_type,
+                    env,
+                ) {
+                    Ok(c) => Some(c),
+                    Err(preset_err) => {
+                        preset_reporter::report_preset(
+                            &self.compiler,
+                            &mut self.summary,
+                            preset_err,
+                            env.region,
+                            self.cfg,
+                            self.interner,
+                        );
+                        None
+                    }
+                };
+
+                if let Some(cond) = cond_opt {
+                    conds.push(cond);
+                }
+            }
+
+            let (directives, preset_errs) = self.handle_directives(&abs_variant.directives, env);
+            preset_reporter::report_preset_vec(
+                &self.compiler,
+                &mut self.summary,
+                preset_errs,
+                env.region,
+                self.cfg,
+                self.interner,
+            );
+
+            let variant = self.compiler.get_variant_mut(*current_memb_id);
+
+            debug_assert_eq!(variant.conds.len(), 0);
+            debug_assert_eq!(variant.directives.len(), 0);
+
+            variant.conds = conds;
+            variant.directives = directives;
+        }
+
+        let mut glob_conds: Vec<ExprId> = Vec::with_capacity(abs_enum.glob_conds.len());
+        for cond in &abs_enum.glob_conds {
+            let cond_opt = match self.register_expr(
+                parent_sym_id.inner().into(),
+                cond,
+                None,
+                associated_scope,
+                scope_type,
+                env,
+            ) {
+                Ok(c) => Some(c),
+                Err(preset_err) => {
+                    preset_reporter::report_preset(
+                        &self.compiler,
+                        &mut self.summary,
+                        preset_err,
+                        env.region,
+                        self.cfg,
+                        self.interner,
+                    );
+                    None
+                }
+            };
+
+            if let Some(cond) = cond_opt {
+                glob_conds.push(cond);
+            }
+        }
+
+        let (glob_directives, preset_errs) = self.handle_directives(&abs_enum.glob_directives, env);
+        preset_reporter::report_preset_vec(
+            &self.compiler,
+            &mut self.summary,
+            preset_errs,
+            env.region,
+            self.cfg,
+            self.interner,
+        );
+
+        let enum_def = self.compiler.get_enum_mut(parent_sym_id);
+
+        debug_assert_eq!(enum_def.glob_conds.len(), 0);
+        debug_assert_eq!(enum_def.glob_directives.len(), 0);
+        enum_def.glob_conds = glob_conds;
+        enum_def.glob_directives = glob_directives;
+    }
+
+    fn resolve_alias(
+        &mut self,
+        parent_sym_id: TaggedId<SymbolId, AliasTag>,
+        ident_tracker: &mut DuplicateTracker<SpannedContainer<InternedId>>,
+        env: &ResolverEnv,
+    ) {
+        let sym = &self.compiler.syms[parent_sym_id.inner()];
+        let ast_id = sym.ast_id.expect("Should be user symbols only");
+        let scope_type = sym.scope_origin;
+        let associated_scope = AssociatedScopeKind::Module(env.current_mod);
+        let local_scope_id = self.compiler.get_alias(parent_sym_id).local_scope_id;
+
+        let abs_alias = env.ast_info.get_alias(ast_id);
+
+        let mut params: Vec<Param> = Vec::with_capacity(abs_alias.params.len());
+
+        // Just a bit crowded in here..
+        // WARN: Ok this just looks like an inlined function now
+        for (i, abs_param) in abs_alias.params.iter().enumerate() {
+            let sp_name_id = SpannedContainer::new(abs_param.name_id, abs_param.name_span);
+            ident_tracker.insert_or_store(sp_name_id);
+
+            //TODO: SHOULD THIS BE A VARIABLE?
+            let expr_id = self.compiler.exprs.make_id();
+            let val_id = self.compiler.values.make_id();
+
+            let type_id = match resolution_helpers::resolve_type_expr_ret_preset(
+                self.compiler,
+                AssociatedScopeKind::Module(env.current_mod),
+                &abs_param.sp_ty_expr,
+                scope_type,
+                ScopeLookupPattern::NoRestrictions,
+                self.interner,
+                env,
+            ) {
+                Ok(type_id) => type_id,
+                Err(preset_err) => {
+                    preset_reporter::report_preset(
+                        &self.compiler,
+                        &mut self.summary,
+                        preset_err,
+                        env.region,
+                        self.cfg,
+                        self.interner,
+                    );
+                    TypeId::new(compiler_consts::CORE_UNKNOWN)
+                }
+            };
+
+            let param_sym_id = self.compiler.syms.make_id();
+            let var_id = self.compiler.vars.make_id();
+
+            let var = VarDef::new(
+                param_sym_id.into_tagged::<VarTag>(),
+                abs_param.name_id,
+                VariableMetadata::User(abs_param.name_span),
+                VariableState::Known(val_id),
+            );
+
+            let param_sym = Symbol::new(
+                abs_param.name_id,
+                param_sym_id,
+                Some(AstId::new(i as u32)),
+                SymbolOrigin::Module(env.current_mod),
+                true,
+                None,
+                ScopeType::Local,
+                SymbolKind::Variable(var_id),
+            );
+
+            let expr_hir = ExprHir::Var(param_sym_id);
+            let resolved_expr = ResolvedExpr::new(
+                type_id,
+                expr_hir,
+                val_id,
+                ResolvedExprMetadata::User(abs_param.name_span),
+                Vec::new(),
+            );
+
+            let val_info = ValueInfo::new(type_id, expr_id, None);
+
+            self.compiler.syms.push(param_sym);
+            self.compiler.vars.push(var);
+            self.compiler.exprs.push(resolved_expr);
+            self.compiler.values.push(val_info);
+
+            let local_scope = &mut self.compiler.get_scope_mut(local_scope_id).scope;
+            local_scope
+                .table
+                .interned_to_sym
+                .insert(abs_param.name_id, param_sym_id);
+
+            let param = Param::new(param_sym_id, type_id, AstId::new(i as u32));
+
+            params.push(param);
+        }
+
+        for found in ident_tracker.found_dups.drain(..) {
+            let preset_err = PresetErr::DuplicateIdents {
+                sp_original: found.original,
+                sp_dup: found.dup,
+                classifier: ChrnClassified::Parameter,
+            };
+
+            let builder = preset_reporter::create_diag_builder_preset(
+                self.compiler,
+                preset_err,
+                env.region,
+                self.cfg,
+                self.interner,
+            )
+            .add_annotation(
+                abs_alias.name_span,
+                AnnotationKind::Secondary,
+                "Found inside this alias".to_string().into(),
+            );
+            self.summary.push_diag(builder.build());
+        }
+
+        let mut conds: Vec<ExprId> = Vec::with_capacity(abs_alias.conds.len());
+        for spanned_expr in &abs_alias.conds {
+            let cond_opt = match self.register_expr(
+                Some(parent_sym_id.inner()),
+                spanned_expr,
+                Some(local_scope_id),
+                //NOTE: Could this change?
+                associated_scope,
+                scope_type,
+                env,
+            ) {
+                Ok(c) => Some(c),
+                Err(preset_err) => {
+                    preset_reporter::report_preset(
+                        &self.compiler,
+                        &mut self.summary,
+                        preset_err,
+                        env.region,
+                        self.cfg,
+                        self.interner,
+                    );
+                    None
+                }
+            };
+
+            if let Some(cond) = cond_opt {
+                conds.push(cond);
+            }
+        }
+
+        let (directives, preset_errs) = self.handle_directives(&abs_alias.directives, env);
+        preset_reporter::report_preset_vec(
+            &self.compiler,
+            &mut self.summary,
+            preset_errs,
+            env.region,
+            self.cfg,
+            self.interner,
+        );
+
+        //TODO: Arg constraint and option tpe constraint.
+        //Could technically happen in constraint resolver since it. Yes.
+        let alias_def = self.compiler.get_alias_mut(parent_sym_id);
+        let param_count = params.len() as u32;
+
+        debug_assert_eq!(alias_def.conds.len(), 0);
+        debug_assert_eq!(alias_def.directives.len(), 0);
+
+        //WARN: Does not yet have constraints of params discovered
+        alias_def.params = params;
+        // This could just be an explicit field, but in case of future changes keeping it under the
+        // same layer of arg constraints so it's compatible with the already present checks in
+        // `ConstraintResolver`.
+        alias_def
+            .arg_constraints
+            // Well param count and arg count could mean a lot of different things
+            // Ok
+            .push(ArgConstraint::ArgCount(param_count));
+
+        alias_def.conds = conds;
+        alias_def.directives = directives;
     }
 
     // The lifetime used here is needed so that the vectors that are pushed into during the recursive
@@ -917,7 +1496,9 @@ impl<'res> TypeResolver<'res> {
                                         .compiler
                                         .get_name_id_from_type_id(type_id)
                                         .expect("NOT DONE YET");
-                                    let found_name = self.interner.extract_str_from_interned_id(found_type_name_id);
+                                    let found_name = self
+                                        .interner
+                                        .extract_str_from_interned_id(found_type_name_id);
 
                                     let preset_err =
                                         PresetErr::Lookup(LookupError::ImpossibleTypeMemberAccess(
@@ -1173,7 +1754,9 @@ impl<'res> TypeResolver<'res> {
                 // the original field for all duplicates.
                 .find(|(other_i, cfg)| *other_i < i && current_cfg.inner == cfg.inner)
             {
-                let dup_name = self.interner.extract_str_from_interned_id(current_cfg.inner);
+                let dup_name = self
+                    .interner
+                    .extract_str_from_interned_id(current_cfg.inner);
 
                 let orig_span = original_cfg.span;
                 let current_cfg_span = current_cfg.span;
@@ -2679,581 +3262,6 @@ impl<'res> TypeResolver<'res> {
 
         Ok((has_resolved_ty, has_const_val))
     }
-
-    fn resolve_var(&mut self, parent_sym_id: TaggedId<SymbolId, VarTag>, env: &ResolverEnv) {
-        // Maybe we should get ast id from the outside since this is a little awkward
-        let sym = &self.compiler.syms[parent_sym_id.inner()];
-        let ast_id = sym.ast_id.expect("Should be user symbols only");
-        let scope_type = sym.scope_origin;
-        let associated_scope = AssociatedScopeKind::Module(env.current_mod);
-
-        let abs_var = env.ast_info.get_var(ast_id);
-
-        // This can either be a check done during the type expr resolution itself to make sure
-        // annotation matches the actual type, or just checked after resoution.
-        // let type_id_opt = if let Some(ty_ann) = &abs_var.ty_ann {
-        //     match resolution_helpers::resolve_type_expr_ret_preset(
-        //         self.compiler,
-        //         associated_scope,
-        //         ty_ann,
-        //         scope_type,
-        //         ScopeLookupPattern::NoRestrictions,
-        //         self.interner,
-        //         env,
-        //     ) {
-        //         Ok(id) => id.into(),
-        //         Err(preset_err) => {
-        //             preset_reporter::report_preset(
-        //                 &self.compiler,
-        //                 &mut self.summary,
-        //                 preset_err,
-        //                 env.region,
-        //                 self.cfg,
-        //                 self.interner,
-        //             );
-        //             None
-        //         }
-        //     }
-        // } else {
-        //     None
-        // };
-
-        //NOTE: Pipeline where expressions are always returned, just that some may have
-        //unresolved parts, which are put into the queue, not the variable itself.
-        let expr_id = match self.register_expr(
-            parent_sym_id.inner().into(),
-            &abs_var.spanned_expr,
-            None,
-            associated_scope,
-            scope_type,
-            env,
-        ) {
-            Ok(expr_id) => expr_id,
-            Err(preset_err) => {
-                preset_reporter::report_preset(
-                    &self.compiler,
-                    &mut self.summary,
-                    preset_err,
-                    env.region,
-                    self.cfg,
-                    self.interner,
-                );
-
-                //TODO: use AstExpr::Error
-                return;
-            }
-        };
-
-        let expr = &self.compiler.exprs[expr_id];
-        let val = &self.compiler.values[expr.val_id];
-
-        let has_resolved_ty = !self.compiler.check_unknown(expr.type_id);
-        let has_const_val = val.const_val.is_some();
-
-        // The top expr is given as the value innately for the variable.
-        let val_id = expr.val_id;
-
-        // Sets the symbol's value to be the last expression's value so that later, if it's
-        // expression is resolved further, since it's already pointing the the same expression it
-        // will by proxy be updated
-
-        let var = self.compiler.get_var_mut(parent_sym_id);
-        var.state = VariableState::Known(val_id);
-
-        // If the symbol that was just examined is a pending symbol AND it was actually resolved,
-        // then it'll be marked as resolved
-        if let Some(pending_sym) = self.ty_ctx.sym_queue.get_mut(&parent_sym_id.inner()) {
-            // Three flags for resolver use
-            pending_sym.has_resolved_ty = has_resolved_ty;
-            pending_sym.has_const_val = has_const_val;
-
-            self.ty_ctx.needs_check = true;
-        }
-    }
-
-    fn resolve_typedef(
-        &mut self,
-        parent_sym_id: TaggedId<SymbolId, TypeDefTag>,
-        env: &ResolverEnv,
-    ) {
-        let sym = &self.compiler.syms[parent_sym_id.inner()];
-        let ast_id = sym.ast_id.expect("Should be user symbols only");
-        let scope_type = sym.scope_origin;
-        let associated_scope = AssociatedScopeKind::Module(env.current_mod);
-
-        let abs_typedef = env.ast_info.get_typedef(ast_id);
-
-        let type_id = match resolution_helpers::resolve_type_expr_ret_preset(
-            &mut self.compiler,
-            AssociatedScopeKind::Module(env.current_mod),
-            &abs_typedef.sp_ty_expr,
-            scope_type,
-            ScopeLookupPattern::NoRestrictions,
-            self.interner,
-            env,
-        ) {
-            Ok(type_id) => type_id,
-            Err(preset_err) => {
-                preset_reporter::report_preset(
-                    &self.compiler,
-                    &mut self.summary,
-                    preset_err,
-                    env.region,
-                    self.cfg,
-                    self.interner,
-                );
-                TypeId::new(compiler_consts::CORE_UNKNOWN)
-            }
-        };
-
-        let mut conds: Vec<ExprId> = Vec::with_capacity(abs_typedef.conds.len());
-        for spanned_expr in &abs_typedef.conds {
-            //FIX: Scope type is a little wrong here since it's a condition
-            match self.register_expr(
-                parent_sym_id.inner().into(),
-                spanned_expr,
-                None,
-                associated_scope,
-                scope_type,
-                env,
-            ) {
-                // For allowing for more diagnostics instead of just leaving the rest of the struct
-                // unfinished upon singular errors
-                Ok(c) => conds.push(c),
-                Err(preset_err) => {
-                    preset_reporter::report_preset(
-                        &self.compiler,
-                        &mut self.summary,
-                        preset_err,
-                        env.region,
-                        self.cfg,
-                        self.interner,
-                    );
-                }
-            }
-        }
-
-        let (directives, preset_errs) = self.handle_directives(&abs_typedef.directives, env);
-        preset_reporter::report_preset_vec(
-            &self.compiler,
-            &mut self.summary,
-            preset_errs,
-            env.region,
-            self.cfg,
-            self.interner,
-        );
-
-        let type_def = self.compiler.get_typedef_mut(parent_sym_id);
-
-        debug_assert_eq!(type_def.conds.len(), 0);
-        debug_assert_eq!(type_def.directives.len(), 0);
-
-        // Assinging from `Unknown` to it's actual type if found
-        //TODO: Constraints should check if this is unknown
-        type_def.type_id = type_id;
-        type_def.conds = conds;
-        // Maybe directives will stay defined here
-        type_def.directives = directives;
-    }
-
-    fn resolve_struct(&mut self, parent_sym_id: TaggedId<SymbolId, StructTag>, env: &ResolverEnv) {
-        let sym = &self.compiler.syms[parent_sym_id.inner()];
-        let ast_id = sym.ast_id.expect("Should be user symbols only");
-        let abs_struct = env.ast_info.get_struct(ast_id);
-        // Not sure of if this should stay a Field type or just be a TypeDef since their intent
-        // somewhat conflicts. For now, typedef is just consumed differently depending on if it's a
-        // field declared in var-> or not since var-> fields may be made possible to reference, but
-        // fields in structures can't. Will possibly just be unified in the future.
-
-        let associated_scope = AssociatedScopeKind::Module(env.current_mod);
-        let scope_type = sym.scope_origin;
-
-        let fields: Vec<TaggedId<MemberId, FieldTag>> =
-            self.compiler.get_struct(parent_sym_id).fields.clone();
-
-        for (i, current_memb_id) in fields.iter().enumerate() {
-            let abs_field = &abs_struct.fields[i];
-            let mut conds: Vec<ExprId> = Vec::with_capacity(abs_field.conds.len());
-
-            for cond in &abs_field.conds {
-                match self.register_expr(
-                    parent_sym_id.inner().into(),
-                    &cond,
-                    None,
-                    associated_scope,
-                    scope_type,
-                    env,
-                ) {
-                    Ok(c) => conds.push(c),
-                    Err(preset_err) => {
-                        preset_reporter::report_preset(
-                            &self.compiler,
-                            &mut self.summary,
-                            preset_err,
-                            env.region,
-                            self.cfg,
-                            self.interner,
-                        );
-                    }
-                };
-            }
-
-            let (directives, preset_errs) = self.handle_directives(&abs_field.directives, env);
-            preset_reporter::report_preset_vec(
-                &self.compiler,
-                &mut self.summary,
-                preset_errs,
-                env.region,
-                self.cfg,
-                self.interner,
-            );
-
-            let field = self.compiler.get_field_mut(*current_memb_id);
-
-            debug_assert_eq!(field.conds.len(), 0);
-            debug_assert_eq!(field.directives.len(), 0);
-
-            field.conds = conds;
-            field.directives = directives;
-        }
-
-        let mut glob_conds: Vec<ExprId> = Vec::with_capacity(abs_struct.glob_conds.len());
-
-        for cond in &abs_struct.glob_conds {
-            match self.register_expr(
-                parent_sym_id.inner().into(),
-                cond,
-                None,
-                associated_scope,
-                scope_type,
-                env,
-            ) {
-                Ok(c) => glob_conds.push(c),
-                Err(preset_err) => {
-                    preset_reporter::report_preset(
-                        &self.compiler,
-                        &mut self.summary,
-                        preset_err,
-                        env.region,
-                        self.cfg,
-                        self.interner,
-                    );
-                }
-            }
-        }
-
-        let (glob_directives, preset_errs) =
-            self.handle_directives(&abs_struct.glob_directives, env);
-
-        preset_reporter::report_preset_vec(
-            &self.compiler,
-            &mut self.summary,
-            preset_errs,
-            env.region,
-            self.cfg,
-            self.interner,
-        );
-
-        let struct_def = self.compiler.get_struct_mut(parent_sym_id);
-
-        debug_assert_eq!(struct_def.glob_conds.len(), 0);
-        debug_assert_eq!(struct_def.glob_directives.len(), 0);
-
-        struct_def.glob_conds = glob_conds;
-        struct_def.glob_directives = glob_directives;
-    }
-
-    fn resolve_enum(&mut self, parent_sym_id: TaggedId<SymbolId, EnumTag>, env: &ResolverEnv) {
-        let sym = &self.compiler.syms[parent_sym_id.inner()];
-        let ast_id = sym.ast_id.expect("Should be user symbols only");
-        let associated_scope = AssociatedScopeKind::Module(env.current_mod);
-        let scope_type = sym.scope_origin;
-
-        let abs_enum = env.ast_info.get_enum(ast_id);
-
-        // Clone needed so iteration doesn't make the compiler borrow itself twice
-        let variants = self.compiler.get_enum(parent_sym_id).variants.clone();
-
-        for (i, current_memb_id) in variants.iter().enumerate() {
-            let abs_variant = &abs_enum.variants[i];
-            let mut conds: Vec<ExprId> = Vec::with_capacity(abs_variant.conds.len());
-
-            for cond in &abs_variant.conds {
-                let cond_opt = match self.register_expr(
-                    parent_sym_id.inner().into(),
-                    &cond,
-                    None,
-                    associated_scope,
-                    scope_type,
-                    env,
-                ) {
-                    Ok(c) => Some(c),
-                    Err(preset_err) => {
-                        preset_reporter::report_preset(
-                            &self.compiler,
-                            &mut self.summary,
-                            preset_err,
-                            env.region,
-                            self.cfg,
-                            self.interner,
-                        );
-                        None
-                    }
-                };
-
-                if let Some(cond) = cond_opt {
-                    conds.push(cond);
-                }
-            }
-
-            let (directives, preset_errs) = self.handle_directives(&abs_variant.directives, env);
-            preset_reporter::report_preset_vec(
-                &self.compiler,
-                &mut self.summary,
-                preset_errs,
-                env.region,
-                self.cfg,
-                self.interner,
-            );
-
-            let variant = self.compiler.get_variant_mut(*current_memb_id);
-
-            debug_assert_eq!(variant.conds.len(), 0);
-            debug_assert_eq!(variant.directives.len(), 0);
-
-            variant.conds = conds;
-            variant.directives = directives;
-        }
-
-        let mut glob_conds: Vec<ExprId> = Vec::with_capacity(abs_enum.glob_conds.len());
-        for cond in &abs_enum.glob_conds {
-            let cond_opt = match self.register_expr(
-                parent_sym_id.inner().into(),
-                cond,
-                None,
-                associated_scope,
-                scope_type,
-                env,
-            ) {
-                Ok(c) => Some(c),
-                Err(preset_err) => {
-                    preset_reporter::report_preset(
-                        &self.compiler,
-                        &mut self.summary,
-                        preset_err,
-                        env.region,
-                        self.cfg,
-                        self.interner,
-                    );
-                    None
-                }
-            };
-
-            if let Some(cond) = cond_opt {
-                glob_conds.push(cond);
-            }
-        }
-
-        let (glob_directives, preset_errs) = self.handle_directives(&abs_enum.glob_directives, env);
-        preset_reporter::report_preset_vec(
-            &self.compiler,
-            &mut self.summary,
-            preset_errs,
-            env.region,
-            self.cfg,
-            self.interner,
-        );
-
-        let enum_def = self.compiler.get_enum_mut(parent_sym_id);
-
-        debug_assert_eq!(enum_def.glob_conds.len(), 0);
-        debug_assert_eq!(enum_def.glob_directives.len(), 0);
-        enum_def.glob_conds = glob_conds;
-        enum_def.glob_directives = glob_directives;
-    }
-
-    fn resolve_alias(
-        &mut self,
-        parent_sym_id: TaggedId<SymbolId, AliasTag>,
-        ident_tracker: &mut DuplicateTracker<SpannedContainer<InternedId>>,
-        env: &ResolverEnv,
-    ) {
-        let sym = &self.compiler.syms[parent_sym_id.inner()];
-        let ast_id = sym.ast_id.expect("Should be user symbols only");
-        let scope_type = sym.scope_origin;
-        let associated_scope = AssociatedScopeKind::Module(env.current_mod);
-        let local_scope_id = self.compiler.get_alias(parent_sym_id).local_scope_id;
-
-        let abs_alias = env.ast_info.get_alias(ast_id);
-
-        let mut params: Vec<Param> = Vec::with_capacity(abs_alias.params.len());
-
-        // Just a bit crowded in here..
-        // WARN: Ok this just looks like an inlined function now
-        for (i, abs_param) in abs_alias.params.iter().enumerate() {
-            let sp_name_id = SpannedContainer::new(abs_param.name_id, abs_param.name_span);
-            ident_tracker.insert_or_store(sp_name_id);
-
-            //TODO: SHOULD THIS BE A VARIABLE?
-            let expr_id = self.compiler.exprs.make_id();
-            let val_id = self.compiler.values.make_id();
-
-            let type_id = match resolution_helpers::resolve_type_expr_ret_preset(
-                self.compiler,
-                AssociatedScopeKind::Module(env.current_mod),
-                &abs_param.sp_ty_expr,
-                scope_type,
-                ScopeLookupPattern::NoRestrictions,
-                self.interner,
-                env,
-            ) {
-                Ok(type_id) => type_id,
-                Err(preset_err) => {
-                    preset_reporter::report_preset(
-                        &self.compiler,
-                        &mut self.summary,
-                        preset_err,
-                        env.region,
-                        self.cfg,
-                        self.interner,
-                    );
-                    TypeId::new(compiler_consts::CORE_UNKNOWN)
-                }
-            };
-
-            let param_sym_id = self.compiler.syms.make_id();
-            let var_id = self.compiler.vars.make_id();
-
-            let var = VarDef::new(
-                param_sym_id.into_tagged::<VarTag>(),
-                abs_param.name_id,
-                VariableMetadata::User(abs_param.name_span),
-                VariableState::Known(val_id),
-            );
-
-            let param_sym = Symbol::new(
-                abs_param.name_id,
-                param_sym_id,
-                Some(AstId::new(i as u32)),
-                SymbolOrigin::Module(env.current_mod),
-                true,
-                None,
-                ScopeType::Local,
-                SymbolKind::Variable(var_id),
-            );
-
-            let expr_hir = ExprHir::Var(param_sym_id);
-            let resolved_expr = ResolvedExpr::new(
-                type_id,
-                expr_hir,
-                val_id,
-                ResolvedExprMetadata::User(abs_param.name_span),
-                Vec::new(),
-            );
-
-            let val_info = ValueInfo::new(type_id, expr_id, None);
-
-            self.compiler.syms.push(param_sym);
-            self.compiler.vars.push(var);
-            self.compiler.exprs.push(resolved_expr);
-            self.compiler.values.push(val_info);
-
-            let local_scope = &mut self.compiler.get_scope_mut(local_scope_id).scope;
-            local_scope
-                .table
-                .interned_to_sym
-                .insert(abs_param.name_id, param_sym_id);
-
-            let param = Param::new(param_sym_id, type_id, AstId::new(i as u32));
-
-            params.push(param);
-        }
-
-        for found in ident_tracker.found_dups.drain(..) {
-            let preset_err = PresetErr::DuplicateIdents {
-                sp_original: found.original,
-                sp_dup: found.dup,
-                classifier: ChrnClassified::Parameter,
-            };
-
-            let builder = preset_reporter::create_diag_builder_preset(
-                self.compiler,
-                preset_err,
-                env.region,
-                self.cfg,
-                self.interner,
-            )
-            .add_annotation(
-                abs_alias.name_span,
-                AnnotationKind::Secondary,
-                "Found inside this alias".to_string().into(),
-            );
-            self.summary.push_diag(builder.build());
-        }
-
-        let mut conds: Vec<ExprId> = Vec::with_capacity(abs_alias.conds.len());
-        for spanned_expr in &abs_alias.conds {
-            let cond_opt = match self.register_expr(
-                Some(parent_sym_id.inner()),
-                spanned_expr,
-                Some(local_scope_id),
-                //NOTE: Could this change?
-                associated_scope,
-                scope_type,
-                env,
-            ) {
-                Ok(c) => Some(c),
-                Err(preset_err) => {
-                    preset_reporter::report_preset(
-                        &self.compiler,
-                        &mut self.summary,
-                        preset_err,
-                        env.region,
-                        self.cfg,
-                        self.interner,
-                    );
-                    None
-                }
-            };
-
-            if let Some(cond) = cond_opt {
-                conds.push(cond);
-            }
-        }
-
-        let (directives, preset_errs) = self.handle_directives(&abs_alias.directives, env);
-        preset_reporter::report_preset_vec(
-            &self.compiler,
-            &mut self.summary,
-            preset_errs,
-            env.region,
-            self.cfg,
-            self.interner,
-        );
-
-        //TODO: Arg constraint and option tpe constraint.
-        //Could technically happen in constraint resolver since it. Yes.
-        let alias_def = self.compiler.get_alias_mut(parent_sym_id);
-        let param_count = params.len() as u32;
-
-        debug_assert_eq!(alias_def.conds.len(), 0);
-        debug_assert_eq!(alias_def.directives.len(), 0);
-
-        //WARN: Does not yet have constraints of params discovered
-        alias_def.params = params;
-        // This could just be an explicit field, but in case of future changes keeping it under the
-        // same layer of arg constraints so it's compatible with the already present checks in
-        // `ConstraintResolver`.
-        alias_def
-            .arg_constraints
-            // Well param count and arg count could mean a lot of different things
-            // Ok
-            .push(ArgConstraint::ArgCount(param_count));
-
-        alias_def.conds = conds;
-        alias_def.directives = directives;
-    }
-
     /// On `Ok`, Creates a HIR expression type and returns the `ExprId` which is either going to be
     /// fully resolved, or marked as pending to be resolved later if possible.
     // The innate `parent_sym_id` may be weird depending on the context
@@ -4308,12 +4316,16 @@ impl<'res> TypeResolver<'res> {
             // Directly checking if a cycle was had
             if current == parent_sym_id {
                 let current_sym = &self.compiler.syms[parent_sym_id];
-                let current_name = self.interner.extract_str_from_interned_id(current_sym.name_id);
+                let current_name = self
+                    .interner
+                    .extract_str_from_interned_id(current_sym.name_id);
                 let current_ast_id = current_sym.ast_id.expect("Should be user symbols only");
 
                 let cycled_sym = &self.compiler.syms[found_sym_id];
                 let cycled_ast_id = cycled_sym.ast_id.expect("Should be user symbols only");
-                let cycled_name = self.interner.extract_str_from_interned_id(cycled_sym.name_id);
+                let cycled_name = self
+                    .interner
+                    .extract_str_from_interned_id(cycled_sym.name_id);
 
                 let cycled_span = env.ast_info.get_name_span(cycled_ast_id);
                 let current_span = env.ast_info.get_name_span(current_ast_id);

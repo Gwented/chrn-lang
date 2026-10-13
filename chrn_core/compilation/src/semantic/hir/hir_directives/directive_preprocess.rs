@@ -2,6 +2,8 @@
 //! parser may do with the information. A failed preprocessed directive should only show it's
 //! failure from compilation stages, never from the actual system applying directives.
 
+use std::borrow::Cow;
+
 use chrn_utils::{
     id_types::{ExprId, InternedId},
     intern::{self, Intern},
@@ -15,8 +17,12 @@ use crate::{
     chrn_config::ChrnConfig,
     lexer::token::{Token, TokenInt, TokenKind},
     resolvers::resolver_state::CompilerStage,
-    semantic::hir::hir_directives::directive_preprocess::{
-        consts::MAX_NUMERIC_BITS_SCHEMA, directive_preprocess_args::DirectivePreprocessArgLayout,
+    semantic::{
+        arbitraries::ArbitraryIntKind,
+        hir::hir_directives::directive_preprocess::{
+            consts::MAX_NUMERIC_BITS_SCHEMA,
+            directive_preprocess_args::DirectivePreprocessArgLayout,
+        },
     },
 };
 
@@ -56,41 +62,6 @@ impl DirectivePreprocessHir {
     }
 }
 
-//// Compiler known preprocessed directives
-// #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-// pub enum DirectivePreprocessKind {
-//     Chrn,
-// }
-//
-// impl DirectivePreprocessKind {
-//     /// Compiler known identifier of `self`
-//     pub const fn name_id(&self) -> InternedId {
-//         let id = match self {
-//             DirectivePreprocessKind::Chrn => intern::INTERNED_CHRN,
-//         };
-//         InternedId::new(id)
-//     }
-//
-//     /// Attempts to get the field of `ident` out of `self.kind`
-//     pub const fn get_field(&self, ident: InternedId) -> Option<&DirectivePreprocessSchema> {
-//         match self {
-//             DirectivePreprocessKind::Chrn => match ident.id {
-//                 intern::INTERNED_MAX_NUMERIC_BITS => Some(&MAX_NUMERIC_BITS_SCHEMA),
-//                 _ => None,
-//             },
-//         }
-//     }
-//
-//     /// Attempts to convert to `Self` using `InternedId`
-//     pub fn try_from_interned_str(interned_id: InternedId) -> Option<Self> {
-//         let kind = match interned_id.id {
-//             intern::INTERNED_CHRN => DirectivePreprocessKind::Chrn,
-//             _ => return None,
-//         };
-//         Some(kind)
-//     }
-// }
-
 /// Policy for what a directive applies it's effect to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DirectivePreprocessEffect {
@@ -106,39 +77,37 @@ impl DirectivePreprocessEffect {
     }
 }
 
-pub enum DirectivePreprocessConstraint {
-    /// Type of value that can be used
-    Input(DirectivePreprocessExpectInput),
-}
+// pub enum DirectivePreprocessConstraint {
+//     /// Type of value that can be used
+//     Input(DirectivePreprocessExpectInput),
+// }
 
 // Input to be compared
 /// Input constraints for `PreprocessDirectiveField`
-#[derive(Debug, PartialEq, Clone, Copy)]
-pub enum DirectivePreprocessExpectInput {
-    Token(TokenKind),
+#[derive(Debug, PartialEq, Clone)]
+pub enum DirectivePreprocessExpectInput<'a> {
+    Integer(Cow<'a, ArbitraryIntKind>),
 }
 
 // Input stored
-/// Input constraints for `PreprocessDirectiveField`
-#[derive(Debug, PartialEq, Clone, Copy)]
-pub enum DirectivePreprocessInput<'a> {
-    Token(&'a Token),
-}
+// /// Input constraints for `PreprocessDirectiveField`
+// #[derive(Debug, PartialEq, Clone, Copy)]
+// pub enum DirectivePreprocessInput<'a> {
+//     Token(&'a Token),
+// }
 
-impl DirectivePreprocessExpectInput {
-    /// Returns `true` if `given` is allowed by `self`
-    pub fn allows(&self, given: &DirectivePreprocessExpectInput) -> bool {
-        match (self, given) {
-            (
-                DirectivePreprocessExpectInput::Token(self_tok),
-                DirectivePreprocessExpectInput::Token(given_tok),
-            ) => self_tok == given_tok,
-        }
-    }
-
+impl<'a> DirectivePreprocessExpectInput<'_> {
     /// Converts `TokenKind` to `DirectivePreprocessInput`
-    pub fn from_tok_kind(kind: TokenKind) -> DirectivePreprocessExpectInput {
-        DirectivePreprocessExpectInput::Token(kind)
+    pub fn from_tok(tok: &Token, interner: &Intern) -> Option<DirectivePreprocessExpectInput<'a>> {
+        let input = match tok {
+            Token::Integer(tok_int) => {
+                let s = interner.extract_str_from_interned_id(tok_int.interned_id);
+                let arbitrary = ArbitraryIntKind::from_str(s, tok_int.notation)?;
+                DirectivePreprocessExpectInput::Integer(Cow::Owned(arbitrary))
+            }
+            _ => return None,
+        };
+        Some(input)
     }
 }
 
@@ -200,7 +169,7 @@ impl DirectivePreprocessSchema {
     /// of `self`
     pub fn try_as_directive_preprocess(
         &self,
-        inputs: &[(DirectivePreprocessExpectInput, DirectivePreprocessInput)],
+        inputs: &[DirectivePreprocessExpectInput],
         // arg: &DirectivePreprocessArg,
     ) -> Option<DirectivePreprocessKind> {
         if inputs.len() != self.arg_layout.arg_len() {
@@ -208,22 +177,18 @@ impl DirectivePreprocessSchema {
         }
 
         for (i, arg) in self.arg_layout.args().iter().enumerate() {
-            let input_arg = &inputs[i].0;
-            for constraint in arg.constraints {
-                if !constraint.allows(input_arg) {
-                    return None;
-                };
+            let input_arg = &inputs[i];
+            if !arg.allows(input_arg) {
+                return None;
             }
         }
-        // TODO: Clear from here all green clean governed
-        let actual_inputs: Vec<DirectivePreprocessInput> = inputs.iter().map(|i| i.1).collect();
-        self.preprocess_kind_from_inputs(&actual_inputs)
+        self.preprocess_kind_from_inputs(inputs)
     }
 
     //TEST:
     pub fn preprocess_kind_from_inputs(
         &self,
-        inputs: &[DirectivePreprocessInput],
+        inputs: &[DirectivePreprocessExpectInput],
     ) -> Option<DirectivePreprocessKind> {
         match self.kind {
             DirectivePreprocessSchemaKind::MaxNumericBits => {
@@ -233,12 +198,19 @@ impl DirectivePreprocessSchema {
                 if inputs.len() != self.arg_layout.arg_len() {
                     return None;
                 }
-                match inputs[0] {
-                    DirectivePreprocessInput::Token(tok) => {
-                        let Token::Integer(tok_int) = tok else {
-                            return None;
+                match &inputs[0] {
+                    DirectivePreprocessExpectInput::Integer(cow_int) => {
+                        // Ok but am I hallucinating
+                        let num = match cow_int.as_ref() {
+                            ArbitraryIntKind::I64(n)
+                                if !n.is_negative() && *n < (u32::MAX as i64) =>
+                            {
+                                *n as u32
+                            }
+                            ArbitraryIntKind::U64(n) if *n < (u32::MAX as u64) => *n as u32,
+                            _ => return None,
                         };
-                        DirectivePreprocessKind::MaxNumericBits(*tok_int).into()
+                        Some(DirectivePreprocessKind::MaxNumericBits(num))
                     }
                 }
             }
@@ -273,12 +245,12 @@ impl DirectivePreprocess {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum DirectivePreprocessKind {
     /// Assumed to be `TokenInteger`
-    MaxNumericBits(TokenInt),
+    MaxNumericBits(u32),
 }
 
 impl DirectivePreprocessKind {
     /// Returns `true` if the given identifier is an existent directive.
-    pub const fn has_directive(interned_id: InternedId) -> bool {
+    pub const fn exists(interned_id: InternedId) -> bool {
         match interned_id.id {
             intern::INTERNED_MAX_NUMERIC_BITS => true,
             _ => false,
@@ -450,7 +422,6 @@ pub fn apply_directives(
     stage: CompilerStage,
     directive_store: &mut DirectivePreprocessStore,
     cfg: &mut ChrnConfig,
-    interner: &Intern,
 ) {
     let count = directive_store.stage_count(stage);
     if count == 0 {
@@ -473,13 +444,8 @@ pub fn apply_directives(
         found += 1;
         to_rm.push(i);
         match kind {
-            DirectivePreprocessKind::MaxNumericBits(tok_int) => {
-                let s = interner.extract_str_from_interned_id(tok_int.interned_id);
-                //This can only fail from overflow
-                let Ok(new_bits) = u32::from_str_radix(s, tok_int.notation.radix()) else {
-                    continue;
-                };
-                cfg.set_max_numeric_bits(new_bits);
+            DirectivePreprocessKind::MaxNumericBits(new_bits) => {
+                cfg.set_max_numeric_bits(*new_bits)
             }
         }
     }

@@ -69,7 +69,9 @@ pub fn run_all(
                 //TODO: directive being tagged with whether its for the compiler or module declared in.
                 //Would then be pushed into either. Need something that goes through directives then
                 //processes ones that correlate to the current stage.
-                let Some(pre_direct) = lexer_processor::process_directive(toks, hash_idx) else {
+                let Some(pre_direct) =
+                    lexer_processor::process_directive(toks, hash_idx, &compiler_store.interner)
+                else {
                     continue;
                 };
 
@@ -91,7 +93,6 @@ pub fn run_all(
             CompilerStage::Lexer,
             &mut compiler_store.directive_store,
             &mut compiler_store.cfg,
-            &compiler_store.interner,
         );
 
         let ast_info_opt = if let Some(toks) = &toks_opt {
@@ -108,7 +109,6 @@ pub fn run_all(
             CompilerStage::Parser,
             &mut compiler_store.directive_store,
             &mut compiler_store.cfg,
-            &compiler_store.interner,
         );
 
         // Compiler store stores these as persistent state in the case of any indexing needing to be
@@ -168,7 +168,6 @@ pub fn run_all(
         CompilerStage::Namespace,
         &mut compiler_store.directive_store,
         &mut compiler_store.cfg,
-        &compiler_store.interner,
     );
 
     // Ownership transfer

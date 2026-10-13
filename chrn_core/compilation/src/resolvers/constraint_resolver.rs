@@ -143,7 +143,7 @@ impl<'a> ConstraintResolver<'a> {
         //TODO: Turn expr ids into inputs, which then get validated against the higher level info
         //expected since `Token` isn't enough.
 
-        // To avoid diagnostic pollution given a long set of incorrect arguments.
+        // To avoid diagnostic pollution
         let mut times_reported: u8 = 0;
 
         for arg in schema.arg_layout.args() {
@@ -401,7 +401,9 @@ impl<'a> ConstraintResolver<'a> {
         {
             SchemaResult::Valid => Ok(()),
             res => {
-                let opt_name = self.interner.extract_str_from_interned_id(sp_opt_name_id.inner);
+                let opt_name = self
+                    .interner
+                    .extract_str_from_interned_id(sp_opt_name_id.inner);
                 let src_diag = match res {
                     SchemaResult::BoundaryMismatch {
                         err_idx,
@@ -511,7 +513,9 @@ impl<'a> ConstraintResolver<'a> {
                         builder
                     }
                     SchemaResult::CannotSupportBoundaries => {
-                        let opt_name = self.interner.extract_str_from_interned_id(sp_opt_name_id.inner);
+                        let opt_name = self
+                            .interner
+                            .extract_str_from_interned_id(sp_opt_name_id.inner);
                         let core_msg = format!(
                             "Option `{opt_name}` requires that the config it is attached to has boundaries"
                         );
@@ -541,7 +545,9 @@ impl<'a> ConstraintResolver<'a> {
                         // )
                     }
                     SchemaResult::UnknownOptionName => {
-                        let opt_name = self.interner.extract_str_from_interned_id(sp_opt_name_id.inner);
+                        let opt_name = self
+                            .interner
+                            .extract_str_from_interned_id(sp_opt_name_id.inner);
                         let core_msg = format!(
                             "Option `{opt_name}` does not exist for schema `{}`",
                             schema.kind

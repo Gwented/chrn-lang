@@ -1,4 +1,8 @@
-use crate::semantic::hir::hir_directives::DirectivePreprocessExpectInput;
+use std::ops::Range;
+
+use crate::semantic::{
+    arbitraries::ArbitraryIntKind, hir::hir_directives::DirectivePreprocessExpectInput,
+};
 
 // In the case of metadata
 /// `Arg` arena which contains metadata
@@ -45,8 +49,21 @@ impl DirectivePreprocessArg {
 }
 
 #[derive(Debug)]
+pub struct DirectiveIntegerArgConstraint {
+    // This is load bearing, red, NOT governed
+    /// Range the given integer must fall into
+    pub range: Option<Range<u64>>,
+}
+
+impl DirectiveIntegerArgConstraint {
+    pub const fn new(range: Option<Range<u64>>) -> Self {
+        Self { range }
+    }
+}
+
+#[derive(Debug)]
 pub enum DirectivePreprocessArgConstraint {
-    Input(DirectivePreprocessExpectInput),
+    Integer(DirectiveIntegerArgConstraint),
 }
 
 // This is nested because the intent of this isn't known yet. Input itself is still supposed to be a
@@ -55,8 +72,24 @@ impl DirectivePreprocessArgConstraint {
     //TODO: Not sure if the `Input` abstraction is really what given will remain as
     /// Returns `true` if `given` is allowed by `self`
     pub fn allows(&self, given: &DirectivePreprocessExpectInput) -> bool {
-        match self {
-            DirectivePreprocessArgConstraint::Input(self_input) => self_input.allows(given),
+        match (self, given) {
+            (
+                DirectivePreprocessArgConstraint::Integer(constraint_int),
+                DirectivePreprocessExpectInput::Integer(given_int),
+            ) => {
+                if let Some(range) = &constraint_int.range {
+                    //method maybe
+                    let num = match given_int.as_ref() {
+                        ArbitraryIntKind::I64(n) => *n as u64,
+                        ArbitraryIntKind::U64(n) => *n,
+                        ArbitraryIntKind::BigInt(_) => return false,
+                    };
+                    if !range.contains(&num) {
+                        return false;
+                    }
+                }
+            }
         }
+        true
     }
 }

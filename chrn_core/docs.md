@@ -638,6 +638,8 @@ complex->
 
 - Directives change how the compiler interprets certain code. This can range from changing how serialized data is represented to changing default runtime behavior.
 
+### (UNNAMED) directives
+
 `#warn`: Would warn instead of terminating upon seeing a wrongful constraint of any kind.
 
 `#ignore`: Ignores all errors for the what this is applied to for serialized data related errors.
@@ -645,6 +647,10 @@ complex->
 `#scient`, `#hex`, `#bin`, `#octal`: Numeric notations to output in serialized file instead of base ten.
 
 `#unicode`: Output characters as their unicode such as '\u{1F480}' instead of '💀'
+
+(This abstraction is bad change it)
+### Preprocessed directives
+
 
 # DOES NOT EXIST
 `#ignore_rm`: (Would remove anything that didn't align under constraint rather than crash or warn.)

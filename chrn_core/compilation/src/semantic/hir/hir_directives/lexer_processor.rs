@@ -1,14 +1,13 @@
 //! Parser intended to process preprocess-directives that MUST be seen before the
 //! parsing stage to be meaningful.
-use chrn_utils::id_types::InternedId;
+use chrn_utils::{id_types::InternedId, intern::Intern};
 use toolsc::cursors::BasicCursor;
 
 use crate::{
     lexer::token::{SpannedToken, Token, TokenFloat, TokenInt, TokenKind},
     parser::parser_helpers::DelimiterContext,
     semantic::hir::hir_directives::{
-        DirectivePreprocess, DirectivePreprocessExpectInput, DirectivePreprocessInput,
-        DirectivePreprocessSchema,
+        DirectivePreprocess, DirectivePreprocessExpectInput, DirectivePreprocessSchema,
     },
 };
 
@@ -20,7 +19,11 @@ use crate::{
 /// Syntax: #[{directive}({val}, ..), ..]
 ///
 /// NOTE: Will panic if expected invariants are broken
-pub fn process_directive(toks: &[SpannedToken], hash_idx: usize) -> Option<DirectivePreprocess> {
+pub fn process_directive(
+    toks: &[SpannedToken],
+    hash_idx: usize,
+    interner: &Intern,
+) -> Option<DirectivePreprocess> {
     debug_assert!(hash_idx < toks.len());
     debug_assert_eq!(toks[hash_idx].tok, Token::HashSymbol);
 
@@ -35,7 +38,7 @@ pub fn process_directive(toks: &[SpannedToken], hash_idx: usize) -> Option<Direc
     let field_schema = DirectivePreprocessSchema::try_from_interned_id(id)?;
 
     let val_delim_ctx = DelimiterContext::with_comma(TokenKind::OParen, TokenKind::CParen);
-    let directive = make_directive(&mut cursor, field_schema, val_delim_ctx)?;
+    let directive = make_directive(&mut cursor, field_schema, val_delim_ctx, interner)?;
 
     Some(directive)
 }
@@ -44,15 +47,17 @@ fn make_directive(
     cursor: &mut BasicCursor<SpannedToken>,
     schema: &DirectivePreprocessSchema,
     delim_ctx: DelimiterContext,
+    interner: &Intern,
 ) -> Option<DirectivePreprocess> {
     if !expect_tok(cursor, delim_ctx.opening()) {
         return None;
     };
 
     // Simplify pleaseee
-    let mut inputs: Vec<(DirectivePreprocessExpectInput, DirectivePreprocessInput)> = Vec::new();
+    // Want this removed. maybe
+    let mut inputs: Vec<DirectivePreprocessExpectInput> = Vec::new();
 
-    //WARN: HANDLE SEMANTICS PLEASE
+    //WARN: Maybe
     // So field schemas can enforce their max arg count
     let mut arg_count = 0;
     //TEST: Overly complicated
@@ -70,15 +75,14 @@ fn make_directive(
             break;
         }
 
-        let expect = DirectivePreprocessExpectInput::Token(tok.kind());
-        let input = DirectivePreprocessInput::Token(tok);
+        let input = DirectivePreprocessExpectInput::from_tok(tok, interner)?;
 
         // if !arg.allows(&input) {
         //     return None;
         // }
 
         arg_count += 1;
-        inputs.push((expect, input));
+        inputs.push(input);
 
         // // Tok needs to be put up against constraints
         // let Some(field_kind) = field_schema.try_tok_as_field_kind(&tok, arg) else {
@@ -112,7 +116,7 @@ fn make_directive(
 /// Returns `true` if `expected` == found
 fn expect_id(cursor: &mut BasicCursor<SpannedToken>, expected: TokenKind) -> Option<InternedId> {
     let found = cursor.advance_owned();
-    let res = match found.tok {
+    let tok_opt = match found.tok {
         Token::Id(id)
         | Token::Str(id)
         | Token::Integer(TokenInt {
@@ -129,7 +133,7 @@ fn expect_id(cursor: &mut BasicCursor<SpannedToken>, expected: TokenKind) -> Opt
         }
         _ => None,
     };
-    res
+    tok_opt
 }
 
 /// Returns `true` if `expected` == found
