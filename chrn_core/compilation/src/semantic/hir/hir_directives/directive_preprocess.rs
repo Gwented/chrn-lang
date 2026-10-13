@@ -19,10 +19,14 @@ use crate::{
     resolvers::resolver_state::CompilerStage,
     semantic::{
         arbitraries::ArbitraryIntKind,
-        hir::hir_directives::directive_preprocess::{
-            consts::MAX_NUMERIC_BITS_SCHEMA,
-            directive_preprocess_args::DirectivePreprocessArgLayout,
+        hir::{
+            hir_directives::directive_preprocess::{
+                consts::MAX_NUMERIC_BITS_SCHEMA,
+                directive_preprocess_args::DirectivePreprocessArgLayout,
+            },
+            hir_exprs::ExprHir,
         },
+        values::Value,
     },
 };
 
@@ -42,16 +46,17 @@ use crate::{
 #[derive(Debug, Clone)]
 pub struct DirectivePreprocessHir {
     pub sp_name_id: SpannedContainer<InternedId>,
+    // Is spanned so that it at least captures the "()" if there are no args for err reporting
     /// Which directive it's fields should correspond to
-    pub array_expr_id: Option<ExprId>,
+    pub args: Option<SpannedContainer<Vec<ExprId>>>,
 }
 
 impl DirectivePreprocessHir {
-    pub fn new(sp_name_id: SpannedContainer<InternedId>, array_expr_id: Option<ExprId>) -> Self {
-        Self {
-            sp_name_id,
-            array_expr_id,
-        }
+    pub fn new(
+        sp_name_id: SpannedContainer<InternedId>,
+        args: Option<SpannedContainer<Vec<ExprId>>>,
+    ) -> Self {
+        Self { sp_name_id, args }
     }
 
     pub const fn try_from_interned_str(interned_id: InternedId) -> Option<Self> {
@@ -83,21 +88,18 @@ impl DirectivePreprocessEffect {
 // }
 
 // Input to be compared
-/// Input constraints for `PreprocessDirectiveField`
+/// Acts as the input to be put against constraints, as well as the value extracted
+///
+/// For example something like `MAX_NUMERIC_BITS` does checks against the integer it's given, then
+/// uses it to put inside it's own parameter if valid.
 #[derive(Debug, PartialEq, Clone)]
 pub enum DirectivePreprocessExpectInput<'a> {
     Integer(Cow<'a, ArbitraryIntKind>),
 }
 
-// Input stored
-// /// Input constraints for `PreprocessDirectiveField`
-// #[derive(Debug, PartialEq, Clone, Copy)]
-// pub enum DirectivePreprocessInput<'a> {
-//     Token(&'a Token),
-// }
-
-impl<'a> DirectivePreprocessExpectInput<'_> {
-    /// Converts `TokenKind` to `DirectivePreprocessInput`
+impl<'a> DirectivePreprocessExpectInput<'a> {
+    // Testing `Self` gimmick
+    /// Attempts to convert `Token` to `Self`
     pub fn from_tok(tok: &Token, interner: &Intern) -> Option<DirectivePreprocessExpectInput<'a>> {
         let input = match tok {
             Token::Integer(tok_int) => {
@@ -105,6 +107,15 @@ impl<'a> DirectivePreprocessExpectInput<'_> {
                 let arbitrary = ArbitraryIntKind::from_str(s, tok_int.notation)?;
                 DirectivePreprocessExpectInput::Integer(Cow::Owned(arbitrary))
             }
+            _ => return None,
+        };
+        Some(input)
+    }
+
+    /// Attempts to convert `Expr` to `Self`
+    pub const fn from_val(val: &'a Value) -> Option<DirectivePreprocessExpectInput<'a>> {
+        let input = match val {
+            Value::ArbitraryInt(int) => DirectivePreprocessExpectInput::Integer(Cow::Borrowed(int)),
             _ => return None,
         };
         Some(input)
@@ -122,6 +133,11 @@ impl DirectivePreprocessSchemaKind {
             DirectivePreprocessSchemaKind::MaxNumericBits => {
                 InternedId::new(intern::INTERNED_MAX_NUMERIC_BITS)
             }
+        }
+    }
+    pub const fn schema(self) -> &'static DirectivePreprocessSchema {
+        match self {
+            DirectivePreprocessSchemaKind::MaxNumericBits => &MAX_NUMERIC_BITS_SCHEMA,
         }
     }
 }
@@ -165,12 +181,11 @@ impl DirectivePreprocessSchema {
     }
 
     //TODO: Naming unclear
-    /// Attempts to convert `Token` into `DirectivePreprocessKind` given the constraints
-    /// of `self`
+    /// Attempts to convert inputs into `DirectivePreprocessKind` given the constraints
+    /// of `Self`
     pub fn try_as_directive_preprocess(
         &self,
         inputs: &[DirectivePreprocessExpectInput],
-        // arg: &DirectivePreprocessArg,
     ) -> Option<DirectivePreprocessKind> {
         if inputs.len() != self.arg_layout.arg_len() {
             return None;
@@ -178,7 +193,7 @@ impl DirectivePreprocessSchema {
 
         for (i, arg) in self.arg_layout.args().iter().enumerate() {
             let input_arg = &inputs[i];
-            if !arg.allows(input_arg) {
+            if arg.allows(input_arg).is_err() {
                 return None;
             }
         }
@@ -186,6 +201,8 @@ impl DirectivePreprocessSchema {
     }
 
     //TEST:
+    //Leaning towards this panicking and seeing wrong usage as developer error
+    /// This is to be ran AFTER all constraints are checked.
     pub fn preprocess_kind_from_inputs(
         &self,
         inputs: &[DirectivePreprocessExpectInput],
@@ -203,11 +220,11 @@ impl DirectivePreprocessSchema {
                         // Ok but am I hallucinating
                         let num = match cow_int.as_ref() {
                             ArbitraryIntKind::I64(n)
-                                if !n.is_negative() && *n < (u32::MAX as i64) =>
+                                if !n.is_negative() && *n <= (u32::MAX as i64) =>
                             {
                                 *n as u32
                             }
-                            ArbitraryIntKind::U64(n) if *n < (u32::MAX as u64) => *n as u32,
+                            ArbitraryIntKind::U64(n) if *n <= (u32::MAX as u64) => *n as u32,
                             _ => return None,
                         };
                         Some(DirectivePreprocessKind::MaxNumericBits(num))
@@ -414,7 +431,6 @@ impl DirectivePreprocessStore {
     }
 }
 
-//TEST: :(
 /// Iterates through `directive_store` and applies it's effects where possible, given `stage`.
 /// Whether a directive is processed successfully or not doesn't matter, both are discarded, the
 /// only difference is that the success is applied.

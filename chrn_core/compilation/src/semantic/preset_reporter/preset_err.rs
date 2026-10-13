@@ -12,11 +12,13 @@ use crate::{
     resolvers::typechecker::typechecker_concepts::{ExpectedKind, ExpectedKindType},
     semantic::{
         hir::{
-            hir_concepts::TypeKind,
-            hir_directives::{Directive, DirectiveInline},
+            hir_directives::{
+                Directive, DirectiveInline, DirectivePreprocessSchema,
+                DirectivePreprocessSchemaKind,
+            },
             hir_symbols::{BuiltinFuncKind, SymbolKindFlat},
         },
-        values::ValueKind,
+        values::{Value, ValueKind},
     },
 };
 
@@ -26,6 +28,7 @@ pub enum PresetErr {
     General(SourceDiagnosticBuilder),
     /// Constraint, found type(builtin or user), spans
     Lookup(LookupError),
+    Directive(DirectiveError),
     SymbolMismatch {
         expected_kind: SymbolKindFlat,
         sp_found_sym_id: SpannedContainer<SymbolId>,
@@ -39,7 +42,13 @@ pub enum PresetErr {
         fmtted_ty: ChrnClassified,
         spans: Vec<SourceSpan>,
     },
-    /// Spanned Directive
+    // maybe have this be general at some point
+    ArgCountMismatch {
+        expected: u16,
+        found: u16,
+        span: SourceSpan,
+    },
+    /// Spanned unknown identifier that was expeceted to be a directive
     UnknownDirective(SpannedContainer<InternedId>),
     // TypecheckFailed {
     //     invalid_ty: SpannedContainer<TypeId>,
@@ -180,6 +189,18 @@ pub(crate) enum LookupError {
 }
 
 #[derive(Debug)]
+pub enum DirectiveError {
+    ParameterMismatch {
+        /// Directive schema
+        direct_schema_kind: DirectivePreprocessSchemaKind,
+        expected_arg_idx: usize,
+        expected_constraint_idx: usize,
+        /// Rejected constant value and the argument expression that supplied it.
+        sp_found_val_kind: SpannedContainer<ValueKind>,
+    },
+}
+
+#[derive(Debug)]
 pub enum FuncConstraints {
     /// Constraint, found type, function kind, spans
     FuncConstraintMismatch {
@@ -195,6 +216,12 @@ pub enum FuncConstraints {
         count: u32,
         spans: Vec<SourceSpan>,
     },
+}
+
+impl From<DirectiveError> for PresetErr {
+    fn from(direct_err: DirectiveError) -> Self {
+        PresetErr::Directive(direct_err)
+    }
 }
 
 impl From<MathError> for PresetErr {

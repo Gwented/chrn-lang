@@ -69,7 +69,6 @@ impl<T: Clone + Hash + Eq> DuplicateTracker<T> {
         self.seen.contains(given)
     }
 
-    // LOAD BEARING
     /// Clears all inners for another round of tracking
     pub(crate) fn clear(&mut self) {
         self.seen.clear();

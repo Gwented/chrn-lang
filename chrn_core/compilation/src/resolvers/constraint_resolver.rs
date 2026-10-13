@@ -37,13 +37,17 @@ use crate::{
         hir::{
             hir_concepts::Type,
             hir_directives::{
-                Directive, DirectiveInline, DirectivePreprocessKind, DirectivePreprocessSchema,
+                Directive, DirectiveInline, DirectivePreprocessExpectInput,
+                DirectivePreprocessSchema,
             },
-            hir_exprs::{ExprHir, ResolvedExpr},
+            hir_exprs::ExprHir,
             hir_impls::{ConfigMember, ConfigMemberMetadataKind, ConfigRootKind},
             hir_symbols::MemberSymbolKind,
         },
-        preset_reporter::{self, preset_err::PresetErr},
+        preset_reporter::{
+            self,
+            preset_err::{DirectiveError, PresetErr},
+        },
         values::Value,
     },
 };
@@ -104,60 +108,95 @@ impl<'a> ConstraintResolver<'a> {
         parent_impl_id: TaggedId<ImplId, DirectivePreprocessTag>,
         env: &ResolverEnv,
     ) {
-        // Should have Option<ExprIdThingy> where ExprIdThingy has Option<DirectivePreprocess>
         let direct = self.compiler.get_directive_preprocess(parent_impl_id);
-        let Some(array_expr_id) = direct.array_expr_id else {
+        let Some(args) = &direct.args else {
             return;
         };
 
-        let array_expr = &self.compiler.exprs[array_expr_id];
-        let ExprHir::Array(elems) = &array_expr.expr_hir else {
-            unreachable!()
-        };
         let schema = DirectivePreprocessSchema::try_from_interned_id(direct.sp_name_id.inner)
             .expect("`TypeResolver` did not check correctly");
 
-        // Does not return as to not lose the more granular arg info
-        if elems.len() != schema.arg_layout.arg_len() {
-            let s_suffix = s_suffix!(schema.arg_layout.arg_len());
-            let core_msg = format!(
-                "Expected {} argument{s_suffix}, found {}",
-                schema.arg_layout.arg_len(),
-                elems.len()
-            );
-
-            let builder = SourceDiagnostic::builder(
-                ErrorCode::DirectiveErr.into(),
-                DiagnosticLevel::Error,
-                core_msg,
-                env.region.path_id,
-            )
-            .add_annotation(
-                array_expr.meta.expect_user(),
-                AnnotationKind::Primary,
-                None,
-            );
-            self.summary.push_diag(builder.build());
-            return;
-        }
-        //TODO: Turn expr ids into inputs, which then get validated against the higher level info
-        //expected since `Token` isn't enough.
-
         // To avoid diagnostic pollution
-        let mut times_reported: u8 = 0;
+        let mut times_reported = 0;
 
-        for arg in schema.arg_layout.args() {
-            dbg!(arg);
-            if times_reported == 5 {
+        // Does not return as to not lose the more granular arg diagnostics
+        if args.inner.len() != schema.arg_layout.arg_len() {
+            let preset_err = PresetErr::ArgCountMismatch {
+                expected: schema.arg_layout.arg_len() as u16,
+                found: args.inner.len() as u16,
+                span: args.span,
+            };
+            preset_reporter::report_preset(
+                self.compiler,
+                &mut self.summary,
+                preset_err,
+                env.region,
+                self.cfg,
+                self.interner,
+            );
+            times_reported += 1;
+        }
+
+        // let mut inputs = Vec::with_capacity(schema.arg_layout.arg_len());
+
+        for (schema_arg_idx, schema_arg) in schema.arg_layout.args().iter().enumerate() {
+            // Making sure we don't exceed either of their len
+            if schema_arg_idx == args.inner.len() {
                 break;
             }
-            todo!()
+
+            let expr = &self.compiler.exprs[args.inner[schema_arg_idx]];
+            let val_opt = &self.compiler.values[expr.val_id].const_val;
+
+            // Was already reported so we need to skip
+            let Some(val) = &val_opt else {
+                continue;
+            };
+
+            let Some(input) = DirectivePreprocessExpectInput::from_val(val) else {
+                let core_msg = format!("No directive supports `{}`", val.kind().to_classified());
+                let builder = SourceDiagnostic::builder(
+                    None,
+                    DiagnosticLevel::Error,
+                    core_msg,
+                    env.region.path_id,
+                )
+                .add_annotation(
+                    expr.meta.expect_user(),
+                    AnnotationKind::Primary,
+                    None,
+                );
+                self.summary.push_diag(builder.build());
+                continue;
+            };
+
+            if let Err(constraint_idx) = schema_arg.allows(&input) {
+                let direct_err = DirectiveError::ParameterMismatch {
+                    direct_schema_kind: schema.kind,
+                    expected_arg_idx: schema_arg_idx,
+                    expected_constraint_idx: constraint_idx,
+                    sp_found_val_kind: SpannedContainer::new(val.kind(), expr.meta.expect_user()),
+                };
+                preset_reporter::report_preset(
+                    self.compiler,
+                    &mut self.summary,
+                    direct_err.into(),
+                    env.region,
+                    self.cfg,
+                    self.interner,
+                );
+                times_reported += 1;
+            };
+
+            // inputs.push(input);
         }
 
         if times_reported > 0 {
             return;
         }
-        todo!()
+        // May not need more here
+
+        // debug_assert!(schema.preprocess_kind_from_inputs(&inputs).is_some());
     }
 
     // Needs:

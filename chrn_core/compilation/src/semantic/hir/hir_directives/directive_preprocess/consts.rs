@@ -18,7 +18,7 @@ pub(super) static MAX_NUMERIC_BITS_SCHEMA: DirectivePreprocessSchema =
         CompilerStage::Lexer,
     );
 
-const MAX_NUMERIC_BITS_MAX_BIT_COUNT: u32 = u32::MAX;
+pub const MAX_NUMERIC_BITS_MAX_BIT_COUNT: u32 = u32::MAX;
 
 // Is there a preference for if these should be ref or not
 //
@@ -29,6 +29,6 @@ const MAX_NUMERIC_BITS_MAX_BIT_COUNT: u32 = u32::MAX;
 pub(super) static MAX_NUMERIC_BITS_ARGS: [DirectivePreprocessArg; 1] = [
     DirectivePreprocessArg::new(&[DirectivePreprocessArgConstraint::Integer(
         // Uhhh uhhh ummm is this uh
-        DirectiveIntegerArgConstraint::new(Some(0..(MAX_NUMERIC_BITS_MAX_BIT_COUNT) as u64)),
+        DirectiveIntegerArgConstraint::new(Some(0..MAX_NUMERIC_BITS_MAX_BIT_COUNT as u64 + 1)),
     )]),
 ];

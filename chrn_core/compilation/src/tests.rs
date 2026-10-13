@@ -5,6 +5,7 @@ mod constraint_resolver_test;
 mod directives_test;
 mod helpers;
 mod inference_test;
+mod lexer_processor_test;
 mod lexer_test;
 mod macros_test;
 mod module_test;

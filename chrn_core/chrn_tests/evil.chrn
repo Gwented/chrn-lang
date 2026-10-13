@@ -58,7 +58,9 @@ for varthing1 {}
 
 // Ensure no panics on sudden end exist
 //#chrn[MAX_NUMERIC_BITS(300, 30, 2, 90, 3)]
-#max_numeric_bits(49)
+// Because the lexer preprocessor doesn't have a concept of sections it DOESN'T lock
+// directives to neutral. That is great news!
+#max_numeric_bits(-1)
 
 // Thinking about removing the big int usage and just making caps or integers.
 // So, we can pick "--max-int-bits=" where the eq value must be a known bit range like 256, 512, etc.
@@ -94,6 +96,7 @@ let hex = 2
 // @end
 // Completion should show literal as solved value rather than just the notation.
 // let decimal_overflow = 9223372036854775808 + 0e-1000000000000
+
 
 var->
 varthing1: str
@@ -146,7 +149,6 @@ for Structure {
 for nest Block=>k {
     override JAVA=>types{change u32 = java::char}
 }
-
 for var varthing1 { override RUST=>types{change = rust::i32} }
 
 for varthing1 {}

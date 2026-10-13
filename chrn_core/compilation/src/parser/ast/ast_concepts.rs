@@ -13,7 +13,7 @@ use crate::{
     lookup::scopes::scopes_concepts::{ScopeLookupPattern, ScopeType},
     parser::ast::{
         ast_exprs::{AstExpr, PathSegment, TypeExpr},
-        ast_stmts::{AbstractOptionAssignment, AstStmt},
+        ast_stmts::AstStmt,
     },
     semantic::hir::hir_impls::ConfigRootMetadataKind,
 };
@@ -406,18 +406,18 @@ impl AbstractDirectiveInline {
 #[derive(Debug)]
 pub struct AbstractDirectivePreprocess {
     pub sp_name_id: SpannedContainer<InternedId>,
-    /// Expects `ArrayExpr`
-    pub array_expr: SpannedContainer<AstExpr>,
+    /// Arguments and the span of their enclosing parentheses.
+    pub sp_args: SpannedContainer<Vec<SpannedContainer<AstExpr>>>,
 }
 
 impl AbstractDirectivePreprocess {
     pub fn new(
         sp_name_id: SpannedContainer<InternedId>,
-        array_expr: SpannedContainer<AstExpr>,
+        sp_args: SpannedContainer<Vec<SpannedContainer<AstExpr>>>,
     ) -> Self {
         Self {
             sp_name_id,
-            array_expr,
+            sp_args,
         }
     }
 }

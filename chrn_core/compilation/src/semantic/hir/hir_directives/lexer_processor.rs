@@ -16,9 +16,10 @@ use crate::{
 /// Expects to start at `#` in a stream of tokens, then attempts to parse it as a
 /// preprocessed directive.
 ///
-/// Syntax: #[{directive}({val}, ..), ..]
+/// Syntax: #{directive}({val}, ..)
 ///
-/// NOTE: Will panic if expected invariants are broken
+/// Returns `None` for malformed or unsupported directives, including truncated input.
+/// NOTE: `hash_idx` must point to a `#` token.
 pub fn process_directive(
     toks: &[SpannedToken],
     hash_idx: usize,
@@ -26,10 +27,6 @@ pub fn process_directive(
 ) -> Option<DirectivePreprocess> {
     debug_assert!(hash_idx < toks.len());
     debug_assert_eq!(toks[hash_idx].tok, Token::HashSymbol);
-
-    //TEST: Is this true?
-    // At least #{ident}() 3 toks ahead
-    _ = toks.get(hash_idx + 3)?;
 
     // At ident
     let mut cursor = BasicCursor::with_pos(toks, hash_idx + 1);
@@ -43,6 +40,7 @@ pub fn process_directive(
     Some(directive)
 }
 
+/// Attempts to parse a directive out of `Token`, expecting the correct syntax
 fn make_directive(
     cursor: &mut BasicCursor<SpannedToken>,
     schema: &DirectivePreprocessSchema,
@@ -53,55 +51,38 @@ fn make_directive(
         return None;
     };
 
-    // Simplify pleaseee
-    // Want this removed. maybe
-    let mut inputs: Vec<DirectivePreprocessExpectInput> = Vec::new();
+    //NOTE: Not sure if this can be removed because for an integer token for example,
+    //we want the integer value to put inside the actual directive field as well as
+    //check against it, which both require the inner info regarding the token, or any input at all.
+    let mut inputs: Vec<DirectivePreprocessExpectInput> =
+        Vec::with_capacity(schema.arg_layout.arg_len());
 
-    //WARN: Maybe
-    // So field schemas can enforce their max arg count
-    let mut arg_count = 0;
-    //TEST: Overly complicated
+    //WARN: The schema bounds the number of arguments consumed.
 
     //NOTE: If we have an actual parameterized directive field, f(x,y), we probably want to return
     //as a failure rather than keep half of something invalid
     for _ in schema.arg_layout.args() {
-        if arg_count + 1 > schema.arg_layout.arg_len() {
-            return None;
-        }
-
-        // Advancing ref so the lifetime lives long enough for the resolved input
-        let tok = &cursor.advance_ref().tok;
-        if tok.kind().is_terminator() || tok.kind() == delim_ctx.closing() {
+        // Leave the closing delimiter for the final check.
+        let tok = &cursor.peek_ref_checked()?.tok;
+        if tok.kind() == delim_ctx.closing() {
             break;
         }
 
+        // Advancing ref so the lifetime lives long enough for the expect input
+        let tok = &cursor.advance_ref_checked()?.tok;
         let input = DirectivePreprocessExpectInput::from_tok(tok, interner)?;
 
-        // if !arg.allows(&input) {
-        //     return None;
-        // }
-
-        arg_count += 1;
         inputs.push(input);
 
-        // // Tok needs to be put up against constraints
-        // let Some(field_kind) = field_schema.try_tok_as_field_kind(&tok, arg) else {
-        //     return;
-        // };
-
-        //TODO: Fields have arguments therefore we need an aregument abresuaotrction for pre fields
-
-        if cursor.peek_owned().tok.kind() == delim_ctx.arg_sep()
-            && cursor.peek_ahead_owned(1).tok.kind() == delim_ctx.closing()
-        {
-            cursor.skip(1);
-            break;
-        } else if cursor.peek_owned().tok.kind() == delim_ctx.closing() {
+        if cursor.peek_ref_checked()?.tok.kind() == delim_ctx.closing() {
             break;
         }
 
         if !expect_tok(cursor, delim_ctx.arg_sep()) {
             return None;
+        }
+        if cursor.peek_ref_checked()?.tok.kind() == delim_ctx.closing() {
+            break;
         }
     }
 
@@ -115,7 +96,7 @@ fn make_directive(
 
 /// Returns `true` if `expected` == found
 fn expect_id(cursor: &mut BasicCursor<SpannedToken>, expected: TokenKind) -> Option<InternedId> {
-    let found = cursor.advance_owned();
+    let found = cursor.advance_owned_checked()?;
     let tok_opt = match found.tok {
         Token::Id(id)
         | Token::Str(id)
@@ -138,6 +119,7 @@ fn expect_id(cursor: &mut BasicCursor<SpannedToken>, expected: TokenKind) -> Opt
 
 /// Returns `true` if `expected` == found
 fn expect_tok(cursor: &mut BasicCursor<SpannedToken>, expected: TokenKind) -> bool {
-    let res = cursor.advance_owned().tok.kind() == expected;
-    res
+    cursor
+        .advance_ref_checked()
+        .is_some_and(|found| found.tok.kind() == expected)
 }

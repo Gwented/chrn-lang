@@ -1,3 +1,4 @@
+//TODO: Maybe consider packaging (ErrorCode, PresetErr) as a struct as to not lose codes
 mod engine;
 mod engine_concepts;
 pub mod preset_err;
@@ -8,14 +9,16 @@ use crate::lookup::member_lookup::MemberLookupResult;
 use crate::lookup::scopes::scopes_concepts::AssociatedScopeKind;
 use crate::resolvers::resolver_env::ResolverEnv;
 use crate::script_compiler::ScriptCompiler;
+use crate::semantic::algo;
 use crate::semantic::hir::hir_concepts::Type;
 use crate::semantic::hir::hir_symbols::{SymbolKind, SymbolOrigin};
 use crate::semantic::preset_reporter::engine_concepts::{
     AvailableKind, EngineOption, EngineOptionBase, ListAvailable,
 };
-use crate::semantic::preset_reporter::preset_err::{LookupError, MathError, PresetErr};
+use crate::semantic::preset_reporter::preset_err::{
+    DirectiveError, LookupError, MathError, PresetErr,
+};
 use crate::semantic::resolution::resolution_concepts::{StaticAccessResult, TypeExprResult};
-use crate::semantic::{self, algo};
 use chrn_utils::err_codes::ErrorCode;
 use chrn_utils::source_map::source_diagnostic::annotations::AnnotationKind;
 use chrn_utils::source_map::source_diagnostic::{
@@ -457,6 +460,36 @@ pub(crate) fn create_diag_builder_preset(
                     .add_annotation(rhs_span, AnnotationKind::Primary, None)
             }
         },
+        PresetErr::Directive(directive_err) => match directive_err {
+            DirectiveError::ParameterMismatch {
+                direct_schema_kind,
+                expected_arg_idx,
+                expected_constraint_idx,
+                sp_found_val_kind,
+            } => {
+                let schema = direct_schema_kind.schema();
+                let arg = &schema.arg_layout.args()[expected_arg_idx];
+                let expected_constraint = &arg.constraints[expected_constraint_idx];
+                //TODO: Help these get more specific. So we get expected in range specifically as
+                //our actual input instead of just a string with the specification. So just domain
+                //specific enum -> error msg translation
+                let core_msg = format!(
+                    "Argument #{} expected constraint `{expected_constraint}` to be met",
+                    expected_arg_idx + 1,
+                );
+                SourceDiagnostic::builder(
+                    ErrorCode::DirectiveErr.into(),
+                    DiagnosticLevel::Error,
+                    core_msg,
+                    region.path_id,
+                )
+                .add_annotation(
+                    sp_found_val_kind.span,
+                    AnnotationKind::Primary,
+                    None,
+                )
+            }
+        },
         // Maybe a type version too?
         PresetErr::TypeBoundaryMismatch {
             given_constraints,
@@ -581,6 +614,16 @@ pub(crate) fn create_diag_builder_preset(
                 AnnotationKind::Secondary,
                 "Original".to_string().into(),
             )
+        }
+        PresetErr::ArgCountMismatch {
+            expected,
+            found,
+            span,
+        } => {
+            let s_suffix = s_suffix!(expected);
+            let core_msg = format!("Expected {expected} argument{s_suffix}, found {found}");
+            SourceDiagnostic::builder(None, DiagnosticLevel::Error, core_msg, region.path_id)
+                .add_annotation(span, AnnotationKind::Primary, None)
         }
     }
 }

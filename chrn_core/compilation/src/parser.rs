@@ -2195,8 +2195,6 @@ fn parse_directive_preprocess(
     budget: &ParserBudget,
     interner: &Intern,
 ) -> Result<AbstractDirectivePreprocess, Token> {
-    let self_delim_ctx = DelimiterContext::with_comma(TokenKind::OParen, TokenKind::CParen);
-
     //TODO: change naming of opt for abs
     let env = SemanticEnv::SectNeutral;
     let branch = Branch::Directive;
@@ -2234,14 +2232,13 @@ fn parse_directive_preprocess(
         branch,
         interner,
     )?;
-    let end = ctx.peek_behind(1).span.end;
+    let end = ctx.cursor.peek_behind_ref(1).span.end;
     let span = SourceSpan::new(ctx.region.self_id, start, end);
-
-    let sp_array_expr = SpannedContainer::new(AstExpr::Array(ArrayExpr::new(exprs)), span);
+    let sp_exprs = SpannedContainer::new(exprs, span);
 
     Ok(AbstractDirectivePreprocess::new(
         sp_direct_name_id,
-        sp_array_expr,
+        sp_exprs,
     ))
 }
 

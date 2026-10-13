@@ -501,34 +501,32 @@ impl<'res> TypeResolver<'res> {
             return;
         };
 
-        let array_expr_id = match self.register_expr(
-            None,
-            &abs_direct.array_expr,
-            None,
-            initial_scope,
-            scope_type,
-            env,
-        ) {
-            Ok(id) => id,
-            Err(preset_err) => {
-                preset_reporter::report_preset(
-                    self.compiler,
-                    &mut self.summary,
-                    preset_err,
-                    env.region,
-                    self.cfg,
-                    self.interner,
-                );
-                // No valid symbol exists so nothing can actually be done here. Could typecheck the
-                // options since they're always valid to check but not now.
-                return;
-            }
-        };
+        let mut args = Vec::with_capacity(abs_direct.sp_args.inner.len());
+        for ast_expr in &abs_direct.sp_args.inner {
+            let expr_id =
+                match self.register_expr(None, &ast_expr, None, initial_scope, scope_type, env) {
+                    Ok(id) => id,
+                    Err(preset_err) => {
+                        preset_reporter::report_preset(
+                            self.compiler,
+                            &mut self.summary,
+                            preset_err,
+                            env.region,
+                            self.cfg,
+                            self.interner,
+                        );
+                        // No valid symbol exists so nothing can actually be done here. Could typecheck the
+                        // options since they're always valid to check but not now.
+                        return;
+                    }
+                };
+            args.push(expr_id);
+        }
 
         let direct = self.compiler.get_directive_preprocess_mut(parent_impl_id);
 
-        debug_assert_eq!(direct.array_expr_id, None);
-        direct.array_expr_id = Some(array_expr_id);
+        debug_assert_eq!(direct.args, None);
+        direct.args = Some(SpannedContainer::new(args, abs_direct.sp_args.span));
     }
 
     fn resolve_var(&mut self, parent_sym_id: TaggedId<SymbolId, VarTag>, env: &ResolverEnv) {
