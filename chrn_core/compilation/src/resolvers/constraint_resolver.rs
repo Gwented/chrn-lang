@@ -19,17 +19,15 @@ use lang::{
     config_schemas::{self, ConfigSchema, ConfigSchemaKind},
     types::{boundaries::TypeBoundaryFlags, builtins::BuiltinType},
 };
-use macrosc::s_suffix;
 
 use crate::{
     chrn_config::{ChrnConfig, chrn_perf::ChrnPerfStage},
     constraints::ArgConstraint,
     id_tag_decls::{
-        AliasTag, ConfigRootTag, DirectivePreprocessTag, EnumTag, OptionAssignmentMemberTag,
+        AliasTag, ConfigRootTag, DirectiveParameterizedTag, EnumTag, OptionAssignmentMemberTag,
         OptionAssignmentRootTag, StructTag, TypeDefTag, VarTag,
     },
     lookup::schema_lookup::{self, SchemaResult},
-    parser::ast::ast_exprs::AstExpr,
     resolvers::{resolver_env::ResolverEnv, resolver_state::CompilerStage},
     script_compiler::ScriptCompiler,
     semantic::{
@@ -40,7 +38,6 @@ use crate::{
                 Directive, DirectiveInline, DirectivePreprocessExpectInput,
                 DirectivePreprocessSchema,
             },
-            hir_exprs::ExprHir,
             hir_impls::{ConfigMember, ConfigMemberMetadataKind, ConfigRootKind},
             hir_symbols::MemberSymbolKind,
         },
@@ -81,7 +78,7 @@ impl<'a> ConstraintResolver<'a> {
     pub fn resolve(&mut self, env: &ResolverEnv) -> SourceDiagnosticSummary {
         self.cfg.perf_tracker_mut().start(env.region.path_id);
         // Everything skipped is not a factor in this compilation step.
-        for comp_unit in env.compilation_syms.iter().cloned() {
+        for comp_unit in env.comp_syms.iter().cloned() {
             match comp_unit {
                 CompilationUnit::TypeDef(sym_id) => self.resolve_typedef(sym_id, env),
                 CompilationUnit::Struct(sym_id) => self.resolve_struct(sym_id, env),
@@ -90,7 +87,7 @@ impl<'a> ConstraintResolver<'a> {
                 CompilationUnit::Var(sym_id) => self.resolve_var(sym_id, env),
                 CompilationUnit::ConfigRoot(impl_id) => self.resolve_cfg_root(impl_id, env),
                 CompilationUnit::DirectivePreprocess(impl_id) => {
-                    self.resolve_preprocess_directive(impl_id, env)
+                    self.resolve_param_directive(impl_id, env)
                 }
             }
         }
@@ -103,12 +100,12 @@ impl<'a> ConstraintResolver<'a> {
         summary
     }
 
-    fn resolve_preprocess_directive(
+    fn resolve_param_directive(
         &mut self,
-        parent_impl_id: TaggedId<ImplId, DirectivePreprocessTag>,
+        parent_impl_id: TaggedId<ImplId, DirectiveParameterizedTag>,
         env: &ResolverEnv,
     ) {
-        let direct = self.compiler.get_directive_preprocess(parent_impl_id);
+        let direct = self.compiler.get_directive_param(parent_impl_id);
         let Some(args) = &direct.args else {
             return;
         };
@@ -146,7 +143,7 @@ impl<'a> ConstraintResolver<'a> {
             }
 
             let expr = &self.compiler.exprs[args.inner[schema_arg_idx]];
-            let val_opt = &self.compiler.values[expr.val_id].const_val;
+            let val_opt = &self.compiler.vals[expr.val_id].const_val;
 
             // Was already reported so we need to skip
             let Some(val) = &val_opt else {
@@ -161,11 +158,8 @@ impl<'a> ConstraintResolver<'a> {
                     core_msg,
                     env.region.path_id,
                 )
-                .add_annotation(
-                    expr.meta.expect_user(),
-                    AnnotationKind::Primary,
-                    None,
-                );
+                .add_annotation(expr.meta.expect_user(), AnnotationKind::Primary, None)
+                .add_note("May change");
                 self.summary.push_diag(builder.build());
                 continue;
             };
@@ -422,7 +416,7 @@ impl<'a> ConstraintResolver<'a> {
         // This seems like something that should be an error earlier since an array with unfinished
         // values after full type resolution is just plainly broken as of right now. Need some layer
         // before this that can serve this as a guarantee
-        let const_array = self.compiler.values[val_id]
+        let const_array = self.compiler.vals[val_id]
             .const_val
             .as_ref()
             .expect("NOT DONE YET");
@@ -1431,7 +1425,7 @@ impl<'a> ConstraintResolver<'a> {
         //                 Type::Constrained(type_constraint) => todo!(),
         //             },
         //             SymbolKind::Val(_) | SymbolKind::Unknown => {
-        //                 let type_id = &self.compiler.values[cond_expr.val_id ].type_id;
+        //                 let type_id = &self.compiler.vals[cond_expr.val_id ].type_id;
         //                 let ty = &self.compiler.types[type_id ].ty;
         //
         //                 if let Type::BuiltinType(BuiltinType::Bool) = ty {
@@ -1448,7 +1442,7 @@ impl<'a> ConstraintResolver<'a> {
         //     }
         //     // Only `BinaryExpr` can actually evaluate to a boolean here, just re-using the logic
         //     ExprHir::BinaryExpr { .. } | ExprHir::Unary { .. } | ExprHir::Default(..) => {
-        //         let type_id = &self.compiler.values[cond_expr.val_id ].type_id;
+        //         let type_id = &self.compiler.vals[cond_expr.val_id ].type_id;
         //         let ty = &self.compiler.types[type_id ].ty;
         //
         //         if let Type::BuiltinType(BuiltinType::Bool) = ty {
@@ -1461,7 +1455,7 @@ impl<'a> ConstraintResolver<'a> {
         //         }
         //     }
         //     ExprHir::Val(_) => {
-        //         let type_id = &self.compiler.values[cond_expr.val_id ].type_id;
+        //         let type_id = &self.compiler.vals[cond_expr.val_id ].type_id;
         //         let ty = &self.compiler.types[type_id ].ty;
         //
         //         if let Type::BuiltinType(BuiltinType::Bool) = ty {

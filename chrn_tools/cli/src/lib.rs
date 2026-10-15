@@ -13,7 +13,7 @@ mod renderer;
 const MAX_DIAGNOSTICS: usize = 80;
 
 /// Max value `max-numeric-bits` can be given
-const MAX_NUMERIC_BITS: i64 = 1_000_000_000;
+const MAX_NUMERIC_BITS: u32 = u32::MAX;
 
 #[cfg(test)]
 mod tests {

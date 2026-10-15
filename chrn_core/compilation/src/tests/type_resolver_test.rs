@@ -377,7 +377,7 @@ fn type_resolver_complex_test() {
         VariableState::Known(val_id) => *val_id,
         other => panic!("CONSTANT should be Known, got {:?}", other),
     };
-    let val_info = &compiler.values[val_id];
+    let val_info = &compiler.vals[val_id];
     assert_eq!(
         val_info.type_id,
         TypeId::new(CORE_I64),
@@ -422,7 +422,7 @@ fn type_resolver_string_concat_type_test() {
         VariableState::Known(val_id) => *val_id,
         other => panic!("'X' should be Known, got {:?}", other),
     };
-    let val_info = &compiler.values[val_id];
+    let val_info = &compiler.vals[val_id];
 
     assert_eq!(
         val_info.type_id,
@@ -548,7 +548,7 @@ fn type_resolver_literal_types_match_arbitrary_type_id() {
         let name_id = res.interner.get_interned_id_from_str(name).unwrap();
         let var_def = find_user_var(&res.compiler, name_id);
         match &var_def.state {
-            VariableState::Known(value_id) => res.compiler.values[*value_id].type_id,
+            VariableState::Known(value_id) => res.compiler.vals[*value_id].type_id,
             _ => panic!("unexpected var state"),
         }
     };
@@ -578,7 +578,7 @@ fn root_option_expr_and_value<'a>(
         })
         .unwrap_or_else(|| panic!("root option `{option_name}` should exist"));
     let array_expr = &resolution.compiler.exprs[option.array_expr_id];
-    (array_expr, &resolution.compiler.values[array_expr.val_id])
+    (array_expr, &resolution.compiler.vals[array_expr.val_id])
 }
 
 fn assert_i64_array(option_name: &str, value: &ValueInfo, expected: &[i64]) {

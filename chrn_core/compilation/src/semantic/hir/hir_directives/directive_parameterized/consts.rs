@@ -1,10 +1,8 @@
 use crate::{
-    lexer::token::TokenKind,
     resolvers::resolver_state::CompilerStage,
     semantic::hir::hir_directives::{
-        DirectivePreprocessEffect, DirectivePreprocessExpectInput, DirectivePreprocessSchema,
-        DirectivePreprocessSchemaKind,
-        directive_preprocess::directive_preprocess_args::{
+        DirectivePreprocessEffect, DirectivePreprocessSchema, DirectivePreprocessSchemaKind,
+        directive_parameterized::directive_preprocess_args::{
             DirectiveIntegerArgConstraint, DirectivePreprocessArg,
             DirectivePreprocessArgConstraint, DirectivePreprocessArgLayout,
         },
@@ -15,6 +13,9 @@ pub(super) static MAX_NUMERIC_BITS_SCHEMA: DirectivePreprocessSchema =
         DirectivePreprocessSchemaKind::MaxNumericBits,
         DirectivePreprocessArgLayout::new(&MAX_NUMERIC_BITS_ARGS),
         DirectivePreprocessEffect::Compiler,
+        // Should probably make it clear that the compiler stage is the stage in which it is
+        // resolved AFTER its done. So, CompilerStage::Lexer means after the lexer, this directive
+        // is ready to be applied.
         CompilerStage::Lexer,
     );
 

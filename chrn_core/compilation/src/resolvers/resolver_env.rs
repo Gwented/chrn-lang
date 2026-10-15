@@ -39,7 +39,7 @@ pub struct ResolverEnv<'a> {
     pub(crate) ast_info: &'a AstInfo,
     pub(crate) region: &'a SourceRegion,
     pub(crate) current_mod: ModuleId,
-    pub(crate) compilation_syms: &'a [CompilationUnit],
+    pub(crate) comp_syms: &'a [CompilationUnit],
 }
 
 impl ResolverEnv<'_> {
@@ -47,13 +47,13 @@ impl ResolverEnv<'_> {
         ast_info: &'a AstInfo,
         region: &'a SourceRegion,
         current_mod: ModuleId,
-        compilation_syms: &'a [CompilationUnit],
+        comp_syms: &'a [CompilationUnit],
     ) -> ResolverEnv<'a> {
         ResolverEnv {
             ast_info,
             region,
             current_mod,
-            compilation_syms,
+            comp_syms,
         }
     }
 }

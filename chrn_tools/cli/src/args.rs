@@ -147,11 +147,13 @@ pub struct CheckCmd {
     /// Shows info regarding the performance of each stage after compilation is done
     #[arg(short = 'p', long = "perf", default_value_t = false)]
     pub(crate) perf_tracker: bool,
-    /// Sets max bits that can be computed
+    /// Sets max bits that can be computed.
+    /// If the entry chrn file contains `#max_numeric_bits` that will be the max amount the numeric
+    /// bits can be set. The CLI CANNOT override the directive.
     #[arg(
         long = "max-numeric-bits",
         default_value_t = compilation::DEFAULT_MAX_NUMERIC_BITS,
-        value_parser = clap::value_parser!(u32).range(1..=crate::MAX_NUMERIC_BITS)
+        value_parser = clap::value_parser!(u32).range(0..=crate::MAX_NUMERIC_BITS as i64)
     )]
     pub(crate) numeric_bits: u32,
     /// Emits diagnostics as a JSON document in stderr

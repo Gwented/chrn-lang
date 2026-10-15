@@ -77,7 +77,7 @@ fn section_items(ast: &AstInfo, kind: SectionKind) -> Vec<AstId> {
 }
 
 #[test]
-fn parse_preprocess_directive_argument_delimiters() {
+fn parse_param_directive_argument_delimiters() {
     for (arguments, expected) in [
         ("()", vec![]),
         ("(2)", vec!["2"]),

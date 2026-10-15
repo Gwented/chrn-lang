@@ -19,12 +19,9 @@ use crate::{
     resolvers::resolver_state::CompilerStage,
     semantic::{
         arbitraries::ArbitraryIntKind,
-        hir::{
-            hir_directives::directive_preprocess::{
-                consts::MAX_NUMERIC_BITS_SCHEMA,
-                directive_preprocess_args::DirectivePreprocessArgLayout,
-            },
-            hir_exprs::ExprHir,
+        hir::hir_directives::directive_parameterized::{
+            consts::MAX_NUMERIC_BITS_SCHEMA,
+            directive_preprocess_args::DirectivePreprocessArgLayout,
         },
         values::Value,
     },
@@ -44,14 +41,15 @@ use crate::{
 // padding is unneccessary so it should just be extracted.
 /// Parameterized directives, which are only at compile-time
 #[derive(Debug, Clone)]
-pub struct DirectivePreprocessHir {
+pub struct DirectiveParameterizedHir {
     pub sp_name_id: SpannedContainer<InternedId>,
     // Is spanned so that it at least captures the "()" if there are no args for err reporting
     /// Which directive it's fields should correspond to
     pub args: Option<SpannedContainer<Vec<ExprId>>>,
+    // pub is_preprocessed: bool,
 }
 
-impl DirectivePreprocessHir {
+impl DirectiveParameterizedHir {
     pub fn new(
         sp_name_id: SpannedContainer<InternedId>,
         args: Option<SpannedContainer<Vec<ExprId>>>,
@@ -274,6 +272,15 @@ impl DirectivePreprocessKind {
         }
     }
 
+    // Could be dynamic where sometimes it's preprocessed sometimes its n- why would I subject chrn
+    // to that in the first place is the real question.
+    /// Returns `true` if `Self` is a directive that is preprocessed
+    pub const fn is_preprocessed(&self) -> bool {
+        match self {
+            DirectivePreprocessKind::MaxNumericBits(_) => true,
+        }
+    }
+
     /// Returns the schema that is needed to create `DirectivePreprocessKind`
     pub const fn schema(&self) -> &DirectivePreprocessSchema {
         match self {
@@ -431,6 +438,7 @@ impl DirectivePreprocessStore {
     }
 }
 
+// Needs to be elsewhere
 /// Iterates through `directive_store` and applies it's effects where possible, given `stage`.
 /// Whether a directive is processed successfully or not doesn't matter, both are discarded, the
 /// only difference is that the success is applied.

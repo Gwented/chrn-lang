@@ -60,7 +60,7 @@ for varthing1 {}
 //#chrn[MAX_NUMERIC_BITS(300, 30, 2, 90, 3)]
 // Because the lexer preprocessor doesn't have a concept of sections it DOESN'T lock
 // directives to neutral. That is great news!
-#max_numeric_bits(-1)
+#mx_numeric_bits(0)
 
 // Thinking about removing the big int usage and just making caps or integers.
 // So, we can pick "--max-int-bits=" where the eq value must be a known bit range like 256, 512, etc.
@@ -73,18 +73,22 @@ for varthing1 {}
 // Namespaces like i128::MAX bypass the max bits because they don't check cfg
 
 // Remember me
+// Probably just remove the const if the max bits is set to disallow it. Or cap it to >128
 // let bin = f32::NAN + f32::INF
 // Please remember me I'm an issue
 // let x = core::f16::NEG_INF + 2
 
 // let x = []
-let array = [[2, 2], [4, 4], ]
+// let array = [[2, 2], [4, 4], ]
 // #chrn[i()]
 
-// Reports nothing
+// Reports nothing. Cannot be iterated until we are at the fns though
+// let array = [[2], 4, core::IsWhitespace]
 // let array = [[2, 2], 4, evil::evil::evil::evil::core::IsWhitespace]
 // Reports nothing
-// let octal = 0o23 + []
+let octal = 0o23 + []
+let e#2 = -[]
+@end
 
 // ignore this
 // let chrn = "chern"

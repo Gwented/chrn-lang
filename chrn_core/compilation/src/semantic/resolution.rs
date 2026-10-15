@@ -20,7 +20,7 @@ use crate::{
         },
     },
     parser::ast::{
-        ast_concepts::AbstractDirectiveInline,
+        ast_concepts::AbstractDirectiveUnparameterized,
         ast_exprs::{AbstractGeneric, PathSegment, TypeExpr},
     },
     resolvers::resolver_env::ResolverEnv,
@@ -455,6 +455,8 @@ pub fn resolve_static_access(
 
 // I KNOW WHAT THIS LOOKS LIKE BUT IT MIGHT BECOME MORE THAN THIS SO IT STILL GETS ITS OWN FUNCTION
 /// Resolves directive
-pub fn resolve_directive(abs_directive: &AbstractDirectiveInline) -> Option<DirectiveInline> {
+pub fn resolve_directive(
+    abs_directive: &AbstractDirectiveUnparameterized,
+) -> Option<DirectiveInline> {
     DirectiveInline::try_from_interned_str(abs_directive.sp_name_id.inner)
 }

@@ -26,7 +26,7 @@ pub struct AstInfo {
     /// order: `neutral`, `var`, `nest`, `complex`, `override`
     pub sections: [Option<AbstractSection>; 4],
     pub items: Arena<Item, AstId>,
-    pub preprocess_directives: Vec<AbstractDirectivePreprocess>,
+    pub param_directives: Vec<AbstractDirectiveParameterized>,
 }
 
 impl AstInfo {
@@ -34,7 +34,7 @@ impl AstInfo {
         AstInfo {
             sections: [None, None, None, None],
             items: Arena::new(),
-            preprocess_directives: Vec::new(),
+            param_directives: Vec::new(),
         }
     }
 
@@ -42,7 +42,7 @@ impl AstInfo {
         AstInfo {
             sections: [None, None, None, None],
             items: Arena::with_capacity(items_cap),
-            preprocess_directives: Vec::with_capacity(directs_cap),
+            param_directives: Vec::with_capacity(directs_cap),
         }
     }
 
@@ -123,7 +123,7 @@ impl AstInfo {
         }
     }
 
-    pub fn get_directive(&self, ast_id: AstId) -> &AbstractDirectivePreprocess {
+    pub fn get_directive(&self, ast_id: AstId) -> &AbstractDirectiveParameterized {
         match &self.items[ast_id] {
             Item::Impl(abs_impl) => match abs_impl {
                 AbstractImpl::Directive(abs_direct) => abs_direct,
@@ -222,7 +222,7 @@ impl AbstractDecl {
 #[derive(Debug)]
 pub enum AbstractImpl {
     Config(AbstractConfig),
-    Directive(AbstractDirectivePreprocess),
+    Directive(AbstractDirectiveParameterized),
 }
 
 #[derive(Debug)]
@@ -392,25 +392,31 @@ impl AbstractVar {
     }
 }
 
+/// A directive that has contextual value that does not take any parameters.
+/// Syntax: `#{identifier}`
 #[derive(Debug)]
-pub struct AbstractDirectiveInline {
+pub struct AbstractDirectiveUnparameterized {
     pub sp_name_id: SpannedContainer<InternedId>,
 }
 
-impl AbstractDirectiveInline {
-    pub fn new(sp_name_id: SpannedContainer<InternedId>) -> AbstractDirectiveInline {
-        AbstractDirectiveInline { sp_name_id }
+impl AbstractDirectiveUnparameterized {
+    pub fn new(sp_name_id: SpannedContainer<InternedId>) -> AbstractDirectiveUnparameterized {
+        AbstractDirectiveUnparameterized { sp_name_id }
     }
 }
 
+// The preprocess naming removal is quite suspicious!
+// Maybe being preprocessed is just a state that either directive may be in?
+/// A directive that takes parameters.
+/// Syntax: `#{identifier}({expr}, ..)`
 #[derive(Debug)]
-pub struct AbstractDirectivePreprocess {
+pub struct AbstractDirectiveParameterized {
     pub sp_name_id: SpannedContainer<InternedId>,
     /// Arguments and the span of their enclosing parentheses.
     pub sp_args: SpannedContainer<Vec<SpannedContainer<AstExpr>>>,
 }
 
-impl AbstractDirectivePreprocess {
+impl AbstractDirectiveParameterized {
     pub fn new(
         sp_name_id: SpannedContainer<InternedId>,
         sp_args: SpannedContainer<Vec<SpannedContainer<AstExpr>>>,
@@ -422,6 +428,8 @@ impl AbstractDirectivePreprocess {
     }
 }
 
+// Need a different name, typedef was not supposed to be permrnemanent permeation.
+// TopLevelField? TopField? FrontField?
 #[derive(Debug)]
 pub struct AbstractTypeDef {
     /// Identifier of `self`
@@ -431,7 +439,7 @@ pub struct AbstractTypeDef {
     pub sp_ty_expr: SpannedContainer<TypeExpr>,
     pub is_priv: bool,
     pub conds: Vec<SpannedContainer<AstExpr>>,
-    pub directives: Vec<AbstractDirectiveInline>,
+    pub directives: Vec<AbstractDirectiveUnparameterized>,
 }
 
 impl AbstractTypeDef {
@@ -439,7 +447,7 @@ impl AbstractTypeDef {
         name_id: InternedId,
         name_span: SourceSpan,
         sp_ty_expr: SpannedContainer<TypeExpr>,
-        directives: Vec<AbstractDirectiveInline>,
+        directives: Vec<AbstractDirectiveUnparameterized>,
         is_priv: bool,
         conds: Vec<SpannedContainer<AstExpr>>,
     ) -> AbstractTypeDef {
@@ -459,7 +467,7 @@ pub struct AbstractStruct {
     pub name_id: InternedId,
     pub name_span: SourceSpan,
     pub glob_conds: Vec<SpannedContainer<AstExpr>>,
-    pub glob_directives: Vec<AbstractDirectiveInline>,
+    pub glob_directives: Vec<AbstractDirectiveUnparameterized>,
     pub fields: Vec<AbstractTypeDef>,
     pub is_priv: bool,
 }
@@ -469,7 +477,7 @@ impl AbstractStruct {
         name_id: InternedId,
         name_span: SourceSpan,
         glob_conds: Vec<SpannedContainer<AstExpr>>,
-        glob_directives: Vec<AbstractDirectiveInline>,
+        glob_directives: Vec<AbstractDirectiveUnparameterized>,
         fields: Vec<AbstractTypeDef>,
         is_priv: bool,
     ) -> AbstractStruct {
@@ -491,7 +499,7 @@ pub struct AbstractEnum {
     pub name_span: SourceSpan,
     pub variants: Vec<AbstractVariant>,
     pub glob_conds: Vec<SpannedContainer<AstExpr>>,
-    pub glob_directives: Vec<AbstractDirectiveInline>,
+    pub glob_directives: Vec<AbstractDirectiveUnparameterized>,
     pub is_priv: bool,
     // pub(crate) visibility: Visibility,
 }
@@ -502,7 +510,7 @@ impl AbstractEnum {
         name_span: SourceSpan,
         variants: Vec<AbstractVariant>,
         glob_conds: Vec<SpannedContainer<AstExpr>>,
-        glob_directives: Vec<AbstractDirectiveInline>,
+        glob_directives: Vec<AbstractDirectiveUnparameterized>,
         is_priv: bool,
     ) -> AbstractEnum {
         AbstractEnum {
@@ -523,7 +531,7 @@ pub struct AbstractVariant {
     pub name_span: SourceSpan,
     // I think this is right?
     pub sp_ty_expr: Option<SpannedContainer<TypeExpr>>,
-    pub directives: Vec<AbstractDirectiveInline>,
+    pub directives: Vec<AbstractDirectiveUnparameterized>,
     pub conds: Vec<SpannedContainer<AstExpr>>,
 }
 
@@ -534,7 +542,7 @@ impl AbstractVariant {
         // I think this is right?
         sp_ty_expr: Option<SpannedContainer<TypeExpr>>,
         conds: Vec<SpannedContainer<AstExpr>>,
-        directives: Vec<AbstractDirectiveInline>,
+        directives: Vec<AbstractDirectiveUnparameterized>,
     ) -> AbstractVariant {
         AbstractVariant {
             name_id,
@@ -722,7 +730,7 @@ impl AbstractParam {
 }
 
 #[derive(Debug)]
-pub struct AbstractFieldDecl {
+struct AbstractFieldDecl {
     pub name_id: InternedId,
     pub fields: Vec<SpannedContainer<AstExpr>>,
 }
@@ -739,7 +747,7 @@ pub struct AbstractAlias {
     pub name_span: SourceSpan,
     pub params: Vec<AbstractParam>,
     pub conds: Vec<SpannedContainer<AstExpr>>,
-    pub directives: Vec<AbstractDirectiveInline>,
+    pub directives: Vec<AbstractDirectiveUnparameterized>,
     pub is_priv: bool,
 }
 
@@ -749,7 +757,7 @@ impl AbstractAlias {
         name_span: SourceSpan,
         params: Vec<AbstractParam>,
         conds: Vec<SpannedContainer<AstExpr>>,
-        directives: Vec<AbstractDirectiveInline>,
+        directives: Vec<AbstractDirectiveUnparameterized>,
         is_priv: bool,
     ) -> AbstractAlias {
         AbstractAlias {

@@ -272,7 +272,7 @@ fn symbol_hover(
         SymbolKind::Type(type_id) => type_symbol_hover(compiler, interner, sym, type_id),
         SymbolKind::Variable(var_id) => match compiler.vars[var_id].state {
             VariableState::Known(val_id) => {
-                let val_info = &compiler.values[val_id];
+                let val_info = &compiler.vals[val_id];
                 let type_str = variable_type_label(compiler, val_info, interner);
                 let val_str = match &val_info.const_val {
                     Some(v) => format_value(v, interner),

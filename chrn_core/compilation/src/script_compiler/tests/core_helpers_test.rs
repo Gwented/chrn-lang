@@ -536,7 +536,7 @@ fn registered_constant<'a>(
         panic!("`{name_id:?}` in {scope_id:?} has no known value");
     };
 
-    let val = &compiler.values[val_id];
+    let val = &compiler.vals[val_id];
     let expr = &compiler.exprs[val.expr_id];
 
     RegisteredConstant {
@@ -812,7 +812,7 @@ fn representative_core_namespace_values_are_registered() {
         assert!(matches!(found.expr.expr_hir, ExprHir::Val(val_id) if val_id == found.expr.val_id));
         assert!(matches!(found.expr.meta, ResolvedExprMetadata::Generated));
         assert_eq!(
-            compiler.values[found.expr.val_id].expr_id,
+            compiler.vals[found.expr.val_id].expr_id,
             found.val.expr_id
         );
     }
@@ -855,7 +855,7 @@ fn core_namespace_arenas_are_reserved_exactly() {
     for (label, len, capacity) in [
         ("variables", compiler.vars.len(), compiler.vars.capacity()),
         ("exprs", compiler.exprs.len(), compiler.exprs.capacity()),
-        ("values", compiler.values.len(), compiler.values.capacity()),
+        ("values", compiler.vals.len(), compiler.vals.capacity()),
     ] {
         assert_eq!(len, ns_counts.variables, "{label} length");
         assert_eq!(capacity, ns_counts.variables, "{label} capacity");

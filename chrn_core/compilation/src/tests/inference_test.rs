@@ -39,7 +39,7 @@ fn type_of(compiler: &ScriptCompiler, interner: &Intern, name: &str) -> TypeId {
     let var_def = find_user_var(compiler, name_id);
 
     match &var_def.state {
-        VariableState::Known(value_id) => compiler.values[*value_id].type_id,
+        VariableState::Known(value_id) => compiler.vals[*value_id].type_id,
         VariableState::ReservedTypeSlot(_) => {
             panic!("Variable '{}' is still a reserved type slot", name)
         }
@@ -495,7 +495,7 @@ fn infer_intrinsic_namespace_constant_test() {
             panic!("`{path}` did not resolve to a known value");
         };
 
-        let val_info = &compiler.values[val_id];
+        let val_info = &compiler.vals[val_id];
 
         assert_eq!(val_info.type_id, type_id, "type of `{path}`");
 
@@ -534,8 +534,8 @@ fn intrinsic_namespace_constants_are_not_rewritten_test() {
 
         for idx in 0..generated {
             let val_id = ValueId::new(idx as u32);
-            let found = &compiler.values[val_id];
-            let expected = &baseline.values[val_id];
+            let found = &compiler.vals[val_id];
+            let expected = &baseline.vals[val_id];
 
             assert_eq!(
                 found.type_id, expected.type_id,

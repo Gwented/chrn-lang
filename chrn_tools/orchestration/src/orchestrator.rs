@@ -126,7 +126,7 @@ pub fn run_all(
     //     };
     //     panic!("Stop");
     // would be done differently since linear
-    // for direct in &info.preprocess_directives {
+    // for direct in &info.param_directives {
     //     lexer_processor::produce_directives(toks, hash_idx, interner)
     // }
     // }

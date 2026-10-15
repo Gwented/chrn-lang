@@ -11,14 +11,14 @@ use chrn_utils::{
 use crate::{
     chrn_config::{ChrnConfig, chrn_perf::ChrnPerfStage},
     id_tag_decls::{
-        AliasTag, ConfigRootTag, DirectivePreprocessTag, DirectiveTag, EnumTag, StructTag,
+        AliasTag, ConfigRootTag, DirectiveParameterizedTag, DirectiveTag, EnumTag, StructTag,
         TypeDefTag, VarTag,
     },
     lookup::scopes::scopes_concepts::{Scope, ScopeInfo, ScopeLookupPattern, ScopeType},
     parser::ast::ast_concepts::{
         AbstractAlias, AbstractConfig, AbstractConfigKind, AbstractDecl,
-        AbstractDirectivePreprocess, AbstractEnum, AbstractImpl, AbstractStruct, AbstractTypeDef,
-        AbstractVar, Item,
+        AbstractDirectiveParameterized, AbstractEnum, AbstractImpl, AbstractStruct,
+        AbstractTypeDef, AbstractVar, Item,
     },
     resolvers::{resolver_env::RegistrationEnv, resolver_state::CompilerStage},
     script_compiler::ScriptCompiler,
@@ -27,7 +27,7 @@ use crate::{
         hir::{
             hir_concepts::{Type, TypeInfo},
             hir_directives::{
-                DirectivePreprocessHir, DirectivePreprocessKind, DirectivePreprocessSchema,
+                DirectiveParameterizedHir, DirectivePreprocessKind, DirectivePreprocessSchema,
             },
             hir_impls::{
                 ConfigRoot, ConfigRootCommon, ConfigRootKind, ConfigRootMetadataKind, ImplHir,
@@ -156,23 +156,23 @@ impl NamespaceResolver<'_> {
     /// registers.
     fn register_directive_preprocess(
         &mut self,
-        abs_direct: &AbstractDirectivePreprocess,
+        abs_direct: &AbstractDirectiveParameterized,
         ast_id: AstId,
         scope_type: ScopeType,
         env: &RegistrationEnv,
         //TEST: Is option because we have no representation for a directive that is invalid.
         //May change, but doesn't matter because user-defined directives will not exist.
         //Also returning `None` instead of the usual `Err(())` as a test of, idk
-    ) -> Option<TaggedId<ImplId, DirectivePreprocessTag>> {
+    ) -> Option<TaggedId<ImplId, DirectiveParameterizedTag>> {
         debug_assert!(matches!(scope_type, ScopeType::Neutral));
 
         _ = self.compiler.push_scope(scope_type, env.current_mod);
 
         let impl_id = self.compiler.impls.make_id();
-        let tagged = impl_id.into_tagged::<DirectivePreprocessTag>();
+        let tagged = impl_id.into_tagged::<DirectiveParameterizedTag>();
         let direct_id = self.compiler.directives.make_id();
 
-        let direct = DirectivePreprocessHir::new(abs_direct.sp_name_id.clone(), None);
+        let direct = DirectiveParameterizedHir::new(abs_direct.sp_name_id.clone(), None);
 
         let impl_hir = ImplHir::new(
             impl_id,

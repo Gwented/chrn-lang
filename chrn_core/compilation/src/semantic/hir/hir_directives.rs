@@ -1,9 +1,9 @@
 pub mod directive_inline;
-mod directive_preprocess;
+mod directive_parameterized;
 pub mod lexer_processor;
 
 pub use directive_inline::*;
-pub use directive_preprocess::*;
+pub use directive_parameterized::*;
 
 use chrn_utils::id_types::InternedId;
 use lang::{
@@ -16,7 +16,7 @@ use lang::{
 #[derive(Debug, Clone)]
 pub enum Directive {
     /// Directives that need special attention to be processed
-    Preprocess(DirectivePreprocessHir),
+    Preprocess(DirectiveParameterizedHir),
     // Better name than comptime
     /// Directives that can be applied in a local context
     Inline(DirectiveInline),
@@ -64,8 +64,8 @@ impl Directive {
 //     }
 // }
 
-impl From<DirectivePreprocessHir> for Directive {
-    fn from(v: DirectivePreprocessHir) -> Self {
+impl From<DirectiveParameterizedHir> for Directive {
+    fn from(v: DirectiveParameterizedHir) -> Self {
         Directive::Preprocess(v)
     }
 }

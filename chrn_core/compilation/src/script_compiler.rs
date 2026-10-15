@@ -20,7 +20,7 @@ use lang::types::{boundaries::TypeBoundaryFlags, builtins::BuiltinType};
 
 use crate::{
     id_tag_decls::{
-        AliasTag, ConfigMemberTag, ConfigRootTag, DirectivePreprocessTag, DirectiveTag, EnumTag,
+        AliasTag, ConfigMemberTag, ConfigRootTag, DirectiveParameterizedTag, DirectiveTag, EnumTag,
         FieldTag, FuncTag, MultiTypeAssignmentTag, OptionAssignmentMemberTag,
         OptionAssignmentRootTag, StructTag, TypeDefTag, VarTag, VariantTag,
     },
@@ -45,7 +45,7 @@ use crate::{
         hir::{
             hir_concepts::{BuiltinTypeInfo, Table, Type, TypeInfo},
             hir_directives::{
-                Directive, DirectiveInline, DirectivePreprocess, DirectivePreprocessHir,
+                Directive, DirectiveInline, DirectiveParameterizedHir, DirectivePreprocess,
             },
             hir_exprs::{ExprHir, ResolvedExpr, ResolvedExprMetadata},
             hir_impls::{
@@ -71,7 +71,7 @@ pub struct ScriptCompiler {
     /// Contains every module's stored types
     pub types: Arena<TypeInfo, TypeId>,
     /// Held `ValueInfo`s
-    pub values: Arena<ValueInfo, ValueId>,
+    pub vals: Arena<ValueInfo, ValueId>,
     /// Held `Exprs`s
     pub exprs: Arena<ResolvedExpr, ExprId>,
     /// Held `Symbol`s
@@ -141,7 +141,7 @@ impl ScriptCompiler {
                     + core_helpers::CORE_FUNCS_DATASET.len()
                     + 1,
             ),
-            values: Arena::with_capacity(ns_counts.variables),
+            vals: Arena::with_capacity(ns_counts.variables),
             exprs: Arena::with_capacity(ns_counts.variables),
             // Not sure if these should be put in their own separate constants comprised of their
             // own semantics or composed like this. Lets do nothing!
@@ -454,10 +454,10 @@ impl ScriptCompiler {
     //     }
     // }
     //
-    pub(super) fn get_directive_preprocess(
+    pub(super) fn get_directive_param(
         &self,
-        impl_id: TaggedId<ImplId, DirectivePreprocessTag>,
-    ) -> &DirectivePreprocessHir {
+        impl_id: TaggedId<ImplId, DirectiveParameterizedTag>,
+    ) -> &DirectiveParameterizedHir {
         match &self.impls[impl_id.inner()] {
             sym_info => match &sym_info.kind {
                 ImplHirKind::Directive(directive_id) => match &self.directives[*directive_id] {
@@ -469,10 +469,10 @@ impl ScriptCompiler {
         }
     }
 
-    pub(super) fn get_directive_preprocess_mut(
+    pub(super) fn get_directive_param_mut(
         &mut self,
-        impl_id: TaggedId<ImplId, DirectivePreprocessTag>,
-    ) -> &mut DirectivePreprocessHir {
+        impl_id: TaggedId<ImplId, DirectiveParameterizedTag>,
+    ) -> &mut DirectiveParameterizedHir {
         match &self.impls[impl_id.inner()] {
             sym_info => match &sym_info.kind {
                 ImplHirKind::Directive(directive_id) => match &mut self.directives[*directive_id] {
@@ -619,7 +619,7 @@ impl ScriptCompiler {
                 SymbolKind::Type(type_id) => *type_id,
                 SymbolKind::Variable(var_id) => match self.vars[*var_id].state {
                     VariableState::ReservedTypeSlot(type_id) => type_id,
-                    VariableState::Known(val_id) => self.values[val_id].type_id,
+                    VariableState::Known(val_id) => self.vals[val_id].type_id,
                 },
                 SymbolKind::ExternType(_) | SymbolKind::Namespace => {
                     unreachable!()
@@ -636,7 +636,7 @@ impl ScriptCompiler {
                 SymbolKind::Type(type_id) => Some(*type_id),
                 SymbolKind::Variable(var_id) => match self.vars[*var_id].state {
                     VariableState::ReservedTypeSlot(type_id) => Some(type_id),
-                    VariableState::Known(val_id) => Some(self.values[val_id].type_id),
+                    VariableState::Known(val_id) => Some(self.vals[val_id].type_id),
                 },
                 SymbolKind::ExternType(_) | SymbolKind::Namespace => None,
             },
@@ -1105,7 +1105,7 @@ impl ScriptCompiler {
         let type_id = self.register_instantiation_type(current_scope_id, base, &var.ty);
 
         let expr_id = self.exprs.make_id();
-        let val_id = self.values.make_id();
+        let val_id = self.vals.make_id();
 
         let expr = ResolvedExpr::new(
             type_id,
@@ -1126,7 +1126,7 @@ impl ScriptCompiler {
 
         self.vars.push(var_def);
         self.exprs.push(expr);
-        self.values.push(val_info);
+        self.vals.push(val_info);
     }
 
     // TEST:

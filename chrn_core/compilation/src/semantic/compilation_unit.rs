@@ -1,8 +1,8 @@
 use chrn_utils::id_types::{ImplId, SymbolId, id_tags::TaggedId};
 
 use crate::id_tag_decls::{
-    AliasTag, ConfigRootTag, DirectivePreprocessTag, DirectiveTag, EnumTag, StructTag, TypeDefTag,
-    VarTag,
+    AliasTag, ConfigRootTag, DirectiveParameterizedTag, DirectiveTag, EnumTag, StructTag,
+    TypeDefTag, VarTag,
 };
 
 /// Represents all possible top-level user compilation units
@@ -13,6 +13,6 @@ pub enum CompilationUnit {
     Enum(TaggedId<SymbolId, EnumTag>),
     Alias(TaggedId<SymbolId, AliasTag>),
     Var(TaggedId<SymbolId, VarTag>),
-    DirectivePreprocess(TaggedId<ImplId, DirectivePreprocessTag>),
+    DirectivePreprocess(TaggedId<ImplId, DirectiveParameterizedTag>),
     ConfigRoot(TaggedId<ImplId, ConfigRootTag>),
 }

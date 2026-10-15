@@ -21,8 +21,8 @@ fn variable_declaration_test() {
 
     let (compiler, _) = compile_and_resolve_single_module(text);
 
-    assert_eq!(compiler.values.len(), generated + 1);
-    let last_val = &compiler.values[ValueId::new(generated as u32)];
+    assert_eq!(compiler.vals.len(), generated + 1);
+    let last_val = &compiler.vals[ValueId::new(generated as u32)];
     match &last_val.const_val {
         Some(Value::ArbitraryInt(ArbitraryIntKind::I64(4))) => (),
         _ => panic!("Value mismatch, expected I64(4)"),
@@ -35,8 +35,8 @@ fn variable_declaration_test() {
 
     let (compiler, interner) = compile_and_resolve_single_module(text);
 
-    assert_eq!(compiler.values.len(), generated + 1);
-    let last_val = &compiler.values[ValueId::new(generated as u32)];
+    assert_eq!(compiler.vals.len(), generated + 1);
+    let last_val = &compiler.vals[ValueId::new(generated as u32)];
     match &last_val.const_val {
         Some(Value::InternedStr(id)) => {
             assert_eq!("Hallo", interner.extract_str_from_interned_id(*id));
@@ -51,8 +51,8 @@ fn variable_declaration_test() {
 
     let (compiler, _) = compile_and_resolve_single_module(text);
 
-    assert_eq!(compiler.values.len(), generated + 1);
-    let last_val = &compiler.values[ValueId::new(generated as u32)];
+    assert_eq!(compiler.vals.len(), generated + 1);
+    let last_val = &compiler.vals[ValueId::new(generated as u32)];
     match &last_val.const_val {
         Some(Value::ArbitraryFloat(v)) if *v == float_from_f64(0e-5) => (),
         _ => panic!("Value mismatch, expected F64(0e-5)"),
@@ -65,8 +65,8 @@ fn variable_declaration_test() {
 
     let (compiler, _) = compile_and_resolve_single_module(text);
 
-    assert_eq!(compiler.values.len(), generated + 1);
-    let last_val = &compiler.values[ValueId::new(generated as u32)];
+    assert_eq!(compiler.vals.len(), generated + 1);
+    let last_val = &compiler.vals[ValueId::new(generated as u32)];
     match &last_val.const_val {
         Some(Value::Bool(true)) => (),
         _ => panic!("Value mismatch, expected Bool(true)"),
@@ -79,8 +79,8 @@ fn variable_declaration_test() {
 
     let (compiler, _) = compile_and_resolve_single_module(text);
 
-    assert_eq!(compiler.values.len(), generated + 1);
-    let last_val = &compiler.values[ValueId::new(generated as u32)];
+    assert_eq!(compiler.vals.len(), generated + 1);
+    let last_val = &compiler.vals[ValueId::new(generated as u32)];
     match &last_val.const_val {
         Some(Value::Bool(false)) => (),
         _ => panic!("Value mismatch, expected Bool(false)"),
@@ -93,8 +93,8 @@ fn variable_declaration_test() {
 
     let (compiler, _) = compile_and_resolve_single_module(text);
 
-    assert_eq!(compiler.values.len(), generated + 1);
-    let last_val = &compiler.values[ValueId::new(generated as u32)];
+    assert_eq!(compiler.vals.len(), generated + 1);
+    let last_val = &compiler.vals[ValueId::new(generated as u32)];
     match &last_val.const_val {
         Some(Value::Char('c')) => (),
         _ => panic!("Value mismatch, expected Char('c')"),
@@ -118,7 +118,7 @@ fn type_resolver_values_test() {
         let name_id = interner.get_interned_id_from_str(name).unwrap();
         let var_def = find_user_var(&compiler, name_id);
         match &var_def.state {
-            VariableState::Known(value_id) => compiler.values[*value_id]
+            VariableState::Known(value_id) => compiler.vals[*value_id]
                 .const_val
                 .as_ref()
                 .expect("Variable '{name}' has no const_val"),
@@ -128,7 +128,7 @@ fn type_resolver_values_test() {
         }
     };
 
-    assert_eq!(compiler.values.len(), generated_value_count() + 6);
+    assert_eq!(compiler.vals.len(), generated_value_count() + 6);
     assert!(matches!(
         find_val("CONSTANT_INT"),
         Value::ArbitraryInt(ArbitraryIntKind::I64(4))

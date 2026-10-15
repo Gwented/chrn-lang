@@ -3,6 +3,7 @@
 //TODO: Should be 64Kib when the change is made. (Could be hallucinating)
 // - 64 Kib persistent buffer
 // - 32 KiB revolving memory
+// - @def & @end are included in the 64Kib.
 // - Scratch buffer 4 bytes OR 64Kib persistent buffer keeps 4 extra bytes but is only sliced - 4
 //! This module represents the stage of `chrn` processing where there it may read an entire file, or
 //! it may read between `@def` and `@end`. This exists so that if there is serial data within the
@@ -11,7 +12,7 @@
 //! IMPORTANT NOTES:
 //! This loader does NOT UTF-8 check anything, it merely ensures that the region is valid for chrn's
 //! language rules. Only bytes are operated upon. The diagnostics sent expect that users of this
-//! data check that the data is valid and react accordingly.
+//! data check that the data is valid and reacts accordingly.
 pub mod config_loader_summary;
 //TODO: Need relative spanning in renderers
 use std::io::{BufRead, BufReader, Read};

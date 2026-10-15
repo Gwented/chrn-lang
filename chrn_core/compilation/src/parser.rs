@@ -18,11 +18,11 @@ use crate::chrn_config::chrn_perf::ChrnPerfStage;
 use crate::lexer::token::{SpannedToken, Token, TokenInt, TokenKind};
 use crate::lookup::scopes::scopes_concepts::ScopeLookupPattern;
 use crate::parser::ast::ast_concepts::{
-    AbstractAlias, AbstractConfig, AbstractConfigKind, AbstractDecl, AbstractDirectiveInline,
-    AbstractDirectivePreprocess, AbstractEnum, AbstractImpl, AbstractMemberAccess, AbstractParam,
-    AbstractStruct, AbstractTypeDef, AbstractVar, AbstractVariant, AstConfigComplexMetadata,
-    AstConfigMemberMetadataKind, AstConfigOverrideMetadata, AstInfo, BinaryOp, Item, SectionKind,
-    Unary, UnaryOp,
+    AbstractAlias, AbstractConfig, AbstractConfigKind, AbstractDecl,
+    AbstractDirectiveParameterized, AbstractDirectiveUnparameterized, AbstractEnum, AbstractImpl,
+    AbstractMemberAccess, AbstractParam, AbstractStruct, AbstractTypeDef, AbstractVar,
+    AbstractVariant, AstConfigComplexMetadata, AstConfigMemberMetadataKind,
+    AstConfigOverrideMetadata, AstInfo, BinaryOp, Item, SectionKind, Unary, UnaryOp,
 };
 
 use crate::parser::ast::ast_exprs::{AbstractGeneric, ArrayExpr, AstExpr, PathSegment, TypeExpr};
@@ -395,12 +395,6 @@ pub fn parse(
                 }
             },
             Token::HashSymbol => {
-                // Not sure if this is reachable
-                // ---
-                if !state.is_neutral() {
-                    // Neural
-                    todo!("Not neural");
-                }
                 ctx.advance_tok();
 
                 let sect_kind = SectionKind::Neutral;
@@ -409,7 +403,7 @@ pub fn parse(
                     let item = Item::Impl(AbstractImpl::Directive(direct));
                     //NOTE: Not sure where to put it but just comp unit for now
                     ast_info.push_item(sect_kind, item);
-                    // ast_info.preprocess_directives.push(direct);
+                    // ast_info.param_directives.push(direct);
                 }
             }
             Token::Invalid(id) => {
@@ -527,7 +521,6 @@ fn parse_alias_stmt(
         Vec::new()
     };
 
-    // TODO: The case of "alias x() = " should maybe be an error..?
     // if conds.is_empty() && args.is_empty() {
     //     ctx.report_verbose("", Branch::Neutral(NeutralBranch::Alias), interner);
     // }
@@ -665,9 +658,8 @@ fn parse_nest_sect(
     budget: &ParserBudget,
     interner: &Intern,
 ) -> Result<Item, Token> {
-    // Wait what is this error?
     let kw = ctx.expect_kw_verbose(
-        "Expected keyword `enum` or `struct`, found ",
+        "Expected enum or struct declaration, found ",
         "",
         InitialEvidence::new(
             SemanticEnv::SectNest,
@@ -806,7 +798,7 @@ fn parse_nest_sect(
         _ => {
             ctx.report_verbose(
                 &format!(
-                    "Expected keyword `enum` or `struct`, found `{}`",
+                    "Expected enum or struct declaration, found `{}`",
                     kw.to_classified()
                 ),
                 InitialEvidence::new(
@@ -2151,8 +2143,8 @@ fn parse_variant(
 fn handle_inline_directives(
     ctx: &mut ParserContext,
     interner: &Intern,
-) -> Result<Vec<AbstractDirectiveInline>, Token> {
-    let mut args: Vec<AbstractDirectiveInline> = Vec::new();
+) -> Result<Vec<AbstractDirectiveUnparameterized>, Token> {
+    let mut args: Vec<AbstractDirectiveUnparameterized> = Vec::new();
 
     // Doesn't need terminator check since the loop would need to be continued on purpose through
     // user-intent for this to not just error
@@ -2168,7 +2160,7 @@ fn handle_inline_directives(
 fn parse_inline_directive(
     ctx: &mut ParserContext,
     interner: &Intern,
-) -> Result<AbstractDirectiveInline, Token> {
+) -> Result<AbstractDirectiveUnparameterized, Token> {
     let name_span = ctx.peek_span();
     let name_id = ctx.expect_id_verbose(
         TokenKind::Id,
@@ -2185,7 +2177,7 @@ fn parse_inline_directive(
     )?;
 
     let sp_name_id = SpannedContainer::new(name_id, name_span);
-    let abs_directive = AbstractDirectiveInline::new(sp_name_id);
+    let abs_directive = AbstractDirectiveUnparameterized::new(sp_name_id);
     Ok(abs_directive)
 }
 
@@ -2194,7 +2186,7 @@ fn parse_directive_preprocess(
     ctx: &mut ParserContext,
     budget: &ParserBudget,
     interner: &Intern,
-) -> Result<AbstractDirectivePreprocess, Token> {
+) -> Result<AbstractDirectiveParameterized, Token> {
     //TODO: change naming of opt for abs
     let env = SemanticEnv::SectNeutral;
     let branch = Branch::Directive;
@@ -2236,7 +2228,7 @@ fn parse_directive_preprocess(
     let span = SourceSpan::new(ctx.region.self_id, start, end);
     let sp_exprs = SpannedContainer::new(exprs, span);
 
-    Ok(AbstractDirectivePreprocess::new(
+    Ok(AbstractDirectiveParameterized::new(
         sp_direct_name_id,
         sp_exprs,
     ))

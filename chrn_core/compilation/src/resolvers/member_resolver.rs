@@ -1,7 +1,3 @@
-//TEST:
-//Seeing if members having a specific stage will help reduce the complexity of type resolution
-//which is stacking infinitely (Infinitely as in the infinite sign here -> 🍔)
-
 use chrn_utils::{
     id_types::{AstId, InternedId, MemberId, SymbolId, TypeId, id_tags::TaggedId},
     intern::Intern,
@@ -72,8 +68,6 @@ impl MemberResolver<'_> {
     // Should this be incremental module-wise?
     /// Goes through all types within `self.compiler` and appends fields/variants where possible,
     /// only resolving their types
-    ///
-    /// If diagnostics > 0 then an error occured
     // Would options be ok here?
     pub fn resolve(&mut self, env: &ResolverEnv) -> SourceDiagnosticSummary {
         self.cfg.perf_tracker_mut().start(env.region.path_id);
@@ -83,7 +77,7 @@ impl MemberResolver<'_> {
 
         // Goes through all symbols the current module has and only picks structs and enums to
         // append to.
-        for comp_unit in env.compilation_syms.iter().cloned() {
+        for comp_unit in env.comp_syms.iter().cloned() {
             match comp_unit {
                 CompilationUnit::Struct(sym_id) => {
                     self.resolve_struct(sym_id, &mut ident_tracker, env)

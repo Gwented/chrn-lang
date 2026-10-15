@@ -8,7 +8,7 @@ use chrn_utils::{id_types::InternedId, utils::containers::SpannedContainer};
 //TODO: Should be in utils actually. Maybe
 
 // ????
-/// Hashes and tracks types generically
+/// Hashes and tracks types
 #[derive(Debug)]
 pub(crate) struct DuplicateTracker<T: Clone + Hash + Eq> {
     pub(crate) seen: HashSet<T>,
@@ -31,17 +31,17 @@ impl<T: Clone + Hash + Eq> DuplicateTracker<T> {
     }
 
     // ???
-    /// If the given element already exists, it is stored inside `found_dups`. Returns `true`.
-    /// If the given element didn't exist, it's inserted. Returns `false`.
+    /// If the given element didn't exist, it's inserted. Returns `true`.
+    /// If the given element already exists, it is stored inside `found_dups`. Returns `false`.
     pub(crate) fn insert_or_store(&mut self, given: T) -> bool {
         if self.contains(&given) {
             let original = self.seen.get(&given).expect("Just checked");
             let duplicate = DuplicateFound::new(original.clone(), given);
             self.found_dups.push(duplicate);
-            return true;
+            return false;
         }
         self.seen.insert(given);
-        false
+        true
     }
 
     // The boolean seems kinda useless here
@@ -102,7 +102,7 @@ pub(crate) enum DuplicateIdentResult {
 }
 
 // Ok but what if this was const?
-/// Checks if `src_idents`
+/// O(n) check of if any of the same identifiers are inside `idents`.
 pub(crate) fn check_duplicate_ident(
     idents: &[SpannedContainer<InternedId>],
 ) -> DuplicateIdentResult {

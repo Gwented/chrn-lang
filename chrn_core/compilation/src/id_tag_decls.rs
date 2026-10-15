@@ -9,7 +9,7 @@ tag_decl!(
     VarTag,
     ConfigRootTag,
     DirectiveTag,
-    DirectivePreprocessTag,
+    DirectiveParameterizedTag,
     FieldTag,
     VariantTag,
     ExternTypeTag,

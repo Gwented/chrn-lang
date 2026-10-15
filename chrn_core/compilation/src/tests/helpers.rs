@@ -631,7 +631,7 @@ pub(super) fn value_of(compiler: &ScriptCompiler, interner: &Intern, name: &str)
     let var_def = find_user_var(compiler, name_id);
 
     match &var_def.state {
-        VariableState::Known(value_id) => compiler.values[*value_id]
+        VariableState::Known(value_id) => compiler.vals[*value_id]
             .const_val
             .clone()
             .unwrap_or_else(|| panic!("Variable '{}' has no constant value", name)),
