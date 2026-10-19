@@ -60,10 +60,14 @@ use compilation::resolvers::constraint_resolver::ConstraintResolver;
 use compilation::resolvers::member_resolver::MemberResolver;
 use compilation::resolvers::name_resolver::NamespaceResolver;
 use compilation::resolvers::resolver_env::{RegistrationEnv, ResolverEnv};
+use compilation::resolvers::resolver_state::CompilerStage;
 use compilation::resolvers::type_resolver::TypeResolver;
 use compilation::script_compiler::ScriptCompiler;
 use compilation::semantic::compilation_unit::CompilationUnit;
 use compilation::semantic::hir::hir_concepts::Type;
+use compilation::semantic::hir::hir_directives::{
+    self, DirectivePreprocessEffect, DirectivePreprocessStore, lexer_processor,
+};
 use compilation::semantic::hir::hir_exprs::{ExprHir, ResolvedExprMetadata};
 use compilation::semantic::hir::hir_impls::{ConfigRoot, ConfigRootCommon, ImplMemberKind};
 use compilation::semantic::hir::hir_symbols::MemberSymbolKind;
@@ -258,6 +262,7 @@ impl DocumentState {
         }
 
         let mut chrn_cfg = ChrnConfig::default();
+        let mut directive_store = DirectivePreprocessStore::new();
         let analyser::ModuleResolution {
             bind,
             main_region,
@@ -318,6 +323,27 @@ impl DocumentState {
             let region = &self.region_arena[src_region_id];
 
             let parse_result = if mod_idx == 0 {
+                // Match orchestration::run_all: only the entry module can change
+                // compiler settings. Reuse the core token processor and validation.
+                for (hash_idx, token) in self.tokens.iter().enumerate() {
+                    if token.tok != ScriptToken::HashSymbol {
+                        continue;
+                    }
+                    if let Some(directive) =
+                        lexer_processor::process_directive(&self.tokens, hash_idx, &self.interner)
+                    {
+                        match directive.effect {
+                            DirectivePreprocessEffect::Compiler => {
+                                directive_store.push(directive.kind);
+                            }
+                        }
+                    }
+                }
+                hir_directives::apply_directives(
+                    CompilerStage::Lexer,
+                    &mut directive_store,
+                    &mut chrn_cfg,
+                );
                 // Reuse pre-computed tokens for main module
                 compilation::parser::parse(&mut chrn_cfg, region, &self.tokens, &self.interner)
             } else {
@@ -333,6 +359,11 @@ impl DocumentState {
                 compilation::parser::parse(&mut chrn_cfg, region, &toks, &self.interner)
             };
 
+            hir_directives::apply_directives(
+                CompilerStage::Parser,
+                &mut directive_store,
+                &mut chrn_cfg,
+            );
             let (ast_info, mut errs) = parse_result;
 
             // Every module's parse diagnostics are kept, matching the orchestrator
@@ -388,6 +419,12 @@ impl DocumentState {
                 compilation_syms.push(Some(current_mod_symbols));
             }
         }
+
+        hir_directives::apply_directives(
+            CompilerStage::Namespace,
+            &mut directive_store,
+            &mut chrn_cfg,
+        );
 
         // Build resolver environments then run member, type, and constraint resolution.
         // This block ensures `resolver_envs` (which borrows `all_asts`) is dropped before

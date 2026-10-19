@@ -15,6 +15,7 @@ use crate::{
             hir_directives::{
                 Directive, DirectiveInline, DirectivePreprocessSchema,
                 DirectivePreprocessSchemaKind,
+                directive_preprocess_args::DirectivePreprocessConstraintErrorKind,
             },
             hir_symbols::{BuiltinFuncKind, SymbolKindFlat},
         },
@@ -193,9 +194,11 @@ pub enum DirectiveError {
     ParameterMismatch {
         /// Directive schema
         direct_schema_kind: DirectivePreprocessSchemaKind,
-        expected_arg_idx: usize,
-        expected_constraint_idx: usize,
-        /// Rejected constant value and the argument expression that supplied it.
+        arg_idx: usize,
+        constraint_err: DirectivePreprocessConstraintErrorKind,
+        // expected_arg_idx: usize,
+        // expected_constraint_idx: usize,
+        /// Rejected value
         sp_found_val_kind: SpannedContainer<ValueKind>,
     },
 }

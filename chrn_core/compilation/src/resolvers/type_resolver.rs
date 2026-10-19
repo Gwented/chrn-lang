@@ -3224,7 +3224,7 @@ impl<'res> TypeResolver<'res> {
                 // point again.
                 unreachable!()
             }
-            ExprHir::Val(val_id) => {
+            ExprHir::LiteralVal(val_id) => {
                 // The root before traversal MUST be a singular expr that has a SymbolId inside of
                 // it, which means anything further up the tree cannot reach that singular symbol
                 // point again.
@@ -3545,7 +3545,7 @@ impl<'res> TypeResolver<'res> {
 
                 // Creating it's default type to the literal value of integer, as well as it's
                 // expression of just being a singular value type
-                let expr_hir = ExprHir::Val(val_id);
+                let expr_hir = ExprHir::LiteralVal(val_id);
 
                 let s = self.interner.extract_str_from_interned_id(*name_id);
                 let max_bits = self.cfg.max_numeric_bits() as u64;
@@ -3591,7 +3591,7 @@ impl<'res> TypeResolver<'res> {
                 let expr_id = self.compiler.exprs.make_id();
                 let val_id = self.compiler.vals.make_id();
 
-                let expr_hir = ExprHir::Val(val_id);
+                let expr_hir = ExprHir::LiteralVal(val_id);
 
                 let s = self.interner.extract_str_from_interned_id(*name_id);
                 let max_bits = self.cfg.max_numeric_bits() as u64;
@@ -3781,7 +3781,7 @@ impl<'res> TypeResolver<'res> {
                 let val_info = ValueInfo::new(type_id, expr_id, Some(val));
                 self.compiler.vals.push(val_info);
 
-                let expr_hir = ExprHir::Val(val_id);
+                let expr_hir = ExprHir::LiteralVal(val_id);
                 let resolved_expr = ResolvedExpr::new(
                     type_id,
                     expr_hir,
@@ -3853,7 +3853,7 @@ impl<'res> TypeResolver<'res> {
                 let val_info = ValueInfo::new(type_id, expr_id, Some(val));
                 self.compiler.vals.push(val_info);
 
-                let expr_hir = ExprHir::Val(val_id);
+                let expr_hir = ExprHir::LiteralVal(val_id);
                 let resolved_expr = ResolvedExpr::new(
                     type_id,
                     expr_hir,
@@ -3958,7 +3958,7 @@ impl<'res> TypeResolver<'res> {
                 let val = Value::Bool(*boolean);
                 let val_info = ValueInfo::new(type_id, expr_id, Some(val));
 
-                let expr_hir = ExprHir::Val(val_id);
+                let expr_hir = ExprHir::LiteralVal(val_id);
                 let resolved_expr = ResolvedExpr::new(
                     type_id,
                     expr_hir,

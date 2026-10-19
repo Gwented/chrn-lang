@@ -60,7 +60,9 @@ for varthing1 {}
 //#chrn[MAX_NUMERIC_BITS(300, 30, 2, 90, 3)]
 // Because the lexer preprocessor doesn't have a concept of sections it DOESN'T lock
 // directives to neutral. That is great news!
-#mx_numeric_bits(0)
+#max_numeric_bits(u32::MAX)
+@end
+let x = y + 2
 
 // Thinking about removing the big int usage and just making caps or integers.
 // So, we can pick "--max-int-bits=" where the eq value must be a known bit range like 256, 512, etc.
@@ -88,7 +90,6 @@ for varthing1 {}
 // Reports nothing
 let octal = 0o23 + []
 let e#2 = -[]
-@end
 
 // ignore this
 // let chrn = "chern"

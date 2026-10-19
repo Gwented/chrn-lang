@@ -6,8 +6,11 @@ use toolsc::cursors::BasicCursor;
 use crate::{
     lexer::token::{SpannedToken, Token, TokenFloat, TokenInt, TokenKind},
     parser::parser_helpers::DelimiterContext,
-    semantic::hir::hir_directives::directive_parameterized::{
-        DirectivePreprocess, DirectivePreprocessExpectInput, DirectivePreprocessSchema,
+    semantic::hir::hir_directives::{
+        DirectivePreprocessExpectInput,
+        directive_preprocess::{
+            DirectivePreprocess, DirectivePreprocessExpectInputKind, DirectivePreprocessSchema,
+        },
     },
 };
 

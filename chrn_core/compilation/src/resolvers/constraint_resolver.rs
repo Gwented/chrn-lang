@@ -142,6 +142,9 @@ impl<'a> ConstraintResolver<'a> {
                 break;
             }
 
+            //TODO: max_numeric_bits wants literals so we have to discern in constraints, somehow.
+            //What about a general value formatting kind where it may be a literal or variable? Tokens
+            //know if they're a literal so.
             let expr = &self.compiler.exprs[args.inner[schema_arg_idx]];
             let val_opt = &self.compiler.vals[expr.val_id].const_val;
 
@@ -150,8 +153,8 @@ impl<'a> ConstraintResolver<'a> {
                 continue;
             };
 
-            let Some(input) = DirectivePreprocessExpectInput::from_val(val) else {
-                let core_msg = format!("No directive supports `{}`", val.kind().to_classified());
+            let Some(input) = DirectivePreprocessExpectInput::from_val(val, &expr.expr_hir) else {
+                let core_msg = format!("No directive uses input `{}`", val.kind().to_classified());
                 let builder = SourceDiagnostic::builder(
                     None,
                     DiagnosticLevel::Error,
@@ -164,11 +167,11 @@ impl<'a> ConstraintResolver<'a> {
                 continue;
             };
 
-            if let Err(constraint_idx) = schema_arg.allows(&input) {
+            if let Err(constraint_err) = schema_arg.allows(&input) {
                 let direct_err = DirectiveError::ParameterMismatch {
                     direct_schema_kind: schema.kind,
-                    expected_arg_idx: schema_arg_idx,
-                    expected_constraint_idx: constraint_idx,
+                    arg_idx: schema_arg_idx,
+                    constraint_err,
                     sp_found_val_kind: SpannedContainer::new(val.kind(), expr.meta.expect_user()),
                 };
                 preset_reporter::report_preset(

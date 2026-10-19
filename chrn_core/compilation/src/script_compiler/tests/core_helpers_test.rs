@@ -809,12 +809,11 @@ fn representative_core_namespace_values_are_registered() {
         assert_eq!(found.val.type_id, TypeId::new(builtin_ty_to_id(value_kind)));
         assert!(same_value(found.val.const_val.as_ref().unwrap(), &expected));
         assert_eq!(found.expr.type_id, found.val.type_id);
-        assert!(matches!(found.expr.expr_hir, ExprHir::Val(val_id) if val_id == found.expr.val_id));
-        assert!(matches!(found.expr.meta, ResolvedExprMetadata::Generated));
-        assert_eq!(
-            compiler.vals[found.expr.val_id].expr_id,
-            found.val.expr_id
+        assert!(
+            matches!(found.expr.expr_hir, ExprHir::LiteralVal(val_id) if val_id == found.expr.val_id)
         );
+        assert!(matches!(found.expr.meta, ResolvedExprMetadata::Generated));
+        assert_eq!(compiler.vals[found.expr.val_id].expr_id, found.val.expr_id);
     }
 }
 
@@ -1166,7 +1165,10 @@ fn representative_char_and_str_constants_are_loaded() {
     let Value::InternedStr(newline_value) = newline.val.const_val.as_ref().unwrap() else {
         panic!("str::NEWLINE should store an interned string")
     };
-    assert_eq!(interner.extract_str_from_idx(newline_value.id as usize), "\n");
+    assert_eq!(
+        interner.extract_str_from_idx(newline_value.id as usize),
+        "\n"
+    );
     check_i64(str_scope, intern::INTERNED_UTF8_MAX_BYTES, 4);
 }
 
@@ -1268,7 +1270,10 @@ fn representative_float_attributes_are_loaded() {
     check_f64_f64("NEG_INF", f64::NEG_INFINITY);
     check_f64_f64("MIN_POSITIVE", f64::MIN_POSITIVE);
 
-    assert_eq!(interner.extract_str_from_idx(intern::INTERNED_INF as usize), "INF");
+    assert_eq!(
+        interner.extract_str_from_idx(intern::INTERNED_INF as usize),
+        "INF"
+    );
 
     let ieee_layouts = [
         (BuiltinTypeKind::F16, 5, 11, 10, -24),

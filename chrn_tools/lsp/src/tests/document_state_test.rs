@@ -27,6 +27,128 @@ fn expected_highlights(text: &str, name: &str, occurrences: &[usize]) -> Vec<Doc
 }
 
 #[tokio::test(start_paused = true)]
+async fn test_preprocess_directive_hover_uses_context_and_absolute_utf16_range() {
+    let workspace = TempWorkspace::new("preprocess_hover");
+    let text = "// header 😀\n@def\n/* 😀 */ # /* max_numeric_bits */ max_numeric_bits(8)\nlet max_numeric_bits = 7\nlet value = max_numeric_bits\n@end\nmax_numeric_bits: serialized data\n";
+    let uri = workspace.write("main.chrn", text);
+    let mut session = Session::new().await;
+    let diagnostics = session.open(&uri, text).await;
+    assert!(diagnostics.is_empty(), "{diagnostics:?}");
+
+    let hover = session
+        .hover(&uri, position_of(text, "max_numeric_bits", 1))
+        .await
+        .expect("the registered preprocess directive has documentation");
+    let start = position_of(text, "max_numeric_bits", 1);
+    assert_eq!(
+        hover.range,
+        Some(Range::new(
+            start,
+            Position::new(start.line, start.character + 16)
+        )),
+    );
+    assert!(hover_text(&hover).contains("Sets the compiler's numeric bit limit"));
+    for occurrence in [2, 3] {
+        let hover = session
+            .hover(&uri, position_of(text, "max_numeric_bits", occurrence))
+            .await
+            .expect("the ordinary binding still has semantic hover");
+        assert!(hover_text(&hover).contains("Arbitrary Integer"));
+        assert!(!hover_text(&hover).contains("Sets the compiler's numeric bit limit"));
+    }
+    for occurrence in [0, 4] {
+        assert_eq!(
+            session
+                .hover(&uri, position_of(text, "max_numeric_bits", occurrence))
+                .await,
+            None,
+            "comments and serialized data have no directive hover",
+        );
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn test_entry_preprocess_directive_controls_imports_and_resets_after_edits() {
+    let workspace = TempWorkspace::new("preprocess_application");
+    let dependency = "#max_numeric_bits(64)\nexport let OVERFLOW = 16 * 16\n";
+    let dependency_uri = workspace.write("dep.chrn", dependency);
+    let body = format!(
+        "import \"{}\" as dep\nlet overflow = 16 * 16\nlet boundary = 15 * 17\n",
+        dependency_uri.to_file_path().unwrap().display(),
+    );
+    let text = format!("#max_numeric_bits(8)\n{body}");
+    let uri = workspace.write("main.chrn", &text);
+    let mut session = Session::new().await;
+    session.open(&uri, &text).await;
+
+    {
+        let state = session.backend().doc_cache.get(uri.as_str()).unwrap();
+        let state = state.read();
+        assert!(
+            state.parse_errors.diags.is_empty(),
+            "{:?}",
+            state.parse_errors
+        );
+        assert_eq!(state.ty_errors.diags.len(), 2, "{:?}", state.ty_errors);
+        for diagnostic in &state.ty_errors.diags {
+            assert_eq!(
+                diagnostic.core_msg,
+                "Numeric value exceeds the configured 8-bit limit"
+            );
+            assert_eq!(diagnostic.annotations.len(), 2);
+            for annotation in &diagnostic.annotations {
+                let region = &state.region_arena[annotation.span.region_id];
+                assert_eq!(
+                    &region.src_bytes[annotation.span.range_exclusive_usize()],
+                    b"16"
+                );
+            }
+        }
+        assert_ne!(
+            state.ty_errors.diags[0].path_id,
+            state.ty_errors.diags[1].path_id
+        );
+    }
+    assert!(session.diagnostics(&uri).iter().any(|diagnostic| {
+        diagnostic
+            .message
+            .contains("Numeric value exceeds the configured 8-bit limit")
+    }));
+
+    session.change_full(&uri, &body).await;
+    assert!(
+        session.diagnostics(&uri).is_empty(),
+        "{:?}",
+        session.diagnostics(&uri)
+    );
+    let state = session.backend().doc_cache.get(uri.as_str()).unwrap();
+    assert!(state.read().ty_errors.diags.is_empty());
+
+    let malformed = format!("{body}#max_numeric_bits");
+    session.change_full(&uri, &malformed).await;
+    {
+        let state = session.backend().doc_cache.get(uri.as_str()).unwrap();
+        let state = state.read();
+        assert_eq!(
+            state.parse_errors.diags.len(),
+            1,
+            "{:?}",
+            state.parse_errors
+        );
+        assert_eq!(
+            state.parse_errors.diags[0].core_msg,
+            "Expected opening '(', found `<eof>`",
+        );
+        assert!(state.ty_errors.diags.is_empty(), "{:?}", state.ty_errors);
+    }
+    let hover = session
+        .hover(&uri, position_of(&malformed, "boundary", 0))
+        .await
+        .expect("malformed directive syntax preserves analysis of valid declarations");
+    assert!(hover_text(&hover).contains("Arbitrary Integer"));
+}
+
+#[tokio::test(start_paused = true)]
 async fn test_document_highlight_tracks_semantic_occurrences_in_embedded_text() {
     let workspace = TempWorkspace::new("highlight_embedded");
     let text = "header: 😀\n@def\nlet x = 3\nlet first = x + x\nlet second = /* 😀 */ x + 1\nlet label = \"x\" // x\n@end\nx: serialized data\n";

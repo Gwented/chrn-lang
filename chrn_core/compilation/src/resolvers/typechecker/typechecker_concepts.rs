@@ -2,7 +2,7 @@ use lang::chrn_classifier::ChrnClassifiable;
 
 use crate::semantic::hir::{hir_concepts::TypeKind, hir_symbols::SymbolKindFlat};
 
-// This is here because the typechecker will probably use this instead of just being for preset err
+// Need more specific name
 /// More dynamic way of expecting a certain kind without specifically picking a type like
 /// `SymbolKindFlat`.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]

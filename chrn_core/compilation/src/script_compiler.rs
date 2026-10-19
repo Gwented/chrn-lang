@@ -1109,7 +1109,7 @@ impl ScriptCompiler {
 
         let expr = ResolvedExpr::new(
             type_id,
-            ExprHir::Val(val_id),
+            ExprHir::LiteralVal(val_id),
             val_id,
             ResolvedExprMetadata::Generated,
             Vec::new(),

@@ -11,6 +11,7 @@ use crate::resolvers::resolver_env::ResolverEnv;
 use crate::script_compiler::ScriptCompiler;
 use crate::semantic::algo;
 use crate::semantic::hir::hir_concepts::Type;
+use crate::semantic::hir::hir_directives::directive_preprocess_args::DirectivePreprocessConstraintErrorKind;
 use crate::semantic::hir::hir_symbols::{SymbolKind, SymbolOrigin};
 use crate::semantic::preset_reporter::engine_concepts::{
     AvailableKind, EngineOption, EngineOptionBase, ListAvailable,
@@ -463,19 +464,19 @@ pub(crate) fn create_diag_builder_preset(
         PresetErr::Directive(directive_err) => match directive_err {
             DirectiveError::ParameterMismatch {
                 direct_schema_kind,
-                expected_arg_idx,
-                expected_constraint_idx,
+                arg_idx,
+                constraint_err,
                 sp_found_val_kind,
             } => {
-                let schema = direct_schema_kind.schema();
-                let arg = &schema.arg_layout.args()[expected_arg_idx];
-                let expected_constraint = &arg.constraints[expected_constraint_idx];
+                // let schema = direct_schema_kind.schema();
+                //TODO: Blee bloo glorb
+                // let expected_constraint = &arg.constraints[expected_constraint_idx];
                 //TODO: Help these get more specific. So we get expected in range specifically as
                 //our actual input instead of just a string with the specification. So just domain
                 //specific enum -> error msg translation
                 let core_msg = format!(
-                    "Argument #{} expected constraint `{expected_constraint}` to be met",
-                    expected_arg_idx + 1,
+                    "Argument #{} expected constraint `{constraint_err:?}` to be met",
+                    arg_idx + 1
                 );
                 SourceDiagnostic::builder(
                     ErrorCode::DirectiveErr.into(),
@@ -639,10 +640,25 @@ pub(crate) fn create_diag_builder_preset(
 //     Some(help)
 // }
 
-//TODO: Make enums first some of these so steps can be ran to check compiler internals procedurely
-//like finding similar
+pub fn directive_constraint_err_to_preset_err(
+    compiler: &ScriptCompiler,
+    interner: &Intern,
+    err: &DirectivePreprocessConstraintErrorKind,
+    env: &ResolverEnv,
+) -> i32 {
+    match err {
+        DirectivePreprocessConstraintErrorKind::ValueSourceMismatch { expected } => todo!(),
+        DirectivePreprocessConstraintErrorKind::Integer(
+            directive_integer_arg_constraint_error_kind,
+        ) => todo!(),
+        DirectivePreprocessConstraintErrorKind::Expect(expected_kind) => todo!(),
+    }
+    2
+}
+
 /// Convenience function to create general errors associated with a `TypeExprResult`
 pub fn type_expr_result_to_preset_err(
+    // Er
     compiler: &ScriptCompiler,
     interner: &Intern,
     res: &TypeExprResult,

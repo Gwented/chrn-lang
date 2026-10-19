@@ -9,7 +9,7 @@
 //! | [`KEYWORD_DOCS`]      | `Keyword as usize`          | 15     |
 //! | [`BUILTIN_TYPE_DOCS`] | `BuiltinTypeKind as usize`  | 27     |
 //! | [`FUNC_DOCS`]         | `BuiltinFuncKind as usize`         | 7      |
-//! | [`DIRECTIVE_DOCS`]    | preloaded [`InternedId`]     | 6      |
+//! | [`DIRECTIVE_DOCS`]    | preloaded [`InternedId`]     | 7      |
 //! | [`CONFIG_OPTION_DOCS`]| preloaded [`InternedId`]     | 3      |
 //!
 //! ## Alignment invariant
@@ -26,7 +26,7 @@ use chrn_utils::{
     id_types::InternedId,
     intern::{
         INTERNED_BIN, INTERNED_CASES, INTERNED_DEFAULT_VAL, INTERNED_HEX, INTERNED_IDENTS,
-        INTERNED_IGNORE, INTERNED_OCTAL, INTERNED_SCIENT, INTERNED_WARN,
+        INTERNED_IGNORE, INTERNED_MAX_NUMERIC_BITS, INTERNED_OCTAL, INTERNED_SCIENT, INTERNED_WARN,
     },
 };
 use compilation::semantic::hir::hir_symbols::BuiltinFuncKind;
@@ -90,6 +90,7 @@ impl Document {
             INTERNED_HEX => Some(&DIRECTIVE_DOCS[3]),
             INTERNED_BIN => Some(&DIRECTIVE_DOCS[4]),
             INTERNED_OCTAL => Some(&DIRECTIVE_DOCS[5]),
+            INTERNED_MAX_NUMERIC_BITS => Some(&DIRECTIVE_DOCS[6]),
             _ => None,
         }
     }
@@ -433,7 +434,7 @@ pub static FUNC_DOCS: [Document; 7] = [
 /// Hover documentation for each Chern directive.
 ///
 /// Indexed by preloaded [`InternedId`] via [`Document::directive_docs`].
-pub static DIRECTIVE_DOCS: [Document; 6] = [
+pub static DIRECTIVE_DOCS: [Document; 7] = [
     Document {
         key: "warn",
         description: "Reports a failed serialized-data constraint as a warning instead of an error",
@@ -465,6 +466,13 @@ pub static DIRECTIVE_DOCS: [Document; 6] = [
         key: "octal",
         description: "Outputs numeric values in octal notation",
         example: Some("```chrn\nvar->\n\tperm: u32 #octal\n```"),
+    },
+    Document {
+        key: "max_numeric_bits",
+        description: "Sets the compiler's numeric bit limit",
+        example: Some(
+            "Accepts one integer from `0` through `4294967295`. Applied after lexing, before parsing and resolution. Only directives in the entry module change compiler settings; imported modules use the entry module's settings.\n\n**Example:**\n```chrn\n#max_numeric_bits(256)\nlet value = 1\n```",
+        ),
     },
 ];
 
@@ -537,6 +545,7 @@ mod tests {
             (INTERNED_HEX, "hex"),
             (INTERNED_BIN, "bin"),
             (INTERNED_OCTAL, "octal"),
+            (INTERNED_MAX_NUMERIC_BITS, "max_numeric_bits"),
         ];
 
         for (id, key) in expected {

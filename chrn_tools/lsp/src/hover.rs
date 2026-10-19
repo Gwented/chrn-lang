@@ -44,6 +44,7 @@ use compilation::lookup::scopes::scopes_concepts::AssociatedScopeKind;
 use compilation::script_compiler::ScriptCompiler;
 use compilation::semantic::arbitraries::{ArbitraryFloatKind, ArbitraryIntKind};
 use compilation::semantic::hir::hir_concepts::Type;
+use compilation::semantic::hir::hir_directives::DirectivePreprocessSchema;
 use compilation::semantic::hir::hir_impls::{ConfigMemberMetadataKind, ImplMemberKind};
 use compilation::semantic::hir::hir_symbols::{
     FuncForm, MemberSymbolKind, SymbolKind, SymbolOrigin, VariableState,
@@ -122,14 +123,25 @@ pub fn compute_hover(
             (doc.compose(), Some((span_start, span_end)))
         }
         ScriptToken::Id(id) => {
-            let compiler = match &state.compiler {
-                Some(c) => c,
-                None => return None,
+            // Recognize the directive by its schema and token context, without
+            // treating an ordinary identifier of the same spelling as a directive.
+            let relative_start =
+                crate::text::abs_to_rel_offset(span_start as u32, state.script_start);
+            let previous = state
+                .tokens
+                .iter()
+                .take_while(|token| token.span.start < relative_start)
+                .last();
+            let hover_text = if previous.is_some_and(|token| token.tok == ScriptToken::HashSymbol)
+                && DirectivePreprocessSchema::try_from_interned_id(id).is_some()
+                && let Some(doc) = Document::directive_docs(id)
+            {
+                doc.compose()
+            } else {
+                let compiler = state.compiler.as_ref()?;
+                identifier_hover(state, compiler, id, offset)
             };
-            (
-                identifier_hover(state, compiler, id, offset),
-                Some((span_start, span_end)),
-            )
+            (hover_text, Some((span_start, span_end)))
         }
         ScriptToken::Str(id) => {
             let s = state.interner.extract_str_from_interned_id(id);

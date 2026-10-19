@@ -88,10 +88,11 @@ impl ResolvedExprMetadata {
 
 #[derive(Debug, Clone)]
 pub enum ExprHir {
-    Val(ValueId),
+    // I believe this is literal?
+    /// Literal
+    LiteralVal(ValueId),
     Var(SymbolId),
-    /// alias default(x) = [Equals(x = 3)]
-    /// x = `SymbolId`, 5 = `ExprId`
+    // Hi default
     Default(ExprId, ExprId),
     // MemberAccess(),
     // Um
