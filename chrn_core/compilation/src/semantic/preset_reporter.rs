@@ -11,6 +11,7 @@ use crate::resolvers::resolver_env::ResolverEnv;
 use crate::script_compiler::ScriptCompiler;
 use crate::semantic::algo;
 use crate::semantic::hir::hir_concepts::Type;
+use crate::semantic::hir::hir_directives::DirectivePreprocessSchemaKind;
 use crate::semantic::hir::hir_directives::directive_preprocess_args::DirectivePreprocessConstraintErrorKind;
 use crate::semantic::hir::hir_symbols::{SymbolKind, SymbolOrigin};
 use crate::semantic::preset_reporter::engine_concepts::{
@@ -20,17 +21,21 @@ use crate::semantic::preset_reporter::preset_err::{
     DirectiveError, LookupError, MathError, PresetErr,
 };
 use crate::semantic::resolution::resolution_concepts::{StaticAccessResult, TypeExprResult};
+use crate::semantic::values::ValueKind;
 use chrn_utils::err_codes::ErrorCode;
 use chrn_utils::source_map::source_diagnostic::annotations::AnnotationKind;
 use chrn_utils::source_map::source_diagnostic::{
     DiagnosticLevel, SourceDiagnosticBuilder, SourceDiagnosticSink,
 };
+use chrn_utils::utils::containers::SpannedContainer;
 use chrn_utils::{
     intern::Intern,
     source_map::{source_diagnostic::SourceDiagnostic, source_region::SourceRegion},
 };
 use lang::chrn_classifier::ChrnClassifiable;
 use macrosc::s_suffix;
+
+use super::hir::hir_directives::directive_preprocess_args::DirectiveIntegerArgConstraintErrorKind;
 
 // These take ownership because `PresetErr::General` will clone otherwise, which isn't expensive.
 // Ok maybe this should just be a reference.
@@ -474,9 +479,10 @@ pub(crate) fn create_diag_builder_preset(
                 //TODO: Help these get more specific. So we get expected in range specifically as
                 //our actual input instead of just a string with the specification. So just domain
                 //specific enum -> error msg translation
-                let core_msg = format!(
-                    "Argument #{} expected constraint `{constraint_err:?}` to be met",
-                    arg_idx + 1
+                let core_msg = make_directive_constraing_err_msg(
+                    arg_idx,
+                    &constraint_err,
+                    sp_found_val_kind.inner,
                 );
                 SourceDiagnostic::builder(
                     ErrorCode::DirectiveErr.into(),
@@ -489,6 +495,26 @@ pub(crate) fn create_diag_builder_preset(
                     AnnotationKind::Primary,
                     None,
                 )
+            }
+            DirectiveError::ValueSourceMismatch {
+                direct_schema_kind,
+                arg_idx,
+                expected_src,
+                found_src,
+            } => {
+                let core_msg = format!(
+                    "Argument #{} expected value of type `{expected_src}`, found `{}`",
+                    arg_idx + 1,
+                    found_src.inner,
+                );
+
+                SourceDiagnostic::builder(
+                    ErrorCode::DirectiveErr.into(),
+                    DiagnosticLevel::Error,
+                    core_msg,
+                    region.path_id,
+                )
+                .add_annotation(found_src.span, AnnotationKind::Primary, None)
             }
         },
         // Maybe a type version too?
@@ -629,31 +655,36 @@ pub(crate) fn create_diag_builder_preset(
     }
 }
 
-//TODO: Needs many changes
-// fn try_help(&self, err_name: &str) -> Option<String> {
-//     let found_kw = algo::fuzzy_match(err_name.as_bytes(), algo::FuzzyMatch::KW)?;
-//
-//     let msg = format!("Found similar keyword \"{}\"", found_kw);
-//
-//     let help = reporter::standardize_help(&msg,  settings.can_color);
-//
-//     Some(help)
-// }
-
-pub fn directive_constraint_err_to_preset_err(
-    compiler: &ScriptCompiler,
-    interner: &Intern,
-    err: &DirectivePreprocessConstraintErrorKind,
-    env: &ResolverEnv,
-) -> i32 {
-    match err {
-        DirectivePreprocessConstraintErrorKind::ValueSourceMismatch { expected } => todo!(),
+//TEST: Avoiding making separate DirectiveErrors since they all want to use the same information
+fn make_directive_constraing_err_msg(
+    arg_idx: usize,
+    constraint_err: &DirectivePreprocessConstraintErrorKind,
+    val_kind: ValueKind,
+) -> String {
+    match constraint_err {
+        DirectivePreprocessConstraintErrorKind::ValueSourceMismatch { expected, found } => {
+            format!(
+                "Argument #{} expected value of type `{expected}`, found `{}`",
+                arg_idx + 1,
+                found,
+            )
+        }
         DirectivePreprocessConstraintErrorKind::Integer(
             directive_integer_arg_constraint_error_kind,
-        ) => todo!(),
-        DirectivePreprocessConstraintErrorKind::Expect(expected_kind) => todo!(),
+        ) => match directive_integer_arg_constraint_error_kind {
+            DirectiveIntegerArgConstraintErrorKind::RangeMismatch { expected } => {
+                // The dbg range formatting is what would be used anyways.
+                // NOTE: The range usage is a bit awkward since we technically want a bit-size in
+                // particular. Maybe we carry that as associated metadata where the schema reports
+                // that back instead of just a raw range? But what if we DO want a raw range? I am a
+                // tornado.
+                format!(
+                    "Expected value in range `{expected:?}`, found `{}`",
+                    val_kind.to_classified()
+                )
+            }
+        },
     }
-    2
 }
 
 /// Convenience function to create general errors associated with a `TypeExprResult`

@@ -38,10 +38,11 @@ impl DirectivePreprocessArgLayout {
 pub enum DirectivePreprocessConstraintErrorKind {
     ValueSourceMismatch {
         expected: DirectivePreprocessValueSource,
+        found: DirectivePreprocessValueSource,
     },
     Integer(DirectiveIntegerArgConstraintErrorKind),
     // Better name please
-    Expect(ExpectedKind),
+    // Expect(ExpectedKind),
 }
 
 impl From<DirectiveIntegerArgConstraintErrorKind> for DirectivePreprocessConstraintErrorKind {
@@ -83,6 +84,7 @@ impl DirectivePreprocessArg {
             return Err(
                 DirectivePreprocessConstraintErrorKind::ValueSourceMismatch {
                     expected: self.val_src_constraint,
+                    found: input.val_src,
                 },
             );
         };

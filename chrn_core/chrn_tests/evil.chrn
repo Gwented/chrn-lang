@@ -60,7 +60,11 @@ for varthing1 {}
 //#chrn[MAX_NUMERIC_BITS(300, 30, 2, 90, 3)]
 // Because the lexer preprocessor doesn't have a concept of sections it DOESN'T lock
 // directives to neutral. That is great news!
-#max_numeric_bits(u32::MAX)
+// Says found "unary op" when a literal was expected. That is just a LITTLE weird in framing,
+// but maybe it's fine since it's at the right abstraction level. The issue is the attempt to
+// use the operator itself, not the value.
+// #max_numeric_bits(-2)
+#max_numeric_bits(4294967296)
 @end
 let x = y + 2
 

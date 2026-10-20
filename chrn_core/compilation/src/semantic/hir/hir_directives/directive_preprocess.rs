@@ -127,6 +127,20 @@ impl DirectivePreprocessValueSource {
     }
 }
 
+impl std::fmt::Display for DirectivePreprocessValueSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            DirectivePreprocessValueSource::Literal => "Literal",
+            DirectivePreprocessValueSource::Var => "Variable",
+            // Not sure if these will actually be used because why would it want to restrict
+            // something to only unary or binary?
+            DirectivePreprocessValueSource::BinaryOp => "Binary op",
+            DirectivePreprocessValueSource::UnaryOp => "Unary op",
+        };
+        write!(f, "{s}")
+    }
+}
+
 // Input to be compared
 /// Acts as the input to be put against constraints, as well as the value extracted
 ///

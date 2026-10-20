@@ -14,7 +14,7 @@ use crate::{
         hir::{
             hir_directives::{
                 Directive, DirectiveInline, DirectivePreprocessSchema,
-                DirectivePreprocessSchemaKind,
+                DirectivePreprocessSchemaKind, DirectivePreprocessValueSource,
                 directive_preprocess_args::DirectivePreprocessConstraintErrorKind,
             },
             hir_symbols::{BuiltinFuncKind, SymbolKindFlat},
@@ -155,7 +155,7 @@ pub enum MathError {
 
 // MemberLookupError, SymbolLookupError?
 #[derive(Debug)]
-pub(crate) enum LookupError {
+pub enum LookupError {
     /// Search context was given an identifier and scope, but the identifier does not exist in the
     /// given scope.
     SymbolNotFound {
@@ -191,6 +191,14 @@ pub(crate) enum LookupError {
 
 #[derive(Debug)]
 pub enum DirectiveError {
+    ValueSourceMismatch {
+        /// Directive schema
+        direct_schema_kind: DirectivePreprocessSchemaKind,
+        arg_idx: usize,
+        expected_src: DirectivePreprocessValueSource,
+        /// Rejected value
+        found_src: SpannedContainer<DirectivePreprocessValueSource>,
+    },
     ParameterMismatch {
         /// Directive schema
         direct_schema_kind: DirectivePreprocessSchemaKind,
