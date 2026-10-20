@@ -27,7 +27,6 @@ use chrn_utils::source_map::source_diagnostic::annotations::AnnotationKind;
 use chrn_utils::source_map::source_diagnostic::{
     DiagnosticLevel, SourceDiagnosticBuilder, SourceDiagnosticSink,
 };
-use chrn_utils::utils::containers::SpannedContainer;
 use chrn_utils::{
     intern::Intern,
     source_map::{source_diagnostic::SourceDiagnostic, source_region::SourceRegion},
@@ -133,7 +132,7 @@ pub(crate) fn create_diag_builder_preset(
             )
             .add_annotation(sp_interned_id.span, AnnotationKind::Primary, None);
 
-            let similar_vec = algo::fuzzy_match(err_name.as_bytes(), algo::FuzzyMatch::Directive);
+            let similar_vec = algo::fuzzy_match(err_name, algo::FuzzyMatch::Directive);
 
             //FIX: Every usage of this is very dis-organized
             if !similar_vec.is_empty() {
@@ -473,13 +472,13 @@ pub(crate) fn create_diag_builder_preset(
                 constraint_err,
                 sp_found_val_kind,
             } => {
-                // let schema = direct_schema_kind.schema();
                 //TODO: Blee bloo glorb
                 // let expected_constraint = &arg.constraints[expected_constraint_idx];
                 //TODO: Help these get more specific. So we get expected in range specifically as
                 //our actual input instead of just a string with the specification. So just domain
                 //specific enum -> error msg translation
-                let core_msg = make_directive_constraing_err_msg(
+                let core_msg = make_directive_constraint_err_msg(
+                    direct_schema_kind,
                     arg_idx,
                     &constraint_err,
                     sp_found_val_kind.inner,
@@ -495,26 +494,6 @@ pub(crate) fn create_diag_builder_preset(
                     AnnotationKind::Primary,
                     None,
                 )
-            }
-            DirectiveError::ValueSourceMismatch {
-                direct_schema_kind,
-                arg_idx,
-                expected_src,
-                found_src,
-            } => {
-                let core_msg = format!(
-                    "Argument #{} expected value of type `{expected_src}`, found `{}`",
-                    arg_idx + 1,
-                    found_src.inner,
-                );
-
-                SourceDiagnostic::builder(
-                    ErrorCode::DirectiveErr.into(),
-                    DiagnosticLevel::Error,
-                    core_msg,
-                    region.path_id,
-                )
-                .add_annotation(found_src.span, AnnotationKind::Primary, None)
             }
         },
         // Maybe a type version too?
@@ -655,17 +634,26 @@ pub(crate) fn create_diag_builder_preset(
     }
 }
 
-//TEST: Avoiding making separate DirectiveErrors since they all want to use the same information
-fn make_directive_constraing_err_msg(
+/// Creates err msg given `DirectivePreprocessConstraintErrorKind`
+fn make_directive_constraint_err_msg(
+    schema_kind: DirectivePreprocessSchemaKind,
     arg_idx: usize,
     constraint_err: &DirectivePreprocessConstraintErrorKind,
     val_kind: ValueKind,
 ) -> String {
+    let schema = schema_kind.schema();
+    let header = if schema.arg_layout.arg_len() > 1 {
+        format!("Argument #{} ", arg_idx + 1)
+    } else {
+        // Stating the argument number may incorrectly allude to there being more arguments
+        "".into()
+    };
+
     match constraint_err {
         DirectivePreprocessConstraintErrorKind::ValueSourceMismatch { expected, found } => {
+            // Is this confusing?
             format!(
-                "Argument #{} expected value of type `{expected}`, found `{}`",
-                arg_idx + 1,
+                "{header}expected value from `{expected}`, found `{}`",
                 found,
             )
         }
@@ -673,13 +661,12 @@ fn make_directive_constraing_err_msg(
             directive_integer_arg_constraint_error_kind,
         ) => match directive_integer_arg_constraint_error_kind {
             DirectiveIntegerArgConstraintErrorKind::RangeMismatch { expected } => {
-                // The dbg range formatting is what would be used anyways.
                 // NOTE: The range usage is a bit awkward since we technically want a bit-size in
                 // particular. Maybe we carry that as associated metadata where the schema reports
-                // that back instead of just a raw range? But what if we DO want a raw range? I am a
-                // tornado.
+                // that back instead of just a raw range? But what if we DO want a raw range?
+                // What if it was in interval notation?
                 format!(
-                    "Expected value in range `{expected:?}`, found `{}`",
+                    "{header}expected value in range `{expected:?}`, found `{}`",
                     val_kind.to_classified()
                 )
             }
@@ -689,7 +676,6 @@ fn make_directive_constraing_err_msg(
 
 /// Convenience function to create general errors associated with a `TypeExprResult`
 pub fn type_expr_result_to_preset_err(
-    // Er
     compiler: &ScriptCompiler,
     interner: &Intern,
     res: &TypeExprResult,

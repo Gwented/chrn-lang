@@ -417,8 +417,8 @@ impl<'a> ParserContext<'a> {
             SemanticSituation::DirectiveParsing => match evidence.found.tok {
                 Token::Id(id) => {
                     // NOTE: We can't actually make it here. At least not reliably
-                    let bytes = interner.extract_str_from_interned_id(id).as_bytes();
-                    let similar = algo::fuzzy_match(bytes, FuzzyMatch::Directive);
+                    let s = interner.extract_str_from_interned_id(id);
+                    let similar = algo::fuzzy_match(s, FuzzyMatch::Directive);
 
                     if similar.len() > 0 {
                         let s_suffix = s_suffix!(similar.len());
@@ -474,8 +474,8 @@ impl<'a> ParserContext<'a> {
             }
             SemanticSituation::KeywordBinding => match evidence.found.tok {
                 Token::Id(id) => {
-                    let bytes = interner.extract_str_from_interned_id(id).as_bytes();
-                    let similar = algo::fuzzy_match(bytes, FuzzyMatch::KW);
+                    let s = interner.extract_str_from_interned_id(id);
+                    let similar = algo::fuzzy_match(s, FuzzyMatch::KW);
 
                     if similar.len() > 0 {
                         let s_suffix = s_suffix!(similar.len());
@@ -547,14 +547,14 @@ impl<'a> ParserContext<'a> {
                 NeutralBranch::Searching => match found.tok {
                     // Found stray unrecognizable identifier in neutral
                     Token::Id(name_id) | Token::Invalid(name_id) => {
-                        let found_bytes = interner.extract_str_from_interned_id(name_id).as_bytes();
+                        let found_str = interner.extract_str_from_interned_id(name_id);
 
                         // Statements and sections are possible so both are tried
                         let similar_opt =
-                            algo::fuzzy_match_with_fmtted(found_bytes, FuzzyMatch::Stmt)
+                            algo::fuzzy_match_with_fmtted(found_str, FuzzyMatch::Stmt)
                                 .is_none()
                                 .then_some(algo::fuzzy_match_with_fmtted(
-                                    found_bytes,
+                                    found_str,
                                     algo::FuzzyMatch::Sect,
                                 ));
 
@@ -713,12 +713,11 @@ impl<'a> ParserContext<'a> {
                 // SectionBranch::Override => todo!(),
                 _ => match found.tok {
                     Token::Id(ident_id) | Token::Invalid(ident_id) => {
-                        let found_bytes =
-                            interner.extract_str_from_interned_id(ident_id).as_bytes();
+                        let found_str = interner.extract_str_from_interned_id(ident_id);
 
                         // Maybe this should return None if it directly IS a direct match since it is
                         // just a range check
-                        let similar_vec = algo::fuzzy_match(found_bytes, algo::FuzzyMatch::Sect);
+                        let similar_vec = algo::fuzzy_match(found_str, algo::FuzzyMatch::Sect);
 
                         if !similar_vec.is_empty() {
                             let help = Self::fmt_founds(
@@ -765,8 +764,8 @@ impl<'a> ParserContext<'a> {
             // Branch::FuncArgs => todo!(),
             Branch::Directive => match found.tok {
                 Token::Id(name_id) => {
-                    let found_bytes = interner.extract_str_from_interned_id(name_id).as_bytes();
-                    let similar_vec = algo::fuzzy_match(found_bytes, algo::FuzzyMatch::Directive);
+                    let found_str = interner.extract_str_from_interned_id(name_id);
+                    let similar_vec = algo::fuzzy_match(found_str, algo::FuzzyMatch::Directive);
 
                     if !similar_vec.is_empty() {
                         let help = Self::fmt_founds(

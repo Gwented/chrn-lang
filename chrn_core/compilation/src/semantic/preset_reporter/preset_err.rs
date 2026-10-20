@@ -191,14 +191,6 @@ pub enum LookupError {
 
 #[derive(Debug)]
 pub enum DirectiveError {
-    ValueSourceMismatch {
-        /// Directive schema
-        direct_schema_kind: DirectivePreprocessSchemaKind,
-        arg_idx: usize,
-        expected_src: DirectivePreprocessValueSource,
-        /// Rejected value
-        found_src: SpannedContainer<DirectivePreprocessValueSource>,
-    },
     ParameterMismatch {
         /// Directive schema
         direct_schema_kind: DirectivePreprocessSchemaKind,

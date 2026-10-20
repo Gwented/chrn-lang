@@ -2,6 +2,7 @@
 pub mod scopes_concepts;
 pub mod scopes_helpers;
 
+use algoc::strings;
 use chrn_utils::{
     id_types::{InternedId, MemberId, ModuleId, ScopeId, SourceRegionId, SymbolId, TypeId},
     intern::Intern,
@@ -316,7 +317,7 @@ pub fn find_symbols_named<'a>(
     interner: &Intern,
 ) -> Vec<SymbolId> {
     let mut found_syms: Vec<SymbolId> = Vec::new();
-    let target_bytes = interner.extract_str_from_interned_id(target_name_id).as_bytes();
+    let target_str = interner.extract_str_from_interned_id(target_name_id);
 
     for sym in compiler.syms.iter() {
         if exact_match {
@@ -324,9 +325,9 @@ pub fn find_symbols_named<'a>(
                 found_syms.push(sym.self_id);
             }
         } else {
-            let sym_bytes = interner.extract_str_from_interned_id(sym.name_id).as_bytes();
+            let sym_str = interner.extract_str_from_interned_id(sym.name_id);
 
-            if algoc::bytes::is_similar(sym_bytes, target_bytes) {
+            if strings::is_similar(sym_str, target_str) {
                 found_syms.push(sym.self_id);
             }
         }

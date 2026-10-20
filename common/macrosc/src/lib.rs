@@ -1,4 +1,5 @@
-// Why is this a macro????
+use std::ops::Range;
+
 /// Given a len, determines if it should use a plural s
 #[macro_export]
 macro_rules! s_suffix {
@@ -9,7 +10,7 @@ macro_rules! s_suffix {
 
 // Incredible name
 /// Given a size in bytes, formats it into a human-readable string with the unit suffix to at most a
-/// GB
+/// GiB
 /// Would turn `1024` into `1 KiB` and so on
 #[macro_export]
 macro_rules! byte_formatter {
