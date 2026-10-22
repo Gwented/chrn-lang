@@ -657,16 +657,10 @@ fn make_directive_constraint_err_msg(
                 found,
             )
         }
-        DirectivePreprocessConstraintErrorKind::Integer(
-            directive_integer_arg_constraint_error_kind,
-        ) => match directive_integer_arg_constraint_error_kind {
+        DirectivePreprocessConstraintErrorKind::Integer(kind) => match kind {
             DirectiveIntegerArgConstraintErrorKind::RangeMismatch { expected } => {
-                // NOTE: The range usage is a bit awkward since we technically want a bit-size in
-                // particular. Maybe we carry that as associated metadata where the schema reports
-                // that back instead of just a raw range? But what if we DO want a raw range?
-                // What if it was in interval notation?
                 format!(
-                    "{header}expected value in range `{expected:?}`, found `{}`",
+                    "{header}expected value in range `{expected}`, found `{}`",
                     val_kind.to_classified()
                 )
             }

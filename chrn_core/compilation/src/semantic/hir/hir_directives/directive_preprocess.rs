@@ -118,7 +118,6 @@ impl DirectivePreprocessValueSource {
             ExprHir::Var(_) => Self::Var,
             ExprHir::Unary { .. } => Self::UnaryOp,
             ExprHir::BinaryExpr { .. } => Self::BinaryOp,
-            // ExprHir::Default(expr_id, expr_id1) => todo!(),
             // ExprHir::Call(expr_id, expr_ids) => todo!(),
             // ExprHir::Array(expr_ids) => todo!(),
             _ => return None,

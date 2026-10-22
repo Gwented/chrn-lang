@@ -638,8 +638,6 @@ complex->
 
 - Directives change how the compiler interprets certain code. This can range from changing how serialized data is represented to changing default runtime behavior.
 
-### (UNNAMED) directives
-
 `#warn`: Would warn instead of terminating upon seeing a wrongful constraint of any kind.
 
 `#ignore`: Ignores all errors for the what this is applied to for serialized data related errors.
@@ -651,6 +649,9 @@ complex->
 (This abstraction is bad change it)
 ### Preprocessed directives
 
+// There's nothing ENTIRELY stopping this from just taking in a variable and expecting that it's in the main file and not a complex variable dependent operation, or at least only dependent on variables defined before the directive. Please don't do this it's not worth it. Please. At least wait. please. Ok.
+
+`max_numeric_bits(u32)`: Changes the maximum value a numeric can be accepted as in bits. External tools can alter the compiler's bits, but cannot exceed the in file defined directive if present, leaving it as the source of truth. This directive only accepts literals to avoid processing values that could cause issues like OOM since `chrn` uses arbitrary numbers. By default this is 256.
 
 # DOES NOT EXIST
 `#ignore_rm`: (Would remove anything that didn't align under constraint rather than crash or warn.)
@@ -772,4 +773,4 @@ matrix: Tensor2<f32>
 Unified serialization rules for any md file.
 Yaml, XML(Forgot this existed), Json, BINARY(I don't know) BINARY, BINARY, BINARY, BINARY
 
-# SERIAL
+# CEREAL

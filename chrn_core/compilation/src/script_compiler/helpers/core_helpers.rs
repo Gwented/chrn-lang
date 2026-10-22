@@ -5,7 +5,7 @@ use dashu_int::IBig;
 use lang::types::{boundaries::TypeBoundaryFlags, builtins::BuiltinType};
 
 use crate::{
-    constraints::ArgConstraint,
+    constraints::FuncArgConstraint,
     lookup::scopes::scopes_concepts::ScopeType,
     script_compiler::{
         compiler_consts::{CORE_BOOL, CORE_UNKNOWN},
@@ -987,7 +987,7 @@ pub struct CoreFunc {
     pub name: u32,
     pub kind: BuiltinFuncKind,
     pub type_constraints: TypeBoundaryFlags,
-    pub arg_constraints: &'static [ArgConstraint],
+    pub arg_constraints: &'static [FuncArgConstraint],
     pub affects_type_constraint: bool,
     /// `TypeId` of the return type, which must already be loaded as a core type
     pub ret_type: u32,
@@ -998,7 +998,7 @@ impl CoreFunc {
         name: u32,
         kind: BuiltinFuncKind,
         type_constraints: TypeBoundaryFlags,
-        arg_constraints: &'static [ArgConstraint],
+        arg_constraints: &'static [FuncArgConstraint],
         affects_type_constraint: bool,
         ret_type: u32,
     ) -> CoreFunc {
@@ -1020,7 +1020,7 @@ pub static CORE_FUNCS_DATASET: [CoreFunc; 7] = [
         intern::INTERNED_IS_EMPTY,
         BuiltinFuncKind::IsEmpty,
         TypeBoundaryFlags::COLLECTION,
-        &[ArgConstraint::ArgCount(0)],
+        &[FuncArgConstraint::ArgCount(0)],
         true,
         CORE_BOOL,
     ),
@@ -1028,7 +1028,10 @@ pub static CORE_FUNCS_DATASET: [CoreFunc; 7] = [
         intern::INTERNED_IS_WHITESPACE,
         BuiltinFuncKind::IsWhitespace,
         TypeBoundaryFlags::CHARACTER_MAPPABLE,
-        &[ArgConstraint::ArgCount(0), ArgConstraint::CharacterMappable],
+        &[
+            FuncArgConstraint::ArgCount(0),
+            FuncArgConstraint::CharacterMappable,
+        ],
         true,
         CORE_BOOL,
     ),
@@ -1036,7 +1039,10 @@ pub static CORE_FUNCS_DATASET: [CoreFunc; 7] = [
         intern::INTERNED_CONTAINS,
         BuiltinFuncKind::Contains,
         TypeBoundaryFlags::CHARACTER_MAPPABLE,
-        &[ArgConstraint::ArgCount(1), ArgConstraint::CharacterMappable],
+        &[
+            FuncArgConstraint::ArgCount(1),
+            FuncArgConstraint::CharacterMappable,
+        ],
         true,
         CORE_BOOL,
     ),
@@ -1044,7 +1050,10 @@ pub static CORE_FUNCS_DATASET: [CoreFunc; 7] = [
         intern::INTERNED_STARTSW,
         BuiltinFuncKind::StartsW,
         TypeBoundaryFlags::CHARACTER_MAPPABLE,
-        &[ArgConstraint::ArgCount(1), ArgConstraint::CharacterMappable],
+        &[
+            FuncArgConstraint::ArgCount(1),
+            FuncArgConstraint::CharacterMappable,
+        ],
         true,
         CORE_BOOL,
     ),
@@ -1052,7 +1061,10 @@ pub static CORE_FUNCS_DATASET: [CoreFunc; 7] = [
         intern::INTERNED_ENDSW,
         BuiltinFuncKind::EndsW,
         TypeBoundaryFlags::CHARACTER_MAPPABLE,
-        &[ArgConstraint::ArgCount(1), ArgConstraint::CharacterMappable],
+        &[
+            FuncArgConstraint::ArgCount(1),
+            FuncArgConstraint::CharacterMappable,
+        ],
         true,
         CORE_BOOL,
     ),
@@ -1061,10 +1073,10 @@ pub static CORE_FUNCS_DATASET: [CoreFunc; 7] = [
         BuiltinFuncKind::Range,
         TypeBoundaryFlags::RANGED,
         &[
-            ArgConstraint::ArgCount(2),
-            ArgConstraint::Numeric,
-            ArgConstraint::MatchingArgumentTypes,
-            ArgConstraint::SameTypeAsSelf,
+            FuncArgConstraint::ArgCount(2),
+            FuncArgConstraint::Numeric,
+            FuncArgConstraint::MatchingArgumentTypes,
+            FuncArgConstraint::SameTypeAsSelf,
         ],
         true,
         CORE_BOOL,
@@ -1074,9 +1086,9 @@ pub static CORE_FUNCS_DATASET: [CoreFunc; 7] = [
         BuiltinFuncKind::Equals,
         TypeBoundaryFlags::COMPARABLE,
         &[
-            ArgConstraint::ArgCount(1),
-            ArgConstraint::Comparable,
-            ArgConstraint::SameTypeAsSelf,
+            FuncArgConstraint::ArgCount(1),
+            FuncArgConstraint::Comparable,
+            FuncArgConstraint::SameTypeAsSelf,
         ],
         true,
         CORE_BOOL,

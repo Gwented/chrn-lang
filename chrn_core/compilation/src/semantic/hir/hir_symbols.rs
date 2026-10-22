@@ -12,7 +12,7 @@ use lang::{
 };
 
 use crate::{
-    constraints::ArgConstraint,
+    constraints::FuncArgConstraint,
     id_tag_decls::{
         AliasTag, EnumTag, FieldTag, FuncTag, StructTag, TypeDefTag, VarTag, VariantTag,
     },
@@ -126,7 +126,6 @@ pub enum SymbolKindFlat {
 }
 
 impl SymbolKindFlat {
-    // Need bit suffix to avoid namespace collision
     pub const TYPE_BITS: u16 = 1 << 1;
     pub const VARIABLE_BITS: u16 = 1 << 2;
     pub const NAMESPACE_BITS: u16 = 1 << 3;
@@ -446,6 +445,7 @@ impl ChrnClassifiable for TypeDef {
     }
 }
 
+//TODO: Const fns
 #[derive(Debug)]
 pub struct FuncDef {
     pub self_id: TaggedId<SymbolId, FuncTag>,
@@ -461,7 +461,7 @@ pub struct FuncDef {
     //TEST:
     pub type_constraints: TypeBoundaryFlags,
     //TEST:
-    pub arg_constraints: Vec<ArgConstraint>,
+    pub arg_constraints: Vec<FuncArgConstraint>,
     pub ret_type: TypeId,
 }
 
@@ -471,7 +471,7 @@ impl FuncDef {
         name_id: InternedId,
         kind: BuiltinFuncKind,
         type_constraints: TypeBoundaryFlags,
-        arg_constraints: Vec<ArgConstraint>,
+        arg_constraints: Vec<FuncArgConstraint>,
         affects_type_constraint: bool,
         ret_type: TypeId,
     ) -> FuncDef {
@@ -539,7 +539,7 @@ pub struct AliasDef {
     pub name_span: SourceSpan,
     pub params: Vec<Param>,
     pub ty_constraints: TypeBoundaryFlags,
-    pub arg_constraints: Vec<ArgConstraint>,
+    pub arg_constraints: Vec<FuncArgConstraint>,
     pub local_scope_id: ScopeId,
     pub directives: Vec<SpannedContainer<DirectiveId>>,
     pub conds: Vec<ExprId>,
@@ -550,7 +550,7 @@ impl AliasDef {
         self_id: TaggedId<SymbolId, AliasTag>,
         name_span: SourceSpan,
         params: Vec<Param>,
-        arg_constraints: Vec<ArgConstraint>,
+        arg_constraints: Vec<FuncArgConstraint>,
         local_scope_id: ScopeId,
     ) -> AliasDef {
         AliasDef {

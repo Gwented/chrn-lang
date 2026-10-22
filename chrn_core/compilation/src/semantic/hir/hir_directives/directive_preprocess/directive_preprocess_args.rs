@@ -1,10 +1,10 @@
 use std::ops::Range;
 
-use crate::{
-    resolvers::typechecker::typechecker_concepts::ExpectedKind,
-    semantic::{
-        arbitraries::ArbitraryIntKind,
-        hir::hir_directives::{
+use crate::semantic::{
+    arbitraries::ArbitraryIntKind,
+    hir::{
+        hir_concepts::IntegerRangeKind,
+        hir_directives::{
             DirectivePreprocessExpectInput, DirectivePreprocessExpectInputKind,
             DirectivePreprocessValueSource,
         },
@@ -53,7 +53,7 @@ impl From<DirectiveIntegerArgConstraintErrorKind> for DirectivePreprocessConstra
 
 #[derive(Debug)]
 pub enum DirectiveIntegerArgConstraintErrorKind {
-    RangeMismatch { expected: Range<u64> },
+    RangeMismatch { expected: IntegerRangeKind },
 }
 
 #[derive(Debug)]
@@ -117,11 +117,11 @@ pub struct DirectiveValueSourceArgConstraint {
 pub struct DirectiveIntegerArgConstraint {
     // This is load bearing, red, NOT governed
     /// Range the given integer must fall into
-    pub range: Option<Range<u64>>,
+    pub range: Option<IntegerRangeKind>,
 }
 
 impl DirectiveIntegerArgConstraint {
-    pub const fn new(range: Option<Range<u64>>) -> Self {
+    pub const fn new(range: Option<IntegerRangeKind>) -> Self {
         Self { range }
     }
 }
@@ -146,10 +146,9 @@ impl DirectivePreprocessArgConstraint {
                 DirectivePreprocessExpectInputKind::Integer(given_int),
             ) => {
                 if let Some(range) = &constraint_int.range {
-                    //method maybe
                     let num = match given_int.as_ref() {
-                        ArbitraryIntKind::I64(n) => *n as u64,
-                        ArbitraryIntKind::U64(n) => *n,
+                        ArbitraryIntKind::I64(n) => i128::from(*n),
+                        ArbitraryIntKind::U64(n) => i128::from(*n),
                         ArbitraryIntKind::BigInt(_) => {
                             return Err(DirectiveIntegerArgConstraintErrorKind::RangeMismatch {
                                 expected: range.clone(),
@@ -157,7 +156,7 @@ impl DirectivePreprocessArgConstraint {
                             .into());
                         }
                     };
-                    if !range.contains(&num) {
+                    if !range.range().contains(&num) {
                         return Err(DirectiveIntegerArgConstraintErrorKind::RangeMismatch {
                             expected: range.clone(),
                         }
@@ -167,23 +166,5 @@ impl DirectivePreprocessArgConstraint {
             }
         }
         Ok(())
-    }
-}
-
-impl std::fmt::Display for DirectivePreprocessArgConstraint {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            // No constraints at all should probably
-            // Also the formatting is not final
-            DirectivePreprocessArgConstraint::Integer(int) => {
-                let mut s = "Integer".to_string();
-
-                // Maybe we can have a formatter where it turns a range into the nearest bit range
-                if let Some(range) = &int.range {
-                    s.push_str(&format!(" | range: {}..{}", range.start, range.end - 1));
-                };
-                write!(f, "{s}")
-            }
-        }
     }
 }

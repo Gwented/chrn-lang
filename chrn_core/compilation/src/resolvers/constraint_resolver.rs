@@ -22,7 +22,7 @@ use lang::{
 
 use crate::{
     chrn_config::{ChrnConfig, chrn_perf::ChrnPerfStage},
-    constraints::ArgConstraint,
+    constraints::FuncArgConstraint,
     id_tag_decls::{
         AliasTag, ConfigRootTag, DirectiveParameterizedTag, EnumTag, OptionAssignmentMemberTag,
         OptionAssignmentRootTag, StructTag, TypeDefTag, VarTag,
@@ -664,9 +664,8 @@ impl<'a> ConstraintResolver<'a> {
         }
 
         for sp_directive in &type_def.directives {
-            // let directive = &self.compiler.directives[sp_directive.inner];
-            let Directive::Inline(directive) = &self.compiler.directives[todo!()] else {
-                panic!("verity");
+            let Directive::Inline(directive) = &self.compiler.directives[sp_directive.inner] else {
+                unreachable!()
             };
             match &ty_info.ty {
                 Type::Struct(_) | Type::Enum(_) => {
@@ -1727,7 +1726,7 @@ impl<'a> ConstraintResolver<'a> {
         parent_span: SourceSpan,
         cond_expr_id: ExprId,
         expr_id_args: &[ExprId],
-        arg_constraints: &[ArgConstraint],
+        arg_constraints: &[FuncArgConstraint],
         // Maybe a more explicit state of Recoverabilitiy as an enum of some sort would be better
         // eventually or at least a wrapper
     ) -> Result<(), Vec<PresetErr>> {

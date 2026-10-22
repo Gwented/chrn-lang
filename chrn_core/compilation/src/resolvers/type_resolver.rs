@@ -33,7 +33,7 @@ use lang::types::builtins::BuiltinType;
 
 use crate::chrn_config::ChrnConfig;
 use crate::chrn_config::chrn_perf::ChrnPerfStage;
-use crate::constraints::ArgConstraint;
+use crate::constraints::FuncArgConstraint;
 use crate::id_tag_decls::{
     AliasTag, ConfigMemberTag, ConfigRootTag, DirectiveParameterizedTag, EnumTag, ExternTypeTag,
     FieldTag, MultiTypeAssignmentTag, OptionAssignmentMemberTag, OptionAssignmentRootTag,
@@ -59,7 +59,7 @@ use crate::resolvers::type_resolver::cfg_ctx::{
 };
 use crate::resolvers::typechecker;
 use crate::resolvers::typechecker::typechecker_concepts::ExpectedKindType;
-use crate::script_compiler::{ScriptCompiler, compiler_consts};
+use crate::script_compiler::{self, ScriptCompiler, compiler_consts};
 use crate::semantic::arbitraries::{
     ArbitraryFloatKind, ArbitraryIntKind, NumericFloatParseError, NumericIntParseError,
 };
@@ -683,7 +683,8 @@ impl<'res> TypeResolver<'res> {
             }
         }
 
-        let (directives, preset_errs) = self.handle_directives(&abs_typedef.directives, env);
+        let (directives, preset_errs) =
+            self.handle_unparameterized_directives(&abs_typedef.directives, env);
         preset_reporter::report_preset_vec(
             &self.compiler,
             &mut self.summary,
@@ -748,7 +749,8 @@ impl<'res> TypeResolver<'res> {
                 };
             }
 
-            let (directives, preset_errs) = self.handle_directives(&abs_field.directives, env);
+            let (directives, preset_errs) =
+                self.handle_unparameterized_directives(&abs_field.directives, env);
             preset_reporter::report_preset_vec(
                 &self.compiler,
                 &mut self.summary,
@@ -793,7 +795,7 @@ impl<'res> TypeResolver<'res> {
         }
 
         let (glob_directives, preset_errs) =
-            self.handle_directives(&abs_struct.glob_directives, env);
+            self.handle_unparameterized_directives(&abs_struct.glob_directives, env);
 
         preset_reporter::report_preset_vec(
             &self.compiler,
@@ -856,7 +858,8 @@ impl<'res> TypeResolver<'res> {
                 }
             }
 
-            let (directives, preset_errs) = self.handle_directives(&abs_variant.directives, env);
+            let (directives, preset_errs) =
+                self.handle_unparameterized_directives(&abs_variant.directives, env);
             preset_reporter::report_preset_vec(
                 &self.compiler,
                 &mut self.summary,
@@ -904,7 +907,8 @@ impl<'res> TypeResolver<'res> {
             }
         }
 
-        let (glob_directives, preset_errs) = self.handle_directives(&abs_enum.glob_directives, env);
+        let (glob_directives, preset_errs) =
+            self.handle_unparameterized_directives(&abs_enum.glob_directives, env);
         preset_reporter::report_preset_vec(
             &self.compiler,
             &mut self.summary,
@@ -1071,7 +1075,8 @@ impl<'res> TypeResolver<'res> {
             }
         }
 
-        let (directives, preset_errs) = self.handle_directives(&abs_alias.directives, env);
+        let (directives, preset_errs) =
+            self.handle_unparameterized_directives(&abs_alias.directives, env);
         preset_reporter::report_preset_vec(
             &self.compiler,
             &mut self.summary,
@@ -1098,7 +1103,7 @@ impl<'res> TypeResolver<'res> {
             .arg_constraints
             // Well param count and arg count could mean a lot of different things
             // Ok
-            .push(ArgConstraint::ArgCount(param_count));
+            .push(FuncArgConstraint::ArgCount(param_count));
 
         alias_def.conds = conds;
         alias_def.directives = directives;
@@ -4392,7 +4397,7 @@ impl<'res> TypeResolver<'res> {
 
     /// Unknown or invalid directives produce a `PresetErr` which is returned alongside any
     /// successfully resolved directive ids.
-    fn handle_directives(
+    fn handle_unparameterized_directives(
         &self,
         abs_directives: &[AbstractDirectiveUnparameterized],
         env: &ResolverEnv,
@@ -4403,7 +4408,8 @@ impl<'res> TypeResolver<'res> {
         for abs_directive in abs_directives {
             match resolution::resolve_directive(abs_directive) {
                 Some(direct) => {
-                    let directive_id = todo!();
+                    //FIXME:
+                    let directive_id = compiler_consts::directive_to_id_const(&direct);
                     let sp_directive_id =
                         SpannedContainer::new(directive_id, abs_directive.sp_name_id.span);
                     directive_ids.push(sp_directive_id);

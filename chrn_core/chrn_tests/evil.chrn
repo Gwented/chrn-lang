@@ -64,9 +64,16 @@ for varthing1 {}
 // but maybe it's fine since it's at the right abstraction level. The issue is the attempt to
 // use the operator itself, not the value.
 // #max_numeric_bits(-2)
-#he()
+
+// Need to give this a bit range without giving it a bit range. What if we instead had a range kind
+// where u32 WAS this range, but if you wanted a more specific range it would literally be that range.
+// Updating rust-analyzer made it buggier. I like it here.
+#max_numeric_bits(2)
 let x = 3
 // #max_numeric_bits(x)
+
+var->
+    x: i32 #warn
 @end
 let x = y + 2
 

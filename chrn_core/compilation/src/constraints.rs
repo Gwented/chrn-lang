@@ -173,7 +173,7 @@ pub fn get_type_constraints(
 // Complex
 // Prime
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ArgConstraint {
+pub enum FuncArgConstraint {
     ArgCount(u32),
     // Ordering(OrderingType),
     DynType,
@@ -235,27 +235,27 @@ pub enum OrderingType {
 //     }
 // }
 
-impl Display for ArgConstraint {
+impl Display for FuncArgConstraint {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ArgConstraint::DynType => write!(f, "DynamicType"),
-            ArgConstraint::MatchingArgumentTypes => write!(f, "MatchingArgumentType"),
-            ArgConstraint::Numeric => write!(f, "Numeric"),
-            ArgConstraint::Integer => write!(f, "Integer"),
-            ArgConstraint::Float => write!(f, "Float"),
-            ArgConstraint::Str => write!(f, "str"),
-            ArgConstraint::ArgCount(count) => {
+            FuncArgConstraint::DynType => write!(f, "DynamicType"),
+            FuncArgConstraint::MatchingArgumentTypes => write!(f, "MatchingArgumentType"),
+            FuncArgConstraint::Numeric => write!(f, "Numeric"),
+            FuncArgConstraint::Integer => write!(f, "Integer"),
+            FuncArgConstraint::Float => write!(f, "Float"),
+            FuncArgConstraint::Str => write!(f, "str"),
+            FuncArgConstraint::ArgCount(count) => {
                 if *count == 0 || *count > 1 {
                     write!(f, "{count} arguments")
                 } else {
                     write!(f, "{count} argument")
                 }
             }
-            ArgConstraint::CharacterMappable => write!(f, "CharacterMappable"),
-            ArgConstraint::Variadic => write!(f, "variadic"),
-            ArgConstraint::Bool => write!(f, "bool"),
-            ArgConstraint::Comparable => write!(f, "Comparable"),
-            ArgConstraint::SameTypeAsSelf => write!(f, "Same type as self"),
+            FuncArgConstraint::CharacterMappable => write!(f, "CharacterMappable"),
+            FuncArgConstraint::Variadic => write!(f, "variadic"),
+            FuncArgConstraint::Bool => write!(f, "bool"),
+            FuncArgConstraint::Comparable => write!(f, "Comparable"),
+            FuncArgConstraint::SameTypeAsSelf => write!(f, "Same type as self"),
         }
     }
 }

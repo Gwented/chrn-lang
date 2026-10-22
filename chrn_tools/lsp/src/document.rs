@@ -2,13 +2,13 @@
 //!
 //! Provides static documentation tables and the [`Document`] type for hover content.
 //!
-//! Four tables are exposed as `pub static` slices:
+//! Five tables are exposed as `pub static` arrays:
 //!
 //! | Constant              | Indexed by                  | Length |
 //! |-----------------------|-----------------------------|--------|
 //! | [`KEYWORD_DOCS`]      | `Keyword as usize`          | 15     |
 //! | [`BUILTIN_TYPE_DOCS`] | `BuiltinTypeKind as usize`  | 27     |
-//! | [`FUNC_DOCS`]         | `BuiltinFuncKind as usize`         | 7      |
+//! | [`FUNC_DOCS`]         | `BuiltinFuncKind as usize`  | 7      |
 //! | [`DIRECTIVE_DOCS`]    | preloaded [`InternedId`]     | 7      |
 //! | [`CONFIG_OPTION_DOCS`]| preloaded [`InternedId`]     | 3      |
 //!
@@ -33,7 +33,7 @@ use compilation::semantic::hir::hir_symbols::BuiltinFuncKind;
 use lang::keywords::Keyword;
 use lang::types::builtins::BuiltinTypeKind;
 
-/// 60 Dashes
+/// Separator between a hover description and its supporting Markdown.
 pub static HOVER_DASHES: &str = "------------------------------------------------------------";
 
 /// A structured documentation entry for a language construct.
@@ -119,107 +119,451 @@ impl Document {
 pub static KEYWORD_DOCS: [Document; 15] = [
     Document {
         key: "struct",
-        description: "Defines a struct in the `nest->` section",
+        description: "Declares a type with named fields in `nest->`",
         example: Some(
-            "Fields have a name and type. Commas between fields are optional.\n\n**Example:**\n```chrn\nnest->\nstruct Person {\n    name: str\n    age: u8\n}\n```",
+            r#"Fields require a type. Commas between fields are optional.
+
+**Fields and nested types:**
+```chrn
+nest->
+struct Address { city: str }
+struct Person {
+    name: str
+    address: Address
+}
+```
+
+**Field conditions and directives (condition and whole-type analysis unfinished):**
+```chrn
+nest->
+struct Person {
+    name: str [!IsEmpty]
+    age: u8 #hex
+} #warn
+```
+A directive after the closing brace applies to the whole struct."#,
         ),
     },
     Document {
         key: "enum",
-        description: "Defines an enum in the `nest->` section",
+        description: "Declares a type with named variants in `nest->`",
         example: Some(
-            "Variants may be untyped or carry a type. Commas between variants are optional.\n\n**Example:**\n```chrn\nnest->\nenum Status {\n    Pending\n    Active: Tuple<i32>\n    Completed\n}\n```",
+            r#"Variants may have a type or no associated data. Commas between variants are optional.
+
+**Variants with and without data:**
+```chrn
+nest->
+enum Color {
+    Default
+    Named: str
+    Rgb: Tuple<u8, u8, u8>
+}
+```
+
+**Variant and enum directives (whole-type analysis unfinished):**
+```chrn
+nest->
+enum Status {
+    Pending
+    Complete: u32 #hex
+} #warn
+```
+A directive after the closing brace applies to the whole enum."#,
         ),
     },
     Document {
         key: "import",
-        description: "Loads another `.chrn` module so its exported symbols can be used",
+        description: "Imports a `.chrn` module so its exported declarations can be used",
         example: Some(
-            "Use `as` to choose the local module name and `::` to access an export.\n\n**Direct import:**\n```chrn\nimport \"definitions.chrn\"\nvar->\n    item: definitions::Item\n```\n\n**Aliased import:**\n```chrn\nimport \"definitions.chrn\" as defs\nvar->\n    item: defs::Item\n```",
+            r#"Both examples use this file. Relative import paths are resolved from the server's working directory; place `definitions.chrn` there for these examples.
+
+**`definitions.chrn`:**
+```chrn
+export let LIMIT = 10
+nest->
+export struct Item { name: str }
+```
+
+**Direct import — `main.chrn`:**
+```chrn
+import "definitions.chrn"
+let limit = definitions::LIMIT
+var->
+    item: definitions::Item
+```
+Without `as`, the file name before its first extension is the local module name.
+
+**Aliased import — `main.chrn`:**
+```chrn
+import "definitions.chrn" as defs
+let limit = defs::LIMIT
+var->
+    item: defs::Item
+```
+Use `::` to access an exported declaration. `as` changes the local module name."#,
         ),
     },
     Document {
         key: "export",
-        description: "Lets imported modules use a definition",
+        description: "Makes a declaration available to modules that import this file",
         example: Some(
-            "Use `export` on a `let`, `alias`, `struct`, or `enum`. Structs and enums still belong in `nest->`.\n\n**Values and aliases:**\n```chrn\nexport let LIMIT = 42\nexport alias NonEmpty() = [!IsEmpty]\n```\n\n**Structs and enums:**\n```chrn\nnest->\nexport struct Thing { value: i32 }\nexport enum State { Ready Pending }\n```",
+            r#"Use `export` on `let`, `alias`, `struct`, or `enum`. It does not change where the declaration is allowed.
+
+**Values and aliases:**
+Alias constraint analysis is unfinished.
+```chrn
+export let LIMIT = 42
+export alias NonEmpty() = [!IsEmpty]
+```
+
+**Structs and enums:**
+```chrn
+nest->
+export struct Item { name: str }
+export enum Status { Ready Pending }
+```
+Import the file and use `module_name::declaration_name` to access an export."#,
         ),
     },
     Document {
         key: "bind",
-        description: "Links this config to an external data file",
+        description: "Associates a standalone chrn configuration with a serialized-data file",
         example: Some(
-            "Use `bind` in a standalone config. You do not need it when the config is inside the data file between `@def` and `@end`.\n\n**Standalone config:**\n```chrn\nbind \"data.json\"\n```",
+            r#"Declare `bind` in the neutral section, before any section keyword. The serialized-data file must exist. Relative paths are resolved from the working directory.
+
+**Standalone configuration:**
+```chrn
+bind "data.json"
+var->
+    name: str
+```
+
+**Chrn embedding:**
+```chrn
+@def
+var->
+    name: str
+@end
+{"name": "Ada"}
+```
+An embedding describes the serialized data after `@end` and does not need `bind`."#,
         ),
     },
     Document {
         key: "alias",
-        description: "Declares a reusable group of predicates and directives",
+        description: "Names a reusable group of conditions, directives, or both",
         example: Some(
-            "Give each parameter a type or a boundary such as `UnsignedInteger`. Use the alias in a condition block.\n\n**Reusable conditions:**\n```chrn\nalias NonBlank() = [!IsEmpty, !IsWhitespace]\nvar->\n    name: str [NonBlank()]\n```\n\n**Alias with a directive:**\n```chrn\nalias WarnIfEmpty() = [IsEmpty] #warn\nvar->\n    tag: str [WarnIfEmpty()]\n```",
+            r#"Alias constraint analysis is unfinished, and calls with arguments are currently rejected by the parser. The following examples illustrate the language syntax, not working constraint checks.
+
+Declare aliases in the neutral section and call them inside a condition block. Parameters require a concrete type or a type boundary.
+
+**Reusable predicates:**
+```chrn
+alias NonBlank() = [!IsEmpty, !IsWhitespace]
+var->
+    name: str [NonBlank()]
+```
+
+**Conditions with a directive:**
+```chrn
+alias WarnIfEmpty() = [!IsEmpty] #warn
+var->
+    tag: str [WarnIfEmpty()]
+```
+The condition requires a nonempty value; `#warn` selects a warning if it fails.
+
+**Directive only:**
+```chrn
+alias WarnOnly() = #warn
+var->
+    name: str [WarnOnly()]
+```
+
+**Typed parameters:**
+```chrn
+alias Enabled(enabled: bool) = [enabled]
+var->
+    name: str [Enabled(true)]
+```
+
+**Boundary parameters:**
+```chrn
+alias Ordered(min: Integer, max: Integer) = [min < max]
+var->
+    name: str [Ordered(1, 10)]
+```
+The last two examples evaluate the arguments, not the serialized value."#,
         ),
     },
     Document {
         key: "let",
-        description: "Declares a reusable value; the type is inferred by default",
+        description: "Binds a name to a value with an inferred type",
         example: Some(
-            "Declare a top-level value in the neutral section.\n\n**Reusable declarations:**\n```chrn\nlet base = 10\nlet doubled = base * 2\n```",
+            r#"Declare top-level values in the neutral section, before any section keyword.
+
+**Values and expressions:**
+```chrn
+let base = 10
+let doubled = base * 2
+```
+Local `let ... in ...` expressions are not implemented."#,
         ),
     },
     Document {
         key: "change",
-        description: "Maps explicit chrn types or the current member to a language-specific type inside an override",
+        description: "Maps chrn types to an extern type inside a language override",
         example: Some(
-            "Put `change` inside a built-in override group such as `types`. List the chrn types on the left and the language type to use on the right. Inside a config member, omit the left-hand type to infer it from that member.\n\n**One chrn type:**\n```chrn\noverride JAVA=>types {\n    change bool = java::boolean\n}\n```\n\n**Several chrn types:**\n```chrn\noverride JAVA=>types {\n    change i8, i16 = java::int\n}\n```\n\n**Inferred member type:**\n```chrn\nfor Person {\n    age {\n        override RUST=>types { change = rust::u32 }\n    }\n}\n```",
+            r#"Use `change` inside the override's `types` block. The right-hand side must be an extern type for that language.
+
+**One source type:**
+```chrn
+complex->
+override JAVA=>types {
+    change bool = java::boolean
+}
+```
+
+**Several source types:**
+```chrn
+complex->
+override JAVA=>types {
+    change i8, i16 = java::int
+}
+```
+
+**Infer the current member's type:**
+```chrn
+nest->
+struct Person { age: u8 }
+complex->
+for Person {
+    age {
+        override RUST=>types { change = rust::u32 }
+    }
+}
+```
+Omitting the left-hand type uses the configured member's type.
+
+**Explicit member type:**
+```chrn
+nest->
+struct Person { age: u8 }
+complex->
+for Person {
+    age {
+        override RUST=>types { change u8 = rust::u32 }
+    }
+}
+```
+In a member override, an explicit source type must match that member."#,
         ),
     },
     Document {
         key: "as",
-        description: "Assigns a local module name to an import",
+        description: "Chooses the local name used to access an imported module",
         example: Some(
-            "```chrn\nimport \"module.chrn\" as mod\nlet x = mod::MAGIC_NUM - 2\nvar->\n    field: mod::EXTERN_TYPE\n```",
+            r#"Both examples use this file. Relative import paths are resolved from the server's working directory; place `definitions.chrn` there for these examples.
+
+**`definitions.chrn`:**
+```chrn
+export let LIMIT = 10
+nest->
+export struct Item { name: str }
+```
+
+**Direct import — `main.chrn`:**
+```chrn
+import "definitions.chrn"
+let limit = definitions::LIMIT
+var->
+    item: definitions::Item
+```
+Without `as`, the file name before its first extension is the local module name.
+
+**Aliased import — `main.chrn`:**
+```chrn
+import "definitions.chrn" as defs
+let limit = defs::LIMIT
+var->
+    item: defs::Item
+```
+Use `::` to access an exported declaration. `as` changes the local module name."#,
         ),
     },
     Document {
         key: "var->",
-        description: "Starts the section describing top-level serialized data",
+        description: "Starts the section declaring front-facing serialized values",
         example: Some(
-            "Each entry has a name and type. Conditions check incoming data. Directives change how errors or output are handled. Names in `var->` can refer to definitions in `nest->` and the neutral section.\n\n**Fields, a condition, and a directive:**\n```chrn\nvar->\n    name: str [!IsEmpty]\n    separator: str [IsWhitespace] #warn\n```",
+            r#"Each declaration has a name and a type. This section searches `nest->`, then the neutral section, for definitions.
+
+**Values and structural types:**
+```chrn
+var->
+    name: str
+    address: Address
+nest->
+struct Address { city: str }
+```
+
+**Conditions and directives (condition analysis unfinished):**
+```chrn
+var->
+    name: str [!IsEmpty]
+    separator: str [IsWhitespace] #warn
+```
+Conditions constrain serialized data. Directives select diagnostic or serialization behavior."#,
         ),
     },
     Document {
         key: "nest->",
-        description: "Starts the section where structs and enums are defined",
+        description: "Starts the section declaring struct and enum types",
         example: Some(
-            "Types declared here can be referenced from `var->` and other nested types. `nest->` can search `var->`, itself, and the neutral section.\n\n**Nested types used by top-level data:**\n```chrn\nvar->\n    address: Address\nnest->\n    struct Address { city: str zip: u32 }\n    enum Color { Red Green Blue }\n```",
+            r#"Declarations here can refer to definitions in `var->`, `nest->`, and the neutral section, in that search order.
+
+**Struct used by a front-facing value:**
+```chrn
+var->
+    address: Address
+nest->
+struct Address { city: str zip: u32 }
+```
+
+**Enum used by a front-facing value:**
+```chrn
+var->
+    color: Color
+nest->
+enum Color { Red Green Blue }
+```"#,
         ),
     },
     Document {
         key: "complex->",
-        description: "Starts the section for type settings and language overrides",
+        description:
+            "Starts the section configuring existing types, members, and language mappings",
         example: Some(
-            "Use `for` to change the settings for a type. Use `override` to change built-in defaults for a language. Normal config blocks can nest two levels deep. Built-in override paths can go deeper.\n\n**Type settings:**\n```chrn\nnest->\nstruct Person { name: str age: u8 }\ncomplex->\nfor Person {\n    cases = [\"snake_case\", \"UpperSnakeCase\"]\n    age { default_val = 0 }\n}\n```\n\n**Language override:**\n```chrn\ncomplex->\noverride JAVA=>types {\n    change i8, i16 = java::int\n}\n```",
+            r#"A `for` block selects a configuration target. Its option assignments configure that target; nested member blocks select individual fields or variants. `override` configures language-specific type mappings.
+
+**Type and member options:**
+```chrn
+nest->
+struct Person { name: str age: i32 }
+complex->
+for Person {
+    cases = ["snake_case", "UpperSnakeCase"]
+    age { default_val = 0 }
+}
+```
+A normal config allows a root and one level of member blocks. Override blocks can nest more deeply.
+
+**Language mappings:**
+```chrn
+complex->
+override JAVA=>types {
+    change i8, i16 = java::int
+}
+```
+`=>types` shortens the nested form `{ types { ... } }`."#,
         ),
     },
     Document {
         key: "override",
-        description: "Changes language defaults for everything or for one `for` block",
+        description: "Sets language-specific type mappings globally or within a type configuration",
         example: Some(
-            "At the root of `complex->`, `override LANGUAGE` changes the defaults everywhere that language is used. Inside a `for` block, it changes only that type or member. The inside override has priority over the root override.\n\n**Root override:**\n```chrn\ncomplex->\noverride JAVA {\n    types {\n        change i8, i16 = java::int\n    }\n}\n```\n\n**Override inside `for`:**\n```chrn\ncomplex->\nfor Person {\n    age {\n        override RUST=>types {\n            change u8 = rust::u32\n        }\n    }\n}\n```",
+            r#"Use a language name such as `JAVA` or `RUST`, then a `types` block containing `change` assignments. An override inside `for` has priority over a global override for the same language.
+
+**Root override:**
+```chrn
+complex->
+override JAVA {
+    types {
+        change i8, i16 = java::int
+    }
+}
+```
+This sets mappings throughout the configuration for Java. `override JAVA=>types { ... }` is the shortened form.
+
+**Override inside `for`:**
+```chrn
+nest->
+struct Person { age: u8 score: i16 }
+complex->
+for Person {
+    override JAVA=>types { change i16 = java::int }
+}
+```
+This Java mapping is local to `Person`.
+
+**Override inside a member:**
+```chrn
+nest->
+struct Person { age: u8 }
+complex->
+for Person {
+    age {
+        override RUST=>types { change = rust::u32 }
+    }
+}
+```
+This Rust mapping is local to `age`."#,
         ),
     },
     Document {
         key: "in",
-        description: "Separates a scoped `let` value from the expression that uses it",
-        example: Some(
-            "```chrn\n@def\n\tlet result = let x = 10 in x * 2\n\t// result = 20\n@end\n```",
-        ),
+        description: "Reserved for local `let` expressions; not implemented",
+        example: None,
     },
     Document {
         key: "for",
-        description: "Chooses the type to configure in `complex->`",
+        description: "Selects an existing type or front-facing value to configure in `complex->`",
         example: Some(
-            "Add `var` or `nest` before the type name when both sections contain that name. Put a member's settings inside a block named after the member.\n\n**Type and member settings:**\n```chrn\ncomplex->\nfor Person {\n    idents = \"Human\"\n    age { default_val = 0 }\n}\n```\n\n**Choose the `nest->` type:**\n```chrn\ncomplex->\nfor nest Person { idents = \"Human\" }\n```",
+            r#"Option assignments on the root configure the selected target. A block named after a member configures that member. These options do not rename chrn declarations.
+
+**Type and member options:**
+```chrn
+nest->
+struct Person { name: str age: i32 }
+complex->
+for Person {
+    idents = "Human"
+    age { default_val = 0 }
+}
+```
+
+**Select a section explicitly:**
+```chrn
+var->
+    Person: Person
+nest->
+struct Person { name: str }
+complex->
+for var Person {}
+for nest Person { idents = "Human" }
+```
+`var` selects the front-facing declaration; `nest` selects the structural type. An empty block selects the target without assigning options.
+
+**Shortened member block:**
+```chrn
+nest->
+struct Person { name: str }
+complex->
+for Person=>name { idents = "display_name" }
+```
+`=>name` selects `name` without an extra pair of braces.
+
+**Imported type:**
+`definitions.chrn` exports the type:
+```chrn
+nest->
+export struct Item { name: str }
+```
+`main.chrn` imports and configures it:
+```chrn
+import "definitions.chrn"
+complex->
+for definitions::Item { idents = "Product" }
+```
+The importing module's configuration takes priority over configuration for that type in the imported module. Relative imports use the server's working directory."#,
         ),
     },
 ];
@@ -329,7 +673,7 @@ pub static BUILTIN_TYPE_DOCS: [Document; 27] = [
     },
     Document {
         key: "bool",
-        description: "Boolean type",
+        description: "Boolean value (`true` or `false`)",
         example: None,
     },
     Document {
@@ -364,9 +708,9 @@ pub static BUILTIN_TYPE_DOCS: [Document; 27] = [
     },
     Document {
         key: "Runtime",
-        description: "Leaves the value's type to be found at runtime",
+        description: "Defers the value's type to runtime",
         example: Some(
-            "Use `Runtime` when the data may hold different types and the config cannot name one type ahead of time.\n\n**Example:**\n```chrn\nvar->\n    payload: Runtime\n```",
+            "Use `Runtime` when the serialized value's type is not known in advance.\n\n**Example:**\n```chrn\nvar->\n    payload: Runtime\n```",
         ),
     },
 ];
@@ -383,13 +727,43 @@ pub static FUNC_DOCS: [Document; 7] = [
         key: "IsEmpty",
         description: "Checks whether a string or collection has length zero",
         example: Some(
-            "Negate the predicate when the value must contain something.\n\n**Example:**\n```chrn\nvar->\n    items: List<str> [!IsEmpty]\n```",
+            r#"Condition analysis is unfinished. Use this predicate without parentheses. Prefix it with `!` to require a nonempty value.
+
+**String:**
+```chrn
+var->
+    placeholder: str [IsEmpty]
+    name: str [!IsEmpty]
+```
+
+**Collections:**
+```chrn
+var->
+    names: List<str> [!IsEmpty]
+    tags: Set<str> [!IsEmpty]
+    scores: Map<str, i32> [!IsEmpty]
+    coordinate: Tuple<i32, i32> [!IsEmpty]
+```"#,
         ),
     },
     Document {
         key: "IsWhitespace",
         description: "Checks whether a string contains only Unicode whitespace",
-        example: Some("```chrn\nvar->\n    separator: str [IsWhitespace]\n```"),
+        example: Some(
+            r#"Condition analysis is unfinished. Use this predicate without parentheses. Negating it requires a string that is not entirely whitespace; it does not forbid whitespace between other characters.
+
+**Whitespace-only string:**
+```chrn
+var->
+    separator: str [IsWhitespace]
+```
+
+**Nonblank string:**
+```chrn
+var->
+    name: str [!IsEmpty, !IsWhitespace]
+```"#,
+        ),
     },
     Document {
         key: "Contains",
@@ -437,41 +811,221 @@ pub static FUNC_DOCS: [Document; 7] = [
 pub static DIRECTIVE_DOCS: [Document; 7] = [
     Document {
         key: "warn",
-        description: "Reports a failed serialized-data constraint as a warning instead of an error",
+        description: "Selects a warning instead of an error for failed serialized-data constraints",
         example: Some(
-            "Add it to the field whose failed condition should produce a warning.\n\n**Example:**\n```chrn\nvar->\n    separator: str [IsWhitespace] #warn\n```",
+            r#"**One value:**
+```chrn
+var->
+    name: str [!IsEmpty] #warn
+```
+
+**Whole struct (analysis unfinished):**
+```chrn
+nest->
+struct Pair { first: str second: str } #warn
+```
+Put the directive after the closing brace to apply it throughout the declared type.
+
+**Whole enum (analysis unfinished):**
+```chrn
+nest->
+enum Choice { First: str Second: str } #warn
+```
+
+**Reusable directive (alias analysis unfinished):**
+```chrn
+alias ApplyDirective() = #warn
+var->
+    name: str [!IsEmpty, ApplyDirective()]
+```"#,
         ),
     },
     Document {
         key: "ignore",
-        description: "Ignores data errors for the field it is added to",
-        example: Some("```chrn\nvar->\n    payload: Runtime #ignore\n```"),
+        description: "Suppresses serialized-data errors for the value or type it is applied to",
+        example: Some(
+            r#"**One value:**
+```chrn
+var->
+    payload: Runtime #ignore
+```
+
+**Whole struct (analysis unfinished):**
+```chrn
+nest->
+struct Pair { first: str second: str } #ignore
+```
+Put the directive after the closing brace to apply it throughout the declared type.
+
+**Whole enum (analysis unfinished):**
+```chrn
+nest->
+enum Choice { First: str Second: str } #ignore
+```
+
+**Reusable directive (alias analysis unfinished):**
+```chrn
+alias ApplyDirective() = #ignore
+var->
+    payload: Runtime [ApplyDirective()]
+```"#,
+        ),
     },
     Document {
         key: "scient",
-        description: "Outputs numeric values in scientific notation",
-        example: Some("```chrn\nvar->\n\tpi: f64 #scient\n```"),
+        description: "Selects scientific notation for serialized numeric output",
+        example: Some(
+            r#"**One value:**
+```chrn
+var->
+    amount: f64 #scient
+```
+
+**Whole struct (analysis unfinished):**
+```chrn
+nest->
+struct Pair { first: f64 second: f64 } #scient
+```
+Put the directive after the closing brace to apply it throughout the declared type.
+
+**Whole enum (analysis unfinished):**
+```chrn
+nest->
+enum Choice { First: f64 Second: f64 } #scient
+```
+
+**Reusable directive (alias analysis unfinished):**
+```chrn
+alias ApplyDirective() = #scient
+var->
+    amount: f64 [ApplyDirective()]
+```"#,
+        ),
     },
     Document {
         key: "hex",
-        description: "Outputs numeric values in hexadecimal notation",
-        example: Some("```chrn\nvar->\n    color: u32 #hex\n```"),
+        description: "Selects hexadecimal notation for serialized numeric output",
+        example: Some(
+            r#"**One value:**
+```chrn
+var->
+    color: u32 #hex
+```
+
+**Whole struct (analysis unfinished):**
+```chrn
+nest->
+struct Pair { first: u32 second: u32 } #hex
+```
+Put the directive after the closing brace to apply it throughout the declared type.
+
+**Whole enum (analysis unfinished):**
+```chrn
+nest->
+enum Choice { First: u32 Second: u32 } #hex
+```
+
+**Reusable directive (alias analysis unfinished):**
+```chrn
+alias ApplyDirective() = #hex
+var->
+    color: u32 [ApplyDirective()]
+```"#,
+        ),
     },
     Document {
         key: "bin",
-        description: "Outputs numeric values in binary notation",
-        example: Some("```chrn\nvar->\n\tflags: u8 #bin\n```"),
+        description: "Selects binary notation for serialized numeric output",
+        example: Some(
+            r#"**One value:**
+```chrn
+var->
+    flags: u8 #bin
+```
+
+**Whole struct (analysis unfinished):**
+```chrn
+nest->
+struct Pair { first: u8 second: u8 } #bin
+```
+Put the directive after the closing brace to apply it throughout the declared type.
+
+**Whole enum (analysis unfinished):**
+```chrn
+nest->
+enum Choice { First: u8 Second: u8 } #bin
+```
+
+**Reusable directive (alias analysis unfinished):**
+```chrn
+alias ApplyDirective() = #bin
+var->
+    flags: u8 [ApplyDirective()]
+```"#,
+        ),
     },
     Document {
         key: "octal",
-        description: "Outputs numeric values in octal notation",
-        example: Some("```chrn\nvar->\n\tperm: u32 #octal\n```"),
+        description: "Selects octal notation for serialized numeric output",
+        example: Some(
+            r#"**One value:**
+```chrn
+var->
+    permissions: u32 #octal
+```
+
+**Whole struct (analysis unfinished):**
+```chrn
+nest->
+struct Pair { first: u32 second: u32 } #octal
+```
+Put the directive after the closing brace to apply it throughout the declared type.
+
+**Whole enum (analysis unfinished):**
+```chrn
+nest->
+enum Choice { First: u32 Second: u32 } #octal
+```
+
+**Reusable directive (alias analysis unfinished):**
+```chrn
+alias ApplyDirective() = #octal
+var->
+    permissions: u32 [ApplyDirective()]
+```"#,
+        ),
     },
     Document {
         key: "max_numeric_bits",
         description: "Sets the compiler's numeric bit limit",
         example: Some(
-            "Accepts one integer from `0` through `4294967295`. Applied after lexing, before parsing and resolution. Only directives in the entry module change compiler settings; imported modules use the entry module's settings.\n\n**Example:**\n```chrn\n#max_numeric_bits(256)\nlet value = 1\n```",
+            r#"Limits numeric literals and computed numeric values. Accepts one integer literal representable as `u32`, not a `let` name or an arithmetic expression.
+
+The compiler needs the limit before evaluating any expressions. If setting the limit required evaluation, a value larger than that limit could be evaluated first. A literal lets the compiler read the setting before evaluation begins.
+
+Only the entry module can change this setting; imported modules use the entry module's limit.
+
+**Within an 8-bit limit:**
+```chrn
+#max_numeric_bits(8)
+let value = 255
+let product = 15 * 17
+```
+Both values are `255`, whose magnitude fits in eight bits.
+
+**Literal exceeds the limit (error):**
+```chrn
+#max_numeric_bits(8)
+let value = 256
+```
+`256` needs nine bits, so the compiler rejects it.
+
+**Computed result exceeds the limit (error):**
+```chrn
+#max_numeric_bits(8)
+let product = 16 * 16
+```
+Each operand fits in eight bits, but the result is `256` and needs nine. The compiler rejects the multiplication."#,
         ),
     },
 ];
@@ -484,23 +1038,100 @@ pub static DIRECTIVE_DOCS: [Document; 7] = [
 pub static CONFIG_OPTION_DOCS: [Document; 3] = [
     Document {
         key: "cases",
-        description: "Lets serialized names use more than one letter case style",
+        description: "Sets letter-case conventions accepted for serialized identifiers",
         example: Some(
-            "Assign one convention directly or a list of conventions. The option applies to the configured type or member.\n\n**Several accepted conventions:**\n```chrn\ncomplex->\nfor Person {\n    cases = [\"snake_case\", \"UpperSnakeCase\"]\n}\n```",
+            r#"Use this option on a struct, enum, or member. Assign one convention as a string or several as a list. The chrn declaration keeps its original name.
+
+**One convention on a type:**
+```chrn
+nest->
+struct Person { displayName: str }
+complex->
+for Person { cases = "snake_case" }
+```
+
+**Several conventions on a type:**
+```chrn
+nest->
+enum Status { InProgress Complete }
+complex->
+for Status { cases = ["snake_case", "UpperSnakeCase"] }
+```
+
+**Member convention:**
+```chrn
+nest->
+struct Person { displayName: str }
+complex->
+for Person {
+    displayName { cases = "snake_case" }
+}
+```"#,
         ),
     },
     Document {
         key: "idents",
-        description: "Adds other names that can match the serialized value",
+        description: "Sets alternative identifiers accepted from serialized data",
         example: Some(
-            "Use it on a root to rename the type during matching, or in a member block to rename that member. A single string does not require brackets.\n\n**Type identifier:**\n```chrn\ncomplex->\nfor Person { idents = \"Human\" }\n```\n\n**Member identifier:**\n```chrn\ncomplex->\nfor Person {\n    name { idents = [\"display_name\", \"full_name\"] }\n}\n```",
+            r#"Use a string for one identifier or a list for several. On a config root, this option names the configured type; on a config member, it names the member, not the member's type. It does not rename either chrn declaration.
+
+**Type identifier:**
+```chrn
+nest->
+struct Person { name: str }
+complex->
+for Person { idents = "Human" }
+```
+
+**Field identifiers:**
+```chrn
+nest->
+struct Person { name: str }
+complex->
+for Person {
+    name { idents = ["display_name", "full_name"] }
+}
+```
+
+**Enum and variant identifiers:**
+```chrn
+nest->
+enum Status { Ready Pending }
+complex->
+for Status {
+    idents = ["State", "Status"]
+    Ready { idents = "ready" }
+}
+```"#,
         ),
     },
     Document {
         key: "default_val",
-        description: "Supplies a member value when serialized data is absent",
+        description:
+            "Sets a member default for null/None data where the target language supports it",
         example: Some(
-            "Set it in the member's config block. The value must match the member's type.\n\n**Example:**\n```chrn\ncomplex->\nfor Person {\n    age { default_val = 0 }\n}\n```",
+            r#"Set this option in a member's config block. The value must match the member's type. This is serialization metadata; it does not initialize a chrn variable.
+
+**Literal default:**
+```chrn
+nest->
+struct Person { age: i32 }
+complex->
+for Person {
+    age { default_val = 0 }
+}
+```
+
+**Default from a named value:**
+```chrn
+let default_name = "Guest"
+nest->
+struct Person { name: str }
+complex->
+for Person {
+    name { default_val = default_name }
+}
+```"#,
         ),
     },
 ];
@@ -650,13 +1281,13 @@ mod tests {
         );
         assert_eq!(
             markdown.matches("```chrn").count(),
-            2,
+            3,
             "each override form should have its own chrn example"
         );
         assert_eq!(
             markdown.matches("```").count(),
-            4,
-            "both override examples should have closed Markdown fences"
+            6,
+            "all override examples should have closed Markdown fences"
         );
     }
 }

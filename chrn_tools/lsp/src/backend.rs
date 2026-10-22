@@ -47,6 +47,7 @@ use compilation::module::module_concepts::ModuleState;
 use compilation::parser::ast::ast_concepts::AbstractConfigKind;
 use compilation::script_compiler::ScriptCompiler;
 use compilation::semantic::hir::hir_concepts::Type;
+use compilation::semantic::hir::hir_directives::DirectivePreprocessSchemaKind;
 use compilation::semantic::hir::hir_impls::{
     ConfigMemberMetadataKind, ConfigRoot, ConfigRootMetadataKind, ImplMemberKind,
 };
@@ -58,9 +59,9 @@ use std::{collections::HashMap, sync::Arc};
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
 use tower_lsp::lsp_types::{
-    CompletionItem, CompletionItemKind, CompletionResponse, CompletionTextEdit,
-    GotoDefinitionResponse, InsertTextFormat, LocationLink, Position, Range, SemanticToken,
-    TextEdit, Url,
+    CompletionItem, CompletionItemKind, CompletionResponse, CompletionTextEdit, Documentation,
+    GotoDefinitionResponse, InsertTextFormat, LocationLink, MarkupContent, MarkupKind, Position,
+    Range, SemanticToken, TextEdit, Url,
 };
 use tower_lsp::{Client, LanguageServer, jsonrpc};
 
@@ -71,6 +72,7 @@ use lang::config_schemas::{ConfigSchemaKind, get_cfg_schema};
 
 use crate::analyser::analyze_and_publish_task;
 use crate::analyser::{dependency_snapshots_are_current, resolve_document_modules};
+use crate::document::Document;
 use crate::state::{DocumentCache, DocumentState, STATE_LOCK_TIMEOUT};
 use crate::text::apply_text_change;
 
@@ -2125,7 +2127,7 @@ impl LanguageServer for Backend {
 
         let byte_off =
             crate::text::position_to_offset(&state.text, params.text_document_position.position);
-        let (mut start_b, _end_b) = crate::text::find_word_bounds(&state.text, byte_off);
+        let (mut start_b, end_b) = crate::text::find_word_bounds(&state.text, byte_off);
         // Word bounds include `>` for section names such as `nest->`. A config
         // arrow is a delimiter, including when a prefix directly follows it.
         if start_b > 0
@@ -2154,11 +2156,57 @@ impl LanguageServer for Backend {
         // Determine the script section boundaries from cached state
         let script_start = state.script_start;
         let serial_start = state.serial_start.unwrap_or(state.text.len());
-        let in_script_section = byte_off >= script_start && byte_off < serial_start;
+        let in_script_section =
+            byte_off >= script_start && (byte_off < serial_start || state.serial_start.is_none());
 
         // If cursor is outside the script section, return no completions
         if !in_script_section || state.offset_in_comment(byte_off) {
             return Ok(Some(CompletionResponse::Array(Vec::new())));
+        }
+
+        if let Some(directive_prefix) = prefix.strip_prefix('#') {
+            let relative_start = crate::text::abs_to_rel_offset(start_b as u32, script_start);
+            let hash_index = state
+                .tokens
+                .partition_point(|token| token.span.start < relative_start);
+            let is_directive = state.tokens.get(hash_index).is_some_and(|token| {
+                token.span.start == relative_start && token.tok == ScriptToken::HashSymbol
+            });
+            // Arguments may follow the complete name after whitespace or comments,
+            // including when the cursor is still in the middle of that name.
+            let relative_end = crate::text::abs_to_rel_offset(end_b as u32, script_start);
+            let next_index = state
+                .tokens
+                .partition_point(|token| token.span.start < relative_end);
+            let has_arguments = state
+                .tokens
+                .get(next_index)
+                .is_some_and(|token| token.tok == ScriptToken::OParen);
+            let name_id = DirectivePreprocessSchemaKind::MaxNumericBits.name_id();
+            let name = state.interner.extract_str_from_interned_id(name_id);
+            let mut items = Vec::new();
+            if is_directive && name.starts_with(directive_prefix) {
+                let mut item =
+                    completion_item(format!("{name}(..)"), CompletionItemKind::FUNCTION, false);
+                item.filter_text = Some(name.to_string());
+                item.insert_text = Some(if has_arguments {
+                    name.to_string()
+                } else if snippet_support {
+                    item.insert_text_format = Some(InsertTextFormat::SNIPPET);
+                    format!("{name}(${{1:{}}})$0", compilation::DEFAULT_MAX_NUMERIC_BITS)
+                } else {
+                    format!("{name}({})", compilation::DEFAULT_MAX_NUMERIC_BITS)
+                });
+                let doc = Document::directive_docs(name_id)
+                    .expect("max_numeric_bits has hover documentation");
+                item.documentation = Some(Documentation::MarkupContent(MarkupContent {
+                    kind: MarkupKind::Markdown,
+                    value: doc.compose(),
+                }));
+                items.push(item);
+            }
+            set_completion_edits(&mut items, &state.text, start_b + 1, end_b);
+            return Ok(Some(CompletionResponse::Array(items)));
         }
 
         // Single `:` should not trigger completions; only `::` (static access) should.
@@ -2297,7 +2345,8 @@ impl LanguageServer for Backend {
                     let ns_scope = &compiler.scopes[scope_id];
                     for (_, memb_id) in ns_scope.scope.table.iter_interned() {
                         let member = &compiler.syms[memb_id];
-                        let member_name = state.interner.extract_str_from_interned_id(member.name_id);
+                        let member_name =
+                            state.interner.extract_str_from_interned_id(member.name_id);
                         if prefix.is_empty() || member_name.starts_with(prefix) {
                             items.push(symbol_completion_item(
                                 compiler,

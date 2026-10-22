@@ -1,13 +1,17 @@
 use crate::backend::{ConfigCompletionCandidate, config_completion_items};
+use crate::document::Document;
 use crate::state::{DocumentState, SemanticEntity};
 use crate::tests::session::{Session, TempWorkspace, position_of};
 use chrn_utils::id_types::{InternedId, SourceRegionId};
+use chrn_utils::intern::INTERNED_MAX_NUMERIC_BITS;
 use chrn_utils::intern::Intern;
 use chrn_utils::source_map::source_span::SourceSpan;
 use compilation::script_compiler::ScriptCompiler;
 use std::sync::Arc;
+use tokio::runtime::Builder;
 use tower_lsp::lsp_types::{
-    CompletionItemKind, CompletionResponse, CompletionTextEdit, InsertTextFormat, Range,
+    CompletionItemKind, CompletionResponse, CompletionTextEdit, Documentation, InsertTextFormat,
+    MarkupKind, Range,
 };
 
 #[test]
@@ -116,6 +120,224 @@ async fn completion_at_line_comment_end_is_suppressed() {
             "expected normal completion at {needle}, got {items:?}"
         );
     }
+}
+
+#[test]
+fn max_numeric_bits_completion_preserves_the_marker_and_respects_client_snippet_support() {
+    let runtime = Builder::new_current_thread()
+        .enable_all()
+        .start_paused(true)
+        .build()
+        .expect("create the paused LSP test runtime");
+    runtime.block_on(async {
+    let workspace = TempWorkspace::new("numeric_bits_directive_completion");
+    let text = "// header 😀\n@def\n#\n#max_\n#max_numeric_bits\n#max_no\n// #max_\n/* #max_ */\nlet text = \"#max_\"\n@end\nserialized: #max_\n";
+    let uri = workspace.write("main.chrn", text);
+    let expected_documentation =
+        Document::directive_docs(InternedId::new(INTERNED_MAX_NUMERIC_BITS))
+            .expect("the numeric bit limit has directive documentation")
+            .compose();
+
+    for (supports_snippets, expected_text) in [
+        (false, "max_numeric_bits(256)"),
+        (true, "max_numeric_bits(${1:256})$0"),
+    ] {
+        let mut session = Session::new_with_snippet_support(supports_snippets).await;
+        session.open(&uri, text).await;
+        {
+            let state = session.backend().doc_cache.get(uri.as_str()).unwrap();
+            let state = state.read();
+            assert!(
+                state.script_start > 0,
+                "the fixture exercises embedded offsets"
+            );
+            assert_eq!(state.text.as_str(), text);
+        }
+
+        for (typed, trigger) in [
+            ("#", Some("#")),
+            ("#max_", None),
+            ("#max_numeric_bits", None),
+        ] {
+            let marker = position_of(text, typed, 0);
+            let mut start = marker;
+            start.character += 1;
+            let mut position = marker;
+            position.character += typed.len() as u32;
+            let Some(CompletionResponse::Array(items)) =
+                session.completion(&uri, position, trigger).await
+            else {
+                panic!("{typed}: directive completion returns an item array");
+            };
+            let matching: Vec<_> = items
+                .iter()
+                .filter(|item| item.label == "max_numeric_bits(..)")
+                .collect();
+            let [item] = matching.as_slice() else {
+                panic!("{typed}: expected one numeric bit limit completion, got {items:?}");
+            };
+            if typed != "#" {
+                assert_eq!(items.len(), 1, "{typed}: filter by the directive name");
+            }
+            assert_eq!(item.kind, Some(CompletionItemKind::FUNCTION));
+            assert_eq!(item.filter_text.as_deref(), Some("max_numeric_bits"));
+            assert_eq!(item.insert_text.as_deref(), Some(expected_text));
+            assert_eq!(
+                item.insert_text_format,
+                supports_snippets.then_some(InsertTextFormat::SNIPPET)
+            );
+            let expected_range = Range::new(start, position);
+            match item
+                .text_edit
+                .as_ref()
+                .expect("replace only the directive name")
+            {
+                CompletionTextEdit::Edit(edit) => {
+                    assert_eq!(edit.range, expected_range, "{typed}: preserve #");
+                    assert_eq!(edit.new_text, expected_text);
+                }
+                CompletionTextEdit::InsertAndReplace(edit) => {
+                    assert_eq!(edit.insert, expected_range, "{typed}: preserve #");
+                    assert_eq!(edit.replace, expected_range, "{typed}: preserve #");
+                    assert_eq!(edit.new_text, expected_text);
+                }
+            }
+            let Some(Documentation::MarkupContent(documentation)) = &item.documentation else {
+                panic!("{typed}: include Markdown directive documentation");
+            };
+            assert_eq!(documentation.kind, MarkupKind::Markdown);
+            assert_eq!(documentation.value, expected_documentation);
+        }
+
+        for (needle, nth) in [
+            ("#max_no", 0),
+            ("// #max_", 0),
+            ("/* #max_", 0),
+            ("\"#max_", 0),
+            ("serialized: #max_", 0),
+        ] {
+            let mut position = position_of(text, needle, nth);
+            position.character += needle.len() as u32;
+            let Some(CompletionResponse::Array(items)) =
+                session.completion(&uri, position, None).await
+            else {
+                panic!("{needle} occurrence {nth}: completion returns an item array");
+            };
+            assert!(
+                items.is_empty(),
+                "{needle} occurrence {nth}: exclude unmatched prefixes, comments, strings, and serialized data: {items:?}"
+            );
+        }
+    }
+    });
+}
+
+#[test]
+fn max_numeric_bits_completion_works_at_eof_and_preserves_existing_arguments() {
+    let runtime = Builder::new_current_thread()
+        .enable_all()
+        .start_paused(true)
+        .build()
+        .expect("create the paused LSP test runtime");
+    runtime.block_on(async {
+        let workspace = TempWorkspace::new("numeric_bits_directive_completion_edits");
+        let mut session = Session::new_with_snippet_support(true).await;
+
+        for (name, marked, replaced_name, expected_text, expected_format) in [
+            (
+                "hash_eof",
+                "#~",
+                "",
+                "max_numeric_bits(${1:256})$0",
+                Some(InsertTextFormat::SNIPPET),
+            ),
+            (
+                "prefix_eof",
+                "#max_~",
+                "max_",
+                "max_numeric_bits(${1:256})$0",
+                Some(InsertTextFormat::SNIPPET),
+            ),
+            (
+                "existing_arguments",
+                "#max_numeric_bits~(8)",
+                "max_numeric_bits",
+                "max_numeric_bits",
+                None,
+            ),
+            (
+                "prefix_with_arguments",
+                "#max_~(8)",
+                "max_",
+                "max_numeric_bits",
+                None,
+            ),
+            (
+                "arguments_after_whitespace",
+                "#max_numeric_bits~ (8)",
+                "max_numeric_bits",
+                "max_numeric_bits",
+                None,
+            ),
+            (
+                "arguments_after_comment",
+                "#max_numeric_bits~ /* note */ (8)",
+                "max_numeric_bits",
+                "max_numeric_bits",
+                None,
+            ),
+            (
+                "midpoint_with_arguments",
+                "#max_~numeric_bits(8)",
+                "max_numeric_bits",
+                "max_numeric_bits",
+                None,
+            ),
+            (
+                "midpoint_without_arguments",
+                "#max_~numeric_bits",
+                "max_numeric_bits",
+                "max_numeric_bits(${1:256})$0",
+                Some(InsertTextFormat::SNIPPET),
+            ),
+        ] {
+            let position = position_of(marked, "~", 0);
+            let text = marked.replace('~', "");
+            let uri = workspace.write(&format!("{name}.chrn"), &text);
+            session.open(&uri, &text).await;
+            let Some(CompletionResponse::Array(items)) =
+                session.completion(&uri, position, None).await
+            else {
+                panic!("{name}: directive completion returns an item array");
+            };
+            let item = items
+                .iter()
+                .find(|item| item.label == "max_numeric_bits(..)")
+                .unwrap_or_else(|| panic!("{name}: the bit limit directive is offered: {items:?}"));
+            assert_eq!(item.insert_text.as_deref(), Some(expected_text), "{name}");
+            assert_eq!(item.insert_text_format, expected_format, "{name}");
+            let mut start = position_of(&text, "#", 0);
+            start.character += 1;
+            let mut end = start;
+            end.character += replaced_name.len() as u32;
+            let expected_range = Range::new(start, end);
+            match item
+                .text_edit
+                .as_ref()
+                .expect("replace the typed directive name")
+            {
+                CompletionTextEdit::Edit(edit) => {
+                    assert_eq!(edit.range, expected_range, "{name}");
+                    assert_eq!(edit.new_text, expected_text, "{name}");
+                }
+                CompletionTextEdit::InsertAndReplace(edit) => {
+                    assert_eq!(edit.insert, expected_range, "{name}");
+                    assert_eq!(edit.replace, expected_range, "{name}");
+                    assert_eq!(edit.new_text, expected_text, "{name}");
+                }
+            }
+        }
+    });
 }
 
 /// Static access on a built-in type offers its namespace members (`MAX`, `MIN`),

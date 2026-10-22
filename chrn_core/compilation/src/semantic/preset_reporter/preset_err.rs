@@ -6,7 +6,7 @@ use chrn_utils::{
 use lang::{chrn_classifier::ChrnClassified, types::boundaries::TypeBoundaryFlags};
 
 use crate::{
-    constraints::ArgConstraint,
+    constraints::FuncArgConstraint,
     lookup::scopes::scopes_concepts::AssociatedScopeKind,
     parser::ast::ast_concepts::{BinaryOp, UnaryOp},
     resolvers::typechecker::typechecker_concepts::{ExpectedKind, ExpectedKindType},
@@ -39,7 +39,7 @@ pub enum PresetErr {
         sp_found_type_id: SpannedContainer<TypeId>,
     },
     FuncConstraintMismatch {
-        constraint: ArgConstraint,
+        constraint: FuncArgConstraint,
         fmtted_ty: ChrnClassified,
         spans: Vec<SourceSpan>,
     },
@@ -56,7 +56,7 @@ pub enum PresetErr {
     // },
     /// Constraint, amount of incorrect params found, spans
     DirectiveCountMismatch {
-        constraint: ArgConstraint,
+        constraint: FuncArgConstraint,
         count: u32,
         spans: Vec<SourceSpan>,
     },
@@ -207,14 +207,14 @@ pub enum DirectiveError {
 pub enum FuncConstraints {
     /// Constraint, found type, function kind, spans
     FuncConstraintMismatch {
-        constraint: ArgConstraint,
+        constraint: FuncArgConstraint,
         fmtted_ty: ChrnClassified,
         func_kind: BuiltinFuncKind,
         spans: Vec<SourceSpan>,
     },
     /// Constraint, function type, amount of incorrect params found, spans
     ArgCountMismatch {
-        constraint: ArgConstraint,
+        constraint: FuncArgConstraint,
         func_kind: BuiltinFuncKind,
         count: u32,
         spans: Vec<SourceSpan>,

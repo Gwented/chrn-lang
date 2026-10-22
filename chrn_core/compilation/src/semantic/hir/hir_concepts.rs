@@ -2,7 +2,7 @@
 // is that a gui framework
 // Maybe named, global table, program table
 
-use std::collections::HashMap;
+use std::{collections::HashMap, ops::Range};
 
 use chrn_utils::{
     arena::Arena,
@@ -187,5 +187,57 @@ pub struct BuiltinTypeInfo {
 impl BuiltinTypeInfo {
     pub fn new(ty: BuiltinType) -> BuiltinTypeInfo {
         BuiltinTypeInfo { ty }
+    }
+}
+
+// No idea where to put this.
+/// Range that may be arbitrary or operate off of set bit sizes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum IntegerRangeKind {
+    RangeI64(Range<i64>),
+    RangeU64(Range<u64>),
+    U8,
+    U16,
+    U32,
+    U64,
+    I8,
+    I16,
+    I32,
+    I64,
+}
+
+impl IntegerRangeKind {
+    // I don't think I like this.
+    /// Returns range (exclusive, exclusive)
+    pub fn range(&self) -> Range<i128> {
+        match self {
+            Self::RangeI64(range) => i128::from(range.start)..i128::from(range.end),
+            Self::RangeU64(range) => i128::from(range.start)..i128::from(range.end),
+            Self::U8 => 0..i128::from(u8::MAX) + 1,
+            Self::U16 => 0..i128::from(u16::MAX) + 1,
+            Self::U32 => 0..i128::from(u32::MAX) + 1,
+            Self::U64 => 0..i128::from(u64::MAX) + 1,
+            Self::I8 => i128::from(i8::MIN)..i128::from(i8::MAX) + 1,
+            Self::I16 => i128::from(i16::MIN)..i128::from(i16::MAX) + 1,
+            Self::I32 => i128::from(i32::MIN)..i128::from(i32::MAX) + 1,
+            Self::I64 => i128::from(i64::MIN)..i128::from(i64::MAX) + 1,
+        }
+    }
+}
+
+impl std::fmt::Display for IntegerRangeKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::RangeI64(range) => write!(f, "{}..{}", range.start, range.end),
+            Self::RangeU64(range) => write!(f, "{}..{}", range.start, range.end),
+            Self::U8 => f.write_str("u8"),
+            Self::U16 => f.write_str("u16"),
+            Self::U32 => f.write_str("u32"),
+            Self::U64 => f.write_str("u64"),
+            Self::I8 => f.write_str("i8"),
+            Self::I16 => f.write_str("i16"),
+            Self::I32 => f.write_str("i32"),
+            Self::I64 => f.write_str("i64"),
+        }
     }
 }

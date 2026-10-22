@@ -1,11 +1,14 @@
 use crate::{
     resolvers::resolver_state::CompilerStage,
-    semantic::hir::hir_directives::{
-        DirectivePreprocessEffect, DirectivePreprocessSchema, DirectivePreprocessSchemaKind,
-        DirectivePreprocessValueSource,
-        directive_preprocess::directive_preprocess_args::{
-            DirectiveIntegerArgConstraint, DirectivePreprocessArg,
-            DirectivePreprocessArgConstraint, DirectivePreprocessArgLayout,
+    semantic::hir::{
+        hir_concepts::IntegerRangeKind,
+        hir_directives::{
+            DirectivePreprocessEffect, DirectivePreprocessSchema, DirectivePreprocessSchemaKind,
+            DirectivePreprocessValueSource,
+            directive_preprocess::directive_preprocess_args::{
+                DirectiveIntegerArgConstraint, DirectivePreprocessArg,
+                DirectivePreprocessArgConstraint, DirectivePreprocessArgLayout,
+            },
         },
     },
 };
@@ -19,8 +22,6 @@ pub(super) static MAX_NUMERIC_BITS_SCHEMA: DirectivePreprocessSchema =
         // is ready to be applied.
         CompilerStage::Lexer,
     );
-
-pub const MAX_NUMERIC_BITS_MAX_BIT_COUNT: u32 = u32::MAX;
 
 // Not really helping..
 const fn new_preprocess_arg(
@@ -39,7 +40,6 @@ const fn new_preprocess_arg(
 pub(super) static MAX_NUMERIC_BITS_ARGS: [DirectivePreprocessArg; 1] = [new_preprocess_arg(
     DirectivePreprocessValueSource::Literal,
     &[DirectivePreprocessArgConstraint::Integer(
-        // Uhhh uhhh ummm is this uh
-        DirectiveIntegerArgConstraint::new(Some(0..MAX_NUMERIC_BITS_MAX_BIT_COUNT as u64 + 1)),
+        DirectiveIntegerArgConstraint::new(Some(IntegerRangeKind::U32)),
     )],
 )];

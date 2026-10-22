@@ -1,7 +1,6 @@
 /// String similarity check (Levenshtein distance)
 pub fn is_similar(a: &str, b: &str) -> bool {
     let mut distance: f64 = 0.0;
-    // let is_target = b == "max_numeric_bits";
 
     let max_len = a.len().max(b.len());
     let min_len = a.len().min(b.len());
@@ -17,7 +16,6 @@ pub fn is_similar(a: &str, b: &str) -> bool {
     let mut a_chars = a.chars();
     let mut b_chars = b.chars();
 
-    // length penalty?
     loop {
         let Some(current_a) = a_chars.next() else {
             break;
