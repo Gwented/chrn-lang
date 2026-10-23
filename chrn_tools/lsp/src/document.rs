@@ -305,8 +305,7 @@ The last two examples evaluate the arguments, not the serialized value."#,
 ```chrn
 let base = 10
 let doubled = base * 2
-```
-Local `let ... in ...` expressions are not implemented."#,
+```"#,
         ),
     },
     Document {
@@ -510,7 +509,7 @@ This Rust mapping is local to `age`."#,
     },
     Document {
         key: "in",
-        description: "Reserved for local `let` expressions; not implemented",
+        description: "Reserved keyword; not implemented",
         example: None,
     },
     Document {
@@ -1291,3 +1290,4 @@ mod tests {
         );
     }
 }
+

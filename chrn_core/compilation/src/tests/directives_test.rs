@@ -18,7 +18,7 @@ use crate::{
         hir::{
             hir_concepts::IntegerRangeKind,
             hir_directives::{
-                Directive, DirectiveInline, DirectivePreprocessExpectInputKind,
+                Directive, DirectiveUnparameterized, DirectivePreprocessExpectInputKind,
                 DirectivePreprocessSchema, DirectivePreprocessSchemaKind, TypeDirective,
                 directive_preprocess_args::{
                     DirectiveIntegerArgConstraint, DirectiveIntegerArgConstraintErrorKind,
@@ -33,14 +33,14 @@ use crate::{
 
 //NOTE: Array positions are the stable pre-registered inline directive IDs. Preprocess
 // directives are recognized through schemas and do not occupy these arena slots.
-const INLINE_DIRECTIVES: [(&str, DirectiveInline); 7] = [
-    ("warn", DirectiveInline::Warn),
-    ("ignore", DirectiveInline::Ignore),
-    ("scient", DirectiveInline::Type(TypeDirective::Scient)),
-    ("hex", DirectiveInline::Type(TypeDirective::Hex)),
-    ("bin", DirectiveInline::Type(TypeDirective::Bin)),
-    ("octal", DirectiveInline::Type(TypeDirective::Octal)),
-    ("unicode", DirectiveInline::Type(TypeDirective::Unicode)),
+const INLINE_DIRECTIVES: [(&str, DirectiveUnparameterized); 7] = [
+    ("warn", DirectiveUnparameterized::Warn),
+    ("ignore", DirectiveUnparameterized::Ignore),
+    ("scient", DirectiveUnparameterized::Type(TypeDirective::Scient)),
+    ("hex", DirectiveUnparameterized::Type(TypeDirective::Hex)),
+    ("bin", DirectiveUnparameterized::Type(TypeDirective::Bin)),
+    ("octal", DirectiveUnparameterized::Type(TypeDirective::Octal)),
+    ("unicode", DirectiveUnparameterized::Type(TypeDirective::Unicode)),
 ];
 
 #[test]
@@ -66,7 +66,7 @@ fn builtin_directives_are_preloaded_and_recognized_by_their_family() {
             intern::INTERNER_PRELOAD_SIZE,
         );
 
-        let inline = DirectiveInline::try_from_interned_str(id);
+        let inline = DirectiveUnparameterized::try_from_interned_str(id);
         let preprocess =
             DirectivePreprocessSchema::try_from_interned_id(id).map(|schema| schema.kind);
         if name == "max_numeric_bits" {

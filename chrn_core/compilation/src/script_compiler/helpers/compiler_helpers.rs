@@ -7,37 +7,37 @@ use chrn_utils::{id_types::InternedId, intern};
 
 use crate::{
     script_compiler::compiler_consts,
-    semantic::hir::hir_directives::{DirectiveInline, TypeDirective},
+    semantic::hir::hir_directives::{DirectiveUnparameterized, TypeDirective},
 };
 
-pub static DIRECTIVES_DATASET: [(InternedId, DirectiveInline);
+pub static DIRECTIVES_DATASET: [(InternedId, DirectiveUnparameterized);
     compiler_consts::DIRECTIVE_UNICODE_IDX + 1] = [
     (
         InternedId::new(intern::INTERNED_WARN),
-        DirectiveInline::Warn,
+        DirectiveUnparameterized::Warn,
     ),
     (
         InternedId::new(intern::INTERNED_IGNORE),
-        DirectiveInline::Ignore,
+        DirectiveUnparameterized::Ignore,
     ),
     (
         InternedId::new(intern::INTERNED_SCIENT),
-        DirectiveInline::Type(TypeDirective::Scient),
+        DirectiveUnparameterized::Type(TypeDirective::Scient),
     ),
     (
         InternedId::new(intern::INTERNED_HEX),
-        DirectiveInline::Type(TypeDirective::Hex),
+        DirectiveUnparameterized::Type(TypeDirective::Hex),
     ),
     (
         InternedId::new(intern::INTERNED_BIN),
-        DirectiveInline::Type(TypeDirective::Bin),
+        DirectiveUnparameterized::Type(TypeDirective::Bin),
     ),
     (
         InternedId::new(intern::INTERNED_OCTAL),
-        DirectiveInline::Type(TypeDirective::Octal),
+        DirectiveUnparameterized::Type(TypeDirective::Octal),
     ),
     (
         InternedId::new(intern::INTERNED_UNICODE),
-        DirectiveInline::Type(TypeDirective::Unicode),
+        DirectiveUnparameterized::Type(TypeDirective::Unicode),
     ),
 ];

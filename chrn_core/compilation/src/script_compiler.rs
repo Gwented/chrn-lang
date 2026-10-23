@@ -45,7 +45,7 @@ use crate::{
         hir::{
             hir_concepts::{BuiltinTypeInfo, Table, Type, TypeInfo},
             hir_directives::{
-                Directive, DirectiveInline, DirectiveParameterizedHir, DirectivePreprocess,
+                Directive, DirectiveUnparameterized, DirectiveParameterizedHir, DirectivePreprocess,
             },
             hir_exprs::{ExprHir, ResolvedExpr, ResolvedExprMetadata},
             hir_impls::{
@@ -445,7 +445,7 @@ impl ScriptCompiler {
     // pub(super) fn get_directive_inline(
     //     &self,
     //     sym_id: TaggedId<SymbolId, DirectiveTag>,
-    // ) -> &DirectiveInline {
+    // ) -> &DirectiveUnparameterized {
     //     match &self.syms[sym_id.inner()] {
     //         sym_info => match &sym_info.kind {
     //             SymbolKind::Directive(directive_id) => &self.directives[*directive_id],
@@ -925,7 +925,7 @@ impl ScriptCompiler {
         );
     }
 
-    fn register_directive(&mut self, interned_id: InternedId, directive: DirectiveInline) {
+    fn register_directive(&mut self, interned_id: InternedId, directive: DirectiveUnparameterized) {
         let sym_id = self.syms.make_id();
         let directive_id = compiler_consts::directive_to_id_const(&directive);
         debug_assert_eq!(directive_id.id, self.directives.len() as u32);
@@ -946,7 +946,7 @@ impl ScriptCompiler {
         self.directives.push(Directive::Inline(directive));
     }
 
-    fn register_directive_const(&mut self, interned_id: InternedId, directive: DirectiveInline) {
+    fn register_directive_const(&mut self, interned_id: InternedId, directive: DirectiveUnparameterized) {
         // let sym_id = self.syms.make_id();
         let directive_id = compiler_consts::directive_to_id_const(&directive);
         debug_assert_eq!(directive_id.id, self.directives.len() as u32);

@@ -35,7 +35,7 @@ use crate::{
         hir::{
             hir_concepts::Type,
             hir_directives::{
-                Directive, DirectiveInline, DirectivePreprocessExpectInput,
+                Directive, DirectiveUnparameterized, DirectivePreprocessExpectInput,
                 DirectivePreprocessSchema,
             },
             hir_impls::{ConfigMember, ConfigMemberMetadataKind, ConfigRootKind},
@@ -1480,7 +1480,7 @@ impl<'a> ConstraintResolver<'a> {
         type_id: TypeId,
         parent_span: SourceSpan,
         active_span: SourceSpan,
-        spanned_directive: &SpannedContainerRef<DirectiveInline>,
+        spanned_directive: &SpannedContainerRef<DirectiveUnparameterized>,
         visited: &mut Vec<TypeId>,
         env: &ResolverEnv,
         // Making this vec makes error messages painful depending on which message failed, so it

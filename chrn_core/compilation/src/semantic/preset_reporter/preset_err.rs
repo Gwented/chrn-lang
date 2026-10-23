@@ -13,7 +13,7 @@ use crate::{
     semantic::{
         hir::{
             hir_directives::{
-                Directive, DirectiveInline, DirectivePreprocessSchema,
+                Directive, DirectiveUnparameterized, DirectivePreprocessSchema,
                 DirectivePreprocessSchemaKind, DirectivePreprocessValueSource,
                 directive_preprocess_args::DirectivePreprocessConstraintErrorKind,
             },
@@ -88,7 +88,7 @@ pub enum PresetErr {
     },
     /// SpannedArg,
     // Interesting name
-    VagueDirective(SpannedContainer<DirectiveInline>),
+    VagueDirective(SpannedContainer<DirectiveUnparameterized>),
     // CircularRef
     // Change this
     /// Occurs when an argument is applied to a type, that recursively holds itself inside of
@@ -100,7 +100,7 @@ pub enum PresetErr {
         sp_fmtted_parent: SpannedContainer<ChrnClassified>,
         // Actual parent name
         // SpannedContainer<InternedId>,
-        sp_directive: SpannedContainer<DirectiveInline>,
+        sp_directive: SpannedContainer<DirectiveUnparameterized>,
         err_ty_span: SourceSpan,
     },
     /// SpannedInterned number, type overflown

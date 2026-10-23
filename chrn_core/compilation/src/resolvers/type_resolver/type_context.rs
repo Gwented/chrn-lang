@@ -1,6 +1,12 @@
 use std::collections::HashMap;
 
-use chrn_utils::id_types::{ExprId, SymbolId};
+use chrn_utils::{
+    id_types::{ExprId, SymbolId},
+    intern::Intern,
+    source_map::source_diagnostic::SourceDiagnosticSummary,
+};
+
+use crate::{chrn_config::ChrnConfig, script_compiler::ScriptCompiler};
 
 // The idea here is to store a symbol that points to an expression at the bottom of a tree.
 // So, let y = x + 2 would store x in the symbol queue, and he expression id "x" within this
@@ -42,6 +48,31 @@ impl TypeContext {
         }
     }
 }
+
+/// Helper for `try_resolve_pending`
+pub(super) struct PendingEnv<'a> {
+    pub compiler: &'a mut ScriptCompiler,
+    pub cfg: &'a mut ChrnConfig,
+    pub summary: &'a mut SourceDiagnosticSummary,
+    pub interner: &'a mut Intern,
+}
+
+impl<'a> PendingEnv<'a> {
+    pub(super) fn new(
+        compiler: &'a mut ScriptCompiler,
+        cfg: &'a mut ChrnConfig,
+        summary: &'a mut SourceDiagnosticSummary,
+        interner: &'a mut Intern,
+    ) -> Self {
+        Self {
+            compiler,
+            cfg,
+            summary,
+            interner,
+        }
+    }
+}
+
 /// Represents a symbol has users but isn't resolved yet. Mainly exists so that metadata
 /// can be associated with a `Symbol` without making every expr own it's own resolved state, which
 /// would just be noise and wasted byte padding outside of type resolution.

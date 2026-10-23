@@ -1,7 +1,7 @@
 use chrn_utils::id_types::DirectiveId;
 use lang::types::builtins::BuiltinTypeKind;
 
-use crate::semantic::hir::hir_directives::{DirectiveInline, TypeDirective};
+use crate::semantic::hir::hir_directives::{DirectiveUnparameterized, TypeDirective};
 
 // -- CORE TYPE CONSTANTS --
 //NOTE: I think these can be removed. Maybe. I don't know actually.
@@ -88,11 +88,11 @@ pub const DIRECTIVE_UNICODE_IDX: usize = 6;
 
 // May be able to pout this in reigsitertry
 /// Maps given directive to it's built-in `DirectiveId`
-pub const fn directive_to_id_const(directive: &DirectiveInline) -> DirectiveId {
+pub const fn directive_to_id_const(directive: &DirectiveUnparameterized) -> DirectiveId {
     let idx = match directive {
-        DirectiveInline::Warn => DIRECTIVE_WARN_IDX,
-        DirectiveInline::Ignore => DIRECTIVE_IGNORE_IDX,
-        DirectiveInline::Type(type_directive) => match type_directive {
+        DirectiveUnparameterized::Warn => DIRECTIVE_WARN_IDX,
+        DirectiveUnparameterized::Ignore => DIRECTIVE_IGNORE_IDX,
+        DirectiveUnparameterized::Type(type_directive) => match type_directive {
             TypeDirective::Scient => DIRECTIVE_SCIENT_IDX,
             TypeDirective::Hex => DIRECTIVE_HEX_IDX,
             TypeDirective::Bin => DIRECTIVE_BIN_IDX,

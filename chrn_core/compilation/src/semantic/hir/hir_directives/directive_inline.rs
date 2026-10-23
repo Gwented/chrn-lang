@@ -4,9 +4,9 @@ use lang::{
     types::{boundaries::TypeBoundaryFlags, builtins::BuiltinType},
 };
 
-/// General directives not specific to anything
+/// Directives that don't have parameters
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DirectiveInline {
+pub enum DirectiveUnparameterized {
     Warn,
     Ignore,
     Type(TypeDirective),
@@ -14,13 +14,13 @@ pub enum DirectiveInline {
     // ExcludeIdent,
 }
 
-impl From<TypeDirective> for DirectiveInline {
+impl From<TypeDirective> for DirectiveUnparameterized {
     fn from(val: TypeDirective) -> Self {
-        DirectiveInline::Type(val)
+        DirectiveUnparameterized::Type(val)
     }
 }
 
-impl DirectiveInline {
+impl DirectiveUnparameterized {
     // Duplicating pathing
     pub const fn is_directive(interned_id: InternedId) -> bool {
         todo!()
@@ -30,45 +30,49 @@ impl DirectiveInline {
     /// Otherwise `false`
     pub fn has_restrictions(self) -> bool {
         match self {
-            DirectiveInline::Warn | DirectiveInline::Ignore => false,
-            DirectiveInline::Type(d) => d.has_restrictions(),
+            DirectiveUnparameterized::Warn | DirectiveUnparameterized::Ignore => false,
+            DirectiveUnparameterized::Type(d) => d.has_restrictions(),
         }
     }
     pub fn supports_builtin_type(self, builtin_type: &BuiltinType) -> bool {
         match self {
-            DirectiveInline::Warn | DirectiveInline::Ignore => true,
-            DirectiveInline::Type(d) => d.supports_builtin_type(builtin_type),
+            DirectiveUnparameterized::Warn | DirectiveUnparameterized::Ignore => true,
+            DirectiveUnparameterized::Type(d) => d.supports_builtin_type(builtin_type),
         }
     }
 
     pub const fn boundaries(self) -> TypeBoundaryFlags {
         match self {
-            DirectiveInline::Warn | DirectiveInline::Ignore => TypeBoundaryFlags::all(),
-            DirectiveInline::Type(d) => d.boundaries(),
+            DirectiveUnparameterized::Warn | DirectiveUnparameterized::Ignore => {
+                TypeBoundaryFlags::all()
+            }
+            DirectiveUnparameterized::Type(d) => d.boundaries(),
         }
     }
 
-    pub const fn try_from_interned_str(interned_id: InternedId) -> Option<DirectiveInline> {
+    pub const fn try_from_interned_str(
+        interned_id: InternedId,
+    ) -> Option<DirectiveUnparameterized> {
         match interned_id.id {
-            intern::INTERNED_WARN => Some(DirectiveInline::Warn),
-            intern::INTERNED_IGNORE => Some(DirectiveInline::Ignore),
+            intern::INTERNED_WARN => Some(DirectiveUnparameterized::Warn),
+            intern::INTERNED_IGNORE => Some(DirectiveUnparameterized::Ignore),
             // Ok this looks confusing
             _ => {
                 let Some(ty_direct) = TypeDirective::try_from_interned_str(interned_id) else {
                     return None;
                 };
-                Some(DirectiveInline::Type(ty_direct))
+                Some(DirectiveUnparameterized::Type(ty_direct))
             }
         }
     }
 }
 
-impl ChrnClassifiable for DirectiveInline {
+impl ChrnClassifiable for DirectiveUnparameterized {
     fn to_classified(&self) -> lang::chrn_classifier::ChrnClassified {
         match self {
-            DirectiveInline::Warn => ChrnClassified::DirectiveWarn,
-            DirectiveInline::Ignore => ChrnClassified::DirectiveIgnore,
-            DirectiveInline::Type(type_directive) => type_directive.to_classified(),
+            DirectiveUnparameterized::Warn => ChrnClassified::DirectiveWarn,
+            DirectiveUnparameterized::Ignore => ChrnClassified::DirectiveIgnore,
+            DirectiveUnparameterized::Type(type_directive) => type_directive.to_classified(),
         }
     }
 }

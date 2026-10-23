@@ -18,13 +18,13 @@ pub enum Directive {
     Preprocess(DirectiveParameterizedHir),
     // Better name than comptime
     /// Directives that can be applied in a local context
-    Inline(DirectiveInline),
+    Inline(DirectiveUnparameterized),
 }
 
 impl Directive {
     /// Returns `true` if any directive has the given `InternedId`, false otherwise.
     pub const fn is_directive(interned_id: InternedId) -> bool {
-        // if let Some(found) = DirectiveInline::is_directive(interned_id) {
+        // if let Some(found) = DirectiveUnparameterized::is_directive(interned_id) {
         //     return Some(Directive::Comptime(found));
         // };
         // if let Some(found) = DirectivePreprocess::is_directive(interned_id) {
@@ -34,7 +34,7 @@ impl Directive {
     }
 
     pub fn try_from_interned_str(interned_id: InternedId) -> Option<Directive> {
-        if let Some(found) = DirectiveInline::try_from_interned_str(interned_id) {
+        if let Some(found) = DirectiveUnparameterized::try_from_interned_str(interned_id) {
             return Some(Directive::Inline(found));
         };
         // Not final
@@ -69,14 +69,14 @@ impl From<DirectiveParameterizedHir> for Directive {
     }
 }
 
-impl From<DirectiveInline> for Directive {
-    fn from(v: DirectiveInline) -> Self {
+impl From<DirectiveUnparameterized> for Directive {
+    fn from(v: DirectiveUnparameterized) -> Self {
         Directive::Inline(v)
     }
 }
 
 impl From<TypeDirective> for Directive {
     fn from(val: TypeDirective) -> Self {
-        Directive::Inline(DirectiveInline::Type(val))
+        Directive::Inline(DirectiveUnparameterized::Type(val))
     }
 }

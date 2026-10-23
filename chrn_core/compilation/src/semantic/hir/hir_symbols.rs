@@ -452,7 +452,7 @@ pub struct FuncDef {
     pub name_id: InternedId,
     pub kind: BuiltinFuncKind,
     /// Given:
-    /// x: i32 \[IsEmpty\]
+    /// x: i32 [IsEmpty]
     /// IsEmpty's usage in this example directly depends on the type of self.
     /// But given "Log(x)", it would not be dependent on self, meaning it should be ignored in
     /// regards to

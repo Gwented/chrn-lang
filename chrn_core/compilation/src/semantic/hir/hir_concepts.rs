@@ -113,8 +113,6 @@ impl Type {
                 Type::BuiltinTypeInfo(builtin_ty) => {
                     return Some(builtin_ty.ty.kind().boundaries());
                 }
-                // This is the only issue since it's not a single Formatted.
-                // The next obvious decision should be to do, "Formatted::NumericIntegerRanged", etc.,
                 Type::Struct(_)
                 | Type::Enum(_)
                 | Type::Func(_)

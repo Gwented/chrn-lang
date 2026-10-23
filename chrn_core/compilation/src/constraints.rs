@@ -170,7 +170,6 @@ pub fn get_type_constraints(
 
 // Nat
 // Real
-// Complex
 // Prime
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FuncArgConstraint {
@@ -201,7 +200,7 @@ pub enum OrderingType {
     LessOrEq,
     Eq,
 }
-//
+
 // impl ArgConstraint {
 //     // TODO: Composable constraints for aliases
 //     /// Takes in a function kind that is built in and returns it's constraints

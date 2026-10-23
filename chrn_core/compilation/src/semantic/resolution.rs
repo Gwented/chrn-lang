@@ -28,7 +28,7 @@ use crate::{
     semantic::{
         hir::{
             hir_concepts::{BuiltinTypeInfo, Type, TypeInfo},
-            hir_directives::DirectiveInline,
+            hir_directives::DirectiveUnparameterized,
             hir_symbols::{Symbol, SymbolKind, SymbolOrigin},
         },
         resolution::resolution_concepts::{StaticAccessOption, StaticAccessResult, TypeExprResult},
@@ -457,6 +457,6 @@ pub fn resolve_static_access(
 /// Resolves directive
 pub fn resolve_directive(
     abs_directive: &AbstractDirectiveUnparameterized,
-) -> Option<DirectiveInline> {
-    DirectiveInline::try_from_interned_str(abs_directive.sp_name_id.inner)
+) -> Option<DirectiveUnparameterized> {
+    DirectiveUnparameterized::try_from_interned_str(abs_directive.sp_name_id.inner)
 }
