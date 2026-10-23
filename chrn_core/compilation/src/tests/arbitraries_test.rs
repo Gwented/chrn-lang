@@ -1727,7 +1727,8 @@ fn arbitrary_float_conversions_use_ieee_rounding_and_exact_binary_values() {
 
     // 2^-1075 is exactly halfway between zero and the smallest binary64 subnormal.
     // 3 * 2^-1075 is halfway between the first (odd) and second (even) subnormals.
-    let half_min_subnormal = DBig::from_parts(IBig::from(5_u8).pow(1075), -1075);
+    let half_min_significand = IBig::from(5_u8).pow(1075);
+    let half_min_subnormal = DBig::from_parts(half_min_significand.clone(), -1075);
     let three_halves_min_subnormal =
         DBig::from_parts(IBig::from(3_u8) * IBig::from(5_u8).pow(1075), -1075);
     assert_eq!(
@@ -1744,6 +1745,33 @@ fn arbitrary_float_conversions_use_ieee_rounding_and_exact_binary_values() {
         2,
         "the even second subnormal must win the tie"
     );
+
+    // Check both sides of the zero/subnormal midpoint without rounding the
+    // decimal source to a binary64 value before exercising BigFloat conversion.
+    for (value, expected_bits) in [
+        (
+            DBig::from_parts(half_min_significand.clone() - IBig::from(1_u8), -1075),
+            0_u64,
+        ),
+        (
+            DBig::from_parts(half_min_significand + IBig::from(1_u8), -1075),
+            1,
+        ),
+        (DBig::from_str("3e-324").unwrap(), 1),
+        (DBig::from_str("4e-324").unwrap(), 1),
+        (DBig::from_str("8e-324").unwrap(), 2),
+    ] {
+        assert_eq!(
+            ArbitraryFloatKind::BigFloat(value.clone()).to_bits(),
+            expected_bits,
+            "positive subnormal conversion of {value}"
+        );
+        assert_eq!(
+            ArbitraryFloatKind::BigFloat(-value.clone()).to_bits(),
+            expected_bits | (-0.0_f64).to_bits(),
+            "negative subnormal conversion of {value}"
+        );
+    }
 
     let exact_binary_tenth =
         DBig::from_str("0.1000000000000000055511151231257827021181583404541015625").unwrap();
@@ -2315,14 +2343,97 @@ fn arbitrary_float_from_str_with_limit_evaluates_f64_first() {
         ArbitraryFloatKind::from_str_with_limit("1.5", 63),
         Err(NumericFloatParseError::LimitExceeded)
     );
-    assert_eq!(
-        ArbitraryFloatKind::from_str_with_limit("1e1000", 64),
-        Err(NumericFloatParseError::LimitExceeded)
-    );
-    assert!(matches!(
-        ArbitraryFloatKind::from_str_with_limit("1e1000", 4096),
-        Ok(ArbitraryFloatKind::BigFloat(_))
-    ));
+    for literal in ["1e1000", "1e-1000"] {
+        assert_eq!(
+            ArbitraryFloatKind::from_str_with_limit(literal, 64),
+            Err(NumericFloatParseError::LimitExceeded),
+            "{literal}"
+        );
+        let value = ArbitraryFloatKind::from_str_with_limit(literal, 4096)
+            .expect("finite literal fits the larger budget");
+        assert!(
+            matches!(value, ArbitraryFloatKind::BigFloat(_)),
+            "{literal}"
+        );
+        assert!(!value.is_zero(), "{literal} must retain its nonzero value");
+    }
+    for (literal, expected) in [
+        ("0e-1000000000000000000000", 0.0_f64),
+        ("-0e+1000000000000000000000", -0.0_f64),
+        ("0.0E+1000000000000000000000", 0.0_f64),
+        ("-0.0E-1000000000000000000000", -0.0_f64),
+    ] {
+        let value = ArbitraryFloatKind::from_str_with_limit(literal, 64)
+            .expect("zero with an oversized exponent fits f64");
+        assert!(
+            matches!(value, ArbitraryFloatKind::F64(value) if value.to_bits() == expected.to_bits()),
+            "{literal} must preserve the zero sign"
+        );
+        assert_eq!(
+            ArbitraryFloatKind::from_str_with_limit(literal, 63),
+            Err(NumericFloatParseError::LimitExceeded),
+            "{literal}"
+        );
+    }
+    for literal in [
+        "1e1000000000000000000000",
+        "1e-1000000000000000000000",
+        "-1E+1000000000000000000000",
+        "-1E-1000000000000000000000",
+    ] {
+        assert_eq!(
+            ArbitraryFloatKind::from_str_with_limit(literal, u64::MAX),
+            Err(NumericFloatParseError::LimitExceeded),
+            "{literal} exceeds the supported exponent range"
+        );
+    }
+    for literal in [
+        "1e999999999999999999999x",
+        "xe999999999999999999999",
+        "1e2e999999999999999999999",
+    ] {
+        assert_eq!(
+            ArbitraryFloatKind::from_str_with_limit(literal, u64::MAX),
+            Err(NumericFloatParseError::Invalid),
+            "{literal} is malformed rather than oversized"
+        );
+    }
+    for literal in [
+        format!("1.1e{}", isize::MIN),
+        format!("0.1e{}", isize::MIN),
+        format!("1.10e{}", isize::MIN + 1),
+        format!("1.1_0e{}", isize::MIN + 1),
+    ] {
+        assert_eq!(
+            ArbitraryFloatKind::from_str_with_limit(&literal, u64::MAX),
+            Err(NumericFloatParseError::LimitExceeded),
+            "{literal} exceeds the exponent range after fractional adjustment"
+        );
+    }
+    for (literal, significand, exponent) in [
+        (format!("1.1e{}", isize::MIN + 1), 11_u8, isize::MIN),
+        (format!("1.0e{}", isize::MIN), 1, isize::MIN),
+        (format!("1.1_0e{}", isize::MIN + 2), 11, isize::MIN + 1),
+    ] {
+        let value = ArbitraryFloatKind::from_str_with_limit(&literal, u64::MAX)
+            .expect("the adjusted exponent remains representable");
+        assert!(
+            matches!(value, ArbitraryFloatKind::BigFloat(ref value)
+                if value.repr().significand() == &IBig::from(significand)
+                    && value.repr().exponent() == exponent),
+            "{literal} must retain its exact significand and exponent"
+        );
+    }
+    for literal in [
+        format!("1.1xe{}", isize::MIN),
+        format!("1.1e{}x", isize::MIN),
+    ] {
+        assert_eq!(
+            ArbitraryFloatKind::from_str_with_limit(&literal, u64::MAX),
+            Err(NumericFloatParseError::Invalid),
+            "{literal} is malformed rather than an exponent-adjustment overflow"
+        );
+    }
     assert_eq!(
         ArbitraryFloatKind::from_str_with_limit("not_a_float", 64),
         Err(NumericFloatParseError::Invalid)

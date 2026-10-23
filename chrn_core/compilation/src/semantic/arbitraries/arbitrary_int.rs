@@ -27,7 +27,7 @@ impl ArbitraryIntKind {
     //WARN: Is this retrying ok?
     /// Parses an integer string under the specified notation.
     pub fn from_str(s: &str, notation: IntegerNotation) -> Option<Self> {
-        Self::from_str_with_limit(s, notation, u64::MAX).ok()
+        Self::from_str_with_limit(s, notation, crate::DEFAULT_MAX_NUMERIC_BITS as u64).ok()
     }
 
     /// Parses an integer literal respecting `max_bits`.
@@ -69,7 +69,7 @@ impl ArbitraryIntKind {
         }
     }
 
-    /// Returns true when literal spelling proves its magnitude exceeds `max_bits`.
+    /// Returns true if literal spelling proves its magnitude exceeds `max_bits`.
     pub fn literal_exceeds_numeric_bits(s: &str, notation: IntegerNotation, max_bits: u64) -> bool {
         let s = s.strip_prefix(['+', '-']).unwrap_or(s);
         let digits = s.trim_start_matches('0');

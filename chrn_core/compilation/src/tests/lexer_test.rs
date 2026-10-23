@@ -1058,258 +1058,285 @@ fn lex_numeric_notation_maps_to_correct_token_and_notation_enum() {
     }
 }
 
-// This should specifically test that the cuts are done correctly preparation for notation parse later
-// #[test]
-// fn lex_notation_test() {
-//     // Hex Test (Hex Text (Hex Test))
-//     let text = "0xff";
-//     let mut interner = mock_interner(1, 1);
-//
-//     let path_id = PathId::new(0);
-//     let region_id = SourceRegionId::new(0);
-//
-//     let metadata = ConfigLoader::new(region_id, text.as_bytes(), path_id, &ChrnConfig::default())
-//         .load_config()
-//         .expect_success();
-//
-//     let toks = Lexer::new(
-//         metadata.region_id,
-//         metadata.path_id,
-//         &metadata.src_bytes,
-//         metadata.script_start,
-//         &mut ChrnConfig::default(),
-//     )
-//     .tokenize(&mut interner)
-//     .toks;
-//
-//     assert_eq!(2, toks.len());
-//     match toks[0].tok {
-//         Token::Integer(TokenInt { interned_id: id, notation: IntegerNotation::Hex }) => {
-//             assert_eq!("255", interner.extract_str_from_interned_id(id));
-//         }
-//         _ => panic!("Expected Integer with Hex, found {:?}", toks[0].tok),
-//     }
-//     assert_eq!(toks[0].span.start, 0);
-//     assert_eq!(toks[0].span.end, 4);
-//     assert_eq!(toks[1].tok, Token::EOF);
-//     assert_eq!(toks[1].span.start, 3);
-//
-//     // Binary
-//     let text = "0b1010";
-//     let metadata = ConfigLoader::new(region_id, text.as_bytes(), path_id, &ChrnConfig::default())
-//         .load_config()
-//         .expect_success();
-//     let toks = Lexer::new(
-//         metadata.region_id,
-//         metadata.path_id,
-//         &metadata.src_bytes,
-//         metadata.script_start,
-//         &mut ChrnConfig::default(),
-//     )
-//     .tokenize(&mut interner)
-//     .toks;
-//
-//     assert_eq!(2, toks.len());
-//     match toks[0].tok {
-//         Token::Integer(TokenInt { interned_id: id, notation: IntegerNotation::Bin }) => {
-//             assert_eq!("10", interner.extract_str_from_interned_id(id));
-//         }
-//         _ => panic!("Expected Integer with Binary, found {:?}", toks[0].tok),
-//     }
-//     assert_eq!(toks[0].span.start, 0);
-//     assert_eq!(toks[0].span.end, 6);
-//     assert_eq!(toks[1].tok, Token::EOF);
-//     assert_eq!(toks[1].span.start, 5);
-//
-//     // Octal
-//     let text = "0o77";
-//     let metadata = ConfigLoader::new(region_id, text.as_bytes(), path_id, &ChrnConfig::default())
-//         .load_config()
-//         .expect_success();
-//     let toks = Lexer::new(
-//         metadata.region_id,
-//         metadata.path_id,
-//         &metadata.src_bytes,
-//         metadata.script_start,
-//         &mut ChrnConfig::default(),
-//     )
-//     .tokenize(&mut interner)
-//     .toks;
-//
-//     assert_eq!(2, toks.len());
-//     match toks[0].tok {
-//         Token::Integer(TokenInt { interned_id: id, notation: IntegerNotation::Octal }) => {
-//             assert_eq!("63", interner.extract_str_from_interned_id(id));
-//         }
-//         _ => panic!("Expected Integer with Octal, found {:?}", toks[0].tok),
-//     }
-//     assert_eq!(toks[0].span.start, 0);
-//     assert_eq!(toks[0].span.end, 4);
-//     assert_eq!(toks[1].tok, Token::EOF);
-//     assert_eq!(toks[1].span.start, 3);
-//
-//     // Decimal
-//     let text = "42";
-//     let metadata = ConfigLoader::new(region_id, text.as_bytes(), path_id, &ChrnConfig::default())
-//         .load_config()
-//         .expect_success();
-//     let toks = Lexer::new(
-//         metadata.region_id,
-//         metadata.path_id,
-//         &metadata.src_bytes,
-//         metadata.script_start,
-//         &mut ChrnConfig::default(),
-//     )
-//     .tokenize(&mut interner)
-//     .toks;
-//
-//     assert_eq!(2, toks.len());
-//     match toks[0].tok {
-//         Token::Integer(TokenInt { interned_id: id, notation: IntegerNotation::Decimal }) => {
-//             assert_eq!("42", interner.extract_str_from_interned_id(id));
-//         }
-//         _ => panic!("Expected Integer of Decimal, found {:?}", toks[0].tok),
-//     }
-//     assert_eq!(toks[0].span.start, 0);
-//     assert_eq!(toks[0].span.end, 2);
-//     assert_eq!(toks[1].tok, Token::EOF);
-//     assert_eq!(toks[1].span.start, 1);
-//
-//     // Float with decimal
-//     let text = "3.14";
-//     let metadata = ConfigLoader::new(region_id, text.as_bytes(), path_id, &ChrnConfig::default())
-//         .load_config()
-//         .expect_success();
-//     let toks = Lexer::new(
-//         metadata.region_id,
-//         metadata.path_id,
-//         &metadata.src_bytes,
-//         metadata.script_start,
-//         &mut ChrnConfig::default(),
-//     )
-//     .tokenize(&mut interner)
-//     .toks;
-//
-//     assert_eq!(2, toks.len());
-//     match toks[0].tok {
-//         Token::Float(TokenFloat { interned_id: id, notation: FloatNotation::Decimal }) => {
-//             assert_eq!("3.14", interner.extract_str_from_interned_id(id));
-//         }
-//         _ => panic!("Expected Float with Decimal, found {:?}", toks[0].tok),
-//     }
-//     assert_eq!(toks[0].span.start, 0);
-//     assert_eq!(toks[0].span.end, 4);
-//     assert_eq!(toks[1].tok, Token::EOF);
-//     assert_eq!(toks[1].span.start, 3);
-//
-//     // Positive Scientific Notation
-//     let text = "1e+23";
-//     let metadata = ConfigLoader::new(region_id, text.as_bytes(), path_id, &ChrnConfig::default())
-//         .load_config()
-//         .expect_success();
-//     let toks = Lexer::new(
-//         metadata.region_id,
-//         metadata.path_id,
-//         &metadata.src_bytes,
-//         metadata.script_start,
-//         &mut ChrnConfig::default(),
-//     )
-//     .tokenize(&mut interner)
-//     .toks;
-//
-//     assert_eq!(2, toks.len());
-//     match toks[0].tok {
-//         Token::Float(TokenFloat { interned_id: id, notation: FloatNotation::Decimal }) => {
-//             assert_eq!("1e+23", interner.extract_str_from_interned_id(id));
-//         }
-//         _ => panic!("Expected Float with Decimal, found {:?}", toks[0].tok),
-//     }
-//     assert_eq!(toks[0].span.start, 0);
-//     assert_eq!(toks[0].span.end, 5);
-//     assert_eq!(toks[1].tok, Token::EOF);
-//     assert_eq!(toks[1].span.start, 4);
-//
-//     // Negative Scientific Notation
-//     let text = "1e-23";
-//     let metadata = ConfigLoader::new(region_id, text.as_bytes(), path_id, &ChrnConfig::default())
-//         .load_config()
-//         .expect_success();
-//     let toks = Lexer::new(
-//         metadata.region_id,
-//         metadata.path_id,
-//         &metadata.src_bytes,
-//         metadata.script_start,
-//         &mut ChrnConfig::default(),
-//     )
-//     .tokenize(&mut interner)
-//     .toks;
-//
-//     assert_eq!(2, toks.len());
-//     match toks[0].tok {
-//         Token::Float(TokenFloat { interned_id: id, notation: FloatNotation::Decimal }) => {
-//             assert_eq!("1e-23", interner.extract_str_from_interned_id(id));
-//         }
-//         _ => panic!("Expected Float with Decimal, found {:?}", toks[0].tok),
-//     }
-//     assert_eq!(toks[0].span.start, 0);
-//     assert_eq!(toks[0].span.end, 5);
-//     assert_eq!(toks[1].tok, Token::EOF);
-//     assert_eq!(toks[1].span.start, 4);
-//
-//     // Underscored Numbers
-//     let text = "1_000_000";
-//     let metadata = ConfigLoader::new(region_id, text.as_bytes(), path_id, &ChrnConfig::default())
-//         .load_config()
-//         .expect_success();
-//     let toks = Lexer::new(
-//         metadata.region_id,
-//         metadata.path_id,
-//         &metadata.src_bytes,
-//         metadata.script_start,
-//         &mut ChrnConfig::default(),
-//     )
-//     .tokenize(&mut interner)
-//     .toks;
-//
-//     assert_eq!(2, toks.len());
-//     match toks[0].tok {
-//         Token::Integer(TokenInt { interned_id: id, notation: IntegerNotation::Decimal }) => {
-//             assert_eq!("1000000", interner.extract_str_from_interned_id(id));
-//         }
-//         _ => panic!("Expected Integer with Decimal, found {:?}", toks[0].tok),
-//     }
-//     assert_eq!(toks[0].span.start, 0);
-//     assert_eq!(toks[0].span.end, 9);
-//     assert_eq!(toks[1].tok, Token::EOF);
-//     assert_eq!(toks[1].span.start, 8);
-//
-//     // Underscored Hex
-//     let text = "0x_ff_ff";
-//     let metadata = ConfigLoader::new(region_id, text.as_bytes(), path_id, &ChrnConfig::default())
-//         .load_config()
-//         .expect_success();
-//     let toks = Lexer::new(
-//         metadata.region_id,
-//         metadata.path_id,
-//         &metadata.src_bytes,
-//         metadata.script_start,
-//         &mut ChrnConfig::default(),
-//     )
-//     .tokenize(&mut interner)
-//     .toks;
-//
-//     assert_eq!(2, toks.len());
-//     match toks[0].tok {
-//         Token::Integer(TokenInt { interned_id: id, notation: IntegerNotation::Hex }) => {
-//             assert_eq!("65535", interner.extract_str_from_interned_id(id));
-//         }
-//         _ => panic!("Expected Integer with Hex, found {:?}", toks[0].tok),
-//     }
-//     assert_eq!(toks[0].span.start, 0);
-//     assert_eq!(toks[0].span.end, 8);
-//     assert_eq!(toks[1].tok, Token::EOF);
-//     assert_eq!(toks[1].span.start, 7);
-// }
+// Check that numeric text is cut and normalized for later parsing, with notation preserved in metadata.
+#[test]
+fn lex_notation_test() {
+    // Hexadecimal digits stay in their original base.
+    let text = "0xff";
+    let mut interner = mock_interner(1, 1);
+
+    let path_id = PathId::new(0);
+    let region_id = SourceRegionId::new(0);
+
+    let metadata = ConfigLoader::new(region_id, text.as_bytes(), path_id, &ChrnConfig::default())
+        .load_config()
+        .expect_success();
+
+    let toks = Lexer::new(
+        metadata.self_id,
+        metadata.path_id,
+        &metadata.src_bytes,
+        metadata.script_start,
+        &mut ChrnConfig::default(),
+    )
+    .tokenize(&mut interner)
+    .toks;
+
+    assert_eq!(2, toks.len());
+    match toks[0].tok {
+        Token::Integer(TokenInt {
+            interned_id: id,
+            notation: IntegerNotation::Hex,
+        }) => {
+            assert_eq!("ff", interner.extract_str_from_interned_id(id));
+        }
+        _ => panic!("Expected Integer with Hex, found {:?}", toks[0].tok),
+    }
+    assert_eq!(toks[0].span.start, 0);
+    assert_eq!(toks[0].span.end, 4);
+    assert_eq!(toks[1].tok, Token::EOF);
+    assert_eq!(toks[1].span.start, 3);
+
+    // Binary
+    let text = "0b1010";
+    let metadata = ConfigLoader::new(region_id, text.as_bytes(), path_id, &ChrnConfig::default())
+        .load_config()
+        .expect_success();
+    let toks = Lexer::new(
+        metadata.self_id,
+        metadata.path_id,
+        &metadata.src_bytes,
+        metadata.script_start,
+        &mut ChrnConfig::default(),
+    )
+    .tokenize(&mut interner)
+    .toks;
+
+    assert_eq!(2, toks.len());
+    match toks[0].tok {
+        Token::Integer(TokenInt {
+            interned_id: id,
+            notation: IntegerNotation::Bin,
+        }) => {
+            assert_eq!("1010", interner.extract_str_from_interned_id(id));
+        }
+        _ => panic!("Expected Integer with Binary, found {:?}", toks[0].tok),
+    }
+    assert_eq!(toks[0].span.start, 0);
+    assert_eq!(toks[0].span.end, 6);
+    assert_eq!(toks[1].tok, Token::EOF);
+    assert_eq!(toks[1].span.start, 5);
+
+    // Octal
+    let text = "0o77";
+    let metadata = ConfigLoader::new(region_id, text.as_bytes(), path_id, &ChrnConfig::default())
+        .load_config()
+        .expect_success();
+    let toks = Lexer::new(
+        metadata.self_id,
+        metadata.path_id,
+        &metadata.src_bytes,
+        metadata.script_start,
+        &mut ChrnConfig::default(),
+    )
+    .tokenize(&mut interner)
+    .toks;
+
+    assert_eq!(2, toks.len());
+    match toks[0].tok {
+        Token::Integer(TokenInt {
+            interned_id: id,
+            notation: IntegerNotation::Octal,
+        }) => {
+            assert_eq!("77", interner.extract_str_from_interned_id(id));
+        }
+        _ => panic!("Expected Integer with Octal, found {:?}", toks[0].tok),
+    }
+    assert_eq!(toks[0].span.start, 0);
+    assert_eq!(toks[0].span.end, 4);
+    assert_eq!(toks[1].tok, Token::EOF);
+    assert_eq!(toks[1].span.start, 3);
+
+    // Decimal
+    let text = "42";
+    let metadata = ConfigLoader::new(region_id, text.as_bytes(), path_id, &ChrnConfig::default())
+        .load_config()
+        .expect_success();
+    let toks = Lexer::new(
+        metadata.self_id,
+        metadata.path_id,
+        &metadata.src_bytes,
+        metadata.script_start,
+        &mut ChrnConfig::default(),
+    )
+    .tokenize(&mut interner)
+    .toks;
+
+    assert_eq!(2, toks.len());
+    match toks[0].tok {
+        Token::Integer(TokenInt {
+            interned_id: id,
+            notation: IntegerNotation::Decimal,
+        }) => {
+            assert_eq!("42", interner.extract_str_from_interned_id(id));
+        }
+        _ => panic!("Expected Integer of Decimal, found {:?}", toks[0].tok),
+    }
+    assert_eq!(toks[0].span.start, 0);
+    assert_eq!(toks[0].span.end, 2);
+    assert_eq!(toks[1].tok, Token::EOF);
+    assert_eq!(toks[1].span.start, 1);
+
+    // Float with decimal
+    let text = "3.14";
+    let metadata = ConfigLoader::new(region_id, text.as_bytes(), path_id, &ChrnConfig::default())
+        .load_config()
+        .expect_success();
+    let toks = Lexer::new(
+        metadata.self_id,
+        metadata.path_id,
+        &metadata.src_bytes,
+        metadata.script_start,
+        &mut ChrnConfig::default(),
+    )
+    .tokenize(&mut interner)
+    .toks;
+
+    assert_eq!(2, toks.len());
+    match toks[0].tok {
+        Token::Float(TokenFloat {
+            interned_id: id,
+            notation: FloatNotation::Decimal,
+        }) => {
+            assert_eq!("3.14", interner.extract_str_from_interned_id(id));
+        }
+        _ => panic!("Expected Float with Decimal, found {:?}", toks[0].tok),
+    }
+    assert_eq!(toks[0].span.start, 0);
+    assert_eq!(toks[0].span.end, 4);
+    assert_eq!(toks[1].tok, Token::EOF);
+    assert_eq!(toks[1].span.start, 3);
+
+    // Positive Scientific Notation
+    let text = "1e+23";
+    let metadata = ConfigLoader::new(region_id, text.as_bytes(), path_id, &ChrnConfig::default())
+        .load_config()
+        .expect_success();
+    let toks = Lexer::new(
+        metadata.self_id,
+        metadata.path_id,
+        &metadata.src_bytes,
+        metadata.script_start,
+        &mut ChrnConfig::default(),
+    )
+    .tokenize(&mut interner)
+    .toks;
+
+    assert_eq!(2, toks.len());
+    match toks[0].tok {
+        Token::Float(TokenFloat {
+            interned_id: id,
+            notation: FloatNotation::Scientific,
+        }) => {
+            assert_eq!("1e+23", interner.extract_str_from_interned_id(id));
+        }
+        _ => panic!("Expected Float with Scientific, found {:?}", toks[0].tok),
+    }
+    assert_eq!(toks[0].span.start, 0);
+    assert_eq!(toks[0].span.end, 5);
+    assert_eq!(toks[1].tok, Token::EOF);
+    assert_eq!(toks[1].span.start, 4);
+
+    // Negative Scientific Notation
+    let text = "1e-23";
+    let metadata = ConfigLoader::new(region_id, text.as_bytes(), path_id, &ChrnConfig::default())
+        .load_config()
+        .expect_success();
+    let toks = Lexer::new(
+        metadata.self_id,
+        metadata.path_id,
+        &metadata.src_bytes,
+        metadata.script_start,
+        &mut ChrnConfig::default(),
+    )
+    .tokenize(&mut interner)
+    .toks;
+
+    assert_eq!(2, toks.len());
+    match toks[0].tok {
+        Token::Float(TokenFloat {
+            interned_id: id,
+            notation: FloatNotation::Scientific,
+        }) => {
+            assert_eq!("1e-23", interner.extract_str_from_interned_id(id));
+        }
+        _ => panic!("Expected Float with Scientific, found {:?}", toks[0].tok),
+    }
+    assert_eq!(toks[0].span.start, 0);
+    assert_eq!(toks[0].span.end, 5);
+    assert_eq!(toks[1].tok, Token::EOF);
+    assert_eq!(toks[1].span.start, 4);
+
+    // Underscored Numbers
+    let text = "1_000_000";
+    let metadata = ConfigLoader::new(region_id, text.as_bytes(), path_id, &ChrnConfig::default())
+        .load_config()
+        .expect_success();
+    let toks = Lexer::new(
+        metadata.self_id,
+        metadata.path_id,
+        &metadata.src_bytes,
+        metadata.script_start,
+        &mut ChrnConfig::default(),
+    )
+    .tokenize(&mut interner)
+    .toks;
+
+    assert_eq!(2, toks.len());
+    match toks[0].tok {
+        Token::Integer(TokenInt {
+            interned_id: id,
+            notation: IntegerNotation::Decimal,
+        }) => {
+            assert_eq!("1000000", interner.extract_str_from_interned_id(id));
+        }
+        _ => panic!("Expected Integer with Decimal, found {:?}", toks[0].tok),
+    }
+    assert_eq!(toks[0].span.start, 0);
+    assert_eq!(toks[0].span.end, 9);
+    assert_eq!(toks[1].tok, Token::EOF);
+    assert_eq!(toks[1].span.start, 8);
+
+    // Underscored Hex
+    let text = "0x_ff_ff";
+    let metadata = ConfigLoader::new(region_id, text.as_bytes(), path_id, &ChrnConfig::default())
+        .load_config()
+        .expect_success();
+    let toks = Lexer::new(
+        metadata.self_id,
+        metadata.path_id,
+        &metadata.src_bytes,
+        metadata.script_start,
+        &mut ChrnConfig::default(),
+    )
+    .tokenize(&mut interner)
+    .toks;
+
+    assert_eq!(2, toks.len());
+    match toks[0].tok {
+        Token::Integer(TokenInt {
+            interned_id: id,
+            notation: IntegerNotation::Hex,
+        }) => {
+            assert_eq!("ffff", interner.extract_str_from_interned_id(id));
+        }
+        _ => panic!("Expected Integer with Hex, found {:?}", toks[0].tok),
+    }
+    assert_eq!(toks[0].span.start, 0);
+    assert_eq!(toks[0].span.end, 8);
+    assert_eq!(toks[1].tok, Token::EOF);
+    assert_eq!(toks[1].span.start, 7);
+}
 
 #[test]
 fn read_ident_includes_trailing_underscore() {

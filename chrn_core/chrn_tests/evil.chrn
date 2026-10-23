@@ -65,15 +65,15 @@ for varthing1 {}
 // use the operator itself, not the value.
 // #max_numeric_bits(-2)
 
-// Need to give this a bit range without giving it a bit range. What if we instead had a range kind
-// where u32 WAS this range, but if you wanted a more specific range it would literally be that range.
-// Updating rust-analyzer made it buggier. I like it here.
-#max_numeric_bits(2)
 let x = 3
 // #max_numeric_bits(x)
+let decimal_overflow = 1e-1000
 
 var->
-    x: i32 #warn
+    x: i32
+    // Need to discern that we are reporting an incorrectly placed directive not an unknwon one.
+    // Not sure what to do with directives yet so leavig as is
+    // x: i32 #max_numeric_bits(23)
 @end
 let x = y + 2
 

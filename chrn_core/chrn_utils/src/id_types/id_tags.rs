@@ -1,7 +1,8 @@
 use std::marker::PhantomData;
 
 use crate::id_types::ArenaIndex;
-// The trait could just be defined in utils as well as the struct
+
+/// Type-safe wrapper over `ArenaIndex` implementers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TaggedId<I: ArenaIndex, T: ArenaIndexTag> {
     inner: I,
@@ -44,8 +45,7 @@ macro_rules! tag_decl {
     }
 }
 
-// Is this ok?
-/// Clones a given `Tagged<T,I>` into a `Vec` with only `I`
+/// Clones `&[TaggedId<T,I>]` into type erased `Vec<I>`
 pub fn clone_vec_untagged<I: ArenaIndex, T: ArenaIndexTag>(tagged: &[TaggedId<I, T>]) -> Vec<I> {
     tagged.iter().map(|tag| tag.inner).collect()
 }

@@ -74,8 +74,6 @@ pub(crate) fn infer_type_from_binary_op(
         | BinaryOp::EqTo
         | BinaryOp::NotEq
         | BinaryOp::LessOrEq => Some(TypeId::new(compiler_consts::CORE_BOOL)),
-        // Bitwise doesn't exist yet
-        //WARN: Endo
         BinaryOp::BitOr
         | BinaryOp::BitAnd
         | BinaryOp::BitRightShift

@@ -179,6 +179,29 @@ fn type_resolver_enforces_numeric_limit_for_float_literals() {
     assert_numeric_limit_error("let X = 1.5", 63, &[(8, 11, "1.5")]);
     assert_numeric_limit_error("let X = 1e1000", 64, &[(8, 14, "1e1000")]);
     assert_numeric_limit_error("let X = 1e-1000", 64, &[(8, 15, "1e-1000")]);
+
+    let accepted_zero = resolve_single_module_with_config(
+        "let decimal_overflow = 0e-1000000000000000000000",
+        Stage::Type,
+        config_with_numeric_limit(64),
+    )
+    .expect_ok();
+    assert!(matches!(
+        accepted_zero.value_of("decimal_overflow"),
+        Value::ArbitraryFloat(ArbitraryFloatKind::F64(value)) if value.to_bits() == 0.0_f64.to_bits()
+    ));
+    for literal in ["1e1000000000000000000000", "1e-1000000000000000000000"] {
+        let source = format!("let X = {literal}");
+        assert_numeric_limit_error(&source, 64, &[(8, source.len() as u32, literal)]);
+    }
+    for literal in [
+        format!("1.1e{}", isize::MIN),
+        format!("0.1e{}", isize::MIN),
+        format!("1.10e{}", isize::MIN + 1),
+    ] {
+        let source = format!("let X = {literal}");
+        assert_numeric_limit_error(&source, 256, &[(8, source.len() as u32, &literal)]);
+    }
 }
 
 /// Protects float binary operation overflow and subsequent numeric limit enforcement.

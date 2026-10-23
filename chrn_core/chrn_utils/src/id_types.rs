@@ -1,3 +1,5 @@
+//TODO: Maybe move all of this to compilation since these are compilation implementations. Nothinga
+//bout this is generararlajral
 use std::{fmt::Debug, hash::Hash};
 
 use crate::id_types::id_tags::{ArenaIndexTag, TaggedId};

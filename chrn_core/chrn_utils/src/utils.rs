@@ -1,7 +1,6 @@
 pub mod containers;
 pub mod trackers;
 
-//TEST: IGNORE THIS
 /// Provides methods for a u32 that is split into u16 | u16
 #[derive(Default, Clone, Copy)]
 pub struct SharedU32 {
@@ -179,12 +178,4 @@ impl FreezeTrackerU32 {
     pub const fn is_frozen(&self) -> bool {
         (self.inner & Self::SIGNAL_FLAG) != 0
     }
-}
-
-// Ignore me
-// Ok but wouldn't making this a trait generate behavior instead of requiring a match each time?
-// Mid train thought cut-off
-pub enum SignalTrackerOptions {
-    NoEffect,
-    Freeze,
 }

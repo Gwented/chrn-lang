@@ -1,4 +1,4 @@
-use std::{borrow::Cow, str::FromStr};
+use std::{borrow::Cow, num::IntErrorKind, str::FromStr};
 
 use chrn_utils::id_types::TypeId;
 use dashu_float::{
@@ -67,7 +67,8 @@ impl ArbitraryFloatKind {
     /// Parses a float literal respecting `max_bits`.
     pub fn from_str_with_limit(s: &str, max_bits: u64) -> Result<Self, NumericFloatParseError> {
         if let Ok(num) = s.parse::<f64>() {
-            let has_nonzero_digit = s.chars().any(|c| matches!(c, '1'..='9'));
+            let significand = s.split(['e', 'E', '@']).next().unwrap();
+            let has_nonzero_digit = significand.chars().any(|c| matches!(c, '1'..='9'));
             if num.is_nan()
                 || (num.is_infinite() && !has_nonzero_digit)
                 || (num.is_finite() && (num != 0.0 || !has_nonzero_digit))
@@ -79,6 +80,9 @@ impl ArbitraryFloatKind {
                     Err(NumericFloatParseError::LimitExceeded)
                 };
             }
+        }
+        if Self::literal_exponent_exceeds_range(s) {
+            return Err(NumericFloatParseError::LimitExceeded);
         }
         // Might insert scientific so keeps notation
         match DBig::from_str(s) {
@@ -97,6 +101,34 @@ impl ArbitraryFloatKind {
             }
             Err(_) => Err(NumericFloatParseError::Invalid),
         }
+    }
+
+    /// Checks both the written exponent and Dashu's fractional-digit adjustment.
+    fn literal_exponent_exceeds_range(s: &str) -> bool {
+        let Some((significand, exponent)) = s.split_once(['e', 'E', '@']) else {
+            return false;
+        };
+        let digits = exponent.strip_prefix(['+', '-']).unwrap_or(exponent);
+        if digits.is_empty() || !digits.bytes().all(|digit| digit.is_ascii_digit()) {
+            return false;
+        }
+        let exceeds_range = match exponent.parse::<isize>() {
+            Ok(exponent) => significand.split_once('.').is_some_and(|(_, fraction)| {
+                // Dashu skips the adjustment when the fractional part is zero.
+                fraction.bytes().any(|digit| matches!(digit, b'1'..=b'9'))
+                    && exponent
+                        .checked_sub(
+                            fraction.bytes().filter(|&digit| digit != b'_').count() as isize
+                        )
+                        .is_none()
+            }),
+            Err(err) => matches!(
+                err.kind(),
+                IntErrorKind::PosOverflow | IntErrorKind::NegOverflow
+            ),
+        };
+        // Preserve Invalid for malformed mantissas even if their exponent overflows.
+        exceeds_range && DBig::from_str(significand).is_ok()
     }
 
     /// Bit size work for `Self`, including scale and precision.
@@ -181,6 +213,19 @@ impl ArbitraryFloatKind {
             Self::F64(v) => *v,
             Self::BigFloat(v) => {
                 let converted = v.clone().with_rounding::<HalfEven>().to_f64().value();
+                if converted == 0.0 && !v.repr().significand().is_zero() {
+                    // Decimal conversion can round twice near zero. Values strictly
+                    // above 2^-1075 round to the smallest subnormal, not to zero.
+                    let half_min_subnormal = DBig::from_parts(IBig::from(5_u8).pow(1075), -1075);
+                    let magnitude = if v < &DBig::ZERO {
+                        -v.clone()
+                    } else {
+                        v.clone()
+                    };
+                    if magnitude > half_min_subnormal {
+                        return f64::from_bits(1).copysign(converted);
+                    }
+                }
                 if !v.repr().is_infinite() && converted.is_infinite() {
                     // The round-to-nearest binary64 overflow boundary is the
                     // midpoint between `f64::MAX` and 2^1024. Correct the
