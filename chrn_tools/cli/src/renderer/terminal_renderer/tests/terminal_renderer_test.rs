@@ -197,3 +197,34 @@ fn diagnostics_without_a_region_arena_render_header_only() {
         )]
     );
 }
+
+#[test]
+fn invalid_utf8_preserves_source_lines_and_annotation_columns() {
+    let src = b"\xff\x80 x\n\xe6\x97\xa5\xe6\x9c\xac \xff\x80 y\nlast\n";
+    // All spans index the original bytes: the first invalid byte, ASCII after invalid bytes,
+    // a later line containing both wide Unicode and invalid bytes, and a line after both.
+    let rendered = render(
+        src,
+        diag(
+            "invalid bytes",
+            vec![
+                primary(0, 1, None),
+                primary(3, 4, None),
+                primary(12, 14, None),
+                primary(15, 16, None),
+                primary(17, 21, None),
+            ],
+        ),
+    );
+
+    assert_eq!(
+        body(&rendered),
+        "  |
+1 | �� x
+  | ^  ^
+2 | 日本 �� y
+  |      ^^ ^
+3 | last
+  | ^^^^"
+    );
+}

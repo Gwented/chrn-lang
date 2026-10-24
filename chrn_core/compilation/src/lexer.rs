@@ -943,8 +943,11 @@ impl Lexer<'_> {
                 }
             }
             Err(_) => {
+                // Would need recover invaild to understand quote behavior to re-use it here
+                // self.recover_invalid(Some(start - 1), interner);
                 self.increment_invalid_tok();
-                let msg_id = interner.intern_str("<invalid UTF-8 in string literal>");
+                let invalid_str = String::from_utf8_lossy(&self.cursor.items[start..end]);
+                let msg_id = interner.intern_str(&invalid_str);
                 SpannedToken {
                     tok: Token::Invalid(msg_id),
                     span,

@@ -5,8 +5,6 @@ pub(crate) mod terminal_config;
 #[cfg(test)]
 mod tests;
 
-use std::borrow::Cow;
-
 use chrn_utils::{
     arena::Arena,
     id_types::SourceRegionId,
@@ -84,22 +82,20 @@ pub(crate) fn render_terminal_diags(
     // THESE ARE POSSIBLE COMMENTS IGNORE THESE
     // Not Option because it's only metadata based off bytes
     let mut ln_views: Vec<LineView> = Vec::with_capacity(required_mapping.len());
-    // May or may not be valid UTF-8, so this is Option.
-    let mut all_src_strs: Vec<Cow<str>> = Vec::with_capacity(required_mapping.len());
+    // Keep original byte offsets until each display slice has been selected.
+    let mut all_src_bytes: Vec<&[u8]> = Vec::with_capacity(required_mapping.len());
 
     for span in &required_mapping {
         let region = &region_arena[span.region_id];
         let ln_view = line_mapping::form_ln_view(&region.src_bytes, &span);
         ln_views.push(ln_view);
-        let src_str = String::from_utf8_lossy(&region.src_bytes);
-
-        all_src_strs.push(src_str);
+        all_src_bytes.push(&region.src_bytes);
     }
 
     // Final step of rendering and returning the text
     let mut rendered_diags: Vec<String> = Vec::with_capacity(diags.len());
     for diag in diags {
-        let rendered_diag = form_diag(diag, &all_src_strs, &ln_views, cfg, region_arena, interner);
+        let rendered_diag = form_diag(diag, &all_src_bytes, &ln_views, cfg, region_arena, interner);
         rendered_diags.push(rendered_diag);
     }
 
@@ -116,7 +112,7 @@ pub(crate) fn render_terminal_diags(
 /// then renders result to text.
 fn form_diag(
     diag: &SourceDiagnostic,
-    src_strs: &[Cow<str>],
+    sources: &[&[u8]],
     ln_views: &[LineView],
     settings: &TerminalRenderConfig,
     region_arena: &Arena<SourceRegion, SourceRegionId>,
@@ -162,7 +158,7 @@ fn form_diag(
             .position(|lv| lv.region_id == layout.ln.ln_span.region_id)
             .expect("Should already have mapped the given annotation's ln_view");
 
-        layout::assign_layers_in_layout(layout, &src_strs[current_idx]);
+        layout::assign_layers_in_layout(layout, sources[current_idx]);
     }
 
     // Remove layouts that ended up with no annotations after layer assignment
@@ -173,7 +169,7 @@ fn form_diag(
     render_text(
         diag,
         &ln_layouts,
-        src_strs,
+        sources,
         ln_views,
         settings,
         ln_num_width,
@@ -187,7 +183,7 @@ fn form_diag(
 fn render_text(
     diag: &SourceDiagnostic,
     ln_layouts: &[RenderLineLayout],
-    src_strs: &[Cow<str>],
+    sources: &[&[u8]],
     ln_views: &[LineView],
     render_cfg: &TerminalRenderConfig,
     ln_num_width: usize,
@@ -210,7 +206,7 @@ fn render_text(
     let mut placed_path = false;
 
     for (i, layout) in ln_layouts.iter().enumerate() {
-        // Searching by key with the region id into ln_views, which corresponds with it's src_str
+        // Searching by key with the region id into ln_views, which corresponds with its source bytes
         let current_ln_view_idx = ln_views
             .iter()
             .position(|lv| lv.region_id == layout.ln.ln_span.region_id)
@@ -254,7 +250,7 @@ fn render_text(
         layout_text.push_str(&render_line_layout_text(
             layout,
             // Is this ok?
-            &src_strs[current_ln_view_idx],
+            sources[current_ln_view_idx],
             region_arena[current_region_id].abs_ln_num_start,
             render_cfg,
             ln_num_width,
@@ -307,7 +303,7 @@ fn render_text(
 /// assignments from [`assign_layers_in_layout`].
 fn render_line_layout_text(
     ln_layout: &RenderLineLayout,
-    src_str: &str,
+    src_bytes: &[u8],
     region_abs_ln_num: u32,
     settings: &TerminalRenderConfig,
     ln_num_width: usize,
@@ -329,12 +325,12 @@ fn render_line_layout_text(
     // -- FIRST --
     // If the current line is the last line then it may or may not contain a new line as it's eof
     // byte, which needs to be removed if present
-    let ln_end = layout::visual_ln_end(ln, src_str);
+    let ln_end = layout::visual_ln_end(ln, src_bytes);
 
     // The line mapping functions used within `chrn_core` ONLY keeps a new line if the line is a
     // single empty line, so this just skips any empty lines.
-    if src_str.as_bytes()[ln_span.start] != b'\n' {
-        plain_ln.push_str(&src_str[ln_span.start..ln_end]);
+    if src_bytes[ln_span.start] != b'\n' {
+        plain_ln.push_str(&String::from_utf8_lossy(&src_bytes[ln_span.start..ln_end]));
 
         // Not sure if this eof specific character is really needed. It's already pretty obvious
         // looking.
@@ -368,7 +364,7 @@ fn render_line_layout_text(
 
         for render_info in infos {
             let ann = render_info.annotation;
-            let placement = layout::place_annotation(ann, ln, ln_end, src_str);
+            let placement = layout::place_annotation(ann, ln, ln_end, src_bytes);
 
             let ptr_str = style::get_annotation_kind_ptr(ann.kind);
             let ptr_color = style::get_annotation_kind_ptr_color(

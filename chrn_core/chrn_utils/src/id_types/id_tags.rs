@@ -46,7 +46,7 @@ macro_rules! tag_decl {
 }
 
 // Needs to be moved but fine here for now
-tag_decl!(UTF8Tag, PathTag, MaybeUTF8Tag,);
+tag_decl!(UTF8Tag, MaybeUTF8Tag,);
 
 /// Clones `&[TaggedId<T,I>]` into type erased `Vec<I>`
 pub fn clone_vec_untagged<I: ArenaIndex, T: ArenaIndexTag>(tagged: &[TaggedId<I, T>]) -> Vec<I> {

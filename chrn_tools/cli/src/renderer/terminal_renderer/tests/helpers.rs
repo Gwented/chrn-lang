@@ -85,14 +85,14 @@ pub(super) fn interner() -> Intern {
 /// Single-region arena over `src`. `abs_ln_num_start` is what `@def` extraction would record: 1
 /// for a plain script file, higher when the script block starts partway into a data file.
 pub(super) fn region_arena(
-    src: &str,
+    src: impl AsRef<[u8]>,
     abs_ln_num_start: u32,
 ) -> Arena<SourceRegion, SourceRegionId> {
     let mut arena = Arena::new();
     let id = arena.push(SourceRegion::new(
         abs_ln_num_start,
         0,
-        src.as_bytes().to_vec(),
+        src.as_ref().to_vec(),
         REGION,
         PathId::new(0),
         0,
@@ -104,12 +104,16 @@ pub(super) fn region_arena(
 
 /// Runs the full terminal renderer over one diagnostic against `src` and returns the rendered
 /// text. This is the same path `chrn check` takes, minus color.
-pub(super) fn render(src: &str, diag: SourceDiagnostic) -> String {
+pub(super) fn render(src: impl AsRef<[u8]>, diag: SourceDiagnostic) -> String {
     render_at(src, diag, 1)
 }
 
 /// [`render`] with control over the region's absolute starting line.
-pub(super) fn render_at(src: &str, diag: SourceDiagnostic, abs_ln_num_start: u32) -> String {
+pub(super) fn render_at(
+    src: impl AsRef<[u8]>,
+    diag: SourceDiagnostic,
+    abs_ln_num_start: u32,
+) -> String {
     let arena = region_arena(src, abs_ln_num_start);
     let interner = interner();
     let rendered = render_terminal_diags(&[diag], &[], Some(&arena), &interner, &plain_cfg());

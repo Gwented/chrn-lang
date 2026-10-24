@@ -11,12 +11,13 @@ use crate::renderer::terminal_renderer::{
 ///
 /// This is what replaced the `saturating_sub` / `max(cursor)` guards in `render_line_layout_text`.
 fn assert_layers_are_walkable(ln_layout: &RenderLineLayout, src_str: &str) {
-    let ln_end = layout::visual_ln_end(ln_layout.ln, src_str);
+    let ln_end = layout::visual_ln_end(ln_layout.ln, src_str.as_bytes());
     // cursors[i] is the column layer i has been written up to.
     let mut cursors: Vec<usize> = Vec::new();
 
     for info in &ln_layout.render_info {
-        let placement = layout::place_annotation(info.annotation, ln_layout.ln, ln_end, src_str);
+        let placement =
+            layout::place_annotation(info.annotation, ln_layout.ln, ln_end, src_str.as_bytes());
         let idx = info.layer as usize;
         if idx >= cursors.len() {
             cursors.resize(idx + 1, 0);
@@ -48,7 +49,7 @@ fn assign_and_collect(src: &str, probe_byte: u32, annotations: &[Annotation]) ->
         .collect();
     let mut ln_layout = RenderLineLayout::new(ln, render_info);
 
-    layout::assign_layers_in_layout(&mut ln_layout, src);
+    layout::assign_layers_in_layout(&mut ln_layout, src.as_bytes());
     assert_layers_are_walkable(&ln_layout, src);
 
     ln_layout.render_info.iter().map(|i| i.layer).collect()
@@ -62,10 +63,10 @@ fn visual_ln_end_drops_a_trailing_newline() {
     let first = line_at(&view, 0);
     // The mapper hands back [0, 4) for "abc\n" only when the line ends the region; either way the
     // visual end must land on the byte after 'c'.
-    assert_eq!(layout::visual_ln_end(first, src), 3);
+    assert_eq!(layout::visual_ln_end(first, src.as_bytes()), 3);
 
     let last = line_at(&view, 4);
-    assert_eq!(layout::visual_ln_end(last, src), src.len());
+    assert_eq!(layout::visual_ln_end(last, src.as_bytes()), src.len());
 }
 
 #[test]
@@ -73,11 +74,11 @@ fn single_line_span_claims_its_own_columns() {
     let src = "bad: notatype\n";
     let view = ln_view(src, full_span(src));
     let ln = line_at(&view, 0);
-    let ln_end = layout::visual_ln_end(ln, src);
+    let ln_end = layout::visual_ln_end(ln, src.as_bytes());
 
     // "notatype" starts at byte 5 and runs 8 bytes.
     let ann = primary(5, 13, None);
-    let placement = layout::place_annotation(&ann, ln, ln_end, src);
+    let placement = layout::place_annotation(&ann, ln, ln_end, src.as_bytes());
 
     assert_eq!(placement.start, 5);
     assert_eq!(placement.ptr_len, 8);
@@ -93,15 +94,15 @@ fn multi_line_span_is_intersected_with_each_line() {
     let ann = primary(8, 15, None);
 
     let first = line_at(&view, 8);
-    let first_end = layout::visual_ln_end(first, src);
-    let on_first = layout::place_annotation(&ann, first, first_end, src);
+    let first_end = layout::visual_ln_end(first, src.as_bytes());
+    let on_first = layout::place_annotation(&ann, first, first_end, src.as_bytes());
     // Starts at "1", stops where the line's text does rather than running past the newline.
     assert_eq!(on_first.start, 8);
     assert_eq!(on_first.ptr_len, 3);
 
     let second = line_at(&view, 14);
-    let second_end = layout::visual_ln_end(second, src);
-    let on_second = layout::place_annotation(&ann, second, second_end, src);
+    let second_end = layout::visual_ln_end(second, src.as_bytes());
+    let on_second = layout::place_annotation(&ann, second, second_end, src.as_bytes());
     // Starts at column 0 of line 2 rather than at the span's own start, which is on line 1.
     assert_eq!(on_second.start, 0);
     assert_eq!(on_second.ptr_len, 3);
@@ -116,7 +117,7 @@ fn interior_lines_of_a_multi_line_span_carry_no_pointer() {
     // Line 2 holds neither endpoint, so layer assignment drops it and the layout is discarded.
     let middle = line_at(&view, 4);
     let mut ln_layout = RenderLineLayout::new(middle, vec![RenderInfo::new(0, &ann)]);
-    layout::assign_layers_in_layout(&mut ln_layout, src);
+    layout::assign_layers_in_layout(&mut ln_layout, src.as_bytes());
 
     assert!(ln_layout.render_info.is_empty());
 }
@@ -126,17 +127,17 @@ fn unicode_width_drives_columns_not_byte_length() {
     let src = "日本 = 1\n";
     let view = ln_view(src, full_span(src));
     let ln = line_at(&view, 0);
-    let ln_end = layout::visual_ln_end(ln, src);
+    let ln_end = layout::visual_ln_end(ln, src.as_bytes());
 
     // Two wide chars, six bytes, four columns.
     let wide = primary(0, 6, None);
-    let on_wide = layout::place_annotation(&wide, ln, ln_end, src);
+    let on_wide = layout::place_annotation(&wide, ln, ln_end, src.as_bytes());
     assert_eq!(on_wide.start, 0);
     assert_eq!(on_wide.ptr_len, 4);
 
     // "1" sits at byte 9 but column 7, because the two wide chars count double.
     let digit = primary(9, 10, None);
-    let on_digit = layout::place_annotation(&digit, ln, ln_end, src);
+    let on_digit = layout::place_annotation(&digit, ln, ln_end, src.as_bytes());
     assert_eq!(on_digit.start, 7);
     assert_eq!(on_digit.ptr_len, 1);
 }
@@ -146,12 +147,12 @@ fn span_over_the_stripped_newline_keeps_one_column() {
     let src = "var->\nname: str [\n";
     let view = ln_view(src, full_span(src));
     let ln = line_at(&view, 16);
-    let ln_end = layout::visual_ln_end(ln, src);
+    let ln_end = layout::visual_ln_end(ln, src.as_bytes());
 
     // The `<eof>` pointer every parser error uses: a one-byte span over the trailing newline,
     // which `visual_ln_end` strips. It must still be drawn, one column past the line's text.
     let ann = primary(17, 18, None);
-    let placement = layout::place_annotation(&ann, ln, ln_end, src);
+    let placement = layout::place_annotation(&ann, ln, ln_end, src.as_bytes());
 
     assert_eq!(placement.start, 11);
     assert_eq!(placement.ptr_len, 1);
@@ -163,10 +164,10 @@ fn label_reserves_columns_past_the_pointer() {
     let src = "abcd\n";
     let view = ln_view(src, full_span(src));
     let ln = line_at(&view, 0);
-    let ln_end = layout::visual_ln_end(ln, src);
+    let ln_end = layout::visual_ln_end(ln, src.as_bytes());
 
-    let bare = layout::place_annotation(&primary(0, 4, None), ln, ln_end, src);
-    let labelled = layout::place_annotation(&primary(0, 4, Some("hi")), ln, ln_end, src);
+    let bare = layout::place_annotation(&primary(0, 4, None), ln, ln_end, src.as_bytes());
+    let labelled = layout::place_annotation(&primary(0, 4, Some("hi")), ln, ln_end, src.as_bytes());
 
     // One space before the label, the label itself, and one column of separation after it.
     assert_eq!(labelled.end - bare.end, 1 + 2 + 1);
@@ -213,7 +214,7 @@ fn primary_takes_the_topmost_row() {
         .collect();
     let mut ln_layout = RenderLineLayout::new(ln, render_info);
 
-    layout::assign_layers_in_layout(&mut ln_layout, src);
+    layout::assign_layers_in_layout(&mut ln_layout, src.as_bytes());
     assert_layers_are_walkable(&ln_layout, src);
 
     let top = ln_layout

@@ -1,0 +1,4 @@
+
+// Causes index out of bounds
+let valid_p = p"ÿ€"
+let invalid = "ÿ€"

@@ -126,11 +126,11 @@ impl AnnotationPlacement {
 }
 
 /// Byte index the line visually ends at, excluding a trailing newline.
-pub(super) fn visual_ln_end(ln: &Line, src_str: &str) -> usize {
+pub(super) fn visual_ln_end(ln: &Line, src_bytes: &[u8]) -> usize {
     let ln_span = ln.ln_span.range_exclusive_usize();
 
     //WARN: SPANNING IS (INCLUSIVE, EXCLUSIVE) SO THIS NEEDS - 1 TO NOT GO OUT OF BOUNDS
-    if src_str.as_bytes()[ln_span.end - 1] == b'\n' {
+    if src_bytes[ln_span.end - 1] == b'\n' {
         ln_span.end - 1
     } else {
         ln_span.end
@@ -146,7 +146,7 @@ pub(super) fn place_annotation(
     annotation: &Annotation,
     ln: &Line,
     ln_end: usize,
-    src_str: &str,
+    src_bytes: &[u8],
 ) -> AnnotationPlacement {
     let span = annotation.span.range_exclusive_usize();
     let ln_start = ln.ln_span.start as usize;
@@ -167,12 +167,15 @@ pub(super) fn place_annotation(
         ln.ln_num
     );
 
-    let start = line_mapping::get_chars_width(src_str, ln_start, ann_start);
+    // Spans index original bytes; lossy decoding can expand invalid sequences.
+    let prefix = String::from_utf8_lossy(&src_bytes[ln_start..ann_start]);
+    let start = line_mapping::get_chars_width(&prefix, 0, prefix.len());
 
     // A span sitting entirely inside the trailing newline that `visual_ln_end` strips (every
     // `<eof>` pointer) intersects the line at zero width. It still gets one column so the pointer
     // is drawn just past the line's text, and so `end` describes what the row builder prints.
-    let ptr_len = line_mapping::get_chars_width(src_str, ann_start, ann_end).max(1);
+    let annotated = String::from_utf8_lossy(&src_bytes[ann_start..ann_end]);
+    let ptr_len = line_mapping::get_chars_width(&annotated, 0, annotated.len()).max(1);
 
     let label_width = match &annotation.label {
         Some(label) => 1 + UnicodeWidthStr::width(label.as_str()) + 1,
@@ -192,7 +195,7 @@ pub(super) fn place_annotation(
 ///
 /// Placement is first-fit over the layers, with primaries offered a row first so they keep the
 /// topmost row.
-pub(super) fn assign_layers_in_layout(ln_layout: &mut RenderLineLayout, src_str: &str) {
+pub(super) fn assign_layers_in_layout(ln_layout: &mut RenderLineLayout, src_bytes: &[u8]) {
     let ln = ln_layout.ln;
     let ln_span = ln.ln_span;
     ln_layout.render_info.retain(|render_info| {
@@ -207,12 +210,12 @@ pub(super) fn assign_layers_in_layout(ln_layout: &mut RenderLineLayout, src_str:
         )
     });
 
-    let ln_end = visual_ln_end(ln, src_str);
+    let ln_end = visual_ln_end(ln, src_bytes);
     // layers[i] holds every placement already claimed on row i.
     let mut layers: Vec<Vec<AnnotationPlacement>> = Vec::new();
 
     for render_info in &mut ln_layout.render_info {
-        let placement = place_annotation(render_info.annotation, ln, ln_end, src_str);
+        let placement = place_annotation(render_info.annotation, ln, ln_end, src_bytes);
 
         let mut layer_idx_opt = None;
         for (layer_idx, claimed) in layers.iter().enumerate() {
