@@ -6,8 +6,9 @@ use crate::semantic::hir::hir_concepts::Type;
 use crate::semantic::hir::hir_symbols::SymbolKind;
 use crate::semantic::inference::{infer_type_from_binary_op, infer_type_from_val};
 use chrn_utils::arena::Arena;
+use chrn_utils::id_types::{InternedId, id_tags::UTF8Tag};
 use chrn_utils::{
-    id_types::{InternedId, SymbolId, TypeId},
+    id_types::{SymbolId, TypeId},
     intern,
 };
 use lang::types::builtins::BuiltinType;
@@ -105,7 +106,10 @@ fn infer_val_maps_scalars_to_core_types() {
         ),
         (Value::Bool(true), CORE_BOOL),
         (Value::Char('x'), CORE_CHAR),
-        (Value::InternedStr(InternedId::new(0)), CORE_STR),
+        (
+            Value::InternedStr(InternedId::new(0).into_tagged::<UTF8Tag>()),
+            CORE_STR,
+        ),
     ];
 
     for (val, expected) in cases {
@@ -147,12 +151,12 @@ fn infer_val_ignores_literal_width() {
     );
 }
 
-/// Interning is not consulted: any `InternedId` is `str`, valid or not.
+/// Interning is not consulted: any `InternedIdUTF8` is `str`, valid or not.
 #[test]
 fn infer_val_str_does_not_read_the_interner() {
     let mut compiler = core_only_compiler();
 
-    let out_of_range = InternedId::new(u32::MAX);
+    let out_of_range = InternedId::new(u32::MAX).into_tagged::<UTF8Tag>();
     assert_eq!(
         infer_type_from_val(&mut compiler, &Value::InternedStr(out_of_range)),
         Some(TypeId::new(CORE_STR))
@@ -178,7 +182,9 @@ fn infer_val_array_yields_list_type() {
     let type_id = infer_type_from_val(&mut compiler, &ints).unwrap();
     assert_list_type(&compiler, type_id, 1, CORE_I64);
 
-    let strs = Value::List(vec![Value::InternedStr(InternedId::new(0))]);
+    let strs = Value::List(vec![Value::InternedStr(
+        InternedId::new(0).into_tagged::<UTF8Tag>(),
+    )]);
     let type_id = infer_type_from_val(&mut compiler, &strs).unwrap();
     assert_list_type(&compiler, type_id, 1, CORE_STR);
 }
@@ -470,7 +476,9 @@ fn intrinsic_constants() -> [(&'static str, TypeId, Value); 4] {
         (
             "str::NEWLINE",
             TypeId::new(CORE_STR),
-            Value::InternedStr(InternedId::new(intern::INTERNED_NEWLINE_VALUE)),
+            Value::InternedStr(
+                InternedId::new(intern::INTERNED_NEWLINE_VALUE).into_tagged::<UTF8Tag>(),
+            ),
         ),
     ]
 }

@@ -14,7 +14,7 @@ use chrn_utils::{
     core_error::{self, ConfigLoadError, ModuleInitError},
     err_codes::ErrorCode,
     files::file_ops,
-    id_types::{InternedId, ModuleId, PathId, SourceRegionId},
+    id_types::{InternedIdUTF8, ModuleId, PathId, SourceRegionId},
     intern::{self, Intern},
     source_map::{
         source_diagnostic::{
@@ -349,13 +349,13 @@ pub fn extract_modules(
             if expected_len > MAX_MODS_USIZE {
                 // Checking if the last processed is in the queue
                 let last_processed_name = if let Some(module) = pending_mods.iter().last() {
-                    interner.extract_str_from_interned_id(module.name_id)
+                    interner.extract_utf8_str(module.name_id)
                 // Checking if the last processed has been pushed into the final module list
                 } else if let Some(module) = valid_mods.iter().last() {
-                    interner.extract_str_from_interned_id(module.name_id)
+                    interner.extract_utf8_str(module.name_id)
                 } else {
                     // All checks were exhausted so this was a failure at the entry point
-                    interner.extract_str_from_interned_id(importer_mod.name_id)
+                    interner.extract_utf8_str(importer_mod.name_id)
                 };
 
                 let core_msg = format!("Exceeded max module count of {}", chrn_utils::MAX_MODULES);
@@ -408,7 +408,7 @@ pub fn extract_modules(
         }
 
         for found in mod_ident_tracker.found_dups.drain(..) {
-            let dup_ident = interner.extract_str_from_interned_id(found.dup.ident_id);
+            let dup_ident = interner.extract_utf8_str(found.dup.ident_id);
 
             // An alias is already present so changes msg
             let add_help = !found.dup.is_alias;
@@ -492,7 +492,7 @@ pub fn extract_modules(
 fn resolve_module(
     // The import to turn into a module
     import: Import,
-    official_ident: InternedId,
+    official_ident: InternedIdUTF8,
     // Module that imported this module, which triggered this module's processing,
     // importer_mod: &Module,
     graph: &mut ModuleGraph,
@@ -538,7 +538,7 @@ fn resolve_module(
 
     //NOTE: If this were allowed, some odd behavior would exist, which should likely just
     //be omitted entirely. This is the only location where anything "core" in identifier is stopped.
-    if official_ident.id == intern::INTERNED_CORE {
+    if official_ident.inner().id == intern::INTERNED_CORE {
         let core_msg = "`core` is a reserved module identifier";
         let builder = SourceDiagnostic::builder(
             ErrorCode::CompilerInternals.into(),

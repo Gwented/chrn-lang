@@ -1,5 +1,6 @@
 use chrn_utils::{
-    id_types::InternedId, source_map::source_span::SourceSpan, utils::containers::SpannedContainer,
+    id_types::InternedIdUTF8, source_map::source_span::SourceSpan,
+    utils::containers::SpannedContainer,
 };
 
 use crate::{
@@ -11,7 +12,7 @@ use crate::{
 // Does this need a literal specific variant?
 #[derive(Debug)]
 pub enum AstExpr {
-    Var(InternedId),
+    Var(InternedIdUTF8),
     /// `::`
     StaticAccess(Vec<SpannedContainer<PathSegment>>),
     Bool(bool),
@@ -20,9 +21,9 @@ pub enum AstExpr {
         Box<SpannedContainer<AstExpr>>,
         Box<SpannedContainer<AstExpr>>,
     ),
-    Integer(InternedId, IntegerNotation),
-    Float(InternedId, FloatNotation),
-    Str(InternedId),
+    Integer(InternedIdUTF8, IntegerNotation),
+    Float(InternedIdUTF8, FloatNotation),
+    Str(InternedIdUTF8),
     Char(char),
     /// Caller, Args
     Call(
@@ -41,13 +42,13 @@ pub enum AstExpr {
 
 #[derive(Debug)]
 pub(crate) struct CallExpr {
-    pub(crate) name_id: InternedId,
+    pub(crate) name_id: InternedIdUTF8,
     pub(crate) spanned_expr: Vec<SpannedContainer<AstExpr>>,
 }
 
 impl CallExpr {
     pub(crate) fn new(
-        name_id: InternedId,
+        name_id: InternedIdUTF8,
         spanned_expr: Vec<SpannedContainer<AstExpr>>,
     ) -> CallExpr {
         CallExpr {
@@ -70,14 +71,14 @@ impl ArrayExpr {
 
 #[derive(Debug, Clone)]
 pub enum TypeExpr {
-    Var(InternedId),
+    Var(InternedIdUTF8),
     Path(Vec<SpannedContainer<PathSegment>>),
     Generic(AbstractGeneric),
 }
 
 #[derive(Debug, Clone)]
 pub enum PathSegment {
-    Ident(InternedId),
+    Ident(InternedIdUTF8),
     Generic(AbstractGeneric),
 }
 
@@ -92,13 +93,13 @@ pub enum PathSegment {
 
 #[derive(Debug, Clone)]
 pub struct AbstractGeneric {
-    pub base: InternedId,
+    pub base: InternedIdUTF8,
     // Change to tuple or something alike since max 2?
     pub inputs: Vec<SpannedContainer<TypeExpr>>,
 }
 
 impl AbstractGeneric {
-    pub fn new(base: InternedId, inputs: Vec<SpannedContainer<TypeExpr>>) -> AbstractGeneric {
+    pub fn new(base: InternedIdUTF8, inputs: Vec<SpannedContainer<TypeExpr>>) -> AbstractGeneric {
         AbstractGeneric { base, inputs }
     }
 }

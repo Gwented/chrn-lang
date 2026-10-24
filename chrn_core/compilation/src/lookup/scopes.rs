@@ -4,7 +4,7 @@ pub mod scopes_helpers;
 
 use algoc::strings;
 use chrn_utils::{
-    id_types::{InternedId, MemberId, ModuleId, ScopeId, SourceRegionId, SymbolId, TypeId},
+    id_types::{InternedIdUTF8, MemberId, ModuleId, ScopeId, SourceRegionId, SymbolId, TypeId},
     intern::Intern,
 };
 
@@ -25,7 +25,7 @@ use crate::{
 pub fn find_sym_id_local(
     compiler: &ScriptCompiler,
     scope_id: ScopeId,
-    target_name_id: InternedId,
+    target_name_id: InternedIdUTF8,
 ) -> Option<SymbolId> {
     // There are no parent hierarchiable (Is this a word?) language semantics yet other than single
     // local scopes so this is just a single scope search.
@@ -41,11 +41,11 @@ pub fn find_sym_id_local(
 }
 
 //NOTE: Exists for separation reasons due to the compiler becoming bloated in many forms
-/// Get's `TypeId` associated with the `InternedId` given if possible
+/// Get's `TypeId` associated with the `InternedIdUTF8` given if possible
 pub fn find_type_id(
     compiler: &ScriptCompiler,
     owner_id: ModuleId,
-    target_name_id: InternedId,
+    target_name_id: InternedIdUTF8,
     scope_type: ScopeType,
     lookup_pat: ScopeLookupPattern,
 ) -> Option<TypeId> {
@@ -115,7 +115,7 @@ pub fn find_scope_in_mod(
 pub fn find_sym_id_intrinsic(
     compiler: &ScriptCompiler,
     associated_scope: AssociatedScopeKind,
-    target_name_id: InternedId,
+    target_name_id: InternedIdUTF8,
     scope_type: ScopeType,
 ) -> Option<SymbolLookupOutput> {
     // Is this ok?
@@ -190,7 +190,7 @@ pub fn find_sym_id_intrinsic(
 pub fn find_sym_id(
     compiler: &ScriptCompiler,
     associated_scope: AssociatedScopeKind,
-    target_name_id: InternedId,
+    target_name_id: InternedIdUTF8,
     scope_type: ScopeType,
     lookup_pat: ScopeLookupPattern,
     lookup_pref: ScopeLookupPreferenceFlags,
@@ -311,13 +311,13 @@ pub fn collect_mod_scope_types(compiler: &ScriptCompiler, owner_id: ModuleId) ->
 /// given target
 pub fn find_symbols_named<'a>(
     compiler: &'a ScriptCompiler,
-    target_name_id: InternedId,
+    target_name_id: InternedIdUTF8,
     exact_match: bool,
     associated_scope: Option<AssociatedScopeKind>,
     interner: &Intern,
 ) -> Vec<SymbolId> {
     let mut found_syms: Vec<SymbolId> = Vec::new();
-    let target_str = interner.extract_str_from_interned_id(target_name_id);
+    let target_str = interner.extract_utf8_str(target_name_id);
 
     for sym in compiler.syms.iter() {
         if exact_match {
@@ -325,7 +325,7 @@ pub fn find_symbols_named<'a>(
                 found_syms.push(sym.self_id);
             }
         } else {
-            let sym_str = interner.extract_str_from_interned_id(sym.name_id);
+            let sym_str = interner.extract_utf8_str(sym.name_id);
 
             if strings::is_similar(sym_str, target_str) {
                 found_syms.push(sym.self_id);
@@ -339,7 +339,7 @@ pub fn find_symbols_named<'a>(
 /// Finds all symbols under the given string identifier and returns their symbols as references
 pub fn find_symbols_named_ref<'a>(
     compiler: &'a ScriptCompiler,
-    target_name_id: InternedId,
+    target_name_id: InternedIdUTF8,
 ) -> (Vec<&'a Symbol>, Vec<&'a MemberSymbolKind>) {
     let mut found_syms: Vec<&Symbol> = Vec::new();
     let mut found_members: Vec<&MemberSymbolKind> = Vec::new();
@@ -443,7 +443,7 @@ pub fn find_symbols_named_from_module_ref<'a>(
 fn collect_inner_symbols<'a>(
     compiler: &'a ScriptCompiler,
     type_id: TypeId,
-    target_name_id: InternedId,
+    target_name_id: InternedIdUTF8,
 ) -> Vec<MemberId> {
     // Um, 20 mb?
     let mut found: Vec<MemberId> = Vec::new();

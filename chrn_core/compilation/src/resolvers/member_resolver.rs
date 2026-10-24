@@ -1,5 +1,5 @@
 use chrn_utils::{
-    id_types::{AstId, InternedId, MemberId, SymbolId, TypeId, id_tags::TaggedId},
+    id_types::{AstId, InternedIdUTF8, MemberId, SymbolId, TypeId, id_tags::TaggedId},
     intern::Intern,
     source_map::source_diagnostic::{
         DiagnosticLevel, SourceDiagnostic, SourceDiagnosticSink, SourceDiagnosticSummary,
@@ -72,7 +72,7 @@ impl MemberResolver<'_> {
     pub fn resolve(&mut self, env: &ResolverEnv) -> SourceDiagnosticSummary {
         self.cfg.perf_tracker_mut().start(env.region.path_id);
         // Re-used hashet when identifiers are checked for members.
-        let mut ident_tracker: DuplicateTracker<SpannedContainer<InternedId>> =
+        let mut ident_tracker: DuplicateTracker<SpannedContainer<InternedIdUTF8>> =
             DuplicateTracker::with_capacities(4, 0);
 
         // Goes through all symbols the current module has and only picks structs and enums to
@@ -103,7 +103,7 @@ impl MemberResolver<'_> {
     fn resolve_struct(
         &mut self,
         parent_sym_id: TaggedId<SymbolId, StructTag>,
-        ident_tracker: &mut DuplicateTracker<SpannedContainer<InternedId>>,
+        ident_tracker: &mut DuplicateTracker<SpannedContainer<InternedIdUTF8>>,
         env: &ResolverEnv,
     ) {
         let ast_id = self.compiler.syms[parent_sym_id.inner()]
@@ -242,7 +242,7 @@ impl MemberResolver<'_> {
     fn resolve_enum(
         &mut self,
         parent_sym_id: TaggedId<SymbolId, EnumTag>,
-        ident_tracker: &mut DuplicateTracker<SpannedContainer<InternedId>>,
+        ident_tracker: &mut DuplicateTracker<SpannedContainer<InternedIdUTF8>>,
         env: &ResolverEnv,
     ) {
         let ast_id = self.compiler.syms[parent_sym_id.inner()]

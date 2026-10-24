@@ -1,7 +1,7 @@
 use chrn_utils::intern::Intern;
 use lang::chrn_classifier::ChrnClassifiable;
 
-use crate::lexer::token::{Token, TokenFloat, TokenInt};
+use crate::lexer::token::{Token, TokenFloat, TokenInt, TokenString};
 
 /// Helper to reduce boiler-plate of formatting a given token
 pub(super) fn fmt_tok(tok: Token, interner: &Intern) -> String {
@@ -9,7 +9,10 @@ pub(super) fn fmt_tok(tok: Token, interner: &Intern) -> String {
         Token::Def => "`@def`".to_string(),
         Token::End => "`@end`".to_string(),
         Token::Id(name_id)
-        | Token::Str(name_id)
+        | Token::Str(TokenString {
+            interned_id: name_id,
+            ..
+        })
         | Token::Integer(TokenInt {
             interned_id: name_id,
             ..
@@ -18,12 +21,12 @@ pub(super) fn fmt_tok(tok: Token, interner: &Intern) -> String {
             interned_id: name_id,
             ..
         }) => {
-            let ident = interner.extract_str_from_interned_id(name_id);
+            let ident = interner.extract_utf8_str(name_id);
             format!("\"{ident}\"")
         }
         Token::Keyword(kw) => format!("keyword `{}`", kw.to_classified().to_string()),
         Token::Invalid(name_id) => {
-            let invalid_msg = interner.extract_str_from_interned_id(name_id);
+            let invalid_msg = interner.extract_utf8_str(name_id);
             let new_msg = format!("invalid token \"{invalid_msg}\"");
             new_msg
         }

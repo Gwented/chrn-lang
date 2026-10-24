@@ -73,7 +73,7 @@ fn preprocess_literal_syntax_agrees_with_parser() {
                 panic!("{arguments}: expected preprocessed directive");
             };
             assert_eq!(
-                interner.extract_str_from_interned_id(directive.sp_name_id.inner),
+                interner.extract_utf8_str(directive.sp_name_id.inner),
                 "max_numeric_bits"
             );
             assert_eq!(
@@ -90,22 +90,18 @@ fn preprocess_literal_syntax_agrees_with_parser() {
                 panic!("{arguments}: expected integer argument");
             };
             assert_eq!(actual_notation, notation, "{arguments}");
-            assert_eq!(
-                interner.extract_str_from_interned_id(id),
-                spelling,
-                "{arguments}"
-            );
+            assert_eq!(interner.extract_utf8_str(id), spelling, "{arguments}");
             if with_neighbors {
                 for (index, name, value) in [(0, "before", "1"), (2, "after", "7")] {
                     let Item::Decl(AbstractDecl::Var(var)) = &ast.items()[index] else {
                         panic!("{arguments}: expected preserved {name} declaration");
                     };
-                    assert_eq!(interner.extract_str_from_interned_id(var.name_id), name);
+                    assert_eq!(interner.extract_utf8_str(var.name_id), name);
                     let AstExpr::Integer(id, IntegerNotation::Decimal) = var.spanned_expr.inner
                     else {
                         panic!("{arguments}: expected preserved {value} value");
                     };
-                    assert_eq!(interner.extract_str_from_interned_id(id), value);
+                    assert_eq!(interner.extract_utf8_str(id), value);
                 }
             }
         }
@@ -154,7 +150,7 @@ fn preprocess_schema_rejection_is_distinct_from_parser_syntax() {
         };
         let name_end = text.find('(').unwrap();
         assert_eq!(
-            interner.extract_str_from_interned_id(directive.sp_name_id.inner),
+            interner.extract_utf8_str(directive.sp_name_id.inner),
             &text[1..name_end]
         );
         assert_eq!(

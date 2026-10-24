@@ -1,5 +1,6 @@
 use crate::types::externs::{java_types::JavaTypeKind, rust_types::RustTypeKind};
-use chrn_utils::{id_types::InternedId, intern};
+use chrn_utils::id_types::{InternedId, id_tags::UTF8Tag};
+use chrn_utils::{id_types::InternedIdUTF8, intern};
 //TEST: None of this is finalityily finallliality final. Question mark.
 
 pub mod java_types;
@@ -18,12 +19,12 @@ impl ExternPlatformType {
     //💀
     /// Identifier of the platform of the current type.
     /// Returns in lower case, like "java", "rust", etsy.
-    pub const fn platform_name(self) -> InternedId {
+    pub const fn platform_name(self) -> InternedIdUTF8 {
         let id = match self {
             ExternPlatformType::Java(_) => intern::INTERNED_JAVA_LOWER,
             ExternPlatformType::Rust(_) => intern::INTERNED_RUST_LOWER,
         };
-        InternedId::new(id)
+        InternedId::new(id).into_tagged::<UTF8Tag>()
     }
 }
 
@@ -31,7 +32,7 @@ impl ExternPlatformType {
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct ExternTypeMetadata {
     /// Language type identifier
-    pub name_id: InternedId,
+    pub name_id: InternedIdUTF8,
     /// Conceptual values representable by the target type.
     pub representation: ExternTypeRepresentation,
 }

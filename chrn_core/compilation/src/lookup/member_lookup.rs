@@ -1,5 +1,5 @@
 use chrn_utils::{
-    id_types::{InternedId, MemberId, SymbolId, TypeId, id_tags},
+    id_types::{MemberId, SymbolId, TypeId, InternedIdUTF8, id_tags},
     loop_abort,
 };
 
@@ -67,7 +67,7 @@ pub fn collect_members(compiler: &ScriptCompiler, mut current_type_id: TypeId) -
 pub fn lookup_member(
     compiler: &ScriptCompiler,
     mut current_type_id: TypeId,
-    target_name_id: InternedId,
+    target_name_id: InternedIdUTF8,
     lookup_pat: MemberLookupPattern,
 ) -> MemberLookupResult {
     // Should probably have own `IncompatibleMemberLookup` result

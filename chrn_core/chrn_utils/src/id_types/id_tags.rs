@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use crate::id_types::ArenaIndex;
 
 /// Type-safe wrapper over `ArenaIndex` implementers.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TaggedId<I: ArenaIndex, T: ArenaIndexTag> {
     inner: I,
     _phantom_data: PhantomData<T>,
@@ -44,6 +44,9 @@ macro_rules! tag_decl {
         )*
     }
 }
+
+// Needs to be moved but fine here for now
+tag_decl!(UTF8Tag, PathTag, MaybeUTF8Tag,);
 
 /// Clones `&[TaggedId<T,I>]` into type erased `Vec<I>`
 pub fn clone_vec_untagged<I: ArenaIndex, T: ArenaIndexTag>(tagged: &[TaggedId<I, T>]) -> Vec<I> {

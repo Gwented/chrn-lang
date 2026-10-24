@@ -1,7 +1,8 @@
 use crate::types::externs::{
     CharacterEncoding, ExternTypeMetadata, ExternTypeRepresentation, Signedness, TypeWidth,
 };
-use chrn_utils::{id_types::InternedId, intern};
+use chrn_utils::id_types::{InternedId, id_tags::UTF8Tag};
+use chrn_utils::intern;
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum RustTypeKind {
@@ -63,7 +64,7 @@ impl RustTypeKind {
         };
 
         ExternTypeMetadata {
-            name_id: InternedId::new(self.name_id()),
+            name_id: InternedId::new(self.name_id()).into_tagged::<UTF8Tag>(),
             representation,
         }
     }

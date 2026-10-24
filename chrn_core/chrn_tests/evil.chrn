@@ -65,10 +65,22 @@ for varthing1 {}
 // use the operator itself, not the value.
 // #max_numeric_bits(-2)
 
-let x = 3
-// #max_numeric_bits(x)
-let decimal_overflow = 1e-1000
 
+// Maybe remove "BITS" and "BYTES"
+// let x = char::BITS
+
+// #max_numeric_bits(x)
+// Bypassed would be a good name but 'b' for byte would ake more sense
+// Let me ask **claude**.
+// Permissive. Could stand for path since that's what it's mainly for. Path string.
+// let decimal_overflow = p"GOBSMACKED"
+// We want "invalid" strings. Strings not marked with invalid are lossily converted and have
+// errors sent.
+// let invalid = p"I speak �."
+// Maybe just prefer formatted strnigs being a funcjionnssdjl. Ok.
+// p""
+
+// printf 'let invalid_utf8 = \xFF' >> ../chrn_core/chrn_tests/evil.chrn
 var->
     x: i32
     // Need to discern that we are reporting an incorrectly placed directive not an unknwon one.
@@ -91,6 +103,8 @@ let x = y + 2
 // Probably just remove the const if the max bits is set to disallow it. Or cap it to >128
 // let bin = f32::NAN + f32::INF
 // Please remember me I'm an issue
+
+// We have to load constants later to avoid this exceeding directive defined bit limits
 // let x = core::f16::NEG_INF + 2
 
 // let x = []
@@ -170,3 +184,4 @@ for nest Block=>k {
 for var varthing1 { override RUST=>types{change = rust::i32} }
 
 for varthing1 {}
+let invalid_utf8 = \xFF

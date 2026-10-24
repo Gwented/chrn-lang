@@ -55,7 +55,7 @@ use tower_lsp::lsp_types;
 use chrn_utils::arena::Arena;
 use chrn_utils::core_error::{self, ConfigLoadError};
 use chrn_utils::err_codes::ErrorCode;
-use chrn_utils::id_types::{InternedId, ModuleId, PathId, SourceRegionId};
+use chrn_utils::id_types::{InternedIdUTF8, ModuleId, PathId, SourceRegionId};
 use chrn_utils::intern::{self, Intern};
 use chrn_utils::source_map::source_diagnostic::SourceDiagnostic;
 use chrn_utils::source_map::source_diagnostic::SourceDiagnosticSummary;
@@ -360,12 +360,9 @@ pub(crate) fn resolve_document_modules(
 
     let mut reserved_mod_ids: Vec<(PathId, ModuleId)> = vec![(path_id, ModuleId::new(0))];
 
-    let (bind, main_imports, mut finder_summary) = ModuleFinder::new(
-        &main_region.src_bytes,
-        chrn_cfg,
-        &main_region,
-    )
-    .collect_imports(&mut interner);
+    let (bind, main_imports, mut finder_summary) =
+        ModuleFinder::new(&main_region.src_bytes, chrn_cfg, &main_region)
+            .collect_imports(&mut interner);
 
     let mut config_errors = SourceDiagnosticSummary::default();
     if !finder_summary.diags.is_empty() {
@@ -1122,8 +1119,9 @@ pub(crate) fn resolve_modules_lsp(
         // occurrence is kept as the original for reporting.
         let mut bound_idents: HashMap<u32, (bool, Option<SourceSpan>)> =
             HashMap::with_capacity(importer_mod.imports.len() + 1);
-        bound_idents.insert(importer_mod.name_id.id, (false, None));
-        let mut dup_records: Vec<(InternedId, bool, SourceSpan, Option<SourceSpan>)> = Vec::new();
+        bound_idents.insert(importer_mod.name_id.inner().id, (false, None));
+        let mut dup_records: Vec<(InternedIdUTF8, bool, SourceSpan, Option<SourceSpan>)> =
+            Vec::new();
 
         for i in 0..importer_mod.imports.len() {
             let import = importer_mod.imports[i].clone();
@@ -1147,7 +1145,7 @@ pub(crate) fn resolve_modules_lsp(
             };
 
             if !is_importer {
-                match bound_idents.entry(official_ident.id) {
+                match bound_idents.entry(official_ident.inner().id) {
                     std::collections::hash_map::Entry::Occupied(original) => {
                         dup_records.push((
                             official_ident,
@@ -1335,7 +1333,7 @@ pub(crate) fn resolve_modules_lsp(
 
             // Mirrors `resolve_module`: `core` is the compiler-synthesized module,
             // so a user module may never bind that identifier.
-            if official_name_id.id == intern::INTERNED_CORE {
+            if official_name_id.inner().id == intern::INTERNED_CORE {
                 let core_msg = "`core` is a reserved module identifier";
                 let src_diag =
                     SourceDiagnostic::builder(None, DiagnosticLevel::Error, core_msg, path_id)
@@ -1418,12 +1416,9 @@ pub(crate) fn resolve_modules_lsp(
             let current_mod_id = ModuleId::new(reserved_mod_ids.len() as u32);
             reserved_mod_ids.push((path_id, current_mod_id));
 
-            let (bind, sub_imports, mut finder_summary) = ModuleFinder::new(
-                &sub_region.src_bytes,
-                settings,
-                &sub_region,
-            )
-            .collect_imports(interner);
+            let (bind, sub_imports, mut finder_summary) =
+                ModuleFinder::new(&sub_region.src_bytes, settings, &sub_region)
+                    .collect_imports(interner);
 
             diags.append(&mut finder_summary.diags);
 
@@ -1467,7 +1462,7 @@ pub(crate) fn resolve_modules_lsp(
         // span unless it is the root module's own name, in which case a note
         // replaces the secondary annotation.
         for (dup_ident, dup_is_alias, dup_span, original_span) in dup_records {
-            let dup_name = interner.extract_str_from_interned_id(dup_ident);
+            let dup_name = interner.extract_utf8_str(dup_ident);
 
             // An alias is already present so changes msg
             let add_help = !dup_is_alias;

@@ -23,13 +23,13 @@ use crate::{
     walk_type_id_deferred,
 };
 
-use chrn_utils::id_types::{AstId, InternedId, SymbolId, VariableId};
+use chrn_utils::id_types::{AstId, SymbolId, InternedIdUTF8, VariableId};
 
 // Who is this?
 #[derive(Debug)]
 pub struct Table {
     pub(crate) ast_to_sym: HashMap<AstId, SymbolId>,
-    pub(crate) interned_to_sym: HashMap<InternedId, SymbolId>,
+    pub(crate) interned_to_sym: HashMap<InternedIdUTF8, SymbolId>,
 }
 
 impl Table {
@@ -49,7 +49,7 @@ impl Table {
     /// Iterates every `(name, symbol)` pair registered under an interned
     /// identifier. Read-only view for consumers outside this crate, such as the
     /// LSP, which enumerate scope contents without mutating them.
-    pub fn iter_interned(&self) -> impl Iterator<Item = (InternedId, SymbolId)> + '_ {
+    pub fn iter_interned(&self) -> impl Iterator<Item = (InternedIdUTF8, SymbolId)> + '_ {
         self.interned_to_sym.iter().map(|(name, sym)| (*name, *sym))
     }
 }

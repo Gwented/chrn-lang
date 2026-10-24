@@ -89,7 +89,7 @@ pub(crate) const STATE_LOCK_TIMEOUT: Duration = Duration::from_millis(500);
 use chrn_utils::arena::Arena;
 use chrn_utils::budget::mem_budget::{BudgetResult, MemoryBudgetUsize};
 use chrn_utils::id_types::{
-    AstId, ImplId, ImplMemberId, InternedId, ModuleId, PathId, SourceRegionId, SymbolId, TypeId,
+    AstId, ImplId, ImplMemberId, ModuleId, PathId, SourceRegionId, SymbolId, TypeId, InternedIdUTF8,
 };
 use chrn_utils::intern::Intern;
 use chrn_utils::source_map::source_diagnostic::SourceDiagnosticSummary;
@@ -120,7 +120,7 @@ pub enum SemanticEntity {
     Module(ModuleId),
     /// A local binding (alias type parameter, etc.) scoped to a single declaration.
     Local {
-        name_id: InternedId,
+        name_id: InternedIdUTF8,
         /// The span at which this local name is declared; used as a stable identity key.
         decl_span: SourceSpan,
         /// The symbol that owns this local scope, if any (e.g. the alias symbol).
@@ -979,7 +979,10 @@ impl DocumentState {
     /// callers can pass them directly to [`crate::text::offset_to_position`].
     /// This is what LSP feature handlers want: absolute positions are immediately
     /// usable as LSP `Position`s.
-    pub fn get_symbol_at_offset(&self, byte_offset: usize) -> Option<(InternedId, usize, usize)> {
+    pub fn get_symbol_at_offset(
+        &self,
+        byte_offset: usize,
+    ) -> Option<(InternedIdUTF8, usize, usize)> {
         self.get_token_at_offset(byte_offset).and_then(|st| {
             if let ScriptToken::Id(id) = st.tok {
                 Some((
@@ -1016,7 +1019,7 @@ impl DocumentState {
     /// that returns the identifier text as a `String`.
     pub fn get_identifier_at_offset(&self, byte_offset: usize) -> Option<String> {
         self.get_symbol_at_offset(byte_offset)
-            .map(|(id, _, _)| self.interner.extract_str_from_interned_id(id).to_string())
+            .map(|(id, _, _)| self.interner.extract_utf8_str(id).to_string())
     }
 
     /// Resolves a symbol to the AST it was declared in, its declaration node, and
@@ -1035,7 +1038,11 @@ impl DocumentState {
         let ast = self.asts[owner_id].as_ref()?;
         let module = &compiler.mods[ModuleId::new(owner_id as u32)];
         let region = &self.region_arena[module.region_id?];
-        Some((ast, ast_id, self.interner.extract_path_from_path_id(region.path_id)))
+        Some((
+            ast,
+            ast_id,
+            self.interner.extract_path_from_path_id(region.path_id),
+        ))
     }
 
     /// Path of the file backing `mod_id`'s source region.
@@ -1233,7 +1240,10 @@ pub(crate) fn cfg_root_parts(cfg_root: &ConfigRoot) -> (&ConfigRootCommon, &[Imp
 /// Resolve a module through the current document's scope, including import aliases.
 /// Loaded modules may be transitive imports or hidden behind an alias; their file
 /// names alone do not establish visibility.
-pub(crate) fn visible_module(compiler: &ScriptCompiler, name_id: InternedId) -> Option<ModuleId> {
+pub(crate) fn visible_module(
+    compiler: &ScriptCompiler,
+    name_id: InternedIdUTF8,
+) -> Option<ModuleId> {
     let sym_id = [ScopeType::Neutral, ScopeType::Var]
         .into_iter()
         .find_map(|scope_type| {
@@ -1813,7 +1823,7 @@ impl<'a> RefCollector<'a> {
     }
 
     /// Looks up a module by the name it is referred to under.
-    fn module_named(&self, name_id: InternedId) -> Option<ModuleId> {
+    fn module_named(&self, name_id: InternedIdUTF8) -> Option<ModuleId> {
         visible_module(self.compiler, name_id)
     }
 
@@ -1825,7 +1835,7 @@ impl<'a> RefCollector<'a> {
     fn lookup_in_module(
         &self,
         mod_id: ModuleId,
-        name_id: InternedId,
+        name_id: InternedIdUTF8,
         order: [ScopeType; 2],
     ) -> Option<SymbolId> {
         self.lookup(mod_id, name_id, order, ScopeLookupPattern::NamespaceOnly)
@@ -1833,7 +1843,7 @@ impl<'a> RefCollector<'a> {
 
     /// Resolves `name_id` as it would be written in the main module, following
     /// imports and enclosing scopes.
-    fn lookup_visible(&self, name_id: InternedId, order: [ScopeType; 2]) -> Option<SymbolId> {
+    fn lookup_visible(&self, name_id: InternedIdUTF8, order: [ScopeType; 2]) -> Option<SymbolId> {
         self.lookup(
             ModuleId::new(0),
             name_id,
@@ -1845,7 +1855,7 @@ impl<'a> RefCollector<'a> {
     fn lookup(
         &self,
         mod_id: ModuleId,
-        name_id: InternedId,
+        name_id: InternedIdUTF8,
         order: [ScopeType; 2],
         pattern: ScopeLookupPattern,
     ) -> Option<SymbolId> {
@@ -1943,7 +1953,7 @@ impl<'a> RefCollector<'a> {
     fn config_member_cursor(
         &mut self,
         parent: Option<PathCursor>,
-        name: SpannedContainer<InternedId>,
+        name: SpannedContainer<InternedIdUTF8>,
         member_kind: &compilation::parser::ast::ast_concepts::AstConfigMemberMetadataKind,
     ) -> Option<PathCursor> {
         let from_parent = parent.and_then(|cursor| match cursor {
@@ -2029,7 +2039,12 @@ impl RefCollector<'_> {
 
     /// Recover the member identifier's lexer span; comments and whitespace are
     /// absent from this stream. The AST currently stores only the member name.
-    fn member_name_span(&self, base_end: u32, access_end: u32, field: InternedId) -> SourceSpan {
+    fn member_name_span(
+        &self,
+        base_end: u32,
+        access_end: u32,
+        field: InternedIdUTF8,
+    ) -> SourceSpan {
         let end = self
             .tokens
             .partition_point(|token| token.span.end <= access_end);
@@ -2105,7 +2120,11 @@ impl RefCollector<'_> {
     }
 
     /// Resolve and index the leading symbol, even when its type is unresolved.
-    fn static_access_head(&mut self, span: SourceSpan, name_id: InternedId) -> Option<PathCursor> {
+    fn static_access_head(
+        &mut self,
+        span: SourceSpan,
+        name_id: InternedIdUTF8,
+    ) -> Option<PathCursor> {
         let sym_id = self.lookup_visible(name_id, [ScopeType::Neutral, ScopeType::Var])?;
         Some(self.cursor_for_symbol(span, sym_id))
     }
@@ -2114,7 +2133,7 @@ impl RefCollector<'_> {
     fn segment_in_module(
         &mut self,
         span: SourceSpan,
-        name_id: InternedId,
+        name_id: InternedIdUTF8,
         mod_id: ModuleId,
     ) -> PathCursor {
         let Some(sym_id) =
@@ -2131,7 +2150,7 @@ impl RefCollector<'_> {
     fn segment_in_scope(
         &mut self,
         span: SourceSpan,
-        name_id: InternedId,
+        name_id: InternedIdUTF8,
         scope: AssociatedScopeKind,
     ) -> PathCursor {
         let Some(sym_id) = scopes::find_sym_id(
@@ -2152,7 +2171,7 @@ impl RefCollector<'_> {
     fn segment_in_type(
         &mut self,
         span: SourceSpan,
-        name_id: InternedId,
+        name_id: InternedIdUTF8,
         type_id: TypeId,
     ) -> PathCursor {
         let compiler = self.compiler;

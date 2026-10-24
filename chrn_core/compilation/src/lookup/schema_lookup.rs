@@ -1,6 +1,6 @@
 use chrn_utils::{
     arena::Arena,
-    id_types::{InternedId, TypeId},
+    id_types::{InternedIdUTF8, TypeId},
 };
 use lang::{
     config_schemas::{self, ConfigSchema, ConfigSchemaKind, OptionSchemaConstraint},
@@ -83,7 +83,7 @@ pub fn validate_opt(
     // This is more like, cfg_ty_boundaries
     user_boundaries_opt: Option<TypeBoundaryFlags>,
     // Given like this so it doesn't matter if it's a root or member option
-    opt_name_id: InternedId,
+    opt_name_id: InternedIdUTF8,
     opt_values: &[Value],
 ) -> SchemaResult {
     // This messes with past conventions of opt meaning Option<T> not option option Options..

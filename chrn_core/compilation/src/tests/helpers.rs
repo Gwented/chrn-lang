@@ -273,7 +273,7 @@ pub(super) use chrn_utils::{
     arena::Arena,
     budget::mem_budget::{BudgetResult, MemoryBudgetUsize},
     core_error::ConfigLoadError,
-    id_types::{InternedId, ModuleId, PathId, SourceRegionId, SymbolId, ValueId},
+    id_types::{InternedIdUTF8, ModuleId, PathId, SourceRegionId, SymbolId, ValueId},
     intern::Intern,
     source_map::{
         source_diagnostic::{DiagnosticLevel, SourceDiagnostic, SourceDiagnosticSummary},
@@ -615,7 +615,7 @@ pub(super) fn type_resolve_single_module_keep_state(
 /// Finds a user-declared `let` variable by interned name, skipping compiler-generated
 /// intrinsic constants (e.g. `f32::E`). The vars arena holds generated constants first, so a
 /// plain name scan can return the wrong definition when names collide.
-pub(super) fn find_user_var(compiler: &ScriptCompiler, name_id: InternedId) -> &VarDef {
+pub(super) fn find_user_var(compiler: &ScriptCompiler, name_id: InternedIdUTF8) -> &VarDef {
     compiler
         .vars
         .iter()

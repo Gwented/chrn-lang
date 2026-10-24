@@ -39,7 +39,7 @@ fn variable_declaration_test() {
     let last_val = &compiler.vals[ValueId::new(generated as u32)];
     match &last_val.const_val {
         Some(Value::InternedStr(id)) => {
-            assert_eq!("Hallo", interner.extract_str_from_interned_id(*id));
+            assert_eq!("Hallo", interner.extract_utf8_str(*id));
         }
         _ => panic!("Value mismatch, expected InternedStr(\"Hallo\")"),
     };
@@ -134,7 +134,7 @@ fn type_resolver_values_test() {
         Value::ArbitraryInt(ArbitraryIntKind::I64(4))
     ));
     assert!(
-        matches!(find_val("CONSTANT_STR"), Value::InternedStr(id) if interner.extract_str_from_interned_id(*id) == "Hallo")
+        matches!(find_val("CONSTANT_STR"), Value::InternedStr(id) if interner.extract_utf8_str(*id) == "Hallo")
     );
     assert!(
         matches!(find_val("CONSTANT_FLOAT"), Value::ArbitraryFloat(v) if *v == float_from_f64(0e-5))

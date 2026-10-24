@@ -1,6 +1,6 @@
 use chrn_utils::{
     err_codes::ErrorCode,
-    id_types::InternedId,
+    id_types::InternedIdUTF8,
     intern::Intern,
     source_map::source_diagnostic::{
         DiagnosticLevel, SourceDiagnostic, annotations::AnnotationKind,
@@ -83,7 +83,7 @@ pub fn find_sym_id_with_static_ret_preset(
 pub fn find_sym_id_ret_preset(
     compiler: &ScriptCompiler,
     associated_scope: AssociatedScopeKind,
-    sp_target_name_id: SpannedContainer<InternedId>,
+    sp_target_name_id: SpannedContainer<InternedIdUTF8>,
     scope_type: ScopeType,
     lookup_pat: ScopeLookupPattern,
     lookup_pref: ScopeLookupPreferenceFlags,
@@ -111,7 +111,7 @@ pub fn find_sym_id_ret_preset(
 pub fn find_sym_id_intrinsic_ret_preset(
     compiler: &ScriptCompiler,
     associated_scope: AssociatedScopeKind,
-    sp_target_name_id: SpannedContainer<InternedId>,
+    sp_target_name_id: SpannedContainer<InternedIdUTF8>,
     scope_type: ScopeType,
 ) -> Result<SymbolLookupOutput, PresetErr> {
     match scopes::find_sym_id_intrinsic(

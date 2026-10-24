@@ -1,6 +1,7 @@
+use chrn_utils::id_types::{InternedId, id_tags::UTF8Tag};
 use chrn_utils::{
     arena::Arena,
-    id_types::{InternedId, ScopeId, TypeId, VariableId},
+    id_types::{InternedIdUTF8, ScopeId, TypeId, VariableId},
     intern::{self, Intern},
     source_map::source_span::SourceSpan,
     utils::containers::SpannedContainer,
@@ -58,7 +59,7 @@ fn complex_scope_instantiates_extern_type_namespaces() {
             .scope
             .table
             .interned_to_sym
-            .get(&InternedId::new(name_id))
+            .get(&InternedId::new(name_id).into_tagged::<UTF8Tag>())
             .copied()
             .expect("namespace should be instantiated");
         let sym = &compiler.syms[sym_id];
@@ -119,7 +120,7 @@ fn complex_scope_instantiates_extern_type_namespaces() {
     assert_eq!(rust_table.len(), expected.len());
     for (name_id, rust_kind) in expected {
         let sym_id = rust_table
-            .get(&InternedId::new(name_id))
+            .get(&InternedId::new(name_id).into_tagged::<UTF8Tag>())
             .copied()
             .expect("Rust extern type should be instantiated");
         assert!(
@@ -171,7 +172,7 @@ fn complex_scope_instantiates_extern_type_namespaces() {
     assert_eq!(java_table.len(), expected.len());
     for (name_id, java_kind) in expected {
         let sym_id = java_table
-            .get(&InternedId::new(name_id))
+            .get(&InternedId::new(name_id).into_tagged::<UTF8Tag>())
             .copied()
             .expect("Java extern type should be instantiated");
         assert!(
@@ -225,9 +226,9 @@ fn core_builtin_type_id_alignment() {
         let sym = &compiler.syms[sym_id];
         assert_eq!(
             sym.name_id,
-            InternedId::new(interned),
+            InternedId::new(interned).into_tagged::<UTF8Tag>(),
             "symbol name for {} does not match its interned id",
-            interner.extract_str_from_idx(interned as usize)
+            interner.extract_utf8_str(InternedId::new(interned).into_tagged::<UTF8Tag>())
         );
     }
 }
@@ -268,7 +269,7 @@ fn core_boundaries_follow_builtins() {
             .syms
             .items
             .iter()
-            .find(|sym| sym.name_id == InternedId::new(interned))
+            .find(|sym| sym.name_id == InternedId::new(interned).into_tagged::<UTF8Tag>())
             .expect("boundary symbol should exist");
 
         assert!(
@@ -300,7 +301,7 @@ fn core_funcs_follow_boundaries() {
         assert_eq!(func_def.kind, core_func.kind, "kind at {type_id:?}");
         assert_eq!(
             func_def.name_id,
-            InternedId::new(core_func.name),
+            InternedId::new(core_func.name).into_tagged::<UTF8Tag>(),
             "name at {type_id:?}"
         );
         assert_eq!(
@@ -339,7 +340,7 @@ fn core_funcs_are_symbols_in_core_scope() {
 
     for (idx, core_func) in CORE_FUNCS_DATASET.iter().enumerate() {
         let type_id = TypeId::new(first + idx as u32);
-        let name_id = InternedId::new(core_func.name);
+        let name_id = InternedId::new(core_func.name).into_tagged::<UTF8Tag>();
 
         let sym_id = *table
             .interned_to_sym
@@ -409,7 +410,7 @@ fn startup_reservations_match_loaded_data() {
         .mods
         .iter()
         .map(|module| {
-            let mut idents: Vec<InternedId> = vec![module.name_id];
+            let mut idents: Vec<InternedIdUTF8> = vec![module.name_id];
             for import in &module.imports {
                 let ident = import
                     .sp_alias_id
@@ -451,15 +452,15 @@ fn startup_reservations_match_loaded_data() {
 #[test]
 fn startup_reservations_include_user_module_symbols() {
     let import = Import::new(
-        InternedId::new(0),
+        InternedId::new(0).into_tagged::<UTF8Tag>(),
         ImportKind::Core(Default::default()),
         Some(SpannedContainer::new(
-            InternedId::new(1),
+            InternedId::new(1).into_tagged::<UTF8Tag>(),
             SourceSpan::default(),
         )),
     );
     let module = Module::new(
-        InternedId::new(2),
+        InternedId::new(2).into_tagged::<UTF8Tag>(),
         Default::default(),
         Default::default(),
         None,
@@ -476,7 +477,7 @@ fn startup_reservations_include_user_module_symbols() {
         .mods
         .iter()
         .map(|module| {
-            let mut idents: Vec<InternedId> = vec![module.name_id];
+            let mut idents: Vec<InternedIdUTF8> = vec![module.name_id];
             for import in &module.imports {
                 let ident = import
                     .sp_alias_id
@@ -518,7 +519,7 @@ struct RegisteredConstant<'a> {
 fn registered_constant<'a>(
     compiler: &'a ScriptCompiler,
     scope_id: ScopeId,
-    name_id: InternedId,
+    name_id: InternedIdUTF8,
 ) -> RegisteredConstant<'a> {
     let sym_id = compiler.get_scope(scope_id).scope.table.interned_to_sym[&name_id];
     let sym = &compiler.syms[sym_id];
@@ -710,7 +711,10 @@ fn core_float_namespace_ieee_metadata_is_append_only() {
             .iter()
             .find(|(_, builtin_ty, _)| builtin_ty.kind() == kind)
             .expect("IEEE float type should be present in the core dataset");
-        let names: Vec<u32> = namespace.iter().map(|base| base.name_id.id).collect();
+        let names: Vec<u32> = namespace
+            .iter()
+            .map(|base| base.name_id.inner().id)
+            .collect();
 
         assert!(
             names.starts_with(&legacy_prefix),
@@ -734,7 +738,10 @@ fn core_float_namespace_ieee_metadata_is_append_only() {
         .iter()
         .find(|(_, builtin_ty, _)| builtin_ty.kind() == BuiltinTypeKind::F128)
         .expect("f128 should be present in the core dataset");
-    let names: Vec<u32> = f128_namespace.iter().map(|base| base.name_id.id).collect();
+    let names: Vec<u32> = f128_namespace
+        .iter()
+        .map(|base| base.name_id.inner().id)
+        .collect();
 
     assert!(names.starts_with(&f128_prefix), "F128 prefix changed");
     assert_eq!(
@@ -785,7 +792,9 @@ fn representative_core_namespace_values_are_registered() {
             BuiltinTypeKind::Str,
             intern::INTERNED_NEWLINE_UPPER,
             BuiltinTypeKind::Str,
-            Value::InternedStr(InternedId::new(intern::INTERNED_NEWLINE_VALUE)),
+            Value::InternedStr(
+                InternedId::new(intern::INTERNED_NEWLINE_VALUE).into_tagged::<UTF8Tag>(),
+            ),
         ),
     ];
 
@@ -800,9 +809,16 @@ fn representative_core_namespace_values_are_registered() {
             namespace,
         )
         .unwrap();
-        let found = registered_constant(&compiler, scope_id, InternedId::new(name));
+        let found = registered_constant(
+            &compiler,
+            scope_id,
+            InternedId::new(name).into_tagged::<UTF8Tag>(),
+        );
 
-        assert_eq!(found.sym.name_id, InternedId::new(name));
+        assert_eq!(
+            found.sym.name_id,
+            InternedId::new(name).into_tagged::<UTF8Tag>()
+        );
         assert!(matches!(found.sym.sym_origin, SymbolOrigin::Compiler));
         assert!(matches!(found.sym.kind, SymbolKind::Variable(_)));
         assert!(matches!(found.var.meta, VariableMetadata::Generated));
@@ -831,7 +847,7 @@ fn core_namespace_constants_stay_out_of_the_core_scope() {
             assert!(
                 !table.interned_to_sym.contains_key(&base.name_id),
                 "core scope must not bind the intrinsic constant at interned id {}",
-                base.name_id.id
+                base.name_id.inner().id
             );
         }
     }
@@ -875,7 +891,7 @@ fn core_namespace_arenas_are_reserved_exactly() {
 
 static COUNT_LEAF_DATASET: [InstantiationSymbolBase; 2] = [
     InstantiationSymbolBase::new(
-        InternedId::new(intern::INTERNED_MAX_UPPER),
+        InternedId::new(intern::INTERNED_MAX_UPPER).into_tagged::<UTF8Tag>(),
         SymbolOrigin::Compiler,
         ScopeType::Compiler,
         false,
@@ -885,7 +901,7 @@ static COUNT_LEAF_DATASET: [InstantiationSymbolBase; 2] = [
         )),
     ),
     InstantiationSymbolBase::new(
-        InternedId::new(intern::INTERNED_INT),
+        InternedId::new(intern::INTERNED_INT).into_tagged::<UTF8Tag>(),
         SymbolOrigin::Compiler,
         ScopeType::Compiler,
         false,
@@ -895,14 +911,14 @@ static COUNT_LEAF_DATASET: [InstantiationSymbolBase; 2] = [
 
 static COUNT_ROOT_DATASET: [InstantiationSymbolBase; 2] = [
     InstantiationSymbolBase::new(
-        InternedId::new(intern::INTERNED_TYPES_LOWER),
+        InternedId::new(intern::INTERNED_TYPES_LOWER).into_tagged::<UTF8Tag>(),
         SymbolOrigin::Compiler,
         ScopeType::Compiler,
         false,
         InstantiationSymbolKind::Namespace(&COUNT_LEAF_DATASET),
     ),
     InstantiationSymbolBase::new(
-        InternedId::new(intern::INTERNED_MIN_UPPER),
+        InternedId::new(intern::INTERNED_MIN_UPPER).into_tagged::<UTF8Tag>(),
         SymbolOrigin::Compiler,
         ScopeType::Compiler,
         false,
@@ -963,7 +979,11 @@ fn representative_float_math_constants_are_loaded() {
     .unwrap();
 
     for (name_id, expected_val) in expected_f16 {
-        let rc = registered_constant(&compiler, f16_scope, InternedId::new(name_id));
+        let rc = registered_constant(
+            &compiler,
+            f16_scope,
+            InternedId::new(name_id).into_tagged::<UTF8Tag>(),
+        );
         assert_eq!(
             rc.val.type_id,
             TypeId::new(builtin_ty_to_id(BuiltinTypeKind::F64))
@@ -986,7 +1006,11 @@ fn representative_float_math_constants_are_loaded() {
     .unwrap();
 
     for (name_id, expected_val) in expected_f32 {
-        let rc = registered_constant(&compiler, f32_scope, InternedId::new(name_id));
+        let rc = registered_constant(
+            &compiler,
+            f32_scope,
+            InternedId::new(name_id).into_tagged::<UTF8Tag>(),
+        );
         assert_eq!(
             rc.val.type_id,
             TypeId::new(builtin_ty_to_id(BuiltinTypeKind::F64))
@@ -1009,7 +1033,11 @@ fn representative_float_math_constants_are_loaded() {
     .unwrap();
 
     for (name_id, expected_val) in expected_f64 {
-        let rc = registered_constant(&compiler, f64_scope, InternedId::new(name_id));
+        let rc = registered_constant(
+            &compiler,
+            f64_scope,
+            InternedId::new(name_id).into_tagged::<UTF8Tag>(),
+        );
         assert_eq!(
             rc.val.type_id,
             TypeId::new(builtin_ty_to_id(BuiltinTypeKind::F64))
@@ -1046,7 +1074,7 @@ fn representative_core_namespaces_declare_bits_and_bytes() {
         let bits_rc = registered_constant(
             &compiler,
             scope_id,
-            InternedId::new(intern::INTERNED_BITS_UPPER),
+            InternedId::new(intern::INTERNED_BITS_UPPER).into_tagged::<UTF8Tag>(),
         );
         assert_eq!(bits_rc.val.type_id, i64_type_id);
         assert!(same_value(
@@ -1057,7 +1085,7 @@ fn representative_core_namespaces_declare_bits_and_bytes() {
         let bytes_rc = registered_constant(
             &compiler,
             scope_id,
-            InternedId::new(intern::INTERNED_BYTES_UPPER),
+            InternedId::new(intern::INTERNED_BYTES_UPPER).into_tagged::<UTF8Tag>(),
         );
         assert_eq!(bytes_rc.val.type_id, i64_type_id);
         assert!(same_value(
@@ -1086,12 +1114,15 @@ fn float_namespace_declares_radix_but_integer_namespace_does_not() {
             .scope
             .table
             .interned_to_sym
-            .contains_key(&InternedId::new(intern::INTERNED_RADIX));
+            .contains_key(&InternedId::new(intern::INTERNED_RADIX).into_tagged::<UTF8Tag>());
 
         if let Some(expected) = expected {
             assert!(has_radix);
-            let radix_rc =
-                registered_constant(&compiler, scope_id, InternedId::new(intern::INTERNED_RADIX));
+            let radix_rc = registered_constant(
+                &compiler,
+                scope_id,
+                InternedId::new(intern::INTERNED_RADIX).into_tagged::<UTF8Tag>(),
+            );
             assert_eq!(radix_rc.val.type_id, i64_type_id);
             assert!(same_value(
                 radix_rc.val.const_val.as_ref().unwrap(),
@@ -1119,7 +1150,11 @@ fn representative_char_and_str_constants_are_loaded() {
     };
 
     let check_i64 = |scope_id, name_id: u32, expected: i64| {
-        let rc = registered_constant(&compiler, scope_id, InternedId::new(name_id));
+        let rc = registered_constant(
+            &compiler,
+            scope_id,
+            InternedId::new(name_id).into_tagged::<UTF8Tag>(),
+        );
         assert_eq!(rc.val.type_id, i64_type_id);
         assert!(same_value(
             rc.val.const_val.as_ref().unwrap(),
@@ -1141,7 +1176,11 @@ fn representative_char_and_str_constants_are_loaded() {
             char::REPLACEMENT_CHARACTER,
         ),
     ] {
-        let rc = registered_constant(&compiler, char_scope, InternedId::new(name_id));
+        let rc = registered_constant(
+            &compiler,
+            char_scope,
+            InternedId::new(name_id).into_tagged::<UTF8Tag>(),
+        );
         assert_eq!(rc.val.type_id, char_type_id);
         assert!(same_value(
             rc.val.const_val.as_ref().unwrap(),
@@ -1165,10 +1204,7 @@ fn representative_char_and_str_constants_are_loaded() {
     let Value::InternedStr(newline_value) = newline.val.const_val.as_ref().unwrap() else {
         panic!("str::NEWLINE should store an interned string")
     };
-    assert_eq!(
-        interner.extract_str_from_idx(newline_value.id as usize),
-        "\n"
-    );
+    assert_eq!(interner.extract_utf8_str(*newline_value), "\n");
     check_i64(str_scope, intern::INTERNED_UTF8_MAX_BYTES, 4);
 }
 
@@ -1271,7 +1307,7 @@ fn representative_float_attributes_are_loaded() {
     check_f64_f64("MIN_POSITIVE", f64::MIN_POSITIVE);
 
     assert_eq!(
-        interner.extract_str_from_idx(intern::INTERNED_INF as usize),
+        interner.extract_utf8_str(InternedId::new(intern::INTERNED_INF).into_tagged::<UTF8Tag>()),
         "INF"
     );
 

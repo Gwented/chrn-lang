@@ -5,6 +5,9 @@ use std::{fmt::Debug, hash::Hash};
 use crate::id_types::id_tags::{ArenaIndexTag, TaggedId};
 pub mod id_tags;
 
+/// An interned ID whose bytes are UTF-8 text.
+pub type InternedIdUTF8 = TaggedId<InternedId, id_tags::UTF8Tag>;
+
 /// Represents a type that can be turned into `usize`
 ///
 /// Specifically for `Arena<T, I>`

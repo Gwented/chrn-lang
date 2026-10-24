@@ -9,8 +9,8 @@
 //! | [`KEYWORD_DOCS`]      | `Keyword as usize`          | 15     |
 //! | [`BUILTIN_TYPE_DOCS`] | `BuiltinTypeKind as usize`  | 27     |
 //! | [`FUNC_DOCS`]         | `BuiltinFuncKind as usize`  | 7      |
-//! | [`DIRECTIVE_DOCS`]    | preloaded [`InternedId`]     | 7      |
-//! | [`CONFIG_OPTION_DOCS`]| preloaded [`InternedId`]     | 3      |
+//! | [`DIRECTIVE_DOCS`]    | preloaded [`InternedIdUTF8`]     | 7      |
+//! | [`CONFIG_OPTION_DOCS`]| preloaded [`InternedIdUTF8`]     | 3      |
 //!
 //! ## Alignment invariant
 //!
@@ -22,8 +22,10 @@
 //! Accessor methods on [`Document`] (`keyword_docs`, `builtin_type_docs`, `func_docs`)
 //! index directly into these arrays; an out-of-bounds index will panic at runtime.
 
+#[cfg(test)]
+use chrn_utils::id_types::{InternedId, id_tags::UTF8Tag};
 use chrn_utils::{
-    id_types::InternedId,
+    id_types::InternedIdUTF8,
     intern::{
         INTERNED_BIN, INTERNED_CASES, INTERNED_DEFAULT_VAL, INTERNED_HEX, INTERNED_IDENTS,
         INTERNED_IGNORE, INTERNED_MAX_NUMERIC_BITS, INTERNED_OCTAL, INTERNED_SCIENT, INTERNED_WARN,
@@ -82,8 +84,8 @@ impl Document {
     }
 
     /// Returns the document for a directive by interned id, or `None` if unknown.
-    pub const fn directive_docs(name_id: InternedId) -> Option<&'static Document> {
-        match name_id.id {
+    pub const fn directive_docs(name_id: InternedIdUTF8) -> Option<&'static Document> {
+        match name_id.inner().id {
             INTERNED_WARN => Some(&DIRECTIVE_DOCS[0]),
             INTERNED_IGNORE => Some(&DIRECTIVE_DOCS[1]),
             INTERNED_SCIENT => Some(&DIRECTIVE_DOCS[2]),
@@ -96,8 +98,8 @@ impl Document {
     }
 
     /// Returns the document for a config option by interned id, or `None` if unknown.
-    pub const fn config_option_docs(name_id: InternedId) -> Option<&'static Document> {
-        match name_id.id {
+    pub const fn config_option_docs(name_id: InternedIdUTF8) -> Option<&'static Document> {
+        match name_id.inner().id {
             INTERNED_CASES => Some(&CONFIG_OPTION_DOCS[0]),
             INTERNED_IDENTS => Some(&CONFIG_OPTION_DOCS[1]),
             INTERNED_DEFAULT_VAL => Some(&CONFIG_OPTION_DOCS[2]),
@@ -438,8 +440,7 @@ enum Color { Red Green Blue }
     },
     Document {
         key: "complex->",
-        description:
-            "Starts the section configuring existing types, members, and language mappings",
+        description: "Starts the section configuring existing types, members, and language mappings",
         example: Some(
             r#"A `for` block selects a configuration target. Its option assignments configure that target; nested member blocks select individual fields or variants. `override` configures language-specific type mappings.
 
@@ -806,7 +807,7 @@ var->
 // The accessor explicitly maps each preloaded id to its local table index.
 /// Hover documentation for each Chern directive.
 ///
-/// Indexed by preloaded [`InternedId`] via [`Document::directive_docs`].
+/// Indexed by preloaded [`InternedIdUTF8`] via [`Document::directive_docs`].
 pub static DIRECTIVE_DOCS: [Document; 7] = [
     Document {
         key: "warn",
@@ -1033,7 +1034,7 @@ Each operand fits in eight bits, but the result is `256` and needs nine. The com
 //
 /// Hover documentation for schema config options used in `complex->`.
 ///
-/// Indexed by preloaded [`InternedId`] via [`Document::config_option_docs`].
+/// Indexed by preloaded [`InternedIdUTF8`] via [`Document::config_option_docs`].
 pub static CONFIG_OPTION_DOCS: [Document; 3] = [
     Document {
         key: "cases",
@@ -1106,8 +1107,7 @@ for Status {
     },
     Document {
         key: "default_val",
-        description:
-            "Sets a member default for null/None data where the target language supports it",
+        description: "Sets a member default for null/None data where the target language supports it",
         example: Some(
             r#"Set this option in a member's config block. The value must match the member's type. This is serialization metadata; it does not initialize a chrn variable.
 
@@ -1180,7 +1180,8 @@ mod tests {
 
         for (id, key) in expected {
             assert_eq!(
-                Document::directive_docs(InternedId::new(id)).map(|document| document.key),
+                Document::directive_docs(InternedId::new(id).into_tagged::<UTF8Tag>())
+                    .map(|document| document.key),
                 Some(key),
                 "directive id {id} should resolve to {key} documentation"
             );
@@ -1197,7 +1198,8 @@ mod tests {
 
         for (id, key) in expected {
             assert_eq!(
-                Document::config_option_docs(InternedId::new(id)).map(|document| document.key),
+                Document::config_option_docs(InternedId::new(id).into_tagged::<UTF8Tag>())
+                    .map(|document| document.key),
                 Some(key),
                 "config option id {id} should resolve to {key} documentation"
             );
@@ -1206,11 +1208,22 @@ mod tests {
 
     #[test]
     fn interned_document_lookups_reject_unknown_ids() {
-        assert!(Document::directive_docs(InternedId::new(INTERNED_CASES)).is_none());
-        assert!(Document::directive_docs(InternedId::new(u32::MAX)).is_none());
+        assert!(
+            Document::directive_docs(InternedId::new(INTERNED_CASES).into_tagged::<UTF8Tag>())
+                .is_none()
+        );
+        assert!(
+            Document::directive_docs(InternedId::new(u32::MAX).into_tagged::<UTF8Tag>()).is_none()
+        );
 
-        assert!(Document::config_option_docs(InternedId::new(INTERNED_WARN)).is_none());
-        assert!(Document::config_option_docs(InternedId::new(u32::MAX)).is_none());
+        assert!(
+            Document::config_option_docs(InternedId::new(INTERNED_WARN).into_tagged::<UTF8Tag>())
+                .is_none()
+        );
+        assert!(
+            Document::config_option_docs(InternedId::new(u32::MAX).into_tagged::<UTF8Tag>())
+                .is_none()
+        );
     }
 
     #[test]
@@ -1290,4 +1303,3 @@ mod tests {
         );
     }
 }
-

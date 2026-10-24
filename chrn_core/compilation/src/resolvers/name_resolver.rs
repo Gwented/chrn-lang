@@ -592,7 +592,7 @@ impl NamespaceResolver<'_> {
             .ast_id
             .expect("Core should not be resolved");
 
-        let dup_name = self.interner.extract_str_from_interned_id(orig_sym.name_id);
+        let dup_name = self.interner.extract_utf8_str(orig_sym.name_id);
         let scope_type = orig_sym.scope_origin;
 
         let orig_span = env.ast_info.get_decl(orig_ast_id).span();

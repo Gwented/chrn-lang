@@ -3,7 +3,7 @@
 //! failure from compilation stages, never from the actual system applying directives.
 
 use chrn_utils::{
-    id_types::{ExprId, InternedId},
+    id_types::{ExprId, InternedIdUTF8},
     utils::containers::SpannedContainer,
 };
 //// General directives not specific to anything
@@ -21,7 +21,7 @@ use chrn_utils::{
 /// Parameterized directives, which are only at compile-time
 #[derive(Debug, Clone)]
 pub struct DirectiveParameterizedHir {
-    pub sp_name_id: SpannedContainer<InternedId>,
+    pub sp_name_id: SpannedContainer<InternedIdUTF8>,
     // Is spanned so that it at least captures the "()" if there are no args for err reporting
     /// Which directive it's fields should correspond to
     pub args: Option<SpannedContainer<Vec<ExprId>>>,
@@ -30,13 +30,13 @@ pub struct DirectiveParameterizedHir {
 
 impl DirectiveParameterizedHir {
     pub fn new(
-        sp_name_id: SpannedContainer<InternedId>,
+        sp_name_id: SpannedContainer<InternedIdUTF8>,
         args: Option<SpannedContainer<Vec<ExprId>>>,
     ) -> Self {
         Self { sp_name_id, args }
     }
 
-    pub const fn try_from_interned_str(interned_id: InternedId) -> Option<Self> {
+    pub const fn try_from_interned_str(interned_id: InternedIdUTF8) -> Option<Self> {
         // None right now
         match interned_id {
             _ => None,

@@ -1,6 +1,6 @@
 use chrn_utils::{
     id_types::{
-        AstId, DirectiveId, ExprId, InternedId, MemberId, ModuleId, ScopeId, SymbolId, TypeId,
+        AstId, DirectiveId, ExprId, MemberId, ModuleId, ScopeId, SymbolId, TypeId, InternedIdUTF8,
         ValueId, VariableId, id_tags::TaggedId,
     },
     source_map::source_span::SourceSpan,
@@ -29,7 +29,7 @@ pub enum SymbolOrigin {
 
 #[derive(Debug)]
 pub struct Symbol {
-    pub name_id: InternedId,
+    pub name_id: InternedIdUTF8,
     // pub name_span: Option<SourceSpan>,
     /// `SymbolId` of `self`
     pub self_id: SymbolId,
@@ -47,7 +47,7 @@ pub struct Symbol {
 impl Symbol {
     pub const fn new(
         // May couple dbg info but fine for now
-        name_id: InternedId,
+        name_id: InternedIdUTF8,
         // name_span: Option<SourceSpan>,
         self_id: SymbolId,
         // Maybe we can have an id enum instead with it possibility allowing for field types?
@@ -160,7 +160,7 @@ pub struct VarDef {
     /// `SymbolId` of `self`
     pub self_id: TaggedId<SymbolId, VarTag>,
     /// Identifier of `self`
-    pub name_id: InternedId,
+    pub name_id: InternedIdUTF8,
     /// Kind of variable
     pub meta: VariableMetadata,
     // Same job as SymbolKind::ReservedTypeSlot
@@ -171,7 +171,7 @@ pub struct VarDef {
 impl VarDef {
     pub fn new(
         self_id: TaggedId<SymbolId, VarTag>,
-        name_id: InternedId,
+        name_id: InternedIdUTF8,
         meta: VariableMetadata,
         state: VariableState,
     ) -> VarDef {
@@ -225,7 +225,7 @@ pub enum MemberSymbolKind {
     Variant(VariantRepre),
     //// Member that has reserved a slot but not yet defined
     // Unknown {
-    //     sp_name_id: SpannedContainer<InternedId>,
+    //     sp_name_id: SpannedContainer<InternedIdUTF8>,
     //     reserved_memb_id: MemberId,
     // },
 }
@@ -249,7 +249,7 @@ impl MemberSymbolKind {
     }
 
     /// Returns `None` if the type is unknown
-    pub fn name_id(&self) -> InternedId {
+    pub fn name_id(&self) -> InternedIdUTF8 {
         match self {
             MemberSymbolKind::Field(field_repre) => field_repre.name_id,
             MemberSymbolKind::Variant(variant_repre) => variant_repre.name_id,
@@ -321,7 +321,7 @@ pub struct EnumDef {
     pub self_id: TaggedId<SymbolId, EnumTag>,
     // Is not present because the symbol also holds the name id which would be duplicated an id. May
     // change to where it includes it anyways.
-    // pub name_id: InternedId,
+    // pub name_id: InternedIdUTF8,
     pub name_span: SourceSpan,
     pub variants: Vec<TaggedId<MemberId, VariantTag>>,
     pub glob_directives: Vec<SpannedContainer<DirectiveId>>,
@@ -331,7 +331,7 @@ pub struct EnumDef {
 impl EnumDef {
     pub fn new(
         self_id: TaggedId<SymbolId, EnumTag>,
-        // name_id: InternedId,
+        // name_id: InternedIdUTF8,
         name_span: SourceSpan,
         variants: Vec<TaggedId<MemberId, VariantTag>>,
     ) -> EnumDef {
@@ -371,7 +371,7 @@ pub struct VariantRepre {
     pub local_parent_sym_id: TaggedId<SymbolId, EnumTag>,
     /// MemberId of `self`
     pub self_id: TaggedId<MemberId, VariantTag>,
-    pub name_id: InternedId,
+    pub name_id: InternedIdUTF8,
     pub name_span: SourceSpan,
     // Because enum types are nullable
     pub type_id: Option<TypeId>,
@@ -387,7 +387,7 @@ impl VariantRepre {
     pub fn new(
         local_parent_sym_id: TaggedId<SymbolId, EnumTag>,
         self_id: TaggedId<MemberId, VariantTag>,
-        name_id: InternedId,
+        name_id: InternedIdUTF8,
         name_span: SourceSpan,
         // spanned_ty: Option<SpannedContainer<TypeId>>,
         type_id: Option<TypeId>,
@@ -413,7 +413,7 @@ pub struct TypeDef {
     pub self_id: TaggedId<SymbolId, TypeDefTag>,
     // The padding fills this to 72 bytes anyways so this does nothing but give convenience and
     // reduce lookup
-    pub name_id: InternedId,
+    pub name_id: InternedIdUTF8,
     pub name_span: SourceSpan,
     /// Represents the str in "var-> name: str"
     pub type_id: TypeId,
@@ -424,7 +424,7 @@ pub struct TypeDef {
 impl TypeDef {
     pub fn new(
         self_id: TaggedId<SymbolId, TypeDefTag>,
-        name_id: InternedId,
+        name_id: InternedIdUTF8,
         name_span: SourceSpan,
         type_id: TypeId,
     ) -> TypeDef {
@@ -449,7 +449,7 @@ impl ChrnClassifiable for TypeDef {
 #[derive(Debug)]
 pub struct FuncDef {
     pub self_id: TaggedId<SymbolId, FuncTag>,
-    pub name_id: InternedId,
+    pub name_id: InternedIdUTF8,
     pub kind: BuiltinFuncKind,
     /// Given:
     /// x: i32 [IsEmpty]
@@ -468,7 +468,7 @@ pub struct FuncDef {
 impl FuncDef {
     pub fn new(
         self_id: TaggedId<SymbolId, FuncTag>,
-        name_id: InternedId,
+        name_id: InternedIdUTF8,
         kind: BuiltinFuncKind,
         type_constraints: TypeBoundaryFlags,
         arg_constraints: Vec<FuncArgConstraint>,
@@ -503,7 +503,7 @@ pub struct FieldRepre {
     pub local_parent_sym_id: TaggedId<SymbolId, StructTag>,
     /// MemberId of `self`
     pub self_id: TaggedId<MemberId, FieldTag>,
-    pub name_id: InternedId,
+    pub name_id: InternedIdUTF8,
     pub name_span: SourceSpan,
     // To TypeDef
     pub type_id: TypeId,
@@ -517,7 +517,7 @@ impl FieldRepre {
     pub fn new(
         local_parent_sym_id: TaggedId<SymbolId, StructTag>,
         self_id: TaggedId<MemberId, FieldTag>,
-        name_id: InternedId,
+        name_id: InternedIdUTF8,
         name_span: SourceSpan,
         type_id: TypeId,
     ) -> FieldRepre {

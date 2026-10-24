@@ -1,5 +1,5 @@
 use chrn_utils::{
-    id_types::{InternedId, ModuleId, SymbolId, TypeId},
+    id_types::{ModuleId, SymbolId, TypeId, InternedIdUTF8},
     source_map::{source_diagnostic::SourceDiagnosticBuilder, source_span::SourceSpan},
     utils::containers::SpannedContainer,
 };
@@ -13,8 +13,8 @@ use crate::{
     semantic::{
         hir::{
             hir_directives::{
-                Directive, DirectiveUnparameterized, DirectivePreprocessSchema,
-                DirectivePreprocessSchemaKind, DirectivePreprocessValueSource,
+                Directive, DirectivePreprocessSchema, DirectivePreprocessSchemaKind,
+                DirectivePreprocessValueSource, DirectiveUnparameterized,
                 directive_preprocess_args::DirectivePreprocessConstraintErrorKind,
             },
             hir_symbols::{BuiltinFuncKind, SymbolKindFlat},
@@ -50,7 +50,7 @@ pub enum PresetErr {
         span: SourceSpan,
     },
     /// Spanned unknown identifier that was expeceted to be a directive
-    UnknownDirective(SpannedContainer<InternedId>),
+    UnknownDirective(SpannedContainer<InternedIdUTF8>),
     // TypecheckFailed {
     //     invalid_ty: SpannedContainer<TypeId>,
     // },
@@ -68,8 +68,8 @@ pub enum PresetErr {
     },
     /// Duplicate identiiers were found
     DuplicateIdents {
-        sp_original: SpannedContainer<InternedId>,
-        sp_dup: SpannedContainer<InternedId>,
+        sp_original: SpannedContainer<InternedIdUTF8>,
+        sp_dup: SpannedContainer<InternedIdUTF8>,
         /// What the duplicate actually was.
         /// Like if it should output "duplicate field/variant/parameter" etsy
         classifier: ChrnClassified,
@@ -99,14 +99,14 @@ pub enum PresetErr {
     CircularDirective {
         sp_fmtted_parent: SpannedContainer<ChrnClassified>,
         // Actual parent name
-        // SpannedContainer<InternedId>,
+        // SpannedContainer<InternedIdUTF8>,
         sp_directive: SpannedContainer<DirectiveUnparameterized>,
         err_ty_span: SourceSpan,
     },
     /// SpannedInterned number, type overflown
     //WARN: Should rename this to something else.
     NumericParseError {
-        sp_num: SpannedContainer<InternedId>,
+        sp_num: SpannedContainer<InternedIdUTF8>,
         fmtted_ty: ChrnClassified,
     },
     /// A literal or constant computation exceeded the configured numeric limit.
@@ -159,13 +159,13 @@ pub enum LookupError {
     /// Search context was given an identifier and scope, but the identifier does not exist in the
     /// given scope.
     SymbolNotFound {
-        sp_invalid_name_id: SpannedContainer<InternedId>,
+        sp_invalid_name_id: SpannedContainer<InternedIdUTF8>,
         scope_searched: AssociatedScopeKind,
     },
     /// Search context was expecting a type but found a non-type
     NotAType {
         invalid_sym_id: SymbolId,
-        sp_invalid_name_id: SpannedContainer<InternedId>,
+        sp_invalid_name_id: SpannedContainer<InternedIdUTF8>,
         scope_found_in: AssociatedScopeKind,
     },
     /// Search context found a type, but it isn't accessible from `current_mod_id`
@@ -179,9 +179,9 @@ pub enum LookupError {
     /// Spanned type's identifier which has no members, Identifier of member looked up
     MemberNotFound {
         searched_type_id: TypeId,
-        sp_searched_type_name_id: SpannedContainer<InternedId>,
+        sp_searched_type_name_id: SpannedContainer<InternedIdUTF8>,
         /// Member looked up but not found
-        not_found_name_id: InternedId,
+        not_found_name_id: InternedIdUTF8,
     },
     /// Spanned Formatted Symbol
     /// (Symbol with no members is `Formatted` because it's a language level symbol construct, not a

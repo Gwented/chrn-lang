@@ -1,5 +1,6 @@
 use chrn_utils::{
-    id_types::InternedId, source_map::source_span::SourceSpan, utils::containers::SpannedContainer,
+    id_types::InternedIdUTF8, source_map::source_span::SourceSpan,
+    utils::containers::SpannedContainer,
 };
 
 use crate::parser::ast::ast_exprs::{AstExpr, PathSegment, TypeExpr};
@@ -20,7 +21,7 @@ pub enum AstStmt {
 #[derive(Debug)]
 pub struct AbstractOptionAssignment {
     /// Name of structural type to configure
-    pub name_id: InternedId,
+    pub name_id: InternedIdUTF8,
     pub name_span: SourceSpan,
     /// Must be an `ArrayExpr`
     pub array_expr: SpannedContainer<AstExpr>,
@@ -28,7 +29,7 @@ pub struct AbstractOptionAssignment {
 
 impl AbstractOptionAssignment {
     pub fn new(
-        name_id: InternedId,
+        name_id: InternedIdUTF8,
         name_span: SourceSpan,
         array_expr: SpannedContainer<AstExpr>,
     ) -> AbstractOptionAssignment {

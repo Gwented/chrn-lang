@@ -9,7 +9,7 @@ use chrn_utils::source_map::source_diagnostic::{
 use chrn_utils::utils::containers::SpannedContainer;
 use chrn_utils::{
     core_error::{self},
-    id_types::InternedId,
+    id_types::InternedIdUTF8,
     intern::Intern,
     source_map::{
         source_diagnostic::SourceDiagnostic, source_region::SourceRegion, source_span::SourceSpan,
@@ -235,7 +235,7 @@ impl ModuleFinder<'_> {
         let name_id = interner.intern_str(&file_name);
         let path_id = interner.intern_path(&import_path);
 
-        let alias_id: Option<SpannedContainer<InternedId>> = if self.is_as() {
+        let alias_id: Option<SpannedContainer<InternedIdUTF8>> = if self.is_as() {
             self.skip_whitespace();
             let start = self.cursor.pos() as u32;
             let id = self.read_id(interner);
@@ -252,7 +252,7 @@ impl ModuleFinder<'_> {
         let import = Import::new(name_id, import_kind, alias_id);
 
         self.cfg.logger().log_dbg(|| {
-            let import_name = interner.extract_str_from_interned_id(name_id);
+            let import_name = interner.extract_utf8_str(name_id);
             let region_path = interner.extract_path_from_path_id(self.current_region.path_id);
             format!(
                 "Created import `{import_name}` (region=\"{}\")",
@@ -402,7 +402,7 @@ impl ModuleFinder<'_> {
         Ok(bind)
     }
 
-    fn read_id(&mut self, interner: &mut Intern) -> InternedId {
+    fn read_id(&mut self, interner: &mut Intern) -> InternedIdUTF8 {
         let start = self.cursor.pos();
 
         while (self.cursor.pos() < self.cursor.len() && self.peek_char().is_alphanumeric())

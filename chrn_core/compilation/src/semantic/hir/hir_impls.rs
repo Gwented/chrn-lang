@@ -1,7 +1,7 @@
 use chrn_utils::{
     id_types::{
-        AstId, ConfigRootId, DirectiveId, ExprId, ImplId, ImplMemberId, InternedId, MemberId,
-        SymbolId, TypeId, id_tags::TaggedId,
+        AstId, ConfigRootId, DirectiveId, ExprId, ImplId, ImplMemberId, MemberId, SymbolId, TypeId,
+        InternedIdUTF8, id_tags::TaggedId,
     },
     source_map::source_span::SourceSpan,
     utils::containers::SpannedContainer,
@@ -59,7 +59,7 @@ pub enum ImplMemberKind {
     MultiTypeAssignment(MultiTypeAssignment),
     /// Member that has reserved a slot but not yet defined
     Unknown {
-        sp_name_id: SpannedContainer<InternedId>,
+        sp_name_id: SpannedContainer<InternedIdUTF8>,
         reserved_memb_id: ImplMemberId,
     },
 }
@@ -150,14 +150,14 @@ pub struct ConfigMemberCommon {
     /// `ImplMemberId` of `self`
     pub self_id: TaggedId<ImplMemberId, ConfigMemberTag>,
     /// Identifier of `self`
-    pub name_id: InternedId,
+    pub name_id: InternedIdUTF8,
     /// Span of identifier
     pub name_span: SourceSpan,
 }
 
 impl ConfigMemberCommon {
     pub fn new(
-        name_id: InternedId,
+        name_id: InternedIdUTF8,
         name_span: SourceSpan,
         self_id: TaggedId<ImplMemberId, ConfigMemberTag>,
     ) -> Self {
@@ -285,7 +285,7 @@ pub struct OptionAssignmentRoot {
     /// `ImplMemberId` of `self`
     pub self_id: TaggedId<ImplMemberId, OptionAssignmentRootTag>,
     /// Identifier of option
-    pub name_id: InternedId,
+    pub name_id: InternedIdUTF8,
     /// Span of identifier
     pub name_span: SourceSpan,
     /// Values defined for this option
@@ -296,7 +296,7 @@ impl OptionAssignmentRoot {
     pub const fn new(
         parent_impl_id: TaggedId<ImplId, ConfigRootTag>,
         self_id: TaggedId<ImplMemberId, OptionAssignmentRootTag>,
-        name_id: InternedId,
+        name_id: InternedIdUTF8,
         name_span: SourceSpan,
         array_expr_id: ExprId,
     ) -> OptionAssignmentRoot {
@@ -330,7 +330,7 @@ pub struct OptionAssignmentMember {
     /// `ImplMemberId` of `self`
     pub self_id: TaggedId<ImplMemberId, OptionAssignmentMemberTag>,
     /// Identifier of option
-    pub name_id: InternedId,
+    pub name_id: InternedIdUTF8,
     /// Span of identifier
     pub name_span: SourceSpan,
     /// Values defined for this option
@@ -342,7 +342,7 @@ impl OptionAssignmentMember {
         // parent_impl_memb_id: TaggedId<ImplMemberId, ConfigMemberTag>,
         linked_memb_id: MemberId,
         self_id: TaggedId<ImplMemberId, OptionAssignmentMemberTag>,
-        name_id: InternedId,
+        name_id: InternedIdUTF8,
         name_span: SourceSpan,
         array_expr_id: ExprId,
     ) -> OptionAssignmentMember {

@@ -1,4 +1,4 @@
-use chrn_utils::id_types::{AstId, InternedId, SymbolId};
+use chrn_utils::id_types::{AstId, InternedIdUTF8, SymbolId};
 use dashu_float::DBig;
 use dashu_int::IBig;
 use lang::types::{builtins::BuiltinType, externs::ExternPlatformType};
@@ -15,7 +15,7 @@ use crate::{
 /// Abstraction to allow for `Symbol` to be made procedurally in a composed manner
 #[derive(Debug)]
 pub struct InstantiationSymbolBase {
-    pub name_id: InternedId,
+    pub name_id: InternedIdUTF8,
     pub sym_origin: SymbolOrigin,
     pub scope_origin: ScopeType,
     pub is_priv: bool,
@@ -24,7 +24,7 @@ pub struct InstantiationSymbolBase {
 
 impl InstantiationSymbolBase {
     pub const fn new(
-        name_id: InternedId,
+        name_id: InternedIdUTF8,
         sym_origin: SymbolOrigin,
         scope_origin: ScopeType,
         is_priv: bool,
@@ -72,7 +72,7 @@ pub enum InstantiationSymbolKind {
 pub struct InstantiationVariable {
     // It needs a symbol to exist so I'd presume this is ok since the symbol would have the
     // identifier already
-    // pub name_id: InternedId,
+    // pub name_id: InternedIdUTF8,
     pub ty: InstiationType,
     pub val: InstiationValue,
 }
@@ -103,7 +103,7 @@ pub enum InstiationValue {
     // Func(SymbolId),
     Tuple(Vec<InstiationValue>),
     Array(Vec<InstiationValue>),
-    Str(InternedId),
+    Str(InternedIdUTF8),
 }
 
 impl InstiationValue {

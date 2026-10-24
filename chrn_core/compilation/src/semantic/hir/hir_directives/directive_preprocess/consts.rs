@@ -34,9 +34,6 @@ const fn new_preprocess_arg(
 // Is there a preference for if these should be ref or not
 //
 // Need a better way of instantiation
-//TODO: This needs to be given an abstract "Integer" idea.
-//Meaning, Token::Integer and Type::I64/U64/BigInt understand what `Input::Integer` means in their
-//own way.
 pub(super) static MAX_NUMERIC_BITS_ARGS: [DirectivePreprocessArg; 1] = [new_preprocess_arg(
     DirectivePreprocessValueSource::Literal,
     &[DirectivePreprocessArgConstraint::Integer(

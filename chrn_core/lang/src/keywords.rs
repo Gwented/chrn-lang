@@ -1,6 +1,7 @@
+use chrn_utils::id_types::{InternedId, id_tags::UTF8Tag};
 use std::ops::RangeInclusive;
 
-use chrn_utils::{id_types::InternedId, intern};
+use chrn_utils::{id_types::InternedIdUTF8, intern};
 
 use crate::chrn_classifier::{self, ChrnClassifiable, ChrnClassified};
 
@@ -63,7 +64,7 @@ impl ChrnClassifiable for Keyword {
 }
 
 impl Keyword {
-    pub fn name_id(self) -> InternedId {
+    pub fn name_id(self) -> InternedIdUTF8 {
         let id = match self {
             Keyword::Struct => intern::INTERNED_STRUCT,
             Keyword::Enum => intern::INTERNED_ENUM,
@@ -81,7 +82,7 @@ impl Keyword {
             Keyword::In => intern::INTERNED_IN,
             Keyword::For => intern::INTERNED_FOR,
         };
-        InternedId::new(id)
+        InternedId::new(id).into_tagged::<UTF8Tag>()
     }
 
     pub fn is_sect(self) -> bool {
@@ -93,8 +94,8 @@ impl Keyword {
 
     // No. No this will not stay.
     /// Returns Some keyword that matches the given id or None
-    pub fn try_from_interned_id(interned_id: InternedId) -> Option<Keyword> {
-        match interned_id.id {
+    pub fn try_from_interned_id(interned_id: InternedIdUTF8) -> Option<Keyword> {
+        match interned_id.inner().id {
             // Using literal because scared of if
             intern::INTERNED_STRUCT => Some(Keyword::Struct),
             intern::INTERNED_ENUM => Some(Keyword::Enum),
@@ -116,8 +117,8 @@ impl Keyword {
     }
 
     /// Returns Some keyword that is considered a statement or None
-    pub fn try_as_stmt(interned_id: InternedId) -> Option<Keyword> {
-        if !stmt_range().contains(&(interned_id.id as usize)) {
+    pub fn try_as_stmt(interned_id: InternedIdUTF8) -> Option<Keyword> {
+        if !stmt_range().contains(&(interned_id.inner().id as usize)) {
             return None;
         }
         Keyword::try_from_interned_id(interned_id)

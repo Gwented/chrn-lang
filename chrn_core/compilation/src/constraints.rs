@@ -33,7 +33,7 @@ pub(super) fn check_type_constraint(
                 // Not sure if this incurs any errors this time
                 if visited.contains(&field.type_id) {
                     // if spanned_directive.arg.has_restrictions() {
-                    //     let name = self.interner.extract_str_from_interned_id(symbol.name_id );
+                    //     let name = self.interner.extract_utf8_str(symbol.name_id );
                     //
                     //     let msg = format!(
                     //         "The type `{name}` cannot have `#{}` applied due to recursively relying on itself satisfying the argument",

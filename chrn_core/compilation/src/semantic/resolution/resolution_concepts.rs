@@ -2,7 +2,7 @@
 // as the literal module name, despite them just being free functions. Maybe just a "concepts" separation.
 
 use chrn_utils::{
-    id_types::{InternedId, ModuleId, SymbolId, TypeId},
+    id_types::{ModuleId, SymbolId, TypeId, InternedIdUTF8},
     source_map::source_span::SourceSpan,
     utils::containers::SpannedContainer,
 };
@@ -23,11 +23,11 @@ pub enum TypeExprResult {
         /// `SymbolId` of `found_sym_id`
         found_sym_id: SymbolId,
         /// Spanned identifier of symbol that is not a type
-        sp_name_id: SpannedContainer<InternedId>,
+        sp_name_id: SpannedContainer<InternedIdUTF8>,
         scope_found_in: AssociatedScopeKind,
     },
     /// (Identifier not found as any symbol, scope searched)
-    SymbolNotFound(SpannedContainer<InternedId>, AssociatedScopeKind),
+    SymbolNotFound(SpannedContainer<InternedIdUTF8>, AssociatedScopeKind),
     /// Symbol found but private to another module
     PrivateTypeAccess {
         sp_found_type_id: SpannedContainer<TypeId>,
@@ -36,12 +36,12 @@ pub enum TypeExprResult {
     },
     /// Found a valid data structure but the inputs exceed the expected
     InvalidGenericArgCount {
-        base: InternedId,
+        base: InternedIdUTF8,
         expected: usize,
         inputs_span: SourceSpan,
     },
     /// Found an identifier using generic parameters after it while not being a known data structure
-    UnknownGenericIdent(SpannedContainer<InternedId>),
+    UnknownGenericIdent(SpannedContainer<InternedIdUTF8>),
     /// Static access variant
     StaticAccessFailure(StaticAccessResult),
 }
@@ -72,11 +72,11 @@ pub enum StaticAccessResult {
     /// If it's `None` then then `current_seg` was found by going through `prev_seg`
     // Should be different variants
     SymNotFound {
-        current_seg: SpannedContainer<InternedId>,
-        prev_seg: Option<SpannedContainer<InternedId>>,
+        current_seg: SpannedContainer<InternedIdUTF8>,
+        prev_seg: Option<SpannedContainer<InternedIdUTF8>>,
     },
     /// A segment was found but does not expose a further namespace
-    NoNamespace(SpannedContainer<InternedId>),
+    NoNamespace(SpannedContainer<InternedIdUTF8>),
     /// A generic found using "::" access
     /// (Generic span)
     GenericUsingStaticPath(SourceSpan),

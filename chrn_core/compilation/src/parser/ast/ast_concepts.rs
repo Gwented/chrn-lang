@@ -1,6 +1,6 @@
 use chrn_utils::{
     arena::Arena,
-    id_types::{AstId, InternedId},
+    id_types::{AstId, InternedIdUTF8},
     source_map::source_span::SourceSpan,
     utils::containers::SpannedContainer,
 };
@@ -366,7 +366,7 @@ impl ChrnClassifiable for BinaryOp {
 // condition is applied to only a particular bit size, then it should be that bit size
 #[derive(Debug)]
 pub struct AbstractVar {
-    pub name_id: InternedId,
+    pub name_id: InternedIdUTF8,
     pub name_span: SourceSpan,
     //// Type annotatoin
     // pub ty_ann: Option<SpannedContainer<TypeExpr>>,
@@ -376,7 +376,7 @@ pub struct AbstractVar {
 
 impl AbstractVar {
     pub fn new(
-        name_id: InternedId,
+        name_id: InternedIdUTF8,
         name_span: SourceSpan,
         // ty_ann: Option<SpannedContainer<TypeExpr>>,
         spanned_expr: SpannedContainer<AstExpr>,
@@ -396,11 +396,11 @@ impl AbstractVar {
 /// Syntax: `#{identifier}`
 #[derive(Debug)]
 pub struct AbstractDirectiveUnparameterized {
-    pub sp_name_id: SpannedContainer<InternedId>,
+    pub sp_name_id: SpannedContainer<InternedIdUTF8>,
 }
 
 impl AbstractDirectiveUnparameterized {
-    pub fn new(sp_name_id: SpannedContainer<InternedId>) -> AbstractDirectiveUnparameterized {
+    pub fn new(sp_name_id: SpannedContainer<InternedIdUTF8>) -> AbstractDirectiveUnparameterized {
         AbstractDirectiveUnparameterized { sp_name_id }
     }
 }
@@ -411,14 +411,14 @@ impl AbstractDirectiveUnparameterized {
 /// Syntax: `#{identifier}({expr}, ..)`
 #[derive(Debug)]
 pub struct AbstractDirectiveParameterized {
-    pub sp_name_id: SpannedContainer<InternedId>,
+    pub sp_name_id: SpannedContainer<InternedIdUTF8>,
     /// Arguments and the span of their enclosing parentheses.
     pub sp_args: SpannedContainer<Vec<SpannedContainer<AstExpr>>>,
 }
 
 impl AbstractDirectiveParameterized {
     pub fn new(
-        sp_name_id: SpannedContainer<InternedId>,
+        sp_name_id: SpannedContainer<InternedIdUTF8>,
         sp_args: SpannedContainer<Vec<SpannedContainer<AstExpr>>>,
     ) -> Self {
         Self {
@@ -433,7 +433,7 @@ impl AbstractDirectiveParameterized {
 #[derive(Debug)]
 pub struct AbstractTypeDef {
     /// Identifier of `self`
-    pub name_id: InternedId,
+    pub name_id: InternedIdUTF8,
     /// Span for identifer of `self`
     pub name_span: SourceSpan,
     pub sp_ty_expr: SpannedContainer<TypeExpr>,
@@ -444,7 +444,7 @@ pub struct AbstractTypeDef {
 
 impl AbstractTypeDef {
     pub fn new(
-        name_id: InternedId,
+        name_id: InternedIdUTF8,
         name_span: SourceSpan,
         sp_ty_expr: SpannedContainer<TypeExpr>,
         directives: Vec<AbstractDirectiveUnparameterized>,
@@ -464,7 +464,7 @@ impl AbstractTypeDef {
 
 #[derive(Debug)]
 pub struct AbstractStruct {
-    pub name_id: InternedId,
+    pub name_id: InternedIdUTF8,
     pub name_span: SourceSpan,
     pub glob_conds: Vec<SpannedContainer<AstExpr>>,
     pub glob_directives: Vec<AbstractDirectiveUnparameterized>,
@@ -474,7 +474,7 @@ pub struct AbstractStruct {
 
 impl AbstractStruct {
     pub fn new(
-        name_id: InternedId,
+        name_id: InternedIdUTF8,
         name_span: SourceSpan,
         glob_conds: Vec<SpannedContainer<AstExpr>>,
         glob_directives: Vec<AbstractDirectiveUnparameterized>,
@@ -495,7 +495,7 @@ impl AbstractStruct {
 #[derive(Debug)]
 pub struct AbstractEnum {
     // Would be SymbolId in symbol table anyways
-    pub name_id: InternedId,
+    pub name_id: InternedIdUTF8,
     pub name_span: SourceSpan,
     pub variants: Vec<AbstractVariant>,
     pub glob_conds: Vec<SpannedContainer<AstExpr>>,
@@ -506,7 +506,7 @@ pub struct AbstractEnum {
 
 impl AbstractEnum {
     pub fn new(
-        name_id: InternedId,
+        name_id: InternedIdUTF8,
         name_span: SourceSpan,
         variants: Vec<AbstractVariant>,
         glob_conds: Vec<SpannedContainer<AstExpr>>,
@@ -527,7 +527,7 @@ impl AbstractEnum {
 // Hold that thought
 #[derive(Debug)]
 pub struct AbstractVariant {
-    pub name_id: InternedId,
+    pub name_id: InternedIdUTF8,
     pub name_span: SourceSpan,
     // I think this is right?
     pub sp_ty_expr: Option<SpannedContainer<TypeExpr>>,
@@ -537,7 +537,7 @@ pub struct AbstractVariant {
 
 impl AbstractVariant {
     pub fn new(
-        name_id: InternedId,
+        name_id: InternedIdUTF8,
         name_span: SourceSpan,
         // I think this is right?
         sp_ty_expr: Option<SpannedContainer<TypeExpr>>,
@@ -556,14 +556,14 @@ impl AbstractVariant {
 
 #[derive(Debug)]
 pub struct AbstractFunc {
-    pub name_id: InternedId,
+    pub name_id: InternedIdUTF8,
     pub name_span: SourceSpan,
     pub params: Vec<SpannedContainer<AstExpr>>,
 }
 
 impl AbstractFunc {
     pub fn new(
-        name_id: InternedId,
+        name_id: InternedIdUTF8,
         name_span: SourceSpan,
         params: Vec<SpannedContainer<AstExpr>>,
     ) -> AbstractFunc {
@@ -577,14 +577,14 @@ impl AbstractFunc {
 
 #[derive(Debug)]
 pub struct AbstractFuncDecl {
-    pub name_id: InternedId,
+    pub name_id: InternedIdUTF8,
     pub name_span: SourceSpan,
     pub params: Vec<AbstractParam>,
 }
 
 impl AbstractFuncDecl {
     pub fn new(
-        name_id: InternedId,
+        name_id: InternedIdUTF8,
         name_span: SourceSpan,
         params: Vec<AbstractParam>,
     ) -> AbstractFuncDecl {
@@ -603,7 +603,7 @@ pub struct AbstractConfig {
     // best in regards to accessing and changing fields
     // Could be a "Outer.a { }" where it is defining it's fields config specifically
     /// Name of assumed struct/enum type to configure
-    // pub name_id: InternedId,
+    // pub name_id: InternedIdUTF8,
     /// Span assocaited with name to configure
     // pub name_span: SourceSpan,
     //// Config specific to the origin of this metadata. ONLY `ConfigMember` can have this.
@@ -644,7 +644,10 @@ pub enum AbstractConfigKind {
     /// Name attached to root
     Root(Vec<SpannedContainer<PathSegment>>, ConfigRootMetadataKind),
     /// :(
-    Member(SpannedContainer<InternedId>, AstConfigMemberMetadataKind),
+    Member(
+        SpannedContainer<InternedIdUTF8>,
+        AstConfigMemberMetadataKind,
+    ),
 }
 
 /// For allowing one config to hold different metadata depending on the context
@@ -710,14 +713,14 @@ impl AstConfigOverrideMetadata {
 
 #[derive(Debug)]
 pub struct AbstractParam {
-    pub name_id: InternedId,
+    pub name_id: InternedIdUTF8,
     pub name_span: SourceSpan,
     pub sp_ty_expr: SpannedContainer<TypeExpr>,
 }
 
 impl AbstractParam {
     pub fn new(
-        name_id: InternedId,
+        name_id: InternedIdUTF8,
         name_span: SourceSpan,
         sp_ty_expr: SpannedContainer<TypeExpr>,
     ) -> AbstractParam {
@@ -731,7 +734,7 @@ impl AbstractParam {
 
 #[derive(Debug)]
 struct AbstractFieldDecl {
-    pub name_id: InternedId,
+    pub name_id: InternedIdUTF8,
     pub fields: Vec<SpannedContainer<AstExpr>>,
 }
 
@@ -743,7 +746,7 @@ struct AbstractFieldDecl {
 
 #[derive(Debug)]
 pub struct AbstractAlias {
-    pub name_id: InternedId,
+    pub name_id: InternedIdUTF8,
     pub name_span: SourceSpan,
     pub params: Vec<AbstractParam>,
     pub conds: Vec<SpannedContainer<AstExpr>>,
@@ -753,7 +756,7 @@ pub struct AbstractAlias {
 
 impl AbstractAlias {
     pub fn new(
-        name_id: InternedId,
+        name_id: InternedIdUTF8,
         name_span: SourceSpan,
         params: Vec<AbstractParam>,
         conds: Vec<SpannedContainer<AstExpr>>,
@@ -774,11 +777,14 @@ impl AbstractAlias {
 #[derive(Debug)]
 pub struct AbstractMemberAccess {
     pub base: Box<SpannedContainer<AstExpr>>,
-    pub field: InternedId,
+    pub field: InternedIdUTF8,
 }
 
 impl AbstractMemberAccess {
-    pub fn new(base: Box<SpannedContainer<AstExpr>>, field: InternedId) -> AbstractMemberAccess {
+    pub fn new(
+        base: Box<SpannedContainer<AstExpr>>,
+        field: InternedIdUTF8,
+    ) -> AbstractMemberAccess {
         AbstractMemberAccess { base, field }
     }
 }

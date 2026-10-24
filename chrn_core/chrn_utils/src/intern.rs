@@ -1,9 +1,13 @@
 use std::{
     collections::HashMap,
+    ops::Range,
     path::{Path, PathBuf},
 };
 
-use crate::id_types::{InternedId, PathId};
+use crate::id_types::{
+    InternedId, InternedIdUTF8, PathId,
+    id_tags::{ArenaIndexTag, MaybeUTF8Tag, TaggedId, UTF8Tag},
+};
 
 // Um
 pub const INTERNED_SELF: u32 = 0;
@@ -340,15 +344,27 @@ pub static PRELOADED_STRINGS: [(&str, u32); INTERNER_PRELOAD_SIZE] = [
     ("max_numeric_bits", INTERNED_MAX_NUMERIC_BITS),
 ];
 
-/// Interner used for the chrn language
+#[derive(Debug)]
+struct InternedOffsetData {
+    /// Bytes occupied in `Intern`'s flat `Vec<u8>`
+    range: Range<usize>,
+    /// Whether or not `Self` was stored as utf8
+    // u32?
+    is_utf8: bool,
+}
+
+//WARN: Growing contiguous byte storage can reallocate the entire buffer.
+//
+// (This rhymes)
+/// Append-only interner for `chrn`
 #[derive(Debug)]
 pub struct Intern {
-    id_map: HashMap<String, u32>,
+    id_map: HashMap<Vec<u8>, TaggedId<InternedId, MaybeUTF8Tag>>,
+    id_map_offset_data: Vec<InternedOffsetData>,
+    stored_bytes: Vec<u8>,
+    //TODO: Not sure what to do with these yet
     path_map: HashMap<PathBuf, u32>,
-    // Is super solely for lib.rs tests
-    pub(super) stored_strs: Vec<String>,
     stored_paths: Vec<PathBuf>,
-    pos: usize,
 }
 
 pub const INTERNER_PRELOAD_SIZE: usize = (INTERNED_MAX_NUMERIC_BITS + 1) as usize;
@@ -358,10 +374,10 @@ impl Intern {
     pub fn init() -> Intern {
         let mut interner = Intern {
             id_map: HashMap::with_capacity(INTERNER_PRELOAD_SIZE),
-            stored_strs: Vec::with_capacity(INTERNER_PRELOAD_SIZE),
+            stored_bytes: Vec::new(),
+            id_map_offset_data: Vec::with_capacity(INTERNER_PRELOAD_SIZE),
             path_map: HashMap::new(),
             stored_paths: Vec::new(),
-            pos: INTERNER_PRELOAD_SIZE,
         };
 
         // Pre-loading every language required string literal
@@ -374,27 +390,71 @@ impl Intern {
 
     /// Internal helper used for registering compiler known interned strings
     fn register(&mut self, s: &str, id: u32) {
-        debug_assert_eq!(self.stored_strs.len() as u32, id);
-        self.id_map.insert(s.to_string(), id);
-        self.stored_strs.push(s.to_string());
+        debug_assert_eq!(self.id_map_offset_data.len() as u32, id);
+        let interned = self.intern_str(s);
+        debug_assert_eq!(interned.inner().id, id);
     }
 
-    /// Stores string and returns it's assigned `InternedId`
-    /// If the string is already stored, returns the existent `InternedId`
-    pub fn intern_str(&mut self, s: &str) -> InternedId {
-        if let Some(id) = self.id_map.get(s) {
-            return InternedId::new(*id);
+    /// Interns as UTF-8
+    pub fn intern_str(&mut self, s: &str) -> InternedIdUTF8 {
+        let id = self.intern_bytes_with_utf8(s.as_bytes(), true).inner();
+        id.into_tagged::<UTF8Tag>()
+    }
+
+    /// Interns arbitrary bytes without asserting UTF-8 validity.
+    pub fn intern_bytes(&mut self, bytes: &[u8]) -> TaggedId<InternedId, MaybeUTF8Tag> {
+        self.intern_bytes_with_utf8(bytes, false)
+    }
+
+    // Maybe should be pub so that intern_str isn't the only way to intern a utf8 validated str
+    // Would be more dangerous though
+    fn intern_bytes_with_utf8(
+        &mut self,
+        bytes: &[u8],
+        known_utf8: bool,
+    ) -> TaggedId<InternedId, MaybeUTF8Tag> {
+        if let Some(id) = self.id_map.get(bytes) {
+            self.id_map_offset_data[id.inner().id as usize].is_utf8 |= known_utf8;
+            return *id;
         }
+        debug_assert!(!known_utf8 || str::from_utf8(bytes).is_ok());
 
-        let id = self.stored_strs.len() as u32;
-        self.pos += 1;
+        let id =
+            InternedId::new(self.id_map_offset_data.len() as u32).into_tagged::<MaybeUTF8Tag>();
+        let start = self.stored_bytes.len();
+        self.stored_bytes.extend_from_slice(bytes);
+        self.id_map_offset_data.push(InternedOffsetData {
+            range: start..self.stored_bytes.len(),
+            is_utf8: known_utf8,
+        });
+        self.id_map.insert(bytes.to_vec(), id);
+        id
+    }
 
-        let new_str = s.to_string();
+    /// Returns bytes if the tagged ID exists
+    pub fn get_bytes<T: ArenaIndexTag>(&self, id: TaggedId<InternedId, T>) -> Option<&[u8]> {
+        let data = self.id_map_offset_data.get(id.inner().id as usize)?;
+        Some(&self.stored_bytes[data.range.clone()])
+    }
 
-        self.id_map.insert(new_str.clone(), id);
-        self.stored_strs.push(new_str);
+    /// Returns bytes assuming the id exists
+    pub fn extract_bytes<T: ArenaIndexTag>(&self, tagged: TaggedId<InternedId, T>) -> &[u8] {
+        let data = &self.id_map_offset_data[tagged.inner().id as usize];
+        &self.stored_bytes[data.range.clone()]
+    }
 
-        InternedId::new(id)
+    /// Returns `&str` if the id exists, trusting the UTF-8 guarantee.
+    pub fn get_utf8_str(&self, id: InternedIdUTF8) -> Option<&str> {
+        let bytes = self.get_bytes(id)?;
+        // SAFETY: the UTF-8 tag identifies valid text; bytes are never modified or removed.
+        Some(Self::assume_utf8(bytes, id))
+    }
+
+    /// Returns `&str`, assuming the `InternedIdUTF8` is valid.
+    pub fn extract_utf8_str(&self, id: InternedIdUTF8) -> &str {
+        let bytes = self.extract_bytes(id);
+        // SAFETY: the UTF-8 tag identifies valid text; bytes are never modified or removed.
+        Self::assume_utf8(bytes, id)
     }
 
     /// Stores path and returns it's assigned `PathId`
@@ -405,7 +465,6 @@ impl Intern {
         }
 
         let id = self.stored_paths.len() as u32;
-        self.pos += 1;
 
         let new_path = p.to_path_buf();
 
@@ -417,8 +476,14 @@ impl Intern {
 
     /// Appends `self` intern all of `other`'s stored strings and paths
     pub fn append(&mut self, other: &Intern) {
-        for i in INTERNER_PRELOAD_SIZE..other.stored_strs.len() {
-            self.intern_str(&other.stored_strs[i]);
+        for i in INTERNER_PRELOAD_SIZE..other.id_map_offset_data.len() {
+            let bytes = &other.stored_bytes[other.id_map_offset_data[i].range.clone()];
+            if other.id_map_offset_data[i].is_utf8 {
+                // SAFETY: The other interner stored this entry as valid UTF-8.
+                self.intern_str(unsafe { str::from_utf8_unchecked(bytes) });
+            } else {
+                self.intern_bytes(bytes);
+            }
         }
 
         for i in 0..other.stored_paths.len() {
@@ -426,26 +491,28 @@ impl Intern {
         }
     }
 
-    /// Looks up and returns the given `InternedId`'s associated string
-    /// Panics on failure
-    pub fn extract_str_from_interned_id(&self, interned_id: InternedId) -> &str {
-        &self.stored_strs[interned_id.id as usize]
+    /// Returns `InternedIdUTF8` if the given `&str` is found and is UTF-8 in metadata.
+    pub fn get_interned_id_from_str(&self, s: &str) -> Option<InternedIdUTF8> {
+        let id = self.id_map.get(s.as_bytes())?;
+        self.id_map_offset_data[id.inner().id as usize]
+            .is_utf8
+            .then(|| id.inner().into_tagged::<UTF8Tag>())
     }
 
-    /// Looks up and returns the given `&str`'s associated string
-    pub fn get_interned_id_from_str(&self, s: &str) -> Option<InternedId> {
-        self.id_map.get(s).map(|id| InternedId::new(*id))
+    /// Returns the path if the id exists
+    pub fn get_path_from_path_id(&self, path_id: PathId) -> Option<&Path> {
+        self.stored_paths
+            .get(path_id.id as usize)
+            .map(PathBuf::as_path)
     }
 
-    // Should probably just be removed
-    /// Looks up and returns the given index's associated string
-    /// Panics on failure
-    pub fn extract_str_from_idx(&self, idx: usize) -> &str {
-        &self.stored_strs[idx]
+    // Not sure if this is actually the best way to do it.
+    // Rust book mentions wrapping unsafe with safe, given a proper invariant so this is here.
+    fn assume_utf8(bytes: &[u8], _: InternedIdUTF8) -> &str {
+        unsafe { str::from_utf8_unchecked(bytes) }
     }
 
-    /// Looks up and returns the given `PathId`'s associated path
-    /// Panics on failure
+    /// Extracts a path, assuming the id exists
     pub fn extract_path_from_path_id(&self, path_id: PathId) -> &Path {
         &self.stored_paths[path_id.id as usize]
     }

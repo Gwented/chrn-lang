@@ -2,7 +2,7 @@
 // Static access help messages
 use chrn_utils::{
     err_codes::ErrorCode,
-    id_types::InternedId,
+    id_types::InternedIdUTF8,
     intern::Intern,
     source_map::{
         source_diagnostic::{
@@ -19,7 +19,7 @@ use toolsc::cursors::BasicCursor;
 
 use crate::{
     chrn_config::ChrnConfig,
-    lexer::token::{self, SpannedToken, Token, TokenFloat, TokenInt, TokenKind},
+    lexer::token::{self, SpannedToken, Token, TokenFloat, TokenInt, TokenKind, TokenString},
     parser::{
         Evidence, InitialEvidence, NeutralBranch, SectionBranch, SemanticSituation, branch::Branch,
         parse_fmt,
@@ -93,7 +93,7 @@ impl<'a> ParserContext<'a> {
         amsg: &str,
         initial_evidence: InitialEvidence,
         interner: &Intern,
-    ) -> Result<InternedId, Token> {
+    ) -> Result<InternedIdUTF8, Token> {
         debug_assert!(
             matches!(
                 expected,
@@ -106,7 +106,9 @@ impl<'a> ParserContext<'a> {
 
         let fmtted_tok = match found.tok {
             Token::Id(id)
-            | Token::Str(id)
+            | Token::Str(TokenString {
+                interned_id: id, ..
+            })
             | Token::Integer(TokenInt {
                 interned_id: id, ..
             })
@@ -399,9 +401,9 @@ impl<'a> ParserContext<'a> {
                         Token::Keyword(kw) => kw.to_classified().to_string(),
                         Token::BoolLiteral(boolean) => boolean.to_string(),
                         // Notation doesn't matter
-                        Token::Integer(tok_int) => interner
-                            .extract_str_from_interned_id(tok_int.interned_id)
-                            .into(),
+                        Token::Integer(tok_int) => {
+                            interner.extract_utf8_str(tok_int.interned_id).into()
+                        }
                         //WARN: IGNORE THIS. DO NOT COMMENT ON THIS.
                         _ => unsafe {
                             std::hint::unreachable_unchecked();
@@ -417,7 +419,7 @@ impl<'a> ParserContext<'a> {
             SemanticSituation::DirectiveParsing => match evidence.found.tok {
                 Token::Id(id) => {
                     // NOTE: We can't actually make it here. At least not reliably
-                    let s = interner.extract_str_from_interned_id(id);
+                    let s = interner.extract_utf8_str(id);
                     let similar = algo::fuzzy_match(s, FuzzyMatch::Directive);
 
                     if similar.len() > 0 {
@@ -474,7 +476,7 @@ impl<'a> ParserContext<'a> {
             }
             SemanticSituation::KeywordBinding => match evidence.found.tok {
                 Token::Id(id) => {
-                    let s = interner.extract_str_from_interned_id(id);
+                    let s = interner.extract_utf8_str(id);
                     let similar = algo::fuzzy_match(s, FuzzyMatch::KW);
 
                     if similar.len() > 0 {
@@ -547,7 +549,7 @@ impl<'a> ParserContext<'a> {
                 NeutralBranch::Searching => match found.tok {
                     // Found stray unrecognizable identifier in neutral
                     Token::Id(name_id) | Token::Invalid(name_id) => {
-                        let found_str = interner.extract_str_from_interned_id(name_id);
+                        let found_str = interner.extract_utf8_str(name_id);
 
                         // Statements and sections are possible so both are tried
                         let similar_opt =
@@ -585,7 +587,7 @@ impl<'a> ParserContext<'a> {
                         //     return None;
                         // };
                         //
-                        // let name = interner.extract_str_from_interned_id(id as usize);
+                        // let name = interner.extract_utf8_str(id as usize);
 
                         // let help_diag = reporter::help_transform(
                         //     name,
@@ -619,9 +621,7 @@ impl<'a> ParserContext<'a> {
                         let help = format!("Can be escaped with `e#{}`", kw.to_classified());
                         builder.add_help(help)
                     }
-                    Token::Str(id)
-                        if expected == TokenKind::Colon && prev_kind == TokenKind::Id =>
-                    {
+                    Token::Str(_) if expected == TokenKind::Colon && prev_kind == TokenKind::Id => {
                         let Token::Id(possible_kw_id) = prev_tok.tok else {
                             return builder;
                         };
@@ -713,7 +713,7 @@ impl<'a> ParserContext<'a> {
                 // SectionBranch::Override => todo!(),
                 _ => match found.tok {
                     Token::Id(ident_id) | Token::Invalid(ident_id) => {
-                        let found_str = interner.extract_str_from_interned_id(ident_id);
+                        let found_str = interner.extract_utf8_str(ident_id);
 
                         // Maybe this should return None if it directly IS a direct match since it is
                         // just a range check
@@ -764,7 +764,7 @@ impl<'a> ParserContext<'a> {
             // Branch::FuncArgs => todo!(),
             Branch::Directive => match found.tok {
                 Token::Id(name_id) => {
-                    let found_str = interner.extract_str_from_interned_id(name_id);
+                    let found_str = interner.extract_utf8_str(name_id);
                     let similar_vec = algo::fuzzy_match(found_str, algo::FuzzyMatch::Directive);
 
                     if !similar_vec.is_empty() {

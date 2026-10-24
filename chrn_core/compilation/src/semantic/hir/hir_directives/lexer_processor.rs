@@ -1,10 +1,10 @@
 //! Parser intended to process preprocess-directives that MUST be seen before the
 //! parsing stage to be meaningful.
-use chrn_utils::{id_types::InternedId, intern::Intern};
+use chrn_utils::{id_types::InternedIdUTF8, intern::Intern};
 use toolsc::cursors::BasicCursor;
 
 use crate::{
-    lexer::token::{SpannedToken, Token, TokenFloat, TokenInt, TokenKind},
+    lexer::token::{SpannedToken, Token, TokenFloat, TokenInt, TokenKind, TokenString},
     parser::parser_helpers::DelimiterContext,
     semantic::hir::hir_directives::{
         DirectivePreprocessExpectInput,
@@ -98,11 +98,16 @@ fn make_directive(
 }
 
 /// Returns `true` if `expected` == found
-fn expect_id(cursor: &mut BasicCursor<SpannedToken>, expected: TokenKind) -> Option<InternedId> {
+fn expect_id(
+    cursor: &mut BasicCursor<SpannedToken>,
+    expected: TokenKind,
+) -> Option<InternedIdUTF8> {
     let found = cursor.advance_owned_checked()?;
     let tok_opt = match found.tok {
         Token::Id(id)
-        | Token::Str(id)
+        | Token::Str(TokenString {
+            interned_id: id, ..
+        })
         | Token::Integer(TokenInt {
             interned_id: id, ..
         })

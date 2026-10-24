@@ -1,5 +1,6 @@
+use chrn_utils::id_types::{InternedId, id_tags::UTF8Tag};
 use chrn_utils::{
-    id_types::{InternedId, TypeId},
+    id_types::{InternedIdUTF8, TypeId},
     intern,
 };
 
@@ -178,7 +179,7 @@ impl ChrnClassifiable for BuiltinTypeKind {
 }
 
 impl BuiltinTypeKind {
-    pub fn name_id(self) -> InternedId {
+    pub fn name_id(self) -> InternedIdUTF8 {
         let id = match self {
             BuiltinTypeKind::I8 => intern::INTERNED_I8,
             BuiltinTypeKind::U8 => intern::INTERNED_U8,
@@ -208,7 +209,7 @@ impl BuiltinTypeKind {
             BuiltinTypeKind::Tuple => intern::INTERNED_TUPLE,
             BuiltinTypeKind::Runtime => intern::INTERNED_RUNTIME,
         };
-        InternedId::new(id)
+        InternedId::new(id).into_tagged::<UTF8Tag>()
     }
 
     pub fn try_from_interned_id(id: u32) -> Option<BuiltinTypeKind> {

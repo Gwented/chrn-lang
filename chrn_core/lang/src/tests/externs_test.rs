@@ -10,7 +10,7 @@ fn assert_metadata(
     expected_name: &str,
     expected_representation: ExternTypeRepresentation,
 ) {
-    assert_eq!(interner.extract_str_from_interned_id(metadata.name_id), expected_name);
+    assert_eq!(interner.extract_utf8_str(metadata.name_id), expected_name);
     assert_eq!(metadata.representation, expected_representation);
 }
 

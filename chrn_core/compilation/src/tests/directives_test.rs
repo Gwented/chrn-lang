@@ -18,8 +18,8 @@ use crate::{
         hir::{
             hir_concepts::IntegerRangeKind,
             hir_directives::{
-                Directive, DirectiveUnparameterized, DirectivePreprocessExpectInputKind,
-                DirectivePreprocessSchema, DirectivePreprocessSchemaKind, TypeDirective,
+                Directive, DirectivePreprocessExpectInputKind, DirectivePreprocessSchema,
+                DirectivePreprocessSchemaKind, DirectiveUnparameterized, TypeDirective,
                 directive_preprocess_args::{
                     DirectiveIntegerArgConstraint, DirectiveIntegerArgConstraintErrorKind,
                     DirectivePreprocessArgConstraint, DirectivePreprocessConstraintErrorKind,
@@ -36,11 +36,20 @@ use crate::{
 const INLINE_DIRECTIVES: [(&str, DirectiveUnparameterized); 7] = [
     ("warn", DirectiveUnparameterized::Warn),
     ("ignore", DirectiveUnparameterized::Ignore),
-    ("scient", DirectiveUnparameterized::Type(TypeDirective::Scient)),
+    (
+        "scient",
+        DirectiveUnparameterized::Type(TypeDirective::Scient),
+    ),
     ("hex", DirectiveUnparameterized::Type(TypeDirective::Hex)),
     ("bin", DirectiveUnparameterized::Type(TypeDirective::Bin)),
-    ("octal", DirectiveUnparameterized::Type(TypeDirective::Octal)),
-    ("unicode", DirectiveUnparameterized::Type(TypeDirective::Unicode)),
+    (
+        "octal",
+        DirectiveUnparameterized::Type(TypeDirective::Octal),
+    ),
+    (
+        "unicode",
+        DirectiveUnparameterized::Type(TypeDirective::Unicode),
+    ),
 ];
 
 #[test]
@@ -60,9 +69,9 @@ fn builtin_directives_are_preloaded_and_recognized_by_their_family() {
             .get_interned_id_from_str(name)
             .unwrap_or_else(|| panic!("directive '{name}' is not preloaded"));
         assert!(
-            (id.id as usize) < intern::INTERNER_PRELOAD_SIZE,
+            (id.inner().id as usize) < intern::INTERNER_PRELOAD_SIZE,
             "directive '{name}' has interned ID {} outside preload size {}",
-            id.id,
+            id.inner().id,
             intern::INTERNER_PRELOAD_SIZE,
         );
 

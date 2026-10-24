@@ -18,7 +18,7 @@ pub mod type_context;
 use chrn_utils::err_codes::ErrorCode;
 use chrn_utils::id_types::id_tags::TaggedId;
 use chrn_utils::id_types::{
-    AstId, DirectiveId, ExprId, ImplId, ImplMemberId, InternedId, MemberId, ScopeId, SymbolId,
+    AstId, DirectiveId, ExprId, ImplId, ImplMemberId, InternedIdUTF8, MemberId, ScopeId, SymbolId,
     TypeId,
 };
 use chrn_utils::intern::{self, Intern};
@@ -159,7 +159,7 @@ impl<'res> TypeResolver<'res> {
         self.cfg.perf_tracker_mut().start(env.region.path_id);
         let speculated_seen = if env.comp_syms.len() > 0 { 4 } else { 0 };
         // Re-used hash-set for when identifiers are checked, like for configs, alias params, etc.
-        let mut ident_tracker: DuplicateTracker<SpannedContainer<InternedId>> =
+        let mut ident_tracker: DuplicateTracker<SpannedContainer<InternedIdUTF8>> =
             DuplicateTracker::with_capacities(speculated_seen, 0);
 
         // Everything skipped is not a factor in this compilation step.
@@ -409,8 +409,8 @@ impl<'res> TypeResolver<'res> {
         //     == self.compiler.mods[ModuleId::new((self.compiler.mods.len() - 2) as u32)].self_id
         // {
         //     for symbol in &self.compiler.syms {
-        //         if self.interner.extract_str_from_interned_id(symbol.name_id) == "B" {
-        //             let name = self.interner.extract_str_from_interned_id(symbol.name_id);
+        //         if self.interner.extract_utf8_str(symbol.name_id) == "B" {
+        //             let name = self.interner.extract_utf8_str(symbol.name_id);
         //             dbg!(name);
         //             match symbol.kind {
         //                 SymbolKind::Variable(var_id) => {
@@ -915,7 +915,7 @@ impl<'res> TypeResolver<'res> {
     fn resolve_alias(
         &mut self,
         parent_sym_id: TaggedId<SymbolId, AliasTag>,
-        ident_tracker: &mut DuplicateTracker<SpannedContainer<InternedId>>,
+        ident_tracker: &mut DuplicateTracker<SpannedContainer<InternedIdUTF8>>,
         env: &ResolverEnv,
     ) {
         let sym = &self.compiler.syms[parent_sym_id.inner()];
@@ -1101,7 +1101,7 @@ impl<'res> TypeResolver<'res> {
     fn resolve_cfg_root<'env>(
         &mut self,
         parent_impl_id: TaggedId<ImplId, ConfigRootTag>,
-        ident_tracker: &mut DuplicateTracker<SpannedContainer<InternedId>>,
+        ident_tracker: &mut DuplicateTracker<SpannedContainer<InternedIdUTF8>>,
         env: &'env ResolverEnv,
     ) {
         let impl_hir = &self.compiler.impls[parent_impl_id.inner()];
@@ -1409,7 +1409,7 @@ impl<'res> TypeResolver<'res> {
         let mut seen_cfg_len = 0;
 
         // Tracking duplicate identifiers for `AbstractConfig`
-        let mut seen_cfg_idents: Vec<SpannedContainer<InternedId>> =
+        let mut seen_cfg_idents: Vec<SpannedContainer<InternedIdUTF8>> =
             Vec::with_capacity(abs_cfg_root.cfg_members.len());
 
         //NOTE: Maybe should be tracked from SymbolId/MemberId instead
@@ -1486,9 +1486,7 @@ impl<'res> TypeResolver<'res> {
                                         .compiler
                                         .get_name_id_from_type_id(type_id)
                                         .expect("NOT DONE YET");
-                                    let found_name = self
-                                        .interner
-                                        .extract_str_from_interned_id(found_type_name_id);
+                                    let found_name = self.interner.extract_utf8_str(found_type_name_id);
 
                                     let preset_err =
                                         PresetErr::Lookup(LookupError::ImpossibleTypeMemberAccess(
@@ -1581,7 +1579,7 @@ impl<'res> TypeResolver<'res> {
                                 // I don't know if this is possible anymore
                                 MemberLookupResult::Unknown(type_id) => {
                                     // let var = self.compiler.get_var(found_sym_id);
-                                    // let name = self.interner.extract_str_from_interned_id(var.name_id);
+                                    // let name = self.interner.extract_utf8_str(var.name_id);
 
                                     // dbg!(&self.compiler.types[var.type_id ]);
                                     todo!("RUST_BACKTRACE=1");
@@ -1744,9 +1742,7 @@ impl<'res> TypeResolver<'res> {
                 // the original field for all duplicates.
                 .find(|(other_i, cfg)| *other_i < i && current_cfg.inner == cfg.inner)
             {
-                let dup_name = self
-                    .interner
-                    .extract_str_from_interned_id(current_cfg.inner);
+                let dup_name = self.interner.extract_utf8_str(current_cfg.inner);
 
                 let orig_span = original_cfg.span;
                 let current_cfg_span = current_cfg.span;
@@ -1819,10 +1815,10 @@ impl<'res> TypeResolver<'res> {
         // For tracking invalid recursive usage
         // cfg_dfs: &mut Vec<(TypeId, SourceSpan)>,
         //TEST: For identifier tracking right now. Trying out something questionable.
-        seen_cfg_idents: &mut Vec<SpannedContainer<InternedId>>,
+        seen_cfg_idents: &mut Vec<SpannedContainer<InternedIdUTF8>>,
         // Carried over and reset through cfg member recursive resolution to track duplicate
         // identifiers.
-        seen_opt_idents: &mut DuplicateTracker<SpannedContainer<InternedId>>,
+        seen_opt_idents: &mut DuplicateTracker<SpannedContainer<InternedIdUTF8>>,
         scope_type: ScopeType,
         depth: u8,
         env: &ResolverEnv,
@@ -2682,7 +2678,6 @@ impl<'res> TypeResolver<'res> {
         let mut queue: Vec<(usize, ExprId)> =
             Vec::with_capacity(pending_sym.pending_exprs.len() / 3);
 
-        //
         for (i, pending_expr) in pending_sym.pending_exprs.iter().enumerate() {
             match &pending_expr.kind {
                 PendingExprKind::Parent(parent_base) => {
@@ -2703,7 +2698,6 @@ impl<'res> TypeResolver<'res> {
                 PendingExprKind::Standing(state) => {
                     // Standing version of same check
                     if matches!(
-                        //WARN: Make sure I work
                         state,
                         StandingExprState::Resolved {
                             has_resolved_ty: true,
@@ -2934,7 +2928,7 @@ impl<'res> TypeResolver<'res> {
             }
         }
 
-        // Meaning every pending_expr are impossible to be resolved further
+        // All being skipped means further resolution is not possible
         if queue.is_empty() {
             can_remove = true;
         }
@@ -3475,7 +3469,7 @@ impl<'res> TypeResolver<'res> {
                             }
                         }
                         SymbolKind::Namespace => {
-                            let err_mod_name = self.interner.extract_str_from_interned_id(*name_id);
+                            let err_mod_name = self.interner.extract_utf8_str(*name_id);
                             // TODO: Should send help, which should be done after re-doing how
                             // errors are rendered
                             let core_msg = format!(
@@ -3508,10 +3502,10 @@ impl<'res> TypeResolver<'res> {
 
                     Ok(expr_id)
                 } else {
-                    let ident = self.interner.extract_str_from_interned_id(*name_id);
+                    let ident = self.interner.extract_utf8_str(*name_id);
 
                     let module = &self.compiler.mods[env.current_mod];
-                    let mod_name = self.interner.extract_str_from_interned_id(module.name_id);
+                    let mod_name = self.interner.extract_utf8_str(module.name_id);
 
                     let and_local = if local_scope_id.is_some() {
                         " and local scopes"
@@ -3547,7 +3541,7 @@ impl<'res> TypeResolver<'res> {
                 // expression of just being a singular value type
                 let expr_hir = ExprHir::LiteralVal(val_id);
 
-                let s = self.interner.extract_str_from_interned_id(*name_id);
+                let s = self.interner.extract_utf8_str(*name_id);
                 let max_bits = self.cfg.max_numeric_bits() as u64;
                 let kind = match ArbitraryIntKind::from_str_with_limit(s, *notation, max_bits) {
                     Ok(kind) => kind,
@@ -3593,7 +3587,7 @@ impl<'res> TypeResolver<'res> {
 
                 let expr_hir = ExprHir::LiteralVal(val_id);
 
-                let s = self.interner.extract_str_from_interned_id(*name_id);
+                let s = self.interner.extract_utf8_str(*name_id);
                 let max_bits = self.cfg.max_numeric_bits() as u64;
                 let kind = match ArbitraryFloatKind::from_str_with_limit(s, max_bits) {
                     Ok(kind) => kind,
@@ -4301,7 +4295,7 @@ impl<'res> TypeResolver<'res> {
             } else {
                 let msg = format!(
                     "Could not find `{}` as a module or value",
-                    self.interner.extract_str_from_interned_id(name_id)
+                    self.interner.extract_utf8_str(name_id)
                 );
 
                 return Err(PresetErr::General(todo!()));
@@ -4331,16 +4325,12 @@ impl<'res> TypeResolver<'res> {
             // Directly checking if a cycle was had
             if current == parent_sym_id {
                 let current_sym = &self.compiler.syms[parent_sym_id];
-                let current_name = self
-                    .interner
-                    .extract_str_from_interned_id(current_sym.name_id);
+                let current_name = self.interner.extract_utf8_str(current_sym.name_id);
                 let current_ast_id = current_sym.ast_id.expect("Should be user symbols only");
 
                 let cycled_sym = &self.compiler.syms[found_sym_id];
                 let cycled_ast_id = cycled_sym.ast_id.expect("Should be user symbols only");
-                let cycled_name = self
-                    .interner
-                    .extract_str_from_interned_id(cycled_sym.name_id);
+                let cycled_name = self.interner.extract_utf8_str(cycled_sym.name_id);
 
                 let cycled_span = env.ast_info.get_name_span(cycled_ast_id);
                 let current_span = env.ast_info.get_name_span(current_ast_id);

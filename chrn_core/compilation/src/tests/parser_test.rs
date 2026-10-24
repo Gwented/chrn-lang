@@ -52,10 +52,10 @@ fn parse_text_with_diags(text: &str) -> (AstInfo, Vec<SourceDiagnostic>, Intern)
     (ast, summary.diags, interner)
 }
 
-fn cfg_name_id(cfg: &AbstractConfig) -> InternedId {
+fn cfg_name_id(cfg: &AbstractConfig) -> InternedIdUTF8 {
     match &cfg.kind {
         AbstractConfigKind::Root(path, _) => match &path[0].inner {
-            PathSegment::Ident(id) => InternedId::new(id.id),
+            PathSegment::Ident(id) => *id,
             _ => panic!("expected Var type expr in Root config"),
         },
         AbstractConfigKind::Member(sp, _) => sp.inner,
@@ -101,20 +101,13 @@ fn parse_param_directive_argument_delimiters() {
             .collect();
         assert_eq!(directives.len(), 1, "{arguments}");
         let directive = directives[0];
-        assert_eq!(
-            interner.extract_str_from_interned_id(directive.sp_name_id.inner),
-            "chrn"
-        );
+        assert_eq!(interner.extract_utf8_str(directive.sp_name_id.inner), "chrn");
         let args = &directive.sp_args.inner;
         assert_eq!(args.len(), expected.len(), "{arguments}");
         for (element, expected) in args.iter().zip(expected) {
             match &element.inner {
                 AstExpr::Integer(id, IntegerNotation::Decimal) => {
-                    assert_eq!(
-                        interner.extract_str_from_interned_id(*id),
-                        expected,
-                        "{arguments}"
-                    );
+                    assert_eq!(interner.extract_utf8_str(*id), expected, "{arguments}");
                 }
                 other => panic!("{arguments}: expected decimal Integer({expected}), got {other:?}"),
             }
@@ -122,13 +115,10 @@ fn parse_param_directive_argument_delimiters() {
         let items = section_items(&ast, SectionKind::Neutral);
         assert_eq!(items.len(), 2, "{arguments}");
         let after = ast.get_var(items[1]);
-        assert_eq!(
-            interner.extract_str_from_interned_id(after.name_id),
-            "after"
-        );
+        assert_eq!(interner.extract_utf8_str(after.name_id), "after");
         match &after.spanned_expr.inner {
             AstExpr::Integer(id, IntegerNotation::Decimal) => {
-                assert_eq!(interner.extract_str_from_interned_id(*id), "7")
+                assert_eq!(interner.extract_utf8_str(*id), "7")
             }
             other => panic!("{arguments}: expected preserved Integer(7), got {other:?}"),
         }
@@ -192,7 +182,7 @@ fn parse_let_integer() {
 
     // AstId 0 -> first item pushed
     let var = ast.get_var(sect[0]);
-    assert_eq!(interner.extract_str_from_interned_id(var.name_id), "x");
+    assert_eq!(interner.extract_utf8_str(var.name_id), "x");
     // name_span should cover "x" bytes 4..5
     assert_eq!(var.name_span.start, 4);
     assert_eq!(var.name_span.end, 5);
@@ -201,7 +191,7 @@ fn parse_let_integer() {
     // Check the expression: Integer(42)
     match &var.spanned_expr.inner {
         AstExpr::Integer(id, IntegerNotation::Decimal) => {
-            assert_eq!(interner.extract_str_from_interned_id(*id), "42");
+            assert_eq!(interner.extract_utf8_str(*id), "42");
         }
         other => panic!("expected AstExprInteger, got {other:?}"),
     }
@@ -220,13 +210,13 @@ fn parse_let_string() {
     assert_eq!(sect.len(), 1);
 
     let var = ast.get_var(sect[0]);
-    assert_eq!(interner.extract_str_from_interned_id(var.name_id), "msg");
+    assert_eq!(interner.extract_utf8_str(var.name_id), "msg");
     assert_eq!(var.name_span.start, 4);
     assert_eq!(var.name_span.end, 7);
 
     match &var.spanned_expr.inner {
         AstExpr::Str(id) => {
-            assert_eq!(interner.extract_str_from_interned_id(*id), "hello");
+            assert_eq!(interner.extract_utf8_str(*id), "hello");
         }
         other => panic!("expected AstExprStr, got {other:?}"),
     }
@@ -245,13 +235,13 @@ fn parse_let_float() {
     assert_eq!(sect.len(), 1);
 
     let var = ast.get_var(sect[0]);
-    assert_eq!(interner.extract_str_from_interned_id(var.name_id), "pi");
+    assert_eq!(interner.extract_utf8_str(var.name_id), "pi");
     assert_eq!(var.name_span.start, 4);
     assert_eq!(var.name_span.end, 6);
 
     match &var.spanned_expr.inner {
         AstExpr::Float(id, FloatNotation::Decimal) => {
-            assert_eq!(interner.extract_str_from_interned_id(*id), "3.14");
+            assert_eq!(interner.extract_utf8_str(*id), "3.14");
         }
         other => panic!("expected AstExprFloat, got {other:?}"),
     }
@@ -293,7 +283,7 @@ fn parse_export_let() {
     let (ast, interner) = parse_text(text);
 
     let var = ast.get_var(section_items(&ast, SectionKind::Neutral)[0]);
-    assert_eq!(interner.extract_str_from_interned_id(var.name_id), "x");
+    assert_eq!(interner.extract_utf8_str(var.name_id), "x");
     assert!(!var.is_priv, "export let should be public");
     assert_eq!(var.name_span.start, 11);
     assert_eq!(var.name_span.end, 12);
@@ -309,7 +299,7 @@ fn parse_alias_no_params() {
     assert_eq!(sect.len(), 1);
 
     let alias = ast.get_alias(sect[0]);
-    assert_eq!(interner.extract_str_from_interned_id(alias.name_id), "x");
+    assert_eq!(interner.extract_utf8_str(alias.name_id), "x");
     assert_eq!(alias.name_span.start, 6);
     assert_eq!(alias.name_span.end, 7);
     assert!(alias.is_priv);
@@ -332,22 +322,22 @@ fn parse_alias_with_params() {
     let (ast, interner) = parse_text(text);
 
     let alias = ast.get_alias(section_items(&ast, SectionKind::Neutral)[0]);
-    assert_eq!(interner.extract_str_from_interned_id(alias.name_id), "max");
+    assert_eq!(interner.extract_utf8_str(alias.name_id), "max");
     assert_eq!(alias.params.len(), 2);
 
     // First param: a: i32
     let p0 = &alias.params[0];
-    assert_eq!(interner.extract_str_from_interned_id(p0.name_id), "a");
+    assert_eq!(interner.extract_utf8_str(p0.name_id), "a");
     match &p0.sp_ty_expr.inner {
-        TypeExpr::Var(id) => assert_eq!(interner.extract_str_from_interned_id(*id), "i32"),
+        TypeExpr::Var(id) => assert_eq!(interner.extract_utf8_str(*id), "i32"),
         other => panic!("expected TypeExpr::Var, got {other:?}"),
     }
 
     // Second param: b: string
     let p1 = &alias.params[1];
-    assert_eq!(interner.extract_str_from_interned_id(p1.name_id), "b");
+    assert_eq!(interner.extract_utf8_str(p1.name_id), "b");
     match &p1.sp_ty_expr.inner {
-        TypeExpr::Var(id) => assert_eq!(interner.extract_str_from_interned_id(*id), "string"),
+        TypeExpr::Var(id) => assert_eq!(interner.extract_utf8_str(*id), "string"),
         other => panic!("expected TypeExpr::Var, got {other:?}"),
     }
 
@@ -370,7 +360,7 @@ fn parse_alias_with_directives() {
     let alias = ast.get_alias(section_items(&ast, SectionKind::Neutral)[0]);
     assert_eq!(alias.directives.len(), 1);
     assert_eq!(
-        interner.extract_str_from_interned_id(alias.directives[0].sp_name_id.inner),
+        interner.extract_utf8_str(alias.directives[0].sp_name_id.inner),
         "warn"
     );
 }
@@ -391,13 +381,13 @@ fn parse_var_section_single_typedef() {
     assert_eq!(sect.nodes.len(), 1);
 
     let typedef = ast.get_typedef(sect.nodes[0]);
-    assert_eq!(interner.extract_str_from_interned_id(typedef.name_id), "x");
+    assert_eq!(interner.extract_utf8_str(typedef.name_id), "x");
     // name_span: "x" at byte 10..11
     assert_eq!(typedef.name_span.start, 10);
     assert_eq!(typedef.name_span.end, 11);
 
     match &typedef.sp_ty_expr.inner {
-        TypeExpr::Var(id) => assert_eq!(interner.extract_str_from_interned_id(*id), "i32"),
+        TypeExpr::Var(id) => assert_eq!(interner.extract_utf8_str(*id), "i32"),
         other => panic!("expected TypeExpr::Var, got {other:?}"),
     }
     // Type span: "i32" at bytes 13..16
@@ -416,16 +406,16 @@ fn parse_var_section_multiple_typedefs() {
     assert_eq!(sect.nodes.len(), 2);
 
     let td0 = ast.get_typedef(sect.nodes[0]);
-    assert_eq!(interner.extract_str_from_interned_id(td0.name_id), "x");
+    assert_eq!(interner.extract_utf8_str(td0.name_id), "x");
     match &td0.sp_ty_expr.inner {
-        TypeExpr::Var(id) => assert_eq!(interner.extract_str_from_interned_id(*id), "i32"),
+        TypeExpr::Var(id) => assert_eq!(interner.extract_utf8_str(*id), "i32"),
         other => panic!("expected i32 type, got {other:?}"),
     }
 
     let td1 = ast.get_typedef(sect.nodes[1]);
-    assert_eq!(interner.extract_str_from_interned_id(td1.name_id), "y");
+    assert_eq!(interner.extract_utf8_str(td1.name_id), "y");
     match &td1.sp_ty_expr.inner {
-        TypeExpr::Var(id) => assert_eq!(interner.extract_str_from_interned_id(*id), "string"),
+        TypeExpr::Var(id) => assert_eq!(interner.extract_utf8_str(*id), "string"),
         other => panic!("expected string type, got {other:?}"),
     }
 }
@@ -454,7 +444,7 @@ fn parse_var_typedef_with_directives() {
     let td = ast.get_typedef(section_items(&ast, SectionKind::Var)[0]);
     assert_eq!(td.directives.len(), 1);
     assert_eq!(
-        interner.extract_str_from_interned_id(td.directives[0].sp_name_id.inner),
+        interner.extract_utf8_str(td.directives[0].sp_name_id.inner),
         "warn"
     );
 }
@@ -469,7 +459,7 @@ fn parse_var_typedef_with_trailing_comma() {
         .expect("expected a var section");
     assert_eq!(sect.nodes.len(), 1);
     let td = ast.get_typedef(sect.nodes[0]);
-    assert_eq!(interner.extract_str_from_interned_id(td.name_id), "x");
+    assert_eq!(interner.extract_utf8_str(td.name_id), "x");
 }
 
 #[test]
@@ -478,10 +468,10 @@ fn parse_var_export_typedef() {
     let (ast, interner) = parse_text(text);
 
     let td = ast.get_typedef(section_items(&ast, SectionKind::Var)[0]);
-    assert_eq!(interner.extract_str_from_interned_id(td.name_id), "x");
+    assert_eq!(interner.extract_utf8_str(td.name_id), "x");
     assert!(!td.is_priv, "export typedef should be public");
     match &td.sp_ty_expr.inner {
-        TypeExpr::Var(id) => assert_eq!(interner.extract_str_from_interned_id(*id), "i32"),
+        TypeExpr::Var(id) => assert_eq!(interner.extract_utf8_str(*id), "i32"),
         other => panic!("expected TypeExpr::Var, got {other:?}"),
     }
 }
@@ -503,7 +493,7 @@ fn parse_nest_struct_empty() {
     assert_eq!(sect.nodes.len(), 1);
 
     let st = ast.get_struct(sect.nodes[0]);
-    assert_eq!(interner.extract_str_from_interned_id(st.name_id), "Foo");
+    assert_eq!(interner.extract_utf8_str(st.name_id), "Foo");
     // name_span should cover "Foo" (bytes 18..21)
     assert_eq!(st.name_span.start, 18);
     assert_eq!(st.name_span.end, 21);
@@ -517,22 +507,22 @@ fn parse_nest_struct_with_fields() {
     let (ast, interner) = parse_text(text);
 
     let st = ast.get_struct(section_items(&ast, SectionKind::Nest)[0]);
-    assert_eq!(interner.extract_str_from_interned_id(st.name_id), "Point");
+    assert_eq!(interner.extract_utf8_str(st.name_id), "Point");
     assert_eq!(st.fields.len(), 2);
 
     // Field x: f64
     let f0 = &st.fields[0];
-    assert_eq!(interner.extract_str_from_interned_id(f0.name_id), "x");
+    assert_eq!(interner.extract_utf8_str(f0.name_id), "x");
     match &f0.sp_ty_expr.inner {
-        TypeExpr::Var(id) => assert_eq!(interner.extract_str_from_interned_id(*id), "f64"),
+        TypeExpr::Var(id) => assert_eq!(interner.extract_utf8_str(*id), "f64"),
         other => panic!("expected f64 type, got {other:?}"),
     }
 
     // Field y: f64
     let f1 = &st.fields[1];
-    assert_eq!(interner.extract_str_from_interned_id(f1.name_id), "y");
+    assert_eq!(interner.extract_utf8_str(f1.name_id), "y");
     match &f1.sp_ty_expr.inner {
-        TypeExpr::Var(id) => assert_eq!(interner.extract_str_from_interned_id(*id), "f64"),
+        TypeExpr::Var(id) => assert_eq!(interner.extract_utf8_str(*id), "f64"),
         other => panic!("expected f64 type, got {other:?}"),
     }
 }
@@ -543,7 +533,7 @@ fn parse_nest_export_struct() {
     let (ast, interner) = parse_text(text);
 
     let st = ast.get_struct(section_items(&ast, SectionKind::Nest)[0]);
-    assert_eq!(interner.extract_str_from_interned_id(st.name_id), "Public");
+    assert_eq!(interner.extract_utf8_str(st.name_id), "Public");
     assert!(!st.is_priv, "export struct should be public");
 }
 
@@ -553,7 +543,7 @@ fn parse_nest_enum_empty() {
     let (ast, interner) = parse_text(text);
 
     let en = ast.get_enum(section_items(&ast, SectionKind::Nest)[0]);
-    assert_eq!(interner.extract_str_from_interned_id(en.name_id), "Color");
+    assert_eq!(interner.extract_utf8_str(en.name_id), "Color");
     assert!(en.variants.is_empty(), "empty enum should have no variants");
 }
 
@@ -563,35 +553,26 @@ fn parse_nest_enum_with_variants() {
     let (ast, interner) = parse_text(text);
 
     let en = ast.get_enum(section_items(&ast, SectionKind::Nest)[0]);
-    assert_eq!(interner.extract_str_from_interned_id(en.name_id), "Color");
+    assert_eq!(interner.extract_utf8_str(en.name_id), "Color");
     assert_eq!(en.variants.len(), 3);
 
     // Red: no type
-    assert_eq!(
-        interner.extract_str_from_interned_id(en.variants[0].name_id),
-        "Red"
-    );
+    assert_eq!(interner.extract_utf8_str(en.variants[0].name_id), "Red");
     assert!(en.variants[0].sp_ty_expr.is_none());
 
     // Green: i32
-    assert_eq!(
-        interner.extract_str_from_interned_id(en.variants[1].name_id),
-        "Green"
-    );
+    assert_eq!(interner.extract_utf8_str(en.variants[1].name_id), "Green");
     let green_ty = en.variants[1]
         .sp_ty_expr
         .as_ref()
         .expect("Green variant should have a type");
     match &green_ty.inner {
-        TypeExpr::Var(id) => assert_eq!(interner.extract_str_from_interned_id(*id), "i32"),
+        TypeExpr::Var(id) => assert_eq!(interner.extract_utf8_str(*id), "i32"),
         other => panic!("expected i32 type, got {other:?}"),
     }
 
     // Blue: no type
-    assert_eq!(
-        interner.extract_str_from_interned_id(en.variants[2].name_id),
-        "Blue"
-    );
+    assert_eq!(interner.extract_utf8_str(en.variants[2].name_id), "Blue");
     assert!(en.variants[2].sp_ty_expr.is_none());
 }
 
@@ -603,7 +584,7 @@ fn parse_nest_struct_with_glob_conditions() {
     let st = ast.get_struct(section_items(&ast, SectionKind::Nest)[0]);
     assert_eq!(st.glob_conds.len(), 1);
     match &st.glob_conds[0].inner {
-        AstExpr::Var(id) => assert_eq!(interner.extract_str_from_interned_id(*id), "cond"),
+        AstExpr::Var(id) => assert_eq!(interner.extract_utf8_str(*id), "cond"),
         other => panic!("expected Var(cond), got {other:?}"),
     }
 }
@@ -616,7 +597,7 @@ fn parse_nest_struct_with_glob_directives() {
     let st = ast.get_struct(section_items(&ast, SectionKind::Nest)[0]);
     assert_eq!(st.glob_directives.len(), 1);
     assert_eq!(
-        interner.extract_str_from_interned_id(st.glob_directives[0].sp_name_id.inner),
+        interner.extract_utf8_str(st.glob_directives[0].sp_name_id.inner),
         "deprecated"
     );
 }
@@ -643,10 +624,7 @@ fn parse_complex_config_root() {
     assert_eq!(cfg_name_span(cfg).start, 14);
     assert_eq!(cfg_name_span(cfg).end, 22);
 
-    assert_eq!(
-        interner.extract_str_from_interned_id(cfg_name_id(cfg)),
-        "MyConfig"
-    );
+    assert_eq!(interner.extract_utf8_str(cfg_name_id(cfg)), "MyConfig");
     assert!(matches!(cfg.kind, AbstractConfigKind::Root(_, _)));
     assert_eq!(cfg.ast_stmts.len(), 1);
     assert!(cfg.cfg_members.is_empty());
@@ -655,13 +633,13 @@ fn parse_complex_config_root() {
     let AstStmt::OptAssignment(opt) = &cfg.ast_stmts[0] else {
         panic!("expected option assignment");
     };
-    assert_eq!(interner.extract_str_from_interned_id(opt.name_id), "option");
+    assert_eq!(interner.extract_utf8_str(opt.name_id), "option");
     match &opt.array_expr.inner {
         AstExpr::Array(arr) => {
             assert_eq!(arr.elements.len(), 1);
             match &arr.elements[0].inner {
                 AstExpr::Integer(id, IntegerNotation::Decimal) => {
-                    assert_eq!(interner.extract_str_from_interned_id(*id), "42");
+                    assert_eq!(interner.extract_utf8_str(*id), "42");
                 }
                 other => panic!("expected Integer, got {other:?}"),
             }
@@ -677,10 +655,7 @@ fn parse_complex_config_var_prefix() {
     let (ast, interner) = parse_text(text);
 
     let cfg = ast.get_cfg_root(section_items(&ast, SectionKind::Complex)[0]);
-    assert_eq!(
-        interner.extract_str_from_interned_id(cfg_name_id(cfg)),
-        "MyConfig"
-    );
+    assert_eq!(interner.extract_utf8_str(cfg_name_id(cfg)), "MyConfig");
     assert!(matches!(cfg.kind, AbstractConfigKind::Root(_, _)));
     // The lookup pattern was changed by the `var` keyword — we can verify it was consumed
     // correctly because the span starts at the name, not at `var`.
@@ -695,22 +670,16 @@ fn parse_complex_config_nested() {
     let (ast, interner) = parse_text(text);
 
     let cfg = ast.get_cfg_root(section_items(&ast, SectionKind::Complex)[0]);
-    assert_eq!(
-        interner.extract_str_from_interned_id(cfg_name_id(cfg)),
-        "Outer"
-    );
+    assert_eq!(interner.extract_utf8_str(cfg_name_id(cfg)), "Outer");
     assert_eq!(cfg.cfg_members.len(), 1, "expected one inner config");
 
     let inner = &cfg.cfg_members[0];
-    assert_eq!(
-        interner.extract_str_from_interned_id(cfg_name_id(inner)),
-        "inner"
-    );
+    assert_eq!(interner.extract_utf8_str(cfg_name_id(inner)), "inner");
     assert_eq!(inner.ast_stmts.len(), 1);
     let AstStmt::OptAssignment(opt) = &inner.ast_stmts[0] else {
         panic!("expected option assignment");
     };
-    assert_eq!(interner.extract_str_from_interned_id(opt.name_id), "opt");
+    assert_eq!(interner.extract_utf8_str(opt.name_id), "opt");
 }
 
 // =============================================================================
@@ -736,7 +705,7 @@ fn parse_expr_binary_precedence() {
             // lhs = 1
             match &lhs.inner {
                 AstExpr::Integer(id, IntegerNotation::Decimal) => {
-                    assert_eq!(interner.extract_str_from_interned_id(*id), "1");
+                    assert_eq!(interner.extract_utf8_str(*id), "1");
                 }
                 other => panic!("expected Integer(1), got {other:?}"),
             }
@@ -749,13 +718,13 @@ fn parse_expr_binary_precedence() {
                 } => {
                     match &inner_lhs.inner {
                         AstExpr::Integer(id, IntegerNotation::Decimal) => {
-                            assert_eq!(interner.extract_str_from_interned_id(*id), "2");
+                            assert_eq!(interner.extract_utf8_str(*id), "2");
                         }
                         other => panic!("expected Integer(2), got {other:?}"),
                     }
                     match &inner_rhs.inner {
                         AstExpr::Integer(id, IntegerNotation::Decimal) => {
-                            assert_eq!(interner.extract_str_from_interned_id(*id), "3");
+                            assert_eq!(interner.extract_utf8_str(*id), "3");
                         }
                         other => panic!("expected Integer(3), got {other:?}"),
                     }
@@ -796,7 +765,7 @@ fn parse_expr_comparison() {
                 } => {
                     match &ll.inner {
                         AstExpr::Var(id) => {
-                            assert_eq!(interner.extract_str_from_interned_id(*id), "a")
+                            assert_eq!(interner.extract_utf8_str(*id), "a")
                         }
                         other => panic!("expected Var(a), got {other:?}"),
                     }
@@ -808,13 +777,13 @@ fn parse_expr_comparison() {
                         } => {
                             match &rl.inner {
                                 AstExpr::Var(id) => {
-                                    assert_eq!(interner.extract_str_from_interned_id(*id), "b")
+                                    assert_eq!(interner.extract_utf8_str(*id), "b")
                                 }
                                 other => panic!("expected Var(b), got {other:?}"),
                             }
                             match &rr.inner {
                                 AstExpr::Var(id) => {
-                                    assert_eq!(interner.extract_str_from_interned_id(*id), "c")
+                                    assert_eq!(interner.extract_utf8_str(*id), "c")
                                 }
                                 other => panic!("expected Var(c), got {other:?}"),
                             }
@@ -825,7 +794,7 @@ fn parse_expr_comparison() {
                 other => panic!("expected EqTo, got {other:?}"),
             }
             match &rhs.inner {
-                AstExpr::Var(id) => assert_eq!(interner.extract_str_from_interned_id(*id), "d"),
+                AstExpr::Var(id) => assert_eq!(interner.extract_utf8_str(*id), "d"),
                 other => panic!("expected Var(d), got {other:?}"),
             }
         }
@@ -844,7 +813,7 @@ fn parse_expr_unary_negate() {
             assert_eq!(unary.op, UnaryOp::Negate);
             match &unary.spanned_expr.inner {
                 AstExpr::Integer(id, IntegerNotation::Decimal) => {
-                    assert_eq!(interner.extract_str_from_interned_id(*id), "42");
+                    assert_eq!(interner.extract_utf8_str(*id), "42");
                 }
                 other => panic!("expected Integer, got {other:?}"),
             }
@@ -866,7 +835,7 @@ fn parse_expr_unary_not() {
         AstExpr::Unary(unary) => {
             assert_eq!(unary.op, UnaryOp::Not);
             match &unary.spanned_expr.inner {
-                AstExpr::Var(id) => assert_eq!(interner.extract_str_from_interned_id(*id), "flag"),
+                AstExpr::Var(id) => assert_eq!(interner.extract_utf8_str(*id), "flag"),
                 other => panic!("expected Var, got {other:?}"),
             }
         }
@@ -884,7 +853,7 @@ fn parse_expr_unary_bitnot() {
         AstExpr::Unary(unary) => {
             assert_eq!(unary.op, UnaryOp::BitNot);
             match &unary.spanned_expr.inner {
-                AstExpr::Var(id) => assert_eq!(interner.extract_str_from_interned_id(*id), "bits"),
+                AstExpr::Var(id) => assert_eq!(interner.extract_utf8_str(*id), "bits"),
                 other => panic!("expected Var, got {other:?}"),
             }
         }
@@ -922,9 +891,9 @@ fn postfix_expressions_bind_inside_unary_operators() {
             AstExpr::MemberAccess(member) => member,
             other => panic!("expected MemberAccess inside Call, got {other:?}"),
         };
-        assert_eq!(interner.extract_str_from_interned_id(member.field), "field");
+        assert_eq!(interner.extract_utf8_str(member.field), "field");
         match &member.base.inner {
-            AstExpr::Var(id) => assert_eq!(interner.extract_str_from_interned_id(*id), "value"),
+            AstExpr::Var(id) => assert_eq!(interner.extract_utf8_str(*id), "value"),
             other => panic!("expected Var(value), got {other:?}"),
         }
     }
@@ -952,13 +921,13 @@ fn parse_expr_shift_operators() {
                 } => {
                     match &ll.inner {
                         AstExpr::Integer(id, _) => {
-                            assert_eq!(interner.extract_str_from_interned_id(*id), "1")
+                            assert_eq!(interner.extract_utf8_str(*id), "1")
                         }
                         other => panic!("expected Integer(1), got {other:?}"),
                     }
                     match &lr.inner {
                         AstExpr::Integer(id, _) => {
-                            assert_eq!(interner.extract_str_from_interned_id(*id), "2")
+                            assert_eq!(interner.extract_utf8_str(*id), "2")
                         }
                         other => panic!("expected Integer(2), got {other:?}"),
                     }
@@ -967,7 +936,7 @@ fn parse_expr_shift_operators() {
             }
             match &rhs.inner {
                 AstExpr::Integer(id, _) => {
-                    assert_eq!(interner.extract_str_from_interned_id(*id), "1")
+                    assert_eq!(interner.extract_utf8_str(*id), "1")
                 }
                 other => panic!("expected Integer(1), got {other:?}"),
             }
@@ -985,7 +954,7 @@ fn parse_expr_call_no_args() {
     match &var.spanned_expr.inner {
         AstExpr::Call(func, args) => {
             match &func.inner {
-                AstExpr::Var(id) => assert_eq!(interner.extract_str_from_interned_id(*id), "f"),
+                AstExpr::Var(id) => assert_eq!(interner.extract_utf8_str(*id), "f"),
                 other => panic!("expected Var(f), got {other:?}"),
             }
             assert!(args.is_empty(), "expected no arguments");
@@ -1003,19 +972,19 @@ fn parse_expr_call_with_args() {
     match &var.spanned_expr.inner {
         AstExpr::Call(func, args) => {
             match &func.inner {
-                AstExpr::Var(id) => assert_eq!(interner.extract_str_from_interned_id(*id), "add"),
+                AstExpr::Var(id) => assert_eq!(interner.extract_utf8_str(*id), "add"),
                 other => panic!("expected Var(add), got {other:?}"),
             }
             assert_eq!(args.len(), 2);
             match &args[0].inner {
                 AstExpr::Integer(id, _) => {
-                    assert_eq!(interner.extract_str_from_interned_id(*id), "1")
+                    assert_eq!(interner.extract_utf8_str(*id), "1")
                 }
                 other => panic!("expected Integer(1), got {other:?}"),
             }
             match &args[1].inner {
                 AstExpr::Integer(id, _) => {
-                    assert_eq!(interner.extract_str_from_interned_id(*id), "2")
+                    assert_eq!(interner.extract_utf8_str(*id), "2")
                 }
                 other => panic!("expected Integer(2), got {other:?}"),
             }
@@ -1034,10 +1003,10 @@ fn parse_expr_member_access() {
     match &var.spanned_expr.inner {
         AstExpr::MemberAccess(ma) => {
             match &ma.base.inner {
-                AstExpr::Var(id) => assert_eq!(interner.extract_str_from_interned_id(*id), "obj"),
+                AstExpr::Var(id) => assert_eq!(interner.extract_utf8_str(*id), "obj"),
                 other => panic!("expected Var(obj), got {other:?}"),
             }
-            assert_eq!(interner.extract_str_from_interned_id(ma.field), "field");
+            assert_eq!(interner.extract_utf8_str(ma.field), "field");
         }
         other => panic!("expected MemberAccess, got {other:?}"),
     }
@@ -1056,13 +1025,13 @@ fn parse_expr_static_access() {
             assert_eq!(path.len(), 2);
             match &path[0].inner {
                 PathSegment::Ident(id) => {
-                    assert_eq!(interner.extract_str_from_interned_id(*id), "module")
+                    assert_eq!(interner.extract_utf8_str(*id), "module")
                 }
                 other => panic!("expected Ident(module), got {other:?}"),
             }
             match &path[1].inner {
                 PathSegment::Ident(id) => {
-                    assert_eq!(interner.extract_str_from_interned_id(*id), "Type")
+                    assert_eq!(interner.extract_utf8_str(*id), "Type")
                 }
                 other => panic!("expected Ident(Type), got {other:?}"),
             }
@@ -1083,18 +1052,18 @@ fn parse_expr_static_access_with_generics() {
             // First segment: "ns"
             match &path[0].inner {
                 PathSegment::Ident(id) => {
-                    assert_eq!(interner.extract_str_from_interned_id(*id), "ns")
+                    assert_eq!(interner.extract_utf8_str(*id), "ns")
                 }
                 other => panic!("expected Ident(ns), got {other:?}"),
             }
             // Second segment: List<i32>
             match &path[1].inner {
                 PathSegment::Generic(g) => {
-                    assert_eq!(interner.extract_str_from_interned_id(g.base), "List");
+                    assert_eq!(interner.extract_utf8_str(g.base), "List");
                     assert_eq!(g.inputs.len(), 1);
                     match &g.inputs[0].inner {
                         TypeExpr::Var(id) => {
-                            assert_eq!(interner.extract_str_from_interned_id(*id), "i32")
+                            assert_eq!(interner.extract_utf8_str(*id), "i32")
                         }
                         other => panic!("expected Var(i32), got {other:?}"),
                     }
@@ -1121,7 +1090,7 @@ fn parse_expr_array() {
             for (element, expected) in arr.elements.iter().zip(["2", "3", "4", "7"]) {
                 match &element.inner {
                     AstExpr::Integer(id, IntegerNotation::Decimal) => {
-                        assert_eq!(interner.extract_str_from_interned_id(*id), expected);
+                        assert_eq!(interner.extract_utf8_str(*id), expected);
                     }
                     other => panic!("expected decimal Integer({expected}), got {other:?}"),
                 }
@@ -1149,14 +1118,14 @@ fn parse_expr_nested_array() {
     for (element, expected) in inner.elements.iter().zip(["2", "3"]) {
         match &element.inner {
             AstExpr::Integer(id, IntegerNotation::Decimal) => {
-                assert_eq!(interner.extract_str_from_interned_id(*id), expected);
+                assert_eq!(interner.extract_utf8_str(*id), expected);
             }
             other => panic!("expected decimal Integer({expected}), got {other:?}"),
         }
     }
     match &outer.elements[1].inner {
         AstExpr::Integer(id, IntegerNotation::Decimal) => {
-            assert_eq!(interner.extract_str_from_interned_id(*id), "4")
+            assert_eq!(interner.extract_utf8_str(*id), "4")
         }
         other => panic!("expected decimal Integer(4), got {other:?}"),
     }
@@ -1184,7 +1153,7 @@ fn parse_expr_grouped() {
             }
             match &rhs.inner {
                 AstExpr::Integer(id, _) => {
-                    assert_eq!(interner.extract_str_from_interned_id(*id), "3")
+                    assert_eq!(interner.extract_utf8_str(*id), "3")
                 }
                 other => panic!("expected Integer(3), got {other:?}"),
             }
@@ -1203,12 +1172,12 @@ fn parse_expr_default() {
     match &var.spanned_expr.inner {
         AstExpr::Default(ident, default_val) => {
             match &ident.inner {
-                AstExpr::Var(id) => assert_eq!(interner.extract_str_from_interned_id(*id), "y"),
+                AstExpr::Var(id) => assert_eq!(interner.extract_utf8_str(*id), "y"),
                 other => panic!("expected Var(y), got {other:?}"),
             }
             match &default_val.inner {
                 AstExpr::Integer(id, _) => {
-                    assert_eq!(interner.extract_str_from_interned_id(*id), "42")
+                    assert_eq!(interner.extract_utf8_str(*id), "42")
                 }
                 other => panic!("expected Integer(42), got {other:?}"),
             }
@@ -1228,7 +1197,7 @@ fn parse_type_expr_simple() {
 
     let td = ast.get_typedef(section_items(&ast, SectionKind::Var)[0]);
     match &td.sp_ty_expr.inner {
-        TypeExpr::Var(id) => assert_eq!(interner.extract_str_from_interned_id(*id), "i32"),
+        TypeExpr::Var(id) => assert_eq!(interner.extract_utf8_str(*id), "i32"),
         other => panic!("expected TypeExpr::Var, got {other:?}"),
     }
 }
@@ -1241,10 +1210,10 @@ fn parse_type_expr_generic() {
     let td = ast.get_typedef(section_items(&ast, SectionKind::Var)[0]);
     match &td.sp_ty_expr.inner {
         TypeExpr::Generic(g) => {
-            assert_eq!(interner.extract_str_from_interned_id(g.base), "List");
+            assert_eq!(interner.extract_utf8_str(g.base), "List");
             assert_eq!(g.inputs.len(), 1);
             match &g.inputs[0].inner {
-                TypeExpr::Var(id) => assert_eq!(interner.extract_str_from_interned_id(*id), "i32"),
+                TypeExpr::Var(id) => assert_eq!(interner.extract_utf8_str(*id), "i32"),
                 other => panic!("expected Var(i32), got {other:?}"),
             }
         }
@@ -1263,13 +1232,13 @@ fn parse_type_expr_path() {
             assert_eq!(path.len(), 2);
             match &path[0].inner {
                 PathSegment::Ident(id) => {
-                    assert_eq!(interner.extract_str_from_interned_id(*id), "module")
+                    assert_eq!(interner.extract_utf8_str(*id), "module")
                 }
                 other => panic!("expected Ident(module), got {other:?}"),
             }
             match &path[1].inner {
                 PathSegment::Ident(id) => {
-                    assert_eq!(interner.extract_str_from_interned_id(*id), "Type")
+                    assert_eq!(interner.extract_utf8_str(*id), "Type")
                 }
                 other => panic!("expected Ident(Type), got {other:?}"),
             }
@@ -1290,18 +1259,18 @@ fn parse_type_expr_generic_path() {
             // First: Ident(module)
             match &path[0].inner {
                 PathSegment::Ident(id) => {
-                    assert_eq!(interner.extract_str_from_interned_id(*id), "module")
+                    assert_eq!(interner.extract_utf8_str(*id), "module")
                 }
                 other => panic!("expected Ident(module), got {other:?}"),
             }
             // Second: Generic(List, [i32])
             match &path[1].inner {
                 PathSegment::Generic(g) => {
-                    assert_eq!(interner.extract_str_from_interned_id(g.base), "List");
+                    assert_eq!(interner.extract_utf8_str(g.base), "List");
                     assert_eq!(g.inputs.len(), 1);
                     match &g.inputs[0].inner {
                         TypeExpr::Var(id) => {
-                            assert_eq!(interner.extract_str_from_interned_id(*id), "i32")
+                            assert_eq!(interner.extract_utf8_str(*id), "i32")
                         }
                         other => panic!("expected Var(i32), got {other:?}"),
                     }
@@ -1321,22 +1290,19 @@ fn parse_type_expr_path_in_struct_field() {
     let st = ast.get_struct(section_items(&ast, SectionKind::Nest)[0]);
     assert_eq!(st.fields.len(), 1);
     let field = &st.fields[0];
-    assert_eq!(
-        interner.extract_str_from_interned_id(field.name_id),
-        "inner"
-    );
+    assert_eq!(interner.extract_utf8_str(field.name_id), "inner");
     match &field.sp_ty_expr.inner {
         TypeExpr::Path(path) => {
             assert_eq!(path.len(), 2);
             match &path[0].inner {
                 PathSegment::Ident(id) => {
-                    assert_eq!(interner.extract_str_from_interned_id(*id), "module")
+                    assert_eq!(interner.extract_utf8_str(*id), "module")
                 }
                 other => panic!("expected Ident(module), got {other:?}"),
             }
             match &path[1].inner {
                 PathSegment::Ident(id) => {
-                    assert_eq!(interner.extract_str_from_interned_id(*id), "Type")
+                    assert_eq!(interner.extract_utf8_str(*id), "Type")
                 }
                 other => panic!("expected Ident(Type), got {other:?}"),
             }
@@ -1357,13 +1323,13 @@ fn parse_type_expr_path_in_alias_param() {
             assert_eq!(path.len(), 2);
             match &path[0].inner {
                 PathSegment::Ident(id) => {
-                    assert_eq!(interner.extract_str_from_interned_id(*id), "module")
+                    assert_eq!(interner.extract_utf8_str(*id), "module")
                 }
                 other => panic!("expected Ident(module), got {other:?}"),
             }
             match &path[1].inner {
                 PathSegment::Ident(id) => {
-                    assert_eq!(interner.extract_str_from_interned_id(*id), "Type")
+                    assert_eq!(interner.extract_utf8_str(*id), "Type")
                 }
                 other => panic!("expected Ident(Type), got {other:?}"),
             }
@@ -1511,44 +1477,32 @@ fn parse_full_script_with_all_sections() {
 
     // Verify the let variable
     let var_item = ast.get_var(neutral.nodes[0]);
-    assert_eq!(interner.extract_str_from_interned_id(var_item.name_id), "x");
+    assert_eq!(interner.extract_utf8_str(var_item.name_id), "x");
 
     // Verify alias
     let alias_item = ast.get_alias(neutral.nodes[1]);
-    assert_eq!(
-        interner.extract_str_from_interned_id(alias_item.name_id),
-        "twice"
-    );
+    assert_eq!(interner.extract_utf8_str(alias_item.name_id), "twice");
     assert_eq!(alias_item.params.len(), 1);
 
     // Verify typedefs
     let name_td = ast.get_typedef(var_sect.nodes[0]);
-    assert_eq!(
-        interner.extract_str_from_interned_id(name_td.name_id),
-        "name"
-    );
+    assert_eq!(interner.extract_utf8_str(name_td.name_id), "name");
     let age_td = ast.get_typedef(var_sect.nodes[1]);
-    assert_eq!(interner.extract_str_from_interned_id(age_td.name_id), "age");
+    assert_eq!(interner.extract_utf8_str(age_td.name_id), "age");
 
     // Verify struct
     let person = ast.get_struct(nest_sect.nodes[0]);
-    assert_eq!(
-        interner.extract_str_from_interned_id(person.name_id),
-        "Person"
-    );
+    assert_eq!(interner.extract_utf8_str(person.name_id), "Person");
     assert_eq!(person.fields.len(), 2);
 
     // Verify enum
     let role = ast.get_enum(nest_sect.nodes[1]);
-    assert_eq!(interner.extract_str_from_interned_id(role.name_id), "Role");
+    assert_eq!(interner.extract_utf8_str(role.name_id), "Role");
     assert_eq!(role.variants.len(), 2);
 
     // Verify configs
     let app_cfg = ast.get_cfg_root(complex_sect.nodes[0]);
-    assert_eq!(
-        interner.extract_str_from_interned_id(cfg_name_id(app_cfg)),
-        "App"
-    );
+    assert_eq!(interner.extract_utf8_str(cfg_name_id(app_cfg)), "App");
 }
 
 // =============================================================================
@@ -1575,7 +1529,7 @@ fn parse_let_hex_integer() {
         AstExpr::Integer(id, IntegerNotation::Hex) => {
             // The lexer keeps the raw digits and the notation; parsing the
             // digits into a value happens later in the type resolver.
-            assert_eq!(interner.extract_str_from_interned_id(*id), "ff");
+            assert_eq!(interner.extract_utf8_str(*id), "ff");
         }
         other => panic!("expected Integer(Hex), got {other:?}"),
     }
@@ -1589,7 +1543,7 @@ fn parse_let_underscored_number() {
     let var = ast.get_var(section_items(&ast, SectionKind::Neutral)[0]);
     match &var.spanned_expr.inner {
         AstExpr::Integer(id, IntegerNotation::Decimal) => {
-            assert_eq!(interner.extract_str_from_interned_id(*id), "1000000");
+            assert_eq!(interner.extract_utf8_str(*id), "1000000");
         }
         other => panic!("expected Integer(Decimal), got {other:?}"),
     }
@@ -1604,13 +1558,13 @@ fn parse_chained_member_access() {
     // a.b.c => MemberAccess(MemberAccess(a, b), c)
     match &var.spanned_expr.inner {
         AstExpr::MemberAccess(outer) => {
-            assert_eq!(interner.extract_str_from_interned_id(outer.field), "c");
+            assert_eq!(interner.extract_utf8_str(outer.field), "c");
             match &outer.base.inner {
                 AstExpr::MemberAccess(inner) => {
-                    assert_eq!(interner.extract_str_from_interned_id(inner.field), "b");
+                    assert_eq!(interner.extract_utf8_str(inner.field), "b");
                     match &inner.base.inner {
                         AstExpr::Var(id) => {
-                            assert_eq!(interner.extract_str_from_interned_id(*id), "a")
+                            assert_eq!(interner.extract_utf8_str(*id), "a")
                         }
                         other => panic!("expected Var(a), got {other:?}"),
                     }
@@ -1628,7 +1582,7 @@ fn parse_export_alias() {
     let (ast, interner) = parse_text(text);
 
     let alias = ast.get_alias(section_items(&ast, SectionKind::Neutral)[0]);
-    assert_eq!(interner.extract_str_from_interned_id(alias.name_id), "foo");
+    assert_eq!(interner.extract_utf8_str(alias.name_id), "foo");
     assert!(!alias.is_priv, "export alias should be public");
 }
 
@@ -1647,17 +1601,11 @@ fn parse_complex_member_override_config() {
     let (ast, interner) = parse_text(text);
 
     let cfg = ast.get_cfg_root(section_items(&ast, SectionKind::Complex)[0]);
-    assert_eq!(
-        interner.extract_str_from_interned_id(cfg_name_id(cfg)),
-        "Outer"
-    );
+    assert_eq!(interner.extract_utf8_str(cfg_name_id(cfg)), "Outer");
     assert_eq!(cfg.cfg_members.len(), 1);
 
     let inner = &cfg.cfg_members[0];
-    assert_eq!(
-        interner.extract_str_from_interned_id(cfg_name_id(inner)),
-        "inner"
-    );
+    assert_eq!(interner.extract_utf8_str(cfg_name_id(inner)), "inner");
     // member inner should have Member kind
     assert!(
         matches!(inner.kind, AbstractConfigKind::Member(..)),
@@ -1668,7 +1616,7 @@ fn parse_complex_member_override_config() {
     let AstStmt::OptAssignment(opt) = &inner.ast_stmts[0] else {
         panic!("expected option assignment");
     };
-    assert_eq!(interner.extract_str_from_interned_id(opt.name_id), "opt");
+    assert_eq!(interner.extract_utf8_str(opt.name_id), "opt");
 }
 
 #[test]
@@ -1684,8 +1632,8 @@ fn parse_multiple_option_assignments() {
     let AstStmt::OptAssignment(opt2) = &cfg.ast_stmts[1] else {
         panic!("expected option assignment");
     };
-    assert_eq!(interner.extract_str_from_interned_id(opt1.name_id), "opt1");
-    assert_eq!(interner.extract_str_from_interned_id(opt2.name_id), "opt2");
+    assert_eq!(interner.extract_utf8_str(opt1.name_id), "opt1");
+    assert_eq!(interner.extract_utf8_str(opt2.name_id), "opt2");
 }
 
 #[test]
@@ -1727,13 +1675,13 @@ fn parse_let_with_bitwise_ops() {
                         } => {
                             match &lll.inner {
                                 AstExpr::Var(id) => {
-                                    assert_eq!(interner.extract_str_from_interned_id(*id), "a")
+                                    assert_eq!(interner.extract_utf8_str(*id), "a")
                                 }
                                 other => panic!("expected Var(a), got {other:?}"),
                             }
                             match &llr.inner {
                                 AstExpr::Var(id) => {
-                                    assert_eq!(interner.extract_str_from_interned_id(*id), "b")
+                                    assert_eq!(interner.extract_utf8_str(*id), "b")
                                 }
                                 other => panic!("expected Var(b), got {other:?}"),
                             }
@@ -1743,7 +1691,7 @@ fn parse_let_with_bitwise_ops() {
                     // lr = c
                     match &lr.inner {
                         AstExpr::Var(id) => {
-                            assert_eq!(interner.extract_str_from_interned_id(*id), "c")
+                            assert_eq!(interner.extract_utf8_str(*id), "c")
                         }
                         other => panic!("expected Var(c), got {other:?}"),
                     }
@@ -1752,7 +1700,7 @@ fn parse_let_with_bitwise_ops() {
             }
             // rhs = d
             match &rhs.inner {
-                AstExpr::Var(id) => assert_eq!(interner.extract_str_from_interned_id(*id), "d"),
+                AstExpr::Var(id) => assert_eq!(interner.extract_utf8_str(*id), "d"),
                 other => panic!("expected Var(d), got {other:?}"),
             }
         }
@@ -1769,7 +1717,7 @@ fn parse_let_with_nested_calls() {
     match &var.spanned_expr.inner {
         AstExpr::Call(outer_func, outer_args) => {
             match &outer_func.inner {
-                AstExpr::Var(id) => assert_eq!(interner.extract_str_from_interned_id(*id), "f"),
+                AstExpr::Var(id) => assert_eq!(interner.extract_utf8_str(*id), "f"),
                 other => panic!("expected Var(f), got {other:?}"),
             }
             assert_eq!(outer_args.len(), 1);
@@ -1777,7 +1725,7 @@ fn parse_let_with_nested_calls() {
                 AstExpr::Call(inner_func, inner_args) => {
                     match &inner_func.inner {
                         AstExpr::Var(id) => {
-                            assert_eq!(interner.extract_str_from_interned_id(*id), "g")
+                            assert_eq!(interner.extract_utf8_str(*id), "g")
                         }
                         other => panic!("expected Var(g), got {other:?}"),
                     }
@@ -1786,7 +1734,7 @@ fn parse_let_with_nested_calls() {
                         AstExpr::Call(deep_func, deep_args) => {
                             match &deep_func.inner {
                                 AstExpr::Var(id) => {
-                                    assert_eq!(interner.extract_str_from_interned_id(*id), "h")
+                                    assert_eq!(interner.extract_utf8_str(*id), "h")
                                 }
                                 other => panic!("expected Var(h), got {other:?}"),
                             }
@@ -1810,7 +1758,7 @@ fn parse_let_scientific_notation() {
     let var = ast.get_var(section_items(&ast, SectionKind::Neutral)[0]);
     match &var.spanned_expr.inner {
         AstExpr::Float(id, FloatNotation::Scientific) => {
-            assert_eq!(interner.extract_str_from_interned_id(*id), "1e10");
+            assert_eq!(interner.extract_utf8_str(*id), "1e10");
         }
         other => panic!("expected Float, got {other:?}"),
     }
@@ -1824,11 +1772,11 @@ fn parse_var_section_generic_typedef() {
     let td = ast.get_typedef(section_items(&ast, SectionKind::Var)[0]);
     match &td.sp_ty_expr.inner {
         TypeExpr::Generic(g) => {
-            assert_eq!(interner.extract_str_from_interned_id(g.base), "List");
+            assert_eq!(interner.extract_utf8_str(g.base), "List");
             assert_eq!(g.inputs.len(), 1);
             match &g.inputs[0].inner {
                 TypeExpr::Var(id) => {
-                    assert_eq!(interner.extract_str_from_interned_id(*id), "string")
+                    assert_eq!(interner.extract_utf8_str(*id), "string")
                 }
                 other => panic!("expected Var(string), got {other:?}"),
             }
@@ -1865,12 +1813,12 @@ fn parse_alias_with_multiple_conds() {
             rhs,
         } => {
             match &lhs.inner {
-                AstExpr::Var(id) => assert_eq!(interner.extract_str_from_interned_id(*id), "a"),
+                AstExpr::Var(id) => assert_eq!(interner.extract_utf8_str(*id), "a"),
                 other => panic!("expected Var(a) in first cond, got {other:?}"),
             }
             match &rhs.inner {
                 AstExpr::Integer(id, _) => {
-                    assert_eq!(interner.extract_str_from_interned_id(*id), "0")
+                    assert_eq!(interner.extract_utf8_str(*id), "0")
                 }
                 other => panic!("expected Integer(0) in first cond, got {other:?}"),
             }
@@ -1886,12 +1834,12 @@ fn parse_alias_with_multiple_conds() {
             rhs,
         } => {
             match &lhs.inner {
-                AstExpr::Var(id) => assert_eq!(interner.extract_str_from_interned_id(*id), "b"),
+                AstExpr::Var(id) => assert_eq!(interner.extract_utf8_str(*id), "b"),
                 other => panic!("expected Var(b) in second cond, got {other:?}"),
             }
             match &rhs.inner {
                 AstExpr::Integer(id, _) => {
-                    assert_eq!(interner.extract_str_from_interned_id(*id), "10")
+                    assert_eq!(interner.extract_utf8_str(*id), "10")
                 }
                 other => panic!("expected Integer(10) in second cond, got {other:?}"),
             }
@@ -1909,7 +1857,7 @@ fn parse_alias_with_both_conds_and_directives() {
     assert_eq!(alias.conds.len(), 1);
     assert_eq!(alias.directives.len(), 1);
     assert_eq!(
-        interner.extract_str_from_interned_id(alias.directives[0].sp_name_id.inner),
+        interner.extract_utf8_str(alias.directives[0].sp_name_id.inner),
         "warn"
     );
 }
@@ -1922,7 +1870,7 @@ fn parse_nest_struct_with_typed_variant_conditions() {
     let st = ast.get_struct(section_items(&ast, SectionKind::Nest)[0]);
     assert_eq!(st.fields.len(), 1);
     let field = &st.fields[0];
-    assert_eq!(interner.extract_str_from_interned_id(field.name_id), "val");
+    assert_eq!(interner.extract_utf8_str(field.name_id), "val");
     assert_eq!(field.conds.len(), 1);
 }
 
@@ -1934,10 +1882,10 @@ fn parse_nest_enum_with_variant_conditions() {
     let en = ast.get_enum(section_items(&ast, SectionKind::Nest)[0]);
     assert_eq!(en.variants.len(), 1);
     let var = &en.variants[0];
-    assert_eq!(interner.extract_str_from_interned_id(var.name_id), "V");
+    assert_eq!(interner.extract_utf8_str(var.name_id), "V");
     assert_eq!(var.conds.len(), 1, "variant should have one condition");
     match &var.conds[0].inner {
-        AstExpr::Var(id) => assert_eq!(interner.extract_str_from_interned_id(*id), "cond"),
+        AstExpr::Var(id) => assert_eq!(interner.extract_utf8_str(*id), "cond"),
         other => panic!("expected Var(cond), got {other:?}"),
     }
 }
@@ -2037,10 +1985,10 @@ fn span_of_chained_calls() {
             assert!(args.is_empty());
             match &base.inner {
                 AstExpr::MemberAccess(ma) => {
-                    assert_eq!(interner.extract_str_from_interned_id(ma.field), "b");
+                    assert_eq!(interner.extract_utf8_str(ma.field), "b");
                     match &ma.base.inner {
                         AstExpr::Var(id) => {
-                            assert_eq!(interner.extract_str_from_interned_id(*id), "a")
+                            assert_eq!(interner.extract_utf8_str(*id), "a")
                         }
                         other => panic!("expected Var(a), got {other:?}"),
                     }
@@ -2059,7 +2007,7 @@ fn parse_let_var_escaped_keyword() {
     let (ast, interner) = parse_text(text);
 
     let var = ast.get_var(section_items(&ast, SectionKind::Neutral)[0]);
-    assert_eq!(interner.extract_str_from_interned_id(var.name_id), "let");
+    assert_eq!(interner.extract_utf8_str(var.name_id), "let");
 }
 
 #[test]
@@ -2068,5 +2016,5 @@ fn parse_var_type_escaped_keyword() {
     let (ast, interner) = parse_text(text);
 
     let td = ast.get_typedef(section_items(&ast, SectionKind::Var)[0]);
-    assert_eq!(interner.extract_str_from_interned_id(td.name_id), "let");
+    assert_eq!(interner.extract_utf8_str(td.name_id), "let");
 }

@@ -3,7 +3,7 @@
 
 use std::{collections::HashSet, hash::Hash};
 
-use chrn_utils::{id_types::InternedId, utils::containers::SpannedContainer};
+use chrn_utils::{id_types::InternedIdUTF8, utils::containers::SpannedContainer};
 
 //TODO: Should be in utils actually. Maybe
 
@@ -96,15 +96,15 @@ impl<T: Hash> DuplicateFound<T> {
 pub(crate) enum DuplicateIdentResult {
     NoDuplicate,
     Duplicate {
-        sp_original: SpannedContainer<InternedId>,
-        sp_dup: SpannedContainer<InternedId>,
+        sp_original: SpannedContainer<InternedIdUTF8>,
+        sp_dup: SpannedContainer<InternedIdUTF8>,
     },
 }
 
 // Ok but what if this was const?
 /// O(n) check of if any of the same identifiers are inside `idents`.
 pub(crate) fn check_duplicate_ident(
-    idents: &[SpannedContainer<InternedId>],
+    idents: &[SpannedContainer<InternedIdUTF8>],
 ) -> DuplicateIdentResult {
     for (i, current_ident) in idents.iter().enumerate() {
         if let Some((_, original)) = idents

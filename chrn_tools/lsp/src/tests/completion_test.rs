@@ -2,7 +2,8 @@ use crate::backend::{ConfigCompletionCandidate, config_completion_items};
 use crate::document::Document;
 use crate::state::{DocumentState, SemanticEntity};
 use crate::tests::session::{Session, TempWorkspace, position_of};
-use chrn_utils::id_types::{InternedId, SourceRegionId};
+use chrn_utils::id_types::{InternedId, id_tags::UTF8Tag};
+use chrn_utils::id_types::{SourceRegionId};
 use chrn_utils::intern::INTERNED_MAX_NUMERIC_BITS;
 use chrn_utils::intern::Intern;
 use chrn_utils::source_map::source_span::SourceSpan;
@@ -33,7 +34,9 @@ fn nested_config_without_a_member_type_still_offers_member_options() {
         type_id: None,
         scope_id: None,
         is_root: false,
-        configured_options: vec![InternedId::new(chrn_utils::intern::INTERNED_IDENTS)],
+        configured_options: vec![
+            InternedId::new(chrn_utils::intern::INTERNED_IDENTS).into_tagged::<UTF8Tag>(),
+        ],
         configured_members: Vec::new(),
     };
 
@@ -134,7 +137,7 @@ fn max_numeric_bits_completion_preserves_the_marker_and_respects_client_snippet_
     let text = "// header 😀\n@def\n#\n#max_\n#max_numeric_bits\n#max_no\n// #max_\n/* #max_ */\nlet text = \"#max_\"\n@end\nserialized: #max_\n";
     let uri = workspace.write("main.chrn", text);
     let expected_documentation =
-        Document::directive_docs(InternedId::new(INTERNED_MAX_NUMERIC_BITS))
+        Document::directive_docs(InternedId::new(INTERNED_MAX_NUMERIC_BITS).into_tagged::<UTF8Tag>())
             .expect("the numeric bit limit has directive documentation")
             .compose();
 

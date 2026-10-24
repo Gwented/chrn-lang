@@ -1,10 +1,10 @@
-use chrn_utils::id_types::{InternedId, PathId, ScopeId};
+use chrn_utils::id_types::{PathId, ScopeId, InternedIdUTF8};
 
 #[derive(Debug)]
 pub(crate) struct ModuleDumpNode {
-    pub(crate) name: InternedId,
+    pub(crate) name: InternedIdUTF8,
     pub(crate) path: PathId,
-    pub(crate) imports: Vec<InternedId>,
+    pub(crate) imports: Vec<InternedIdUTF8>,
     pub(crate) scopes: Vec<ScopeId>,
 }
 

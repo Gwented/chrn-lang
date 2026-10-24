@@ -1,10 +1,11 @@
+use chrn_utils::id_types::{InternedId, InternedIdUTF8, id_tags::UTF8Tag};
 use std::fmt::Display;
 
 //TODO: Adjust behavior as needed for the type system since some oddities from the original
 //hallucinated idea are still in place since.
 use bitflags::bitflags;
 
-use chrn_utils::{id_types::InternedId, intern};
+use chrn_utils::intern;
 
 use crate::chrn_classifier::ChrnClassified;
 
@@ -135,7 +136,7 @@ impl TypeBoundaryFlags {
     }
 
     /// Returns the interned name id if exactly one flag is set, else `None`.
-    pub fn name_id(self) -> Option<InternedId> {
+    pub fn name_id(self) -> Option<InternedIdUTF8> {
         if self.bits().count_ones() != 1 {
             return None;
         }
@@ -158,7 +159,7 @@ impl TypeBoundaryFlags {
             TypeBoundaryFlags::NIL => intern::INTERNED_NIL,
             _ => unreachable!("`i_am_a_bug`"),
         };
-        Some(InternedId::new(id))
+        Some(InternedId::new(id).into_tagged::<UTF8Tag>())
     }
 
     /// Expand these constraints into the set of concrete built-in types that

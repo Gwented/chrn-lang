@@ -7,7 +7,7 @@ pub use directive_inline::*;
 pub use directive_parameterized::*;
 pub use directive_preprocess::*;
 
-use chrn_utils::id_types::InternedId;
+use chrn_utils::id_types::InternedIdUTF8;
 use lang::types::boundaries::TypeBoundaryFlags;
 //Might be a little too much here
 
@@ -22,8 +22,8 @@ pub enum Directive {
 }
 
 impl Directive {
-    /// Returns `true` if any directive has the given `InternedId`, false otherwise.
-    pub const fn is_directive(interned_id: InternedId) -> bool {
+    /// Returns `true` if any directive has the given `InternedIdUTF8`, false otherwise.
+    pub const fn is_directive(interned_id: InternedIdUTF8) -> bool {
         // if let Some(found) = DirectiveUnparameterized::is_directive(interned_id) {
         //     return Some(Directive::Comptime(found));
         // };
@@ -33,7 +33,7 @@ impl Directive {
         todo!()
     }
 
-    pub fn try_from_interned_str(interned_id: InternedId) -> Option<Directive> {
+    pub fn try_from_interned_str(interned_id: InternedIdUTF8) -> Option<Directive> {
         if let Some(found) = DirectiveUnparameterized::try_from_interned_str(interned_id) {
             return Some(Directive::Inline(found));
         };

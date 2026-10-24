@@ -3,7 +3,7 @@
 //TODO: Proper directive validation
 use chrn_utils::{
     err_codes::ErrorCode,
-    id_types::{ExprId, ImplId, InternedId, SymbolId, TypeId, id_tags::TaggedId},
+    id_types::{ExprId, ImplId, InternedIdUTF8, SymbolId, TypeId, id_tags::TaggedId},
     intern::Intern,
     source_map::{
         source_diagnostic::{
@@ -35,8 +35,8 @@ use crate::{
         hir::{
             hir_concepts::Type,
             hir_directives::{
-                Directive, DirectiveUnparameterized, DirectivePreprocessExpectInput,
-                DirectivePreprocessSchema,
+                Directive, DirectivePreprocessExpectInput, DirectivePreprocessSchema,
+                DirectiveUnparameterized,
             },
             hir_impls::{ConfigMember, ConfigMemberMetadataKind, ConfigRootKind},
             hir_symbols::MemberSymbolKind,
@@ -377,7 +377,7 @@ impl<'a> ConstraintResolver<'a> {
 
                             // for thing in cfg_member.cfg_members.iter().cloned() {
                             //     let mem = self.compiler.get_cfg_member(thing);
-                            //     dbg!(self.interner.extract_str_from_interned_id(mem.name_id));
+                            //     dbg!(self.interner.extract_utf8_str(mem.name_id));
                             //     dbg!(mem);
                             //     dbg!(thing);
                             //     todo!("Ok");
@@ -404,12 +404,12 @@ impl<'a> ConstraintResolver<'a> {
         // We need the config details associated with the given option, but in pieces.
         &self,
         schema: &ConfigSchema,
-        cfg_ty_name_id: Option<InternedId>,
+        cfg_ty_name_id: Option<InternedIdUTF8>,
         cfg_name_span: SourceSpan,
         // Is option since if the root option is typedef, it has user boundaries to account for. If
         // the root option is a struct, there are none.
         user_boundaries_opt: Option<TypeBoundaryFlags>,
-        sp_opt_name_id: &SpannedContainer<InternedId>,
+        sp_opt_name_id: &SpannedContainer<InternedIdUTF8>,
         array_expr_id: ExprId,
         env: &ResolverEnv,
     ) -> Result<(), PresetErr> {
@@ -437,9 +437,7 @@ impl<'a> ConstraintResolver<'a> {
         {
             SchemaResult::Valid => Ok(()),
             res => {
-                let opt_name = self
-                    .interner
-                    .extract_str_from_interned_id(sp_opt_name_id.inner);
+                let opt_name = self.interner.extract_utf8_str(sp_opt_name_id.inner);
                 let src_diag = match res {
                     SchemaResult::BoundaryMismatch {
                         err_idx,
@@ -539,7 +537,7 @@ impl<'a> ConstraintResolver<'a> {
                         );
 
                         if let Some(ty_name_id) = cfg_ty_name_id {
-                            let ty_name = self.interner.extract_str_from_interned_id(ty_name_id);
+                            let ty_name = self.interner.extract_utf8_str(ty_name_id);
                             builder = builder.add_annotation(
                                 cfg_name_span,
                                 AnnotationKind::Secondary,
@@ -549,9 +547,7 @@ impl<'a> ConstraintResolver<'a> {
                         builder
                     }
                     SchemaResult::CannotSupportBoundaries => {
-                        let opt_name = self
-                            .interner
-                            .extract_str_from_interned_id(sp_opt_name_id.inner);
+                        let opt_name = self.interner.extract_utf8_str(sp_opt_name_id.inner);
                         let core_msg = format!(
                             "Option `{opt_name}` requires that the config it is attached to has boundaries"
                         );
@@ -581,9 +577,7 @@ impl<'a> ConstraintResolver<'a> {
                         // )
                     }
                     SchemaResult::UnknownOptionName => {
-                        let opt_name = self
-                            .interner
-                            .extract_str_from_interned_id(sp_opt_name_id.inner);
+                        let opt_name = self.interner.extract_utf8_str(sp_opt_name_id.inner);
                         let core_msg = format!(
                             "Option `{opt_name}` does not exist for schema `{}`",
                             schema.kind
@@ -867,7 +861,7 @@ impl<'a> ConstraintResolver<'a> {
     //     // Should this be sym_id?
     //     // Can't really do that right now because expressions aren't symbols, but x usage
     //     // represents the x symbol in the local scope
-    //     param_name_id: InternedId,
+    //     param_name_id: InternedIdUTF8,
     //     param_span: SourceSpan,
     // ) -> Option<TypeBoundaryFlags> {
     //     let expr = &self.compiler.exprs[expr_id ];
@@ -1245,7 +1239,7 @@ impl<'a> ConstraintResolver<'a> {
         //
         // // if visited.contains(&field.type_id) {
         // //     if spanned_directive.arg.has_restrictions() {
-        // //         let name = self.interner.extract_str_from_interned_id(symbol.name_id );
+        // //         let name = self.interner.extract_utf8_str(symbol.name_id );
         // //
         // //         let msg = format!(
         // //             "The type `{name}` cannot have `#{}` applied due to recursively relying on itself satisfying the argument",

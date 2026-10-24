@@ -38,6 +38,7 @@
 //! were spawned for; stale results are discarded before cache mutation and in
 //! [`crate::analyser::publish_if_current`].
 
+use chrn_utils::id_types::{InternedId, id_tags::UTF8Tag};
 use chrn_utils::source_map::source_span::SourceSpan;
 use compilation::config_loader::{ConfigLoader, ConfigLoaderOutput};
 use compilation::id_tag_decls::ConfigMemberTag;
@@ -66,7 +67,7 @@ use tower_lsp::lsp_types::{
 use tower_lsp::{Client, LanguageServer, jsonrpc};
 
 use chrn_utils::id_types::{
-    ImplMemberId, InternedId, ModuleId, ScopeId, SymbolId, TypeId, id_tags::TaggedId,
+    ImplMemberId, ModuleId, ScopeId, SymbolId, TypeId, InternedIdUTF8, id_tags::TaggedId,
 };
 use lang::config_schemas::{ConfigSchemaKind, get_cfg_schema};
 
@@ -691,7 +692,7 @@ fn reachable_module_symbols(compiler: &ScriptCompiler, mod_id: ModuleId) -> Vec<
 /// even though built-in types are not modules.
 fn namespace_scope_of_visible_symbol(
     compiler: &ScriptCompiler,
-    name_id: InternedId,
+    name_id: InternedIdUTF8,
 ) -> Option<ScopeId> {
     for scope_type in [
         scopes_concepts::ScopeType::Var,
@@ -719,7 +720,7 @@ fn namespace_scope_of_visible_symbol(
 /// but they are valid inside override configuration paths.
 fn namespace_scope_of_intrinsic_symbol(
     compiler: &ScriptCompiler,
-    name_id: InternedId,
+    name_id: InternedIdUTF8,
 ) -> Option<ScopeId> {
     compiler.syms.items.iter().find_map(|sym| {
         if sym.name_id != name_id || !matches!(sym.kind, SymbolKind::Namespace) {
@@ -756,7 +757,7 @@ fn completion_namespace_for_symbol(sym: &Symbol) -> Option<CompletionNamespace> 
 /// Extracts every namespace segment before the completion prefix from lexer
 /// tokens. Walking tokens keeps comments and whitespace out of the path while
 /// retaining the full `a::b::` chain instead of only the nearest identifier.
-fn static_access_target_path(state: &DocumentState, prefix_start: usize) -> Vec<InternedId> {
+fn static_access_target_path(state: &DocumentState, prefix_start: usize) -> Vec<InternedIdUTF8> {
     let relative_start = prefix_start.saturating_sub(state.script_start) as u32;
     let mut index = state
         .tokens
@@ -789,7 +790,7 @@ fn static_access_target_path(state: &DocumentState, prefix_start: usize) -> Vec<
 fn module_symbol_for_completion(
     compiler: &ScriptCompiler,
     mod_id: ModuleId,
-    name_id: InternedId,
+    name_id: InternedIdUTF8,
 ) -> Option<SymbolId> {
     if mod_id == ModuleId::new(0) {
         return [
@@ -819,7 +820,7 @@ fn module_symbol_for_completion(
 
 fn resolve_completion_namespace_path(
     compiler: &ScriptCompiler,
-    path: &[InternedId],
+    path: &[InternedIdUTF8],
     allow_intrinsic_root: bool,
 ) -> Option<CompletionNamespace> {
     let (&head, tail) = path.split_first()?;
@@ -863,8 +864,8 @@ pub(crate) struct ConfigCompletionCandidate {
     pub(crate) type_id: Option<TypeId>,
     pub(crate) scope_id: Option<ScopeId>,
     pub(crate) is_root: bool,
-    pub(crate) configured_options: Vec<InternedId>,
-    pub(crate) configured_members: Vec<InternedId>,
+    pub(crate) configured_options: Vec<InternedIdUTF8>,
+    pub(crate) configured_members: Vec<InternedIdUTF8>,
 }
 
 fn config_namespace_scope_id(
@@ -942,7 +943,7 @@ fn config_block_bounds(
 fn config_type_info(
     compiler: &ScriptCompiler,
     mut type_id: TypeId,
-) -> Option<(Vec<(InternedId, CompletionItemKind)>, ConfigSchemaKind)> {
+) -> Option<(Vec<(InternedIdUTF8, CompletionItemKind)>, ConfigSchemaKind)> {
     for _ in 0..chrn_utils::MAX_LOOPS {
         match &compiler.types[type_id].ty {
             Type::Struct(struct_def) => {
@@ -987,7 +988,7 @@ fn config_type_info(
 fn configured_option_names(
     compiler: &ScriptCompiler,
     option_ids: &[ImplMemberId],
-) -> Vec<InternedId> {
+) -> Vec<InternedIdUTF8> {
     option_ids
         .iter()
         .filter_map(|memb_id| match &compiler.impl_membs[*memb_id] {
@@ -1230,7 +1231,7 @@ fn completion_follows_override(state: &DocumentState, prefix_start: usize) -> bo
 fn override_config_namespace_path(
     state: &DocumentState,
     prefix_start: usize,
-) -> Option<Vec<InternedId>> {
+) -> Option<Vec<InternedIdUTF8>> {
     let relative_start = prefix_start.saturating_sub(state.script_start) as u32;
     let before_prefix = state
         .tokens
@@ -1281,7 +1282,7 @@ fn override_config_namespace_path(
 
 fn resolve_intrinsic_config_namespace_path(
     compiler: &ScriptCompiler,
-    path: &[InternedId],
+    path: &[InternedIdUTF8],
 ) -> Option<ScopeId> {
     let (&root, tail) = path.split_first()?;
     let mut scope_id = namespace_scope_of_intrinsic_symbol(compiler, root)?;
@@ -1324,15 +1325,15 @@ fn override_root_completion_items(
         // materialized its intrinsic scope yet. These names are stable interner
         // preloads and are the roots core will install once the target parses.
         vec![
-            InternedId::new(chrn_utils::intern::INTERNED_JAVA_UPPER),
-            InternedId::new(chrn_utils::intern::INTERNED_RUST_UPPER),
+            InternedId::new(chrn_utils::intern::INTERNED_JAVA_UPPER).into_tagged::<UTF8Tag>(),
+            InternedId::new(chrn_utils::intern::INTERNED_RUST_UPPER).into_tagged::<UTF8Tag>(),
         ]
     };
 
     roots
         .into_iter()
         .filter_map(|name_id| {
-            let name = state.interner.extract_str_from_interned_id(name_id);
+            let name = state.interner.extract_utf8_str(name_id);
             (prefix.is_empty() || name.starts_with(prefix)).then(|| CompletionItem {
                 label: name.to_string(),
                 kind: Some(CompletionItemKind::VARIABLE),
@@ -1355,7 +1356,7 @@ pub(crate) fn config_completion_items(
             .iter_interned()
             .filter_map(|(_, sym_id)| {
                 let sym = &compiler.syms[sym_id];
-                let name = state.interner.extract_str_from_interned_id(sym.name_id);
+                let name = state.interner.extract_utf8_str(sym.name_id);
                 (prefix.is_empty() || name.starts_with(prefix)).then(|| {
                     completion_item(
                         name.to_string(),
@@ -1390,7 +1391,7 @@ pub(crate) fn config_completion_items(
         if configured_members.contains(&name_id) {
             continue;
         }
-        let name = state.interner.extract_str_from_interned_id(name_id);
+        let name = state.interner.extract_utf8_str(name_id);
         if prefix.is_empty() || name.starts_with(prefix) {
             items.push(CompletionItem {
                 label: name.to_string(),
@@ -1404,7 +1405,7 @@ pub(crate) fn config_completion_items(
         if configured_options.contains(&option.name_id) {
             continue;
         }
-        let name = state.interner.extract_str_from_interned_id(option.name_id);
+        let name = state.interner.extract_utf8_str(option.name_id);
         if prefix.is_empty() || name.starts_with(prefix) {
             items.push(CompletionItem {
                 label: format!("{name} ="),
@@ -1963,7 +1964,8 @@ impl LanguageServer for Backend {
                         let next_is_paren = tok_idx < toks_vec.len()
                             && matches!(toks_vec[tok_idx].tok, ScriptToken::OParen);
                         let entity = state.get_entity_at_offset(abs_start);
-                        if let Some(ty) = classify_id_token(compiler, entity, id.id, next_is_paren)
+                        if let Some(ty) =
+                            classify_id_token(compiler, entity, id.inner().id, next_is_paren)
                         {
                             ty
                         } else {
@@ -2183,7 +2185,7 @@ impl LanguageServer for Backend {
                 .get(next_index)
                 .is_some_and(|token| token.tok == ScriptToken::OParen);
             let name_id = DirectivePreprocessSchemaKind::MaxNumericBits.name_id();
-            let name = state.interner.extract_str_from_interned_id(name_id);
+            let name = state.interner.extract_utf8_str(name_id);
             let mut items = Vec::new();
             if is_directive && name.starts_with(directive_prefix) {
                 let mut item =
@@ -2243,7 +2245,7 @@ impl LanguageServer for Backend {
                 {
                     let mut push_symbol = |sym_id: SymbolId| {
                         let sym = &compiler.syms[sym_id];
-                        let name = state.interner.extract_str_from_interned_id(sym.name_id);
+                        let name = state.interner.extract_utf8_str(sym.name_id);
                         if prefix.is_empty() || name.starts_with(prefix) {
                             items.push(symbol_completion_item(
                                 compiler,
@@ -2303,7 +2305,7 @@ impl LanguageServer for Backend {
                             if sym.scope_origin == scopes_concepts::ScopeType::Var {
                                 continue;
                             }
-                            let sym_name = state.interner.extract_str_from_interned_id(sym.name_id);
+                            let sym_name = state.interner.extract_utf8_str(sym.name_id);
                             if prefix.is_empty() || sym_name.starts_with(prefix) {
                                 items.push(symbol_completion_item(
                                     compiler,
@@ -2319,7 +2321,7 @@ impl LanguageServer for Backend {
                         // Other modules: show only exported symbols
                         for sym_id in &module.exports {
                             let sym = &compiler.syms[*sym_id];
-                            let sym_name = state.interner.extract_str_from_interned_id(sym.name_id);
+                            let sym_name = state.interner.extract_utf8_str(sym.name_id);
                             if prefix.is_empty() || sym_name.starts_with(prefix) {
                                 items.push(symbol_completion_item(
                                     compiler,
@@ -2345,8 +2347,7 @@ impl LanguageServer for Backend {
                     let ns_scope = &compiler.scopes[scope_id];
                     for (_, memb_id) in ns_scope.scope.table.iter_interned() {
                         let member = &compiler.syms[memb_id];
-                        let member_name =
-                            state.interner.extract_str_from_interned_id(member.name_id);
+                        let member_name = state.interner.extract_utf8_str(member.name_id);
                         if prefix.is_empty() || member_name.starts_with(prefix) {
                             items.push(symbol_completion_item(
                                 compiler,
@@ -2386,7 +2387,7 @@ impl LanguageServer for Backend {
                 .iter_interned()
                 .filter_map(|(_, sym_id)| {
                     let sym = &compiler.syms[sym_id];
-                    let name = state.interner.extract_str_from_interned_id(sym.name_id);
+                    let name = state.interner.extract_utf8_str(sym.name_id);
                     (prefix.is_empty() || name.starts_with(prefix)).then(|| {
                         symbol_completion_item(
                             compiler,
@@ -2457,7 +2458,7 @@ impl LanguageServer for Backend {
                     }
                     for (_, sym_id) in scope.table.iter_interned() {
                         let sym = &compiler.syms[sym_id];
-                        let name = state.interner.extract_str_from_interned_id(sym.name_id);
+                        let name = state.interner.extract_utf8_str(sym.name_id);
                         if (prefix.is_empty() || name.starts_with(prefix))
                             && seen.insert(name.to_string())
                         {
@@ -2478,7 +2479,7 @@ impl LanguageServer for Backend {
             let core_mod = &compiler.mods[compiler.intrinsic_registry.core_mod_id];
             for sym_id in &core_mod.exports {
                 let sym = &compiler.syms[*sym_id];
-                let name = state.interner.extract_str_from_interned_id(sym.name_id);
+                let name = state.interner.extract_utf8_str(sym.name_id);
                 if (prefix.is_empty() || name.starts_with(prefix)) && seen.insert(name.to_string())
                 {
                     items.push(symbol_completion_item(

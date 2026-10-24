@@ -1,7 +1,7 @@
 //! Holds external type instantiation helpers
+use chrn_utils::id_types::{InternedId, id_tags::UTF8Tag};
 pub mod java_helpers;
 pub mod rust_helpers;
-use chrn_utils::id_types::InternedId;
 use lang::types::externs::ExternPlatformType;
 
 use crate::{
@@ -32,7 +32,7 @@ const fn new_extern_namespace(
     syms: &'static [InstantiationSymbolBase],
 ) -> InstantiationSymbolBase {
     InstantiationSymbolBase::new(
-        InternedId::new(name_id),
+        InternedId::new(name_id).into_tagged::<UTF8Tag>(),
         EXTERN_SYM_ORIGIN,
         EXTERN_SCOPE_TYPE,
         EXTERN_IS_PRIV,
@@ -43,7 +43,7 @@ const fn new_extern_namespace(
 /// Domain-specific constructor helper for `InstantiationSymbolBase`
 const fn new_extern_sym(name_id: u32, extern_ty: ExternPlatformType) -> InstantiationSymbolBase {
     InstantiationSymbolBase::new(
-        InternedId::new(name_id),
+        InternedId::new(name_id).into_tagged::<UTF8Tag>(),
         EXTERN_SYM_ORIGIN,
         EXTERN_SCOPE_TYPE,
         EXTERN_IS_PRIV,

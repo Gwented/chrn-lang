@@ -23,7 +23,7 @@ use crate::{
     lexer::{
         lexer_output::LexerOutput,
         notations::{FloatNotation, IntegerNotation, Notation},
-        token::{SpannedToken, Token, TokenFloat, TokenInt},
+        token::{SpannedToken, StringForm, Token, TokenFloat, TokenInt, TokenString},
         trivia::{Trivia, TriviaKind},
     },
 };
@@ -130,6 +130,19 @@ impl Lexer<'_> {
             let ch = self.peek_char();
 
             match ch {
+                // Technically the 'p' prefix could be inferred where if a conversion to utf8 fails
+                // the string will store raw bytes.
+                // Wait we need to store raw bytes now. Who's we?
+                c if c == 'p' && self.peek_ahead(1) == b'"' || c == '"' => {
+                    let form = if c == 'p' {
+                        self.cursor.skip(1);
+                        StringForm::MaybeUTF8
+                    } else {
+                        StringForm::Default
+                    };
+                    self.cursor.skip(1);
+                    toks.push(self.read_quotes(form, interner));
+                }
                 c if c.is_alphabetic() || c == '_' => {
                     toks.push(self.read_ident(interner));
                 }
@@ -424,10 +437,6 @@ impl Lexer<'_> {
                             ..self.trivia_end_idx as u32,
                     });
                 }
-                '"' => {
-                    self.advance();
-                    toks.push(self.read_quotes(interner));
-                }
                 '\'' => {
                     self.advance();
                     toks.push(self.read_char(interner));
@@ -665,13 +674,13 @@ impl Lexer<'_> {
         //WARN: USES END WITHOUT - 1
         let span = SourceSpan::new(self.current_region_id, span_start, end as u32);
 
-        if interned_id.id == intern::INTERNED_TRUE && !is_escaped {
+        if interned_id.inner().id == intern::INTERNED_TRUE && !is_escaped {
             return SpannedToken {
                 tok: Token::BoolLiteral(true),
                 span,
                 leading_trivia_indices: self.trivia_start_idx as u32..self.trivia_end_idx as u32,
             };
-        } else if interned_id.id == intern::INTERNED_FALSE && !is_escaped {
+        } else if interned_id.inner().id == intern::INTERNED_FALSE && !is_escaped {
             return SpannedToken {
                 tok: Token::BoolLiteral(false),
                 span,
@@ -889,7 +898,7 @@ impl Lexer<'_> {
     // No
     // Please
     /// Reads bytes until an end quote is reached. May return an invalid token.
-    fn read_quotes(&mut self, interner: &mut Intern) -> SpannedToken {
+    fn read_quotes(&mut self, form: StringForm, interner: &mut Intern) -> SpannedToken {
         let start = self.cursor.pos();
 
         while self.cursor.pos() < self.cursor.len() {
@@ -927,7 +936,7 @@ impl Lexer<'_> {
             Ok(p) => {
                 let interned_id = interner.intern_str(p);
                 SpannedToken {
-                    tok: Token::Str(interned_id),
+                    tok: Token::Str(TokenString::new(interned_id, form)),
                     span,
                     leading_trivia_indices: self.trivia_start_idx as u32
                         ..self.trivia_end_idx as u32,

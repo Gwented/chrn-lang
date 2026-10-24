@@ -1,11 +1,6 @@
 /- Prove that there is no e in chrn -/
 /- calc is short for calculator for anyone new -/
 
-/-
-To use Mathlib we need to have a project and depend on it.
-We're using ascii codes.
--/
-
 def c : Nat := 99
 def h : Nat := 104
 def e : Nat := 101
@@ -18,3 +13,8 @@ def chern : Nat := c + h + e + r + n
 /- Proves 'e' ∉ "chrn" -/
 theorem chrn_has_no_e : chrn ≠ chern := by
     decide
+
+/-
+TODO: Prove `TypeResolver`'s dependency resolution system
+
+-/

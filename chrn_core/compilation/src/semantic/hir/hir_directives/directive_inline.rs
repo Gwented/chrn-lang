@@ -1,4 +1,4 @@
-use chrn_utils::{id_types::InternedId, intern};
+use chrn_utils::{id_types::InternedIdUTF8, intern};
 use lang::{
     chrn_classifier::{ChrnClassifiable, ChrnClassified},
     types::{boundaries::TypeBoundaryFlags, builtins::BuiltinType},
@@ -22,7 +22,7 @@ impl From<TypeDirective> for DirectiveUnparameterized {
 
 impl DirectiveUnparameterized {
     // Duplicating pathing
-    pub const fn is_directive(interned_id: InternedId) -> bool {
+    pub const fn is_directive(interned_id: InternedIdUTF8) -> bool {
         todo!()
     }
 
@@ -51,9 +51,9 @@ impl DirectiveUnparameterized {
     }
 
     pub const fn try_from_interned_str(
-        interned_id: InternedId,
+        interned_id: InternedIdUTF8,
     ) -> Option<DirectiveUnparameterized> {
-        match interned_id.id {
+        match interned_id.inner().id {
             intern::INTERNED_WARN => Some(DirectiveUnparameterized::Warn),
             intern::INTERNED_IGNORE => Some(DirectiveUnparameterized::Ignore),
             // Ok this looks confusing
@@ -162,8 +162,8 @@ impl TypeDirective {
         }
     }
 
-    pub const fn try_from_interned_str(interned_id: InternedId) -> Option<TypeDirective> {
-        match interned_id.id {
+    pub const fn try_from_interned_str(interned_id: InternedIdUTF8) -> Option<TypeDirective> {
+        match interned_id.inner().id {
             intern::INTERNED_SCIENT => Some(TypeDirective::Scient),
             intern::INTERNED_HEX => Some(TypeDirective::Hex),
             intern::INTERNED_BIN => Some(TypeDirective::Bin),

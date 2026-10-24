@@ -1,7 +1,8 @@
+use chrn_utils::id_types::{InternedId, id_tags::UTF8Tag};
 use std::borrow::Cow;
 
 use chrn_utils::{
-    id_types::InternedId,
+    id_types::InternedIdUTF8,
     intern::{self, Intern},
     utils::SharedU32,
 };
@@ -61,7 +62,7 @@ impl<'a> DirectivePreprocessExpectInput<'a> {
         let val_src = DirectivePreprocessValueSource::from_tok_kind(tok.kind())?;
         let kind = match tok {
             Token::Integer(tok_int) => {
-                let s = interner.extract_str_from_interned_id(tok_int.interned_id);
+                let s = interner.extract_utf8_str(tok_int.interned_id);
                 let arbitrary = ArbitraryIntKind::from_str(s, tok_int.notation)?;
                 DirectivePreprocessExpectInputKind::Integer(Cow::Owned(arbitrary))
             }
@@ -158,7 +159,7 @@ impl<'a> DirectivePreprocessExpectInputKind<'a> {
     pub fn from_tok(tok: &Token, interner: &Intern) -> Option<Self> {
         let input = match tok {
             Token::Integer(tok_int) => {
-                let s = interner.extract_str_from_interned_id(tok_int.interned_id);
+                let s = interner.extract_utf8_str(tok_int.interned_id);
                 let arbitrary = ArbitraryIntKind::from_str(s, tok_int.notation)?;
                 DirectivePreprocessExpectInputKind::Integer(Cow::Owned(arbitrary))
             }
@@ -185,10 +186,10 @@ pub enum DirectivePreprocessSchemaKind {
 }
 
 impl DirectivePreprocessSchemaKind {
-    pub const fn name_id(self) -> InternedId {
+    pub const fn name_id(self) -> InternedIdUTF8 {
         match self {
             DirectivePreprocessSchemaKind::MaxNumericBits => {
-                InternedId::new(intern::INTERNED_MAX_NUMERIC_BITS)
+                InternedId::new(intern::INTERNED_MAX_NUMERIC_BITS).into_tagged::<UTF8Tag>()
             }
         }
     }
@@ -229,9 +230,9 @@ impl DirectivePreprocessSchema {
     }
 
     pub const fn try_from_interned_id(
-        interned_id: InternedId,
+        interned_id: InternedIdUTF8,
     ) -> Option<&'static DirectivePreprocessSchema> {
-        let schema = match interned_id.id {
+        let schema = match interned_id.inner().id {
             intern::INTERNED_MAX_NUMERIC_BITS => &MAX_NUMERIC_BITS_SCHEMA,
             _ => return None,
         };
@@ -301,11 +302,11 @@ pub struct DirectivePreprocess {
 }
 
 impl DirectivePreprocess {
-    pub const fn name_id(&self) -> InternedId {
+    pub const fn name_id(&self) -> InternedIdUTF8 {
         let id = match self.kind {
             DirectivePreprocessKind::MaxNumericBits(_) => intern::INTERNED_MAX_NUMERIC_BITS,
         };
-        InternedId::new(id)
+        InternedId::new(id).into_tagged::<UTF8Tag>()
     }
     pub const fn new(kind: DirectivePreprocessKind) -> Self {
         //TODO:
@@ -325,8 +326,8 @@ pub enum DirectivePreprocessKind {
 
 impl DirectivePreprocessKind {
     /// Returns `true` if the given identifier is an existent directive.
-    pub const fn exists(interned_id: InternedId) -> bool {
-        match interned_id.id {
+    pub const fn exists(interned_id: InternedIdUTF8) -> bool {
+        match interned_id.inner().id {
             intern::INTERNED_MAX_NUMERIC_BITS => true,
             _ => false,
         }
@@ -500,14 +501,14 @@ impl DirectivePreprocessStore {
 
 // Needs to be elsewhere
 /// Iterates through `directive_store` and applies it's effects where possible, given `stage`.
-/// Whether a directive is processed successfully or not doesn't matter, both are discarded, the
+/// Whether a directive is processed successfully or not doesn't matter, both are discarded. The
 /// only difference is that the success is applied.
 pub fn apply_directives(
     stage: CompilerStage,
-    directive_store: &mut DirectivePreprocessStore,
+    store: &mut DirectivePreprocessStore,
     cfg: &mut ChrnConfig,
 ) {
-    let count = directive_store.stage_count(stage);
+    let count = store.stage_count(stage);
     if count == 0 {
         return;
     }
@@ -519,7 +520,7 @@ pub fn apply_directives(
     // Counts how many were found so the loop doesn't have to go through all elements by default.
     let mut found = 0;
 
-    for (i, kind) in directive_store.directives.iter().enumerate() {
+    for (i, kind) in store.directives.iter().enumerate() {
         if found == count {
             break;
         } else if kind.schema().ready_stage != stage {
@@ -535,6 +536,6 @@ pub fn apply_directives(
     }
 
     for idx in to_rm.iter().rev().copied() {
-        directive_store.swap_remove(idx);
+        store.swap_remove(idx);
     }
 }

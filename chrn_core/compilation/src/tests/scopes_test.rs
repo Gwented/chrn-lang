@@ -8,6 +8,7 @@ use crate::script_compiler::compiler_consts::builtin_ty_to_id;
 use crate::script_compiler::helpers::core_helpers::CORE_BUILTIN_TYPES_DATASET;
 use crate::semantic::hir::hir_concepts::Type;
 use crate::semantic::hir::hir_symbols::SymbolKind;
+use chrn_utils::id_types::{InternedId, id_tags::UTF8Tag};
 use chrn_utils::id_types::{ScopeId, SymbolId, TypeId};
 use chrn_utils::intern;
 use lang::types::builtins::BuiltinTypeKind;
@@ -260,7 +261,9 @@ fn namespaced_builtins() -> Vec<(String, TypeId)> {
         .filter(|(_, _, ns)| !ns.is_empty())
         .map(|(interned, builtin_ty, _)| {
             (
-                interner.extract_str_from_idx(*interned as usize).to_string(),
+                interner
+                    .extract_utf8_str(InternedId::new(*interned).into_tagged::<UTF8Tag>())
+                    .to_string(),
                 TypeId::new(builtin_ty_to_id(builtin_ty.kind())),
             )
         })
@@ -285,11 +288,11 @@ fn ns_scope_of(compiler: &ScriptCompiler, type_id: TypeId) -> ScopeId {
 #[test]
 fn scope_core_type_namespace_test() {
     let (compiler, _) = ns_resolve("let CONSTANT = 3");
-    let max_id = InternedId::new(intern::INTERNED_MAX_UPPER);
-    let min_id = InternedId::new(intern::INTERNED_MIN_UPPER);
-    let bits_id = InternedId::new(intern::INTERNED_BITS_UPPER);
-    let bytes_id = InternedId::new(intern::INTERNED_BYTES_UPPER);
-    let tab_id = InternedId::new(intern::INTERNED_TAB_UPPER);
+    let max_id = InternedId::new(intern::INTERNED_MAX_UPPER).into_tagged::<UTF8Tag>();
+    let min_id = InternedId::new(intern::INTERNED_MIN_UPPER).into_tagged::<UTF8Tag>();
+    let bits_id = InternedId::new(intern::INTERNED_BITS_UPPER).into_tagged::<UTF8Tag>();
+    let bytes_id = InternedId::new(intern::INTERNED_BYTES_UPPER).into_tagged::<UTF8Tag>();
+    let tab_id = InternedId::new(intern::INTERNED_TAB_UPPER).into_tagged::<UTF8Tag>();
 
     for (name, type_id) in namespaced_builtins() {
         let scope_id = ns_scope_of(&compiler, type_id);
@@ -363,7 +366,7 @@ fn scope_core_type_namespace_unreachable_test() {
     // `sized`/`unsized` are pointer-sized, so neither carries an intrinsic namespace
     for (interned, builtin_ty, ns) in &CORE_BUILTIN_TYPES_DATASET {
         let interner = Intern::init();
-        let name = interner.extract_str_from_idx(*interned as usize);
+        let name = interner.extract_utf8_str(InternedId::new(*interned).into_tagged::<UTF8Tag>());
 
         if !ns.is_empty() {
             continue;

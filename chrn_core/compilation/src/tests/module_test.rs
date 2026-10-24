@@ -1,3 +1,4 @@
+use chrn_utils::id_types::{InternedId, id_tags::UTF8Tag};
 use std::env;
 use std::fs;
 use std::io::Cursor;
@@ -11,7 +12,7 @@ use crate::module::module_concepts::{ImportKind, Module, ModuleState};
 use crate::module::module_finder::ModuleFinder;
 use crate::script_compiler::reporter::Reporter;
 use chrn_utils::{
-    id_types::{InternedId, ModuleId, PathId, SourceRegionId},
+    id_types::{ModuleId, PathId, SourceRegionId},
     intern::Intern,
 };
 
@@ -312,7 +313,7 @@ fn modfinder_import_with_alias() {
         import.sp_alias_id.is_some(),
         "import should have an alias_id"
     );
-    let alias_name = interner.extract_str_from_interned_id(import.sp_alias_id.as_ref().unwrap().inner);
+    let alias_name = interner.extract_utf8_str(import.sp_alias_id.as_ref().unwrap().inner);
     assert_eq!(alias_name, "my_mod", "alias should be 'my_mod'");
 
     _ = fs::remove_dir_all(&dir);
@@ -556,7 +557,7 @@ fn extract_main_simple_script() {
         "main module should be Loaded"
     );
     assert_eq!(main_mod.self_id, ModuleId::new(0), "main gets mod_id 0");
-    let main_name = interner.extract_str_from_interned_id(main_mod.name_id);
+    let main_name = interner.extract_utf8_str(main_mod.name_id);
     assert_eq!(
         main_name, "main",
         "module name should be 'main' (file stem)"
@@ -869,7 +870,7 @@ fn extract_all_modules_single() {
     let core_mod = &compiler.mods[core_mod_id];
     assert_eq!(
         core_mod.name_id,
-        InternedId::new(chrn_utils::intern::INTERNED_CORE),
+        InternedId::new(chrn_utils::intern::INTERNED_CORE).into_tagged::<UTF8Tag>(),
         "last module must be core"
     );
 

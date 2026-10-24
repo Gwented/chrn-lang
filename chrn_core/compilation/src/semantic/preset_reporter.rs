@@ -121,7 +121,7 @@ pub(crate) fn create_diag_builder_preset(
             .add_annotation(sym_span, AnnotationKind::Primary, None)
         }
         PresetErr::UnknownDirective(sp_interned_id) => {
-            let err_name = interner.extract_str_from_interned_id(sp_interned_id.inner);
+            let err_name = interner.extract_utf8_str(sp_interned_id.inner);
             let core_msg = format!("Unknown directive `#{err_name}`");
 
             let mut builder = SourceDiagnostic::builder(
@@ -224,7 +224,7 @@ pub(crate) fn create_diag_builder_preset(
         // Should have the data type's cap shown as well
         //TODO: May be set for removal.
         PresetErr::NumericParseError { sp_num, fmtted_ty } => {
-            let invalid = interner.extract_str_from_interned_id(sp_num.inner);
+            let invalid = interner.extract_utf8_str(sp_num.inner);
             let core_msg = format!("Failed to parse {fmtted_ty} \"{}\"", invalid);
 
             SourceDiagnostic::builder(None, DiagnosticLevel::Error, core_msg, region.path_id)
@@ -255,8 +255,8 @@ pub(crate) fn create_diag_builder_preset(
                 sp_searched_type_name_id,
                 not_found_name_id,
             } => {
-                let ty_name = interner.extract_str_from_interned_id(sp_searched_type_name_id.inner);
-                let member_name = interner.extract_str_from_interned_id(not_found_name_id);
+                let ty_name = interner.extract_utf8_str(sp_searched_type_name_id.inner);
+                let member_name = interner.extract_utf8_str(not_found_name_id);
                 let core_msg = format!("No member `{member_name}` in type `{ty_name}`");
 
                 let builder = SourceDiagnostic::builder(
@@ -290,11 +290,11 @@ pub(crate) fn create_diag_builder_preset(
                 sp_invalid_name_id,
                 scope_searched,
             } => {
-                let err_name = interner.extract_str_from_interned_id(sp_invalid_name_id.inner);
+                let err_name = interner.extract_utf8_str(sp_invalid_name_id.inner);
                 let core_msg = match scope_searched {
                     AssociatedScopeKind::Module(mod_id) => {
                         let err_mod = &compiler.mods[mod_id];
-                        let err_mod_name = interner.extract_str_from_interned_id(err_mod.name_id);
+                        let err_mod_name = interner.extract_utf8_str(err_mod.name_id);
 
                         //WARN: If we have "var State {}" in complex or override, and it's not in that
                         //scope solely, this will say that the ENTIRE module does not contain the given
@@ -314,7 +314,7 @@ pub(crate) fn create_diag_builder_preset(
                         let sym_owner = scope_info.sym_owner.expect("!");
 
                         let sym_name_id = compiler.syms[sym_owner].name_id;
-                        let sym_name = interner.extract_str_from_interned_id(sym_name_id);
+                        let sym_name = interner.extract_utf8_str(sym_name_id);
 
                         format!("Namespace `{sym_name}` does not contain `{err_name}`")
                     }
@@ -339,7 +339,7 @@ pub(crate) fn create_diag_builder_preset(
                 //     scope_searched.into(),
                 //     interner,
                 // );
-                // dbg!(interner.extract_str_from_interned_id(sp_invalid_name_id.inner));
+                // dbg!(interner.extract_utf8_str(sp_invalid_name_id.inner));
                 // panic!();
 
                 // if !similar.is_empty() {
@@ -357,7 +357,7 @@ pub(crate) fn create_diag_builder_preset(
                 scope_found_in,
             } => {
                 let kind = SymbolKind::to_classified(compiler, invalid_sym_id);
-                let name = interner.extract_str_from_interned_id(sp_invalid_name_id.inner);
+                let name = interner.extract_utf8_str(sp_invalid_name_id.inner);
 
                 let core_msg = format!("`{name}` is a {kind} not a type");
 
@@ -391,8 +391,8 @@ pub(crate) fn create_diag_builder_preset(
 
                 let sym_mod = &compiler.mods[mod_id];
 
-                let sym_mod_name = interner.extract_str_from_interned_id(sym_mod.name_id);
-                let sym_name = interner.extract_str_from_interned_id(sym.name_id);
+                let sym_mod_name = interner.extract_utf8_str(sym_mod.name_id);
+                let sym_name = interner.extract_utf8_str(sym.name_id);
 
                 let core_msg = format!("Type `{sym_name}` is private in module `{sym_mod_name}`");
 
@@ -599,7 +599,7 @@ pub(crate) fn create_diag_builder_preset(
             sp_dup,
             classifier,
         } => {
-            let dup_name = interner.extract_str_from_interned_id(sp_original.inner);
+            let dup_name = interner.extract_utf8_str(sp_original.inner);
             let core_msg = format!("Duplicate {classifier} identifier `{dup_name}`");
 
             // Maybe give `None` here..
@@ -715,7 +715,7 @@ pub fn type_expr_result_to_preset_err(
             inputs_span,
         } => {
             // The name based if confusing
-            let name = interner.extract_str_from_interned_id(*base);
+            let name = interner.extract_utf8_str(*base);
             // BRING S_IFIER IN HERE NOW
             let core_msg = format!("`{name}` expects {expected} input(s)");
 
@@ -730,7 +730,7 @@ pub fn type_expr_result_to_preset_err(
             Some(PresetErr::General(src_diag))
         }
         TypeExprResult::UnknownGenericIdent(sp_name_id) => {
-            let name = interner.extract_str_from_interned_id(sp_name_id.inner);
+            let name = interner.extract_utf8_str(sp_name_id.inner);
             let core_msg = format!("Unknown generic identifier `{name}`");
 
             let src_diag = SourceDiagnostic::builder(
@@ -766,9 +766,9 @@ pub fn static_access_result_to_preset_err(
             current_seg,
             prev_seg,
         } => {
-            let current_seg_name = interner.extract_str_from_interned_id(current_seg.inner);
+            let current_seg_name = interner.extract_utf8_str(current_seg.inner);
             let src_diag = if let Some(prev) = prev_seg {
-                let prev_seg_name = interner.extract_str_from_interned_id(prev.inner);
+                let prev_seg_name = interner.extract_utf8_str(prev.inner);
                 let core_msg = format!(
                     "Could not find `{}` in namespace `{}`",
                     current_seg_name, prev_seg_name
@@ -796,7 +796,7 @@ pub fn static_access_result_to_preset_err(
             Some(PresetErr::General(src_diag))
         }
         StaticAccessResult::NoNamespace(sp_name_id) => {
-            let namespace_name = interner.extract_str_from_interned_id(sp_name_id.inner);
+            let namespace_name = interner.extract_utf8_str(sp_name_id.inner);
             let core_msg = format!("No namespace found in `{namespace_name}`");
 
             let src_diag = SourceDiagnostic::builder(
@@ -862,7 +862,7 @@ pub fn static_access_result_to_preset_err(
 //                     .compiler
 //                     .get_name_id_from_type_id(type_id)
 //                     .expect("NOT DONE YET");
-//                 let found_name = self.interner.extract_str_from_interned_id(found_type_name_id);
+//                 let found_name = self.interner.extract_utf8_str(found_type_name_id);
 //
 //                 let preset_err = PresetErr::Lookup(
 //                     LookupError::ImpossibleTypeMemberAccess(SpannedContainer::new(
@@ -960,7 +960,7 @@ pub fn static_access_result_to_preset_err(
 //             // Um. When is this case met?
 //             MemberLookupResult::Unknown(type_id) => {
 //                 // let var = self.compiler.get_var(found_sym_id);
-//                 // let name = self.interner.extract_str_from_interned_id(var.name_id);
+//                 // let name = self.interner.extract_utf8_str(var.name_id);
 //
 //                 // dbg!(&self.compiler.types[var.type_id ]);
 //                 todo!("RUST_BACKTRACE=1");

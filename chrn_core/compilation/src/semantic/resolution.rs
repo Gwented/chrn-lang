@@ -1,10 +1,11 @@
 //! Module intended for storing free functions that perform general resolution tasks
 
+use chrn_utils::id_types::{InternedId, id_tags::UTF8Tag};
 pub(crate) mod resolution_concepts;
 pub(crate) mod resolution_helpers;
 
 use chrn_utils::{
-    id_types::{InternedId, TypeId},
+    id_types::{TypeId},
     intern,
     source_map::source_span::SourceSpan,
     utils::containers::SpannedContainer,
@@ -175,7 +176,7 @@ fn resolve_generic(
     scope_type: ScopeType,
     env: &ResolverEnv,
 ) -> TypeExprResult {
-    match BuiltinTypeKind::try_from_interned_id(generic.base.id) {
+    match BuiltinTypeKind::try_from_interned_id(generic.base.inner().id) {
         Some(kind) => match kind {
             BuiltinTypeKind::List | BuiltinTypeKind::Set => {
                 if generic.inputs.len() != 1 {
@@ -204,10 +205,16 @@ fn resolve_generic(
 
                 let (interned_id, ty) = if kind == BuiltinTypeKind::List {
                     let ty = Type::BuiltinTypeInfo(BuiltinTypeInfo::new(BuiltinType::List(inner)));
-                    (InternedId::new(intern::INTERNED_LIST), ty)
+                    (
+                        InternedId::new(intern::INTERNED_LIST).into_tagged::<UTF8Tag>(),
+                        ty,
+                    )
                 } else {
                     let ty = Type::BuiltinTypeInfo(BuiltinTypeInfo::new(BuiltinType::Set(inner)));
-                    (InternedId::new(intern::INTERNED_SET), ty)
+                    (
+                        InternedId::new(intern::INTERNED_SET).into_tagged::<UTF8Tag>(),
+                        ty,
+                    )
                 };
 
                 //WARN: Definitely not sure about this setup
@@ -252,7 +259,7 @@ fn resolve_generic(
 
                 //WARN: Definitely not sure about this setup
                 let sym = Symbol::new(
-                    InternedId::new(intern::INTERNED_TUPLE),
+                    InternedId::new(intern::INTERNED_TUPLE).into_tagged::<UTF8Tag>(),
                     sym_id,
                     None,
                     SymbolOrigin::Module(env.current_mod),
@@ -309,7 +316,7 @@ fn resolve_generic(
                 let type_id = compiler.types.make_id();
 
                 let sym = Symbol::new(
-                    InternedId::new(intern::INTERNED_MAP),
+                    InternedId::new(intern::INTERNED_MAP).into_tagged::<UTF8Tag>(),
                     sym_id,
                     None,
                     SymbolOrigin::Module(env.current_mod),

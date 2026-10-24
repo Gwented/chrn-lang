@@ -1,3 +1,4 @@
+use chrn_utils::id_types::{InternedId, id_tags::UTF8Tag};
 pub mod compiler_consts;
 pub(crate) mod helpers;
 pub mod reporter;
@@ -10,8 +11,8 @@ use chrn_utils::{
     arena::Arena,
     budget::mem_cost::MemoryCost,
     id_types::{
-        ConfigRootId, DirectiveId, ExprId, ImplId, ImplMemberId, InternedId, MemberId, ModuleId,
-        ScopeId, SymbolId, TypeId, ValueId, VariableId, id_tags::TaggedId,
+        ConfigRootId, DirectiveId, ExprId, ImplId, ImplMemberId, InternedIdUTF8, MemberId,
+        ModuleId, ScopeId, SymbolId, TypeId, ValueId, VariableId, id_tags::TaggedId,
     },
     intern,
     source_map::source_span::SourceSpan,
@@ -45,7 +46,7 @@ use crate::{
         hir::{
             hir_concepts::{BuiltinTypeInfo, Table, Type, TypeInfo},
             hir_directives::{
-                Directive, DirectiveUnparameterized, DirectiveParameterizedHir, DirectivePreprocess,
+                Directive, DirectiveParameterizedHir, DirectivePreprocess, DirectiveUnparameterized,
             },
             hir_exprs::{ExprHir, ResolvedExpr, ResolvedExprMetadata},
             hir_impls::{
@@ -746,7 +747,7 @@ impl ScriptCompiler {
     // TODO: Fix type metadata
     /// Returns `None` if type `TypeBoundaryFlags` is found and there's more
     /// than one boundary encoded, otherwise returns `Some`
-    pub(super) fn get_name_id_from_type_id(&self, mut type_id: TypeId) -> Option<InternedId> {
+    pub(super) fn get_name_id_from_type_id(&self, mut type_id: TypeId) -> Option<InternedIdUTF8> {
         let checked = walk_type_id_deferred!(&self.types, type_id);
 
         match &self.types[checked.inner].ty {
@@ -766,7 +767,9 @@ impl ScriptCompiler {
             // rather than rephrasing for the fact that the type itself is unknown.
             //
             // Phrases like "The type `Unknown`" sound wrong because it's not a type it's a state
-            Type::Unknown => InternedId::new(intern::INTERNED_UNKNOWN).into(),
+            Type::Unknown => InternedId::new(intern::INTERNED_UNKNOWN)
+                .into_tagged::<UTF8Tag>()
+                .into(),
             Type::Deferred(_) => unreachable!(),
         }
     }
@@ -854,7 +857,7 @@ impl ScriptCompiler {
     /// Loads the core module
     fn load_core(&mut self) -> BuiltinIdRepository {
         //TODO: If namespace core exists as a module then should error earlier
-        let core_name_id = InternedId::new(intern::INTERNED_CORE);
+        let core_name_id = InternedId::new(intern::INTERNED_CORE).into_tagged::<UTF8Tag>();
         let core_mod_id = self.mods.make_id();
 
         let core_scope_id = self.scopes.make_id();
@@ -925,7 +928,11 @@ impl ScriptCompiler {
         );
     }
 
-    fn register_directive(&mut self, interned_id: InternedId, directive: DirectiveUnparameterized) {
+    fn register_directive(
+        &mut self,
+        interned_id: InternedIdUTF8,
+        directive: DirectiveUnparameterized,
+    ) {
         let sym_id = self.syms.make_id();
         let directive_id = compiler_consts::directive_to_id_const(&directive);
         debug_assert_eq!(directive_id.id, self.directives.len() as u32);
@@ -946,7 +953,11 @@ impl ScriptCompiler {
         self.directives.push(Directive::Inline(directive));
     }
 
-    fn register_directive_const(&mut self, interned_id: InternedId, directive: DirectiveUnparameterized) {
+    fn register_directive_const(
+        &mut self,
+        interned_id: InternedIdUTF8,
+        directive: DirectiveUnparameterized,
+    ) {
         // let sym_id = self.syms.make_id();
         let directive_id = compiler_consts::directive_to_id_const(&directive);
         debug_assert_eq!(directive_id.id, self.directives.len() as u32);
@@ -1159,7 +1170,7 @@ impl ScriptCompiler {
     ) {
         let type_id = self.types.make_id();
         let sym_id = self.syms.make_id();
-        let name_id = InternedId::new(core_func.name);
+        let name_id = InternedId::new(core_func.name).into_tagged::<UTF8Tag>();
 
         let func_def = FuncDef::new(
             sym_id.into_tagged::<FuncTag>(),
@@ -1199,7 +1210,7 @@ impl ScriptCompiler {
         // -- Concrete types --
         let mut builder = BuiltinIdRepository::builder();
         for (interned, ty, ns) in &core_helpers::CORE_BUILTIN_TYPES_DATASET {
-            let interned_id = InternedId::new(*interned);
+            let interned_id = InternedId::new(*interned).into_tagged::<UTF8Tag>();
             let sym_id =
                 self.register_builtin(interned_id, ty.clone(), ns, core_scope_id, core_mod_id);
             builder.add(ty.kind(), sym_id);
@@ -1211,7 +1222,7 @@ impl ScriptCompiler {
 
         // -- Boundaries --
         for (interned, flags) in core_helpers::CORE_BOUNDARIES_DATASET.iter().cloned() {
-            let interned_id = InternedId::new(interned);
+            let interned_id = InternedId::new(interned).into_tagged::<UTF8Tag>();
             self.register_boundary(interned_id, flags, core_scope_id, core_mod_id);
         }
 
@@ -1229,7 +1240,7 @@ impl ScriptCompiler {
     /// Registers a single core builtin-type and pushes it
     fn register_builtin(
         &mut self,
-        name_id: InternedId,
+        name_id: InternedIdUTF8,
         builtin_ty: BuiltinType,
         ns: &[InstantiationSymbolBase],
         core_scope_id: ScopeId,
@@ -1281,7 +1292,7 @@ impl ScriptCompiler {
     /// Registers a single core boundary type and pushes it
     fn register_boundary(
         &mut self,
-        name_id: InternedId,
+        name_id: InternedIdUTF8,
         flags: TypeBoundaryFlags,
         core_scope_id: ScopeId,
         core_mod_id: ModuleId,

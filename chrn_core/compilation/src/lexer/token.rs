@@ -1,7 +1,14 @@
+use chrn_utils::id_types::InternedId;
 // TRIVIA IS NOT A LANGUAGE CONCEPT
 use std::{fmt::Display, ops::Range};
 
-use chrn_utils::{id_types::InternedId, source_map::source_span::SourceSpan};
+use chrn_utils::{
+    id_types::{
+        InternedIdUTF8,
+        id_tags::{MaybeUTF8Tag, TaggedId},
+    },
+    source_map::source_span::SourceSpan,
+};
 use lang::keywords::Keyword;
 
 use crate::{
@@ -22,12 +29,12 @@ pub struct SpannedToken {
 //token enum or kept at all
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TokenInt {
-    pub interned_id: InternedId,
+    pub interned_id: InternedIdUTF8,
     pub notation: IntegerNotation,
 }
 
 impl TokenInt {
-    pub const fn new(interned_id: InternedId, notation: IntegerNotation) -> Self {
+    pub const fn new(interned_id: InternedIdUTF8, notation: IntegerNotation) -> Self {
         Self {
             interned_id,
             notation,
@@ -37,17 +44,50 @@ impl TokenInt {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TokenFloat {
-    pub interned_id: InternedId,
+    pub interned_id: InternedIdUTF8,
     pub notation: FloatNotation,
 }
 
 impl TokenFloat {
-    pub const fn new(interned_id: InternedId, notation: FloatNotation) -> Self {
+    pub const fn new(interned_id: InternedIdUTF8, notation: FloatNotation) -> Self {
         Self {
             interned_id,
             notation,
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum TokenStringKind {
+    UTF8(InternedIdUTF8),
+    MaybeUTF8(TaggedId<InternedId, MaybeUTF8Tag>),
+}
+
+//TEST: Maybe we should just use
+//What if the interner interned all strings as a vector of bytes and did unchecked utf8 for all that
+//stores they were a string so both have the same storage area question mark
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TokenString {
+    pub interned_id: InternedIdUTF8,
+    pub form: StringForm,
+}
+
+impl TokenString {
+    pub const fn new(interned_id: InternedIdUTF8, form: StringForm) -> Self {
+        Self { interned_id, form }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StringForm {
+    /// Uses standard string behavior
+    /// Declaration: "I am default"
+    Default,
+    /// May or may not contain invalid UTF-8. Still considered valid.
+    /// Declaration: as p"(Imagine a replacement character being here) I am still valid"
+    ///
+    /// 'p' will stand for permissive or path.
+    MaybeUTF8,
 }
 
 // WHAT
@@ -60,11 +100,12 @@ pub enum Token {
     End,
     Keyword(Keyword),
     BoolLiteral(bool),
-    Id(InternedId),
-    Str(InternedId),
+    Id(InternedIdUTF8),
+    //TODO: Either TokenStringKind or Str and PStr. Should have a .bytes(), just because.
+    Str(TokenString),
     Integer(TokenInt),
     Float(TokenFloat),
-    Invalid(InternedId),
+    Invalid(InternedIdUTF8),
     Char(char),
     OParen,
     CParen,

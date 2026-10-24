@@ -1,7 +1,7 @@
 // The value system of script would be simple but the serial does need this too so maybe re-use
 // it?
 
-use chrn_utils::id_types::{ExprId, InternedId, SymbolId, TypeId};
+use chrn_utils::id_types::{ExprId, SymbolId, TypeId, InternedIdUTF8};
 use lang::{
     chrn_classifier::{ChrnClassifiable, ChrnClassified},
     types::boundaries::TypeBoundaryFlags,
@@ -39,7 +39,7 @@ pub enum Value {
     Func(SymbolId),
     Tuple(Vec<Value>),
     List(Vec<Value>),
-    InternedStr(InternedId),
+    InternedStr(InternedIdUTF8),
     RuntimeStr(String),
     Unknown,
 }

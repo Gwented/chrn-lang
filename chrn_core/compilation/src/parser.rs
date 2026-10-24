@@ -15,7 +15,7 @@ mod parser_state;
 
 use crate::chrn_config::ChrnConfig;
 use crate::chrn_config::chrn_perf::ChrnPerfStage;
-use crate::lexer::token::{SpannedToken, Token, TokenInt, TokenKind};
+use crate::lexer::token::{SpannedToken, StringForm, Token, TokenInt, TokenKind, TokenString};
 use crate::lookup::scopes::scopes_concepts::ScopeLookupPattern;
 use crate::parser::ast::ast_concepts::{
     AbstractAlias, AbstractConfig, AbstractConfigKind, AbstractDecl,
@@ -34,7 +34,7 @@ use crate::parser::parser_budget::ParserBudget;
 use crate::parser::parser_helpers::DelimiterContext;
 use crate::parser::parser_state::ParserState;
 use crate::semantic::hir::hir_impls::ConfigRootMetadataKind;
-use chrn_utils::id_types::InternedId;
+use chrn_utils::id_types::InternedIdUTF8;
 use chrn_utils::intern::Intern;
 use chrn_utils::source_map::source_diagnostic::SourceDiagnosticSummary;
 use chrn_utils::source_map::source_region::SourceRegion;
@@ -408,7 +408,7 @@ pub fn parse(
             }
             Token::Invalid(id) => {
                 ctx.advance_tok();
-                let err_str = interner.extract_str_from_interned_id(id);
+                let err_str = interner.extract_utf8_str(id);
                 let msg = format!("Invalid token {err_str}");
                 let env = if state.is_neutral() {
                     SemanticEnv::SearchingNeutral
@@ -615,7 +615,7 @@ fn parse_typedef(
         interner,
     )?;
 
-    let err_name = interner.extract_str_from_interned_id(name_id);
+    let err_name = interner.extract_utf8_str(name_id);
 
     ctx.expect_verbose(
         TokenKind::Colon,
@@ -685,7 +685,7 @@ fn parse_nest_sect(
                 interner,
             )?;
 
-            let struct_name = interner.extract_str_from_interned_id(sp_name_id.inner);
+            let struct_name = interner.extract_utf8_str(sp_name_id.inner);
 
             ctx.expect_verbose(
                 TokenKind::OCurlyBracket,
@@ -749,7 +749,7 @@ fn parse_nest_sect(
                 interner,
             )?;
 
-            let enum_name = interner.extract_str_from_interned_id(sp_name_id.inner);
+            let enum_name = interner.extract_utf8_str(sp_name_id.inner);
 
             ctx.expect_verbose(
                 TokenKind::OCurlyBracket,
@@ -1514,7 +1514,10 @@ fn parse_primary(
         }
         Token::Str(name_id) => {
             let span = ctx.advance_span();
-            Ok(SpannedContainer::new(AstExpr::Str(name_id), span))
+            Ok(SpannedContainer::new(
+                AstExpr::Str(name_id.interned_id),
+                span,
+            ))
         }
         Token::Char(ch) => {
             let span = ctx.advance_span();
@@ -1715,7 +1718,9 @@ fn parse_type_expr(
 
             Ok(SpannedContainer::new(ty_expr, span))
         }
-        Token::Str(id)
+        Token::Str(TokenString {
+            interned_id: id, ..
+        })
         | Token::Integer(TokenInt {
             interned_id: id, ..
         }) => {
@@ -1735,7 +1740,7 @@ fn parse_type_expr(
                 interner,
             );
 
-            Err(Token::Str(id))
+            Err(Token::Str(TokenString::new(id, StringForm::Default)))
         }
         Token::EOF => {
             ctx.advance_tok();
@@ -2427,7 +2432,7 @@ fn parse_id(
     expected_name: Option<&str>,
     evidence: InitialEvidence,
     interner: &Intern,
-) -> Result<SpannedContainer<InternedId>, Token> {
+) -> Result<SpannedContainer<InternedIdUTF8>, Token> {
     debug_assert!(
         matches!(
             expected,

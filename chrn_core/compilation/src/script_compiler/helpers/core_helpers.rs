@@ -1,6 +1,7 @@
 //! Compiler generated compiler-specific helpers
 
-use chrn_utils::{id_types::InternedId, intern};
+use chrn_utils::id_types::{InternedId, id_tags::UTF8Tag};
+use chrn_utils::intern;
 use dashu_int::IBig;
 use lang::types::{boundaries::TypeBoundaryFlags, builtins::BuiltinType};
 
@@ -1101,7 +1102,7 @@ const CORE_IS_PRIV: bool = false;
 
 const fn new_const(id: u32, var: InstantiationVariable) -> InstantiationSymbolBase {
     InstantiationSymbolBase::new(
-        InternedId::new(id),
+        InternedId::new(id).into_tagged::<UTF8Tag>(),
         // More like core_sym_origin
         CORE_SYM_ORIGIN,
         CORE_SCOPE_ORIGIN,
@@ -1181,7 +1182,7 @@ const fn new_str_const(name: u32, value: u32) -> InstantiationSymbolBase {
         name,
         InstantiationVariable::new(
             InstiationType::BuiltinType(BuiltinType::Str),
-            InstiationValue::Str(InternedId::new(value)),
+            InstiationValue::Str(InternedId::new(value).into_tagged::<UTF8Tag>()),
         ),
     )
 }

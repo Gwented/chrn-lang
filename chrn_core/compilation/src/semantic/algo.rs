@@ -44,7 +44,6 @@ pub fn fuzzy_match_with_fmtted(
 /// Fuzzily searches stuff
 pub fn fuzzy_match(given: &str, target: FuzzyMatch) -> Vec<&str> {
     match target {
-        //TODO: Update this!
         FuzzyMatch::KW => _fuzzy_match(given, &keywords::KEYWORDS_ARRAY),
         FuzzyMatch::Type => _fuzzy_match(given, &builtins::BUILTIN_TYPE_ARRAY),
         FuzzyMatch::Stmt => _fuzzy_match(given, &keywords::KEYWORDS_ARRAY[keywords::stmt_range()]),
@@ -68,10 +67,9 @@ fn _fuzzy_match<'a>(given: &str, arr: &'a [&str]) -> Vec<&'a str> {
             max_len = s.len();
         }
     }
-    // For being slightly above len
-    max_len += 3;
 
-    if given.len() > max_len {
+    // Compensates by exceeding bounds by 3
+    if given.len() > max_len + 3 {
         return found;
     }
 

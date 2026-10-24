@@ -1,6 +1,6 @@
 use chrn_utils::{
     arena::Arena,
-    id_types::{InternedId, ModuleId, PathId, ScopeId, SourceRegionId, SymbolId},
+    id_types::{InternedIdUTF8, ModuleId, PathId, ScopeId, SourceRegionId, SymbolId},
     source_map::{source_region::SourceRegion, source_span::SourceSpan},
     utils::containers::SpannedContainer,
 };
@@ -14,7 +14,7 @@ use chrn_utils::{
 #[derive(Debug, Clone)]
 pub struct Module {
     /// File name that will be used internally
-    pub name_id: InternedId,
+    pub name_id: InternedIdUTF8,
     /// `ModuleId` of `self`
     pub self_id: ModuleId,
     /// Imports found in the module
@@ -36,7 +36,7 @@ pub struct Module {
 
 impl Module {
     pub const fn new(
-        name_id: InternedId,
+        name_id: InternedIdUTF8,
         state: ModuleState,
         self_id: ModuleId,
         bind: Option<Bind>,
@@ -134,7 +134,7 @@ impl ModuleGraph {
 #[derive(Debug, Clone, Eq)]
 pub(super) struct ModuleIdent {
     /// Identifier which is an import's alias if present, it's file name otherwise.
-    pub(super) ident_id: InternedId,
+    pub(super) ident_id: InternedIdUTF8,
     /// Whether `ident_id` came from an alias. Only used to pick the diagnostic wording.
     pub(super) is_alias: bool,
     /// Is either a path span or alias span.
@@ -145,7 +145,7 @@ pub(super) struct ModuleIdent {
 
 impl ModuleIdent {
     pub(super) const fn new(
-        ident_id: InternedId,
+        ident_id: InternedIdUTF8,
         is_alias: bool,
         span: Option<SourceSpan>,
     ) -> Self {
@@ -180,16 +180,16 @@ impl std::hash::Hash for ModuleIdent {
 /// Imports used by user and compiler generated modules
 #[derive(Debug, Clone)]
 pub struct Import {
-    pub name_id: InternedId,
+    pub name_id: InternedIdUTF8,
     pub kind: ImportKind,
-    pub sp_alias_id: Option<SpannedContainer<InternedId>>,
+    pub sp_alias_id: Option<SpannedContainer<InternedIdUTF8>>,
 }
 
 impl Import {
     pub const fn new(
-        name_id: InternedId,
+        name_id: InternedIdUTF8,
         kind: ImportKind,
-        sp_alias_id: Option<SpannedContainer<InternedId>>,
+        sp_alias_id: Option<SpannedContainer<InternedIdUTF8>>,
     ) -> Import {
         Import {
             name_id,

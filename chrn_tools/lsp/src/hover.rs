@@ -143,22 +143,22 @@ pub fn compute_hover(
             };
             (hover_text, Some((span_start, span_end)))
         }
-        ScriptToken::Str(id) => {
-            let s = state.interner.extract_str_from_interned_id(id);
+        ScriptToken::Str(token_string) => {
+            let s = state.interner.extract_utf8_str(token_string.interned_id);
             (
                 format!("string literal: \"{}\"", s),
                 Some((span_start, span_end)),
             )
         }
         ScriptToken::Integer(value) => {
-            let s = state.interner.extract_str_from_interned_id(value.interned_id);
+            let s = state.interner.extract_utf8_str(value.interned_id);
             (
                 format!("Integer literal: {}", s),
                 Some((span_start, span_end)),
             )
         }
         ScriptToken::Float(value) => {
-            let s = state.interner.extract_str_from_interned_id(value.interned_id);
+            let s = state.interner.extract_utf8_str(value.interned_id);
             (
                 format!("Float literal: {}", s),
                 Some((span_start, span_end)),
@@ -215,7 +215,7 @@ pub fn compute_hover(
 fn identifier_hover(
     state: &crate::state::DocumentState,
     compiler: &ScriptCompiler,
-    id: chrn_utils::id_types::InternedId,
+    id: chrn_utils::id_types::InternedIdUTF8,
     offset: usize,
 ) -> String {
     let mut hover_text = state
@@ -230,7 +230,7 @@ fn identifier_hover(
     }
 
     if hover_text.is_empty()
-        && let Some(kind) = BuiltinTypeKind::try_from_interned_id(id.id)
+        && let Some(kind) = BuiltinTypeKind::try_from_interned_id(id.inner().id)
     {
         hover_text = Document::builtin_type_docs(kind).compose();
     }
@@ -244,7 +244,7 @@ fn entity_hover(
     state: &crate::state::DocumentState,
     compiler: &ScriptCompiler,
     entity: &SemanticEntity,
-    id: chrn_utils::id_types::InternedId,
+    id: chrn_utils::id_types::InternedIdUTF8,
 ) -> String {
     match entity {
         SemanticEntity::Symbol(sym_id) => symbol_hover(state, compiler, *sym_id),
@@ -260,7 +260,7 @@ fn entity_hover(
             module_hover(state, compiler, &compiler.mods[*mod_id], id)
         }
         SemanticEntity::Local { name_id, .. } => {
-            format!("{}: (param)", state.interner.extract_str_from_interned_id(*name_id))
+            format!("{}: (param)", state.interner.extract_utf8_str(*name_id))
         }
         SemanticEntity::ConfigMember { memb_id, .. } => {
             config_member_hover(state, compiler, *memb_id)
@@ -292,7 +292,7 @@ fn symbol_hover(
                 };
                 format!(
                     "{}: {} = {}",
-                    interner.extract_str_from_interned_id(sym.name_id),
+                    interner.extract_utf8_str(sym.name_id),
                     type_str,
                     val_str
                 )
@@ -306,7 +306,7 @@ fn symbol_hover(
             AssociatedScopeKind::Module(mod_id) => {
                 format!(
                     "module **{}**",
-                    interner.extract_str_from_interned_id(compiler.mods[mod_id].name_id)
+                    interner.extract_utf8_str(compiler.mods[mod_id].name_id)
                 )
             }
             AssociatedScopeKind::Scope(scope_id) => {
@@ -315,7 +315,11 @@ fn symbol_hover(
                 } else {
                     "Namespace"
                 };
-                format!("{} **{}**", namespace_kind, interner.extract_str_from_interned_id(sym.name_id))
+                format!(
+                    "{} **{}**",
+                    namespace_kind,
+                    interner.extract_utf8_str(sym.name_id)
+                )
             }
         },
         SymbolKind::ExternType(extern_ty) => extern_type_hover(interner, extern_ty),
@@ -366,8 +370,8 @@ fn extern_type_hover(interner: &Intern, extern_ty: ExternPlatformType) -> String
 
     format!(
         "extern type **{}**\n\n**Platform:** {}\n\n**Representation:** {}",
-        interner.extract_str_from_interned_id(metadata.name_id),
-        interner.extract_str_from_interned_id(extern_ty.platform_name()),
+        interner.extract_utf8_str(metadata.name_id),
+        interner.extract_utf8_str(extern_ty.platform_name()),
         representation
     )
 }
@@ -431,7 +435,7 @@ fn type_symbol_hover(
             let export_prefix = if sym.is_priv { "" } else { "export " };
             format!(
                 "module **{}**\n\n{}{}",
-                interner.extract_str_from_interned_id(compiler.mods[ModuleId::new(owner_id)].name_id),
+                interner.extract_utf8_str(compiler.mods[ModuleId::new(owner_id)].name_id),
                 export_prefix,
                 t
             )
@@ -451,7 +455,7 @@ fn field_hover(
     };
     let ast_id = sym.ast_id.expect("owner_decl checked the ast id");
     let field = &ast.get_struct(ast_id).fields[field_idx];
-    let field_name = state.interner.extract_str_from_interned_id(field.name_id);
+    let field_name = state.interner.extract_utf8_str(field.name_id);
 
     let struct_def = compiler.get_struct(owner_sym_id.into_tagged::<StructTag>());
     let field_repre = compiler.get_field(struct_def.fields[field_idx]);
@@ -476,7 +480,7 @@ fn variant_hover(
     };
     let ast_id = sym.ast_id.expect("owner_decl checked the ast id");
     let variant = &ast.get_enum(ast_id).variants[variant_idx];
-    let variant_name = state.interner.extract_str_from_interned_id(variant.name_id);
+    let variant_name = state.interner.extract_utf8_str(variant.name_id);
 
     let enum_def = compiler.get_enum(owner_sym_id.into_tagged::<EnumTag>());
     let variant_repre = compiler.get_variant(enum_def.variants[variant_idx]);
@@ -518,13 +522,18 @@ fn module_hover(
     state: &crate::state::DocumentState,
     compiler: &ScriptCompiler,
     module: &compilation::module::module_concepts::Module,
-    referenced_as: chrn_utils::id_types::InternedId,
+    referenced_as: chrn_utils::id_types::InternedIdUTF8,
 ) -> String {
     let interner = &state.interner;
     let mod_path = module
         .region_id
         .map(|region_id| &state.region_arena[region_id])
-        .map(|region| interner.extract_path_from_path_id(region.path_id).display().to_string())
+        .map(|region| {
+            interner
+                .extract_path_from_path_id(region.path_id)
+                .display()
+                .to_string()
+        })
         .unwrap_or_else(|| "<builtin>".to_string());
 
     let alias_prefix = compiler.mods[ModuleId::new(0)]
@@ -535,14 +544,14 @@ fn module_hover(
                 .as_ref()
                 .map(|sp_alias| sp_alias.inner)
                 .filter(|a| *a == referenced_as)
-                .map(|a| format!("alias **{}** | ", interner.extract_str_from_interned_id(a)))
+                .map(|a| format!("alias **{}** | ", interner.extract_utf8_str(a)))
         })
         .unwrap_or_default();
 
     format!(
         "{}module **{}**\n{}\npath: `{}`",
         alias_prefix,
-        interner.extract_str_from_interned_id(module.name_id),
+        interner.extract_utf8_str(module.name_id),
         document::HOVER_DASHES,
         mod_path
     )
@@ -555,7 +564,7 @@ fn config_member_hover(
     memb_id: chrn_utils::id_types::ImplMemberId,
 ) -> String {
     let cfg_member = compiler.get_cfg_member(memb_id.into_tagged::<ConfigMemberTag>());
-    let name = state.interner.extract_str_from_interned_id(cfg_member.common.name_id);
+    let name = state.interner.extract_utf8_str(cfg_member.common.name_id);
     let type_of = |type_id| {
         format_type(
             &compiler.types[type_id].ty,
@@ -599,7 +608,7 @@ fn config_option_hover(
         ImplMemberKind::OptAssignmentMember(opt) => opt.name_id,
         _ => return String::new(),
     };
-    let name = state.interner.extract_str_from_interned_id(name_id);
+    let name = state.interner.extract_utf8_str(name_id);
     document::Document::config_option_docs(name_id)
         .map(|doc| doc.compose())
         .unwrap_or_else(|| format!("**{}**\n\nUnknown option", name))
@@ -714,10 +723,10 @@ fn format_type(
                 format!("Tuple<{}>", elems.join(", "))
             }
             BuiltinType::Runtime => "Runtime".into(),
-            b => interner.extract_str_from_interned_id(b.kind().name_id()).to_string(),
+            b => interner.extract_utf8_str(b.kind().name_id()).to_string(),
         },
         Type::Struct(struct_def) => {
-            let name = interner.extract_str_from_interned_id(compiler.syms[struct_def.self_id.inner()].name_id);
+            let name = interner.extract_utf8_str(compiler.syms[struct_def.self_id.inner()].name_id);
 
             if matches!(style, TypeDisplay::Reference) {
                 return name.to_string();
@@ -731,7 +740,7 @@ fn format_type(
                     .iter()
                     .map(|memb_id| {
                         let field = compiler.get_field(*memb_id);
-                        let field_name = interner.extract_str_from_interned_id(field.name_id);
+                        let field_name = interner.extract_utf8_str(field.name_id);
                         let field_ty = &compiler.types[field.type_id].ty;
                         let field_ty_str =
                             format_type(field_ty, compiler, interner, TypeDisplay::Reference);
@@ -742,7 +751,7 @@ fn format_type(
             }
         }
         Type::Enum(enum_def) => {
-            let name = interner.extract_str_from_interned_id(compiler.syms[enum_def.self_id.inner()].name_id);
+            let name = interner.extract_utf8_str(compiler.syms[enum_def.self_id.inner()].name_id);
 
             if matches!(style, TypeDisplay::Reference) {
                 return name.to_string();
@@ -756,7 +765,7 @@ fn format_type(
                     .iter()
                     .map(|memb_id| {
                         let variant = compiler.get_variant(*memb_id);
-                        let variant_name = interner.extract_str_from_interned_id(variant.name_id);
+                        let variant_name = interner.extract_utf8_str(variant.name_id);
 
                         if let Some(type_id) = variant.type_id {
                             let variant_ty = &compiler.types[type_id].ty;
@@ -772,7 +781,7 @@ fn format_type(
             }
         }
         Type::Func(func) => {
-            let name = interner.extract_str_from_interned_id(func.name_id);
+            let name = interner.extract_utf8_str(func.name_id);
             let prefix = match func.kind.form() {
                 FuncForm::Call => "function",
                 FuncForm::Predicate => "predicate",
@@ -781,7 +790,7 @@ fn format_type(
             format!("{prefix} {name}")
         }
         Type::Alias(alias_def) => {
-            let name = interner.extract_str_from_interned_id(compiler.syms[alias_def.self_id.inner()].name_id);
+            let name = interner.extract_utf8_str(compiler.syms[alias_def.self_id.inner()].name_id);
 
             if matches!(style, TypeDisplay::Reference) {
                 return name.to_string();
@@ -791,7 +800,7 @@ fn format_type(
                 .params
                 .iter()
                 .map(|p| {
-                    let p_name = interner.extract_str_from_interned_id(compiler.syms[p.sym_id].name_id);
+                    let p_name = interner.extract_utf8_str(compiler.syms[p.sym_id].name_id);
                     let p_constraint = format_type(
                         &compiler.types[p.type_id].ty,
                         compiler,
@@ -837,7 +846,7 @@ fn format_value(v: &Value, interner: &Intern) -> String {
             format!("({})", parts.join(", "))
         }
         Value::InternedStr(id) => {
-            format!("\"{}\"", interner.extract_str_from_interned_id(*id))
+            format!("\"{}\"", interner.extract_utf8_str(*id))
         }
         Value::RuntimeStr(s) => format!("\"{s}\""),
         Value::Func(_) => "Function".to_string(),

@@ -22,7 +22,7 @@ pub struct ConcreteTypeDef {
 
 // #[derive(Debug)]
 // pub struct AbstractTypeDef {
-//     pub name_id: InternedId,
+//     pub name_id: InternedIdUTF8,
 //     pub name_span: SourceSpan,
 //     pub sp_ty_expr: SpannedContainer<TypeExpr>,
 //     pub conds: Vec<SpannedContainer<AstExpr>>,
@@ -31,7 +31,7 @@ pub struct ConcreteTypeDef {
 //
 // impl AbstractTypeDef {
 //     pub fn new(
-//         name_id: InternedId,
+//         name_id: InternedIdUTF8,
 //         name_span: SourceSpan,
 //         sp_ty_expr: SpannedContainer<TypeExpr>,
 //         directives: Vec<AbstractDirective>,

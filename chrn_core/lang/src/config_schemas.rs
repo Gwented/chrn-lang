@@ -1,6 +1,7 @@
+use chrn_utils::id_types::{InternedId, id_tags::UTF8Tag};
 use std::fmt::Display;
 
-use chrn_utils::{id_types::InternedId, intern};
+use chrn_utils::{id_types::InternedIdUTF8, intern};
 
 use crate::types::boundaries::TypeBoundaryFlags;
 
@@ -20,11 +21,11 @@ impl ConfigSchema {
     // Manual hashmap.
 
     /// Attempts to find option from the given identifier and returns it's `OptionSchema`
-    pub const fn get_opt(&self, target_name_id: InternedId) -> Option<&OptionSchema> {
+    pub const fn get_opt(&self, target_name_id: InternedIdUTF8) -> Option<&OptionSchema> {
         let mut i = 0;
         while i < self.opt_schema.len() {
             let opt = &self.opt_schema[i];
-            if opt.name_id.id == target_name_id.id {
+            if opt.name_id.inner().id == target_name_id.inner().id {
                 return Some(opt);
             }
             i += 1;
@@ -35,7 +36,7 @@ impl ConfigSchema {
     /// Attempts to find option from the given identifier
     ///
     /// Returns `true` if present, `false` if not
-    pub const fn has_opt(&self, target_name_id: InternedId) -> bool {
+    pub const fn has_opt(&self, target_name_id: InternedIdUTF8) -> bool {
         self.get_opt(target_name_id).is_some()
     }
 }
@@ -43,13 +44,13 @@ impl ConfigSchema {
 /// Represents a configs options, that are preloaded by the compiler as schemas to follow
 #[derive(Debug)]
 pub struct OptionSchema {
-    pub name_id: InternedId,
+    pub name_id: InternedIdUTF8,
     pub boundaries: Option<OptionSchemaConstraint>,
 }
 
 impl OptionSchema {
     pub const fn new(
-        name_id: InternedId,
+        name_id: InternedIdUTF8,
         boundaries: Option<OptionSchemaConstraint>,
     ) -> OptionSchema {
         OptionSchema {
@@ -97,15 +98,15 @@ pub enum OptionSchemaConstraint {
 }
 
 const OPT_DEFAULT_VAL: OptionSchema = OptionSchema::new(
-    InternedId::new(intern::INTERNED_DEFAULT_VAL),
+    InternedId::new(intern::INTERNED_DEFAULT_VAL).into_tagged::<UTF8Tag>(),
     Some(OptionSchemaConstraint::SameTypeAsConfig),
 );
 const OPT_IDENTS: OptionSchema = OptionSchema::new(
-    InternedId::new(intern::INTERNED_IDENTS),
+    InternedId::new(intern::INTERNED_IDENTS).into_tagged::<UTF8Tag>(),
     Some(OptionSchemaConstraint::Boundaries(TypeBoundaryFlags::STR)),
 );
 const OPT_CASES: OptionSchema = OptionSchema::new(
-    InternedId::new(intern::INTERNED_CASES),
+    InternedId::new(intern::INTERNED_CASES).into_tagged::<UTF8Tag>(),
     Some(OptionSchemaConstraint::Boundaries(TypeBoundaryFlags::STR)),
 );
 
