@@ -446,14 +446,12 @@ impl Intern {
     /// Returns `&str` if the id exists, trusting the UTF-8 guarantee.
     pub fn get_utf8_str(&self, id: InternedIdUTF8) -> Option<&str> {
         let bytes = self.get_bytes(id)?;
-        // SAFETY: the UTF-8 tag identifies valid text; bytes are never modified or removed.
         Some(Self::assume_utf8(bytes, id))
     }
 
     /// Returns `&str`, assuming the `InternedIdUTF8` is valid.
     pub fn extract_utf8_str(&self, id: InternedIdUTF8) -> &str {
         let bytes = self.extract_bytes(id);
-        // SAFETY: the UTF-8 tag identifies valid text; bytes are never modified or removed.
         Self::assume_utf8(bytes, id)
     }
 
@@ -509,6 +507,7 @@ impl Intern {
     // Not sure if this is actually the best way to do it.
     // Rust book mentions wrapping unsafe with safe, given a proper invariant so this is here.
     fn assume_utf8(bytes: &[u8], _: InternedIdUTF8) -> &str {
+        // SAFETY: the UTF-8 tag denotes validity
         unsafe { str::from_utf8_unchecked(bytes) }
     }
 

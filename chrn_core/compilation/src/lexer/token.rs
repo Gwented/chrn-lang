@@ -63,9 +63,6 @@ pub enum TokenStringKind {
     MaybeUTF8(TaggedId<InternedId, MaybeUTF8Tag>),
 }
 
-//TEST: Maybe we should just use
-//What if the interner interned all strings as a vector of bytes and did unchecked utf8 for all that
-//stores they were a string so both have the same storage area question mark
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TokenString {
     pub interned_id: InternedIdUTF8,
@@ -86,11 +83,11 @@ pub enum StringForm {
     /// May or may not contain invalid UTF-8. Still considered valid.
     /// Declaration: as p"(Imagine a replacement character being here) I am still valid"
     ///
-    /// 'p' will stand for permissive or path.
+    /// 'p' stands for permissive or path.
     MaybeUTF8,
 }
 
-// WHAT
+/// chrn
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Token {
     // To help with error messages
@@ -102,9 +99,12 @@ pub enum Token {
     BoolLiteral(bool),
     Id(InternedIdUTF8),
     //TODO: Either TokenStringKind or Str and PStr. Should have a .bytes(), just because.
+    // May need two enums in the enum since a utf8 string cannot be a maybe form, but may have other
+    // forms representable. But maybe forms have opposite issue. Something!
     Str(TokenString),
     Integer(TokenInt),
     Float(TokenFloat),
+    /// Lossily converted
     Invalid(InternedIdUTF8),
     Char(char),
     OParen,

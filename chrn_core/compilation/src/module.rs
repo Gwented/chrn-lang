@@ -458,6 +458,10 @@ pub fn extract_modules(
         valid_mods.push(importer_mod);
     }
 
+    // let x = valid_mods.iter().for_each(|e| {
+    //     dbg!(interner.extract_utf8_str(e.name_id));
+    // });
+
     // Still concerning
     cfg.perf_tracker_mut().stop(ChrnPerfStage::ModuleGraph);
 

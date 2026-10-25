@@ -21,7 +21,7 @@ use chrn_utils::id_types::{
     AstId, DirectiveId, ExprId, ImplId, ImplMemberId, InternedIdUTF8, MemberId, ScopeId, SymbolId,
     TypeId,
 };
-use chrn_utils::intern::{self, Intern};
+use chrn_utils::intern::Intern;
 use chrn_utils::source_map::source_diagnostic::annotations::AnnotationKind;
 use chrn_utils::source_map::source_diagnostic::{
     DiagnosticLevel, SourceDiagnostic, SourceDiagnosticSink, SourceDiagnosticSummary,
@@ -1486,7 +1486,8 @@ impl<'res> TypeResolver<'res> {
                                         .compiler
                                         .get_name_id_from_type_id(type_id)
                                         .expect("NOT DONE YET");
-                                    let found_name = self.interner.extract_utf8_str(found_type_name_id);
+                                    let found_name =
+                                        self.interner.extract_utf8_str(found_type_name_id);
 
                                     let preset_err =
                                         PresetErr::Lookup(LookupError::ImpossibleTypeMemberAccess(

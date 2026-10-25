@@ -613,12 +613,9 @@ impl Lexer<'_> {
                 }
             }
         }
-        //WARN: Slow.
-        // dbg!(toks.len());
+        // dbg!(speculated_toks, self.cursor.len(), toks.len());
 
         self.cfg.perf_tracker_mut().stop(ChrnPerfStage::Lexer);
-        // dbg!(&toks);
-        // panic!();
 
         let mut trivia: Vec<Trivia> = Vec::with_capacity(self.trivia.len());
         trivia.append(&mut self.trivia);
@@ -899,7 +896,11 @@ impl Lexer<'_> {
     // Please
     /// Reads bytes until an end quote is reached. May return an invalid token.
     fn read_quotes(&mut self, form: StringForm, interner: &mut Intern) -> SpannedToken {
-        let start = self.cursor.pos();
+        let start = match form {
+            StringForm::Default => self.cursor.pos(),
+            //WARN: Hi
+            StringForm::MaybeUTF8 => self.cursor.pos() - 1,
+        };
 
         while self.cursor.pos() < self.cursor.len() {
             match self.peek() {
@@ -923,37 +924,53 @@ impl Lexer<'_> {
         }
 
         //WARN: IS - 1 BECAUSE THE QUOTE IS SKIPPED PAST
-        //"Hello"\"e" -> removing the "e" "Hello\"" now it probably sets up for an exclusive end
         let end = self.cursor.pos() - 1;
 
-        let quotes_res = str::from_utf8(&self.cursor.items[start..end]);
+        let slice = &self.cursor.items[start..end];
 
-        // This is to keep the quotes captured
+        // This is to keep the quotes captured.
+        // TODO:  Maybe  capture the p in p""?
         //WARN: CHANGED END TO END + 1 SO THAT IT MATCHES END QUOTE CAPTURING BEHAVIOR FOR SPANNING
         let span = SourceSpan::new(self.current_region_id, (start - 1) as u32, (end + 1) as u32);
 
-        match quotes_res {
-            Ok(p) => {
-                let interned_id = interner.intern_str(p);
-                SpannedToken {
-                    tok: Token::Str(TokenString::new(interned_id, form)),
-                    span,
-                    leading_trivia_indices: self.trivia_start_idx as u32
-                        ..self.trivia_end_idx as u32,
+        match form {
+            StringForm::Default => {
+                let quotes_res = str::from_utf8(slice);
+                match quotes_res {
+                    Ok(p) => {
+                        let interned_id = interner.intern_str(p);
+                        SpannedToken {
+                            tok: Token::Str(TokenString::new(interned_id, form)),
+                            span,
+                            leading_trivia_indices: self.trivia_start_idx as u32
+                                ..self.trivia_end_idx as u32,
+                        }
+                    }
+                    Err(_) => {
+                        // Would need recover invaild to understand quote behavior to re-use it here
+                        // self.recover_invalid(Some(start - 1), interner);
+                        self.increment_invalid_tok();
+                        let invalid_str = String::from_utf8_lossy(slice);
+                        let msg_id = interner.intern_str(&invalid_str);
+                        SpannedToken {
+                            tok: Token::Invalid(msg_id),
+                            span,
+                            leading_trivia_indices: self.trivia_start_idx as u32
+                                ..self.trivia_end_idx as u32,
+                        }
+                    }
                 }
             }
-            Err(_) => {
-                // Would need recover invaild to understand quote behavior to re-use it here
-                // self.recover_invalid(Some(start - 1), interner);
-                self.increment_invalid_tok();
-                let invalid_str = String::from_utf8_lossy(&self.cursor.items[start..end]);
-                let msg_id = interner.intern_str(&invalid_str);
-                SpannedToken {
-                    tok: Token::Invalid(msg_id),
-                    span,
-                    leading_trivia_indices: self.trivia_start_idx as u32
-                        ..self.trivia_end_idx as u32,
-                }
+            // This COULD use backquotes. Maybe no.
+            StringForm::MaybeUTF8 => {
+                let interned_id = interner.intern_bytes(slice);
+                // SpannedToken {
+                //     tok: Token::Str(TokenString::new(interned_id, form)),
+                //     span,
+                //     leading_trivia_indices: self.trivia_start_idx as u32
+                //         ..self.trivia_end_idx as u32,
+                // }
+                todo!();
             }
         }
     }

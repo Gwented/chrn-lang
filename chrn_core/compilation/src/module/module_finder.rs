@@ -2,6 +2,8 @@
 use std::{ffi::OsStr, path::PathBuf, str::FromStr};
 
 use chrn_utils::err_codes::ErrorCode;
+use chrn_utils::platform::files::error::PathConversionErrorKind;
+use chrn_utils::platform::{self, files};
 use chrn_utils::source_map::source_diagnostic::annotations::AnnotationKind;
 use chrn_utils::source_map::source_diagnostic::{
     DiagnosticLevel, SourceDiagnosticSink, SourceDiagnosticSummary,
@@ -19,7 +21,7 @@ use lang::keywords;
 use toolsc::cursors::BasicCursor;
 
 use crate::chrn_config::ChrnConfig;
-use crate::module::module_concepts::Bind;
+use crate::module::module_concepts::{self, Bind};
 use crate::module::{Import, ImportKind};
 
 /// Module graph start-up structure that finds imports and assigns them a `ModuleId` from `seen`.
@@ -210,29 +212,8 @@ impl ModuleFinder<'_> {
 
         // We could check for an alias here too in case the file name is invalid and needs an alias
         //TODO:
-        let file_name = match import_path.file_prefix().map(|n| n.to_str()).flatten() {
-            Some(n) => n,
-            _ => {
-                let core_msg = format!(
-                    "Failed to extract file name for path \"{}\"",
-                    import_path.display()
-                );
+        let file_name_opt = import_path.file_prefix().map(|n| n.to_str()).flatten();
 
-                //TODO: Aliasing
-                let src_diag = SourceDiagnostic::builder(
-                    ErrorCode::ImportErr.into(),
-                    DiagnosticLevel::Error,
-                    core_msg,
-                    self.current_region.path_id,
-                )
-                .add_annotation(path_span, AnnotationKind::Primary, None)
-                .build();
-
-                return Err(src_diag);
-            }
-        };
-
-        let name_id = interner.intern_str(&file_name);
         let path_id = interner.intern_path(&import_path);
 
         let alias_id: Option<SpannedContainer<InternedIdUTF8>> = if self.is_as() {
@@ -246,6 +227,30 @@ impl ModuleFinder<'_> {
             .into()
         } else {
             None
+        };
+
+        // Allows for aliases to be used if import's path is not UTF-8
+        let name_id = if let Some(name) = file_name_opt {
+            interner.intern_str(name)
+        } else if let Some(SpannedContainer { inner, .. }) = alias_id {
+            inner
+        } else {
+            let core_msg = format!("Path \"{}\" contains Non-UTF-8", import_path.display());
+
+            //TODO: Aliasing
+            let src_diag = SourceDiagnostic::builder(
+                ErrorCode::ImportErr.into(),
+                DiagnosticLevel::Error,
+                core_msg,
+                self.current_region.path_id,
+            )
+            .add_annotation(path_span, AnnotationKind::Primary, None)
+            //TODO: This is more of a warn than error because the compiler still functions
+            // fine without the identifier.
+            .add_note("Non-UTF-8 is accepted as a file path but requires an `as` alias so the module can still be referenced in-file")
+            .build();
+
+            return Err(src_diag);
         };
 
         let import_kind = ImportKind::UnresolvedSource(SpannedContainer::new(path_id, path_span));
@@ -266,26 +271,10 @@ impl ModuleFinder<'_> {
     //WARN: Will be placed in different module
     //FIX: ugf3 8
     fn create_pathbuf(&self, slice: &[u8]) -> Result<PathBuf, SourceDiagnostic> {
-        if cfg!(unix) {
-            #[cfg(unix)]
-            {
-                use std::os::unix::ffi::OsStrExt;
-                let os_str = OsStr::from_bytes(slice);
-                return Ok(PathBuf::from(os_str));
-            }
-        } else if cfg!(windows) {
-            // NOTE: This may be done differently but remains a basic utf-8 check for now
-            // #[cfg(windows)]
-            // {
-            //     use std::os::windows::ffi::OsStrExt;
-            //     let os_str = OsStr::from_wide(slice);
-            //
-            //     return Ok(PathBuf::from(slice));
-            // }
-            //TODO: Do not. Enforce. UTF-8. !
-            match str::from_utf8(slice) {
-                Ok(s) => return Ok(PathBuf::from_str(&s).expect("Infallable")),
-                Err(_) => {
+        match files::pathbuf_from_bytes(slice) {
+            Ok(p) => Ok(p),
+            Err(kind) => match kind {
+                PathConversionErrorKind::InvalidUTF8 => {
                     let msg = "Invalid UTF-8 found within file".to_string();
                     let src_diag = SourceDiagnostic::builder(
                         None,
@@ -295,25 +284,9 @@ impl ModuleFinder<'_> {
                     )
                     .build();
 
-                    return Err(src_diag);
+                    Err(src_diag)
                 }
-            }
-        }
-
-        match str::from_utf8(slice) {
-            Ok(s) => Ok(PathBuf::from_str(&s).expect("Infallible")),
-            Err(_) => {
-                let msg = "Invalid UTF-8 found within file".to_string();
-                let src_diag = SourceDiagnostic::builder(
-                    None,
-                    DiagnosticLevel::Error,
-                    msg,
-                    self.current_region.path_id,
-                )
-                .build();
-
-                Err(src_diag)
-            }
+            },
         }
     }
 
@@ -540,7 +513,13 @@ impl ModuleFinder<'_> {
         }
 
         //FIX: Utf 98
+        //FIX: Doesn't skip comments
         self.skip_whitespace();
+
+        //WARN: If ever exceeds just `u8` will need different check
+        if module_concepts::STR_PREFIXES.contains(&self.peek()) {
+            self.advance_char();
+        }
 
         if self.peek() != b'"' {
             return false;
@@ -578,6 +557,10 @@ impl ModuleFinder<'_> {
 
         //FIX: Utf 98
         self.skip_whitespace();
+
+        if module_concepts::STR_PREFIXES.contains(&self.peek()) {
+            self.advance_char();
+        }
 
         if self.peek() != b'"' {
             return false;

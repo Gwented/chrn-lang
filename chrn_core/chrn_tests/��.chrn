@@ -1,0 +1,4 @@
+// Since the invalid characters themselves are multi-byte
+//let hopefully_invalid = "pre_`echo -e ""`"
+//let valid_p = p"ÿ€"
+//let invalid = "ÿ€"

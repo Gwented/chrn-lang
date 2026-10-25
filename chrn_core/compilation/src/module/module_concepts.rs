@@ -5,6 +5,9 @@ use chrn_utils::{
     utils::containers::SpannedContainer,
 };
 
+/// All known prefixes for strings such as p""
+pub static STR_PREFIXES: [u8; 1] = [b'p'];
+
 //TODO:
 //Maybe, a kind field that says user or builtin,
 //or, a wrapper that has a module that could explicitly represent if it's user or not

@@ -8,7 +8,7 @@ import "../chrn_core/chrn_tests/other.chrn"
 // import "../chrn_core/chrn_tests/nothing.chrn"
 // import "../chrn_core/chrn_tests/core.chrn"
 
-let x = i32::MIN
+let x = i32::MIN - 1
 
 // if this was something that wanted to be added, that would then mean the compiler store needs to be 
 // mutable, but the environments USE the compiler store, which makes it hard to concat and intern

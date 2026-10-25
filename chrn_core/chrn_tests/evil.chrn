@@ -76,9 +76,19 @@ for varthing1 {}
 // let decimal_overflow = p"GOBSMACKED"
 // We want "invalid" strings. Strings not marked with invalid are lossily converted and have
 // errors sent.
-// let invalid = p"I speak ï¿½."
 // Maybe just prefer formatted strnigs being a funcjionnssdjl. Ok.
 // p""
+// Help.
+
+// Windows needs help
+// Also this needs to be `Option` as module identifiers internalyl for it to become a warn on
+// no alias
+import p"../chrn_core/chrn_tests/ÿ€.chrn" as aliasing
+// import "../chrn_core/chrn_tests/ÿ€.chrn" as unsized
+@end
+
+// let x = i128::MAX
+let invalid = p"I speak ï¿½."
 
 // printf 'let invalid_utf8 = \xFF' >> ../chrn_core/chrn_tests/evil.chrn
 var->

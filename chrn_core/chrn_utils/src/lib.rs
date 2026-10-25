@@ -8,6 +8,7 @@ pub mod id_types;
 pub mod intern;
 pub mod macros;
 pub mod pair;
+pub mod platform;
 pub mod source_map;
 pub mod utils;
 
