@@ -202,6 +202,22 @@ fn cfg_empty_file_test() {
     assert!(res.serial_start.is_none());
 }
 
+/// A standalone configuration starts at the beginning of the file, regardless of its EOF position.
+#[test]
+fn cfg_markerless_region_start_metadata_test() {
+    let input = "var->\nvalue: i32";
+    let region = load_cfg(input).expect_success();
+
+    assert_eq!(region.src_bytes, input.as_bytes());
+    assert_eq!(region.script_start, 0);
+    assert_eq!(region.serial_start, None);
+    assert_eq!(
+        (region.abs_ln_num_start, region.abs_col_start),
+        (1, 1),
+        "a region beginning at file offset zero must begin at line 1, column 1"
+    );
+}
+
 /// Line comments terminated by CRLF preserve source bytes and do not interfere with
 /// subsequent source scanning.
 #[test]
@@ -225,6 +241,30 @@ fn cfg_lone_at_sign_at_eof_test() {
     assert!(res.serial_start.is_none());
     assert_eq!(res.script_start, 0);
     assert_eq!(std::str::from_utf8(&res.src_bytes).unwrap(), "some text @");
+}
+
+/// An incomplete marker is ordinary source text; scanning must still diagnose a following
+/// unterminated quote instead of accepting the remainder without inspecting it.
+#[test]
+fn cfg_incomplete_marker_preserves_unclosed_quote_diagnostic_test() {
+    let input = "@\"";
+    match load_cfg(input) {
+        ConfigLoaderOutput::Broken(region, ConfigLoadError::Diagnostic(diag)) => {
+            assert_eq!(region.src_bytes, input.as_bytes());
+            assert_eq!(region.script_start, 0);
+            assert_eq!(region.serial_start, None);
+            assert_eq!(diag.core_msg, "Unclosed quotes reached end of read limit");
+            assert_eq!(diag.annotations.len(), 1);
+            let primary = &diag.annotations[0];
+            assert_eq!(primary.kind, AnnotationKind::Primary);
+            assert_eq!(primary.span.start..primary.span.end, 1..2);
+            assert_eq!(
+                &region.src_bytes[primary.span.start as usize..primary.span.end as usize],
+                b"\""
+            );
+        }
+        other => panic!("expected an unclosed-quote diagnostic after incomplete marker, got {other:?}"),
+    }
 }
 
 /// Unmatched `@` characters remain ordinary source text; only complete recognized markers
@@ -625,6 +665,35 @@ fn cfg_missing_at_end_eof_span_is_region_relative_test() {
     }
 }
 
+/// The opening marker counts toward the region budget; a missing-end diagnostic cannot
+/// point into the four bytes beyond the retained region.
+#[test]
+fn cfg_missing_at_end_at_region_limit_has_in_bounds_eof_span_test() {
+    const LIMIT: usize = chrn_utils::MAX_REGION_SIZE;
+    let mut input = b"@def".to_vec();
+    input.resize(LIMIT + 4, b' ');
+
+    match load_cfg_bytes(&input) {
+        ConfigLoaderOutput::Broken(region, ConfigLoadError::Diagnostic(diag)) => {
+            assert_eq!(region.script_start, 0);
+            assert_eq!(region.serial_start, None);
+            assert_eq!(region.src_bytes, input[..LIMIT]);
+            assert_eq!(diag.core_msg, "Could not find `@end` after `@def`");
+            let primary = diag
+                .annotations
+                .iter()
+                .find(|annotation| annotation.kind == AnnotationKind::Primary)
+                .expect("missing-end diagnostic must identify the last in-budget byte");
+            assert_eq!(
+                primary.span.start..primary.span.end,
+                (LIMIT - 1) as u32..LIMIT as u32,
+                "the EOF span must cover the final retained byte, not bytes beyond the region"
+            );
+        }
+        other => panic!("expected a broken region with a missing-end diagnostic, got {other:?}"),
+    }
+}
+
 /// A multi-line comment delimiter that crosses the region limit is not recognized as complete.
 /// Out-of-budget lookahead must not close an in-budget comment.
 #[test]
@@ -782,5 +851,34 @@ fn cfg_unclosed_multi_comment_inside_at_def_spans_are_region_relative_test() {
             );
         }
         other => panic!("expected Broken with Diagnostic, got: {other:?}"),
+    }
+}
+
+/// Bytes outside the retained embedding cannot introduce a quote or an out-of-bounds span.
+#[test]
+fn cfg_quote_beyond_embedding_limit_is_not_scanned_test() {
+    const LIMIT: usize = chrn_utils::MAX_REGION_SIZE;
+    let mut input = b"@def".to_vec();
+    input.resize(LIMIT, b' ');
+    input.push(b'"');
+
+    match load_cfg_bytes(&input) {
+        ConfigLoaderOutput::Broken(region, ConfigLoadError::Diagnostic(diag)) => {
+            assert_eq!(region.src_bytes, input[..LIMIT]);
+            assert_eq!(region.script_start, 0);
+            assert_eq!(region.serial_start, None);
+            let primary = diag
+                .annotations
+                .iter()
+                .find(|annotation| annotation.kind == AnnotationKind::Primary)
+                .expect("missing-end diagnostic must identify the last in-budget byte");
+            assert_eq!(
+                primary.span.start..primary.span.end,
+                (LIMIT - 1) as u32..LIMIT as u32,
+                "a quote outside the region must not replace the in-budget EOF span"
+            );
+            assert_eq!(diag.core_msg, "Could not find `@end` after `@def`");
+        }
+        other => panic!("expected a missing-end diagnostic, got {other:?}"),
     }
 }

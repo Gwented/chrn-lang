@@ -1,6 +1,0 @@
-[package]
-name = "chrn_model"
-version.workspace = true
-edition.workspace = true
-
-[dependencies]

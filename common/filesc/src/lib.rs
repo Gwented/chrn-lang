@@ -6,8 +6,6 @@ use std::{
     ptr,
 };
 
-use algoc::mixer;
-
 const MAX_TEMP_FILE_CREATION_ATTEMPTS: u16 = 500;
 
 /// Writes `to_write` into the file `dest` at the front.
@@ -26,7 +24,7 @@ pub fn write_bytes_front(dest: &Path, to_write: &[u8]) -> Result<(), io::Error> 
 
 /// Writes `to_write` into the file `dest` from the beginning.
 ///
-/// Creates a file with a random name, puts `to_write` inside, streams `dest`'s contents into it,
+/// Creates a file with a generated name, puts `to_write` inside, streams `dest`'s contents into it,
 /// removes the original file, then renames the random file name to the original file name `dest` had.
 ///
 /// NOTE: Internally creates custom errors using the same `std::io::Error` type where needed.
@@ -55,7 +53,7 @@ pub fn write_bytes_front_stream(
     // File that will be renamed after being streamed into
     let stream_file = create_unique_file(&mut stream_file_path, tmp_file_name_suffix)?;
 
-    // 32KB is probably fine?
+    // 32 KiB is probably fine?
     let mut stream_writer = BufWriter::with_capacity(32768, stream_file);
 
     // Writing given bytes to duplicate before streaming into file

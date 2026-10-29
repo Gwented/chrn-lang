@@ -67,23 +67,21 @@ pub struct ConfigLoader<'a, R: Read> {
     cfg: &'a ChrnConfig,
     ln_num_tracker: FreezeTrackerU32,
     col_tracker: FreezeTrackerU32,
-    /// Position specifically used for navigating the IO buffer
+    /// Cursor for navigating `persistent_buffer`
     cursor: usize,
+    /// Absolute position in file
     abs_pos: usize,
-    /// The max amount of bytes to stop it, which is dynamically set, hence why it's apart of the struct.
-    /// (It says dynamically set but it's not dynamically set yet. It just relies on
-    /// `bytes_consumed_rel`)
+    /// The limit of bytes that can be consumed
     limit: usize,
     // Need to keep script_start to have this be a method where we have the abs version by default.
     /// Bytes consumed relative to `@def` if present, otherwise it's relative to the start of file,
     /// 0.
     bytes_consumed_start_rel: usize,
-    // -- NEW --
     /// Buffer that may or may not exceed 64 Kib which is where operations should index from.
     persistent_buffer: Vec<u8>,
     /// Buffer that refills `persistent_buffer`. This should never be indexed.
     handle: BufReader<R>,
-    /// The absolute start of the file which may be simply pos = 0 or starting at the d in @def
+    /// The absolute start of the file which may be 0 or starting at the d in @def
     script_start: usize,
 }
 
@@ -183,12 +181,12 @@ impl<R: Read> ConfigLoader<'_, R> {
                     None => break,
                 },
                 Err(e) => {
-                    //TODO:
                     let out = if self.persistent_buffer.is_empty() {
                         let cfg_err = ConfigLoadError::IO(e);
                         ConfigLoaderOutput::UnrecoverableErr(cfg_err)
                     } else {
-                        let broken_region = self.create_region(None, !requires_end);
+                        let broken_region =
+                            self.create_region(None, !requires_end, self.actual_len());
                         let cfg_err = ConfigLoadError::IO(e);
                         ConfigLoaderOutput::Broken(broken_region, cfg_err)
                     };
@@ -242,7 +240,8 @@ impl<R: Read> ConfigLoader<'_, R> {
                             };
 
                             let src_diag = builder.build();
-                            let broken_region = self.create_region(None, !requires_end);
+                            let broken_region =
+                                self.create_region(None, !requires_end, self.actual_len());
 
                             return ConfigLoaderOutput::Broken(
                                 broken_region,
@@ -250,7 +249,8 @@ impl<R: Read> ConfigLoader<'_, R> {
                             );
                         }
                         QuoteResult::IO(e) => {
-                            let broken_region = self.create_region(None, !requires_end);
+                            let broken_region =
+                                self.create_region(None, !requires_end, self.actual_len());
                             let config_load_err = ConfigLoadError::IO(e);
                             return ConfigLoaderOutput::Broken(broken_region, config_load_err);
                         }
@@ -300,7 +300,8 @@ impl<R: Read> ConfigLoader<'_, R> {
 
                             let src_diag = diag_builder.build();
 
-                            let broken_region = self.create_region(None, !requires_end);
+                            let broken_region =
+                                self.create_region(None, !requires_end, self.actual_len());
 
                             return ConfigLoaderOutput::Broken(
                                 broken_region,
@@ -308,7 +309,8 @@ impl<R: Read> ConfigLoader<'_, R> {
                             );
                         }
                         QuoteResult::IO(e) => {
-                            let broken_region = self.create_region(None, !requires_end);
+                            let broken_region =
+                                self.create_region(None, !requires_end, self.actual_len());
                             let cfg_err = ConfigLoadError::IO(e);
                             return ConfigLoaderOutput::Broken(broken_region, cfg_err);
                         }
@@ -329,7 +331,8 @@ impl<R: Read> ConfigLoader<'_, R> {
                             None => break,
                         },
                         Err(e) => {
-                            let broken_region = self.create_region(None, !requires_end);
+                            let broken_region =
+                                self.create_region(None, !requires_end, self.actual_len());
                             let cfg_err = ConfigLoadError::IO(e);
                             return ConfigLoaderOutput::Broken(broken_region, cfg_err);
                         }
@@ -340,7 +343,8 @@ impl<R: Read> ConfigLoader<'_, R> {
                         match self.handle_comment() {
                             Ok(_) => (),
                             Err(e) => {
-                                let broken_region = self.create_region(None, !requires_end);
+                                let broken_region =
+                                    self.create_region(None, !requires_end, self.actual_len());
                                 let config_load_err = ConfigLoadError::IO(e);
                                 return ConfigLoaderOutput::Broken(broken_region, config_load_err);
                             }
@@ -350,12 +354,14 @@ impl<R: Read> ConfigLoader<'_, R> {
                         match self.handle_multi_comment() {
                             MultiCommentResult::Success => (),
                             MultiCommentResult::Diagnostic(diag) => {
-                                let region = self.create_region(None, !requires_end);
+                                let region =
+                                    self.create_region(None, !requires_end, self.actual_len());
                                 let cfg_err = ConfigLoadError::Diagnostic(diag);
                                 return ConfigLoaderOutput::Broken(region, cfg_err);
                             }
                             MultiCommentResult::IO(e) => {
-                                let region = self.create_region(None, !requires_end);
+                                let region =
+                                    self.create_region(None, !requires_end, self.actual_len());
                                 let cfg_err = ConfigLoadError::IO(e);
                                 return ConfigLoaderOutput::Broken(region, cfg_err);
                             }
@@ -365,7 +371,6 @@ impl<R: Read> ConfigLoader<'_, R> {
                 b'@' => {
                     // This @ is not skipped for the sake of keeping self.pos at the same starting point.
 
-                    let clause_end_abs = self.abs_pos + (EMBEDDING_CLAUSE_SIZE - 1);
                     // The limit is relative to 32Kib so we need a rel version
 
                     // NOTE: Why is this - 1 here?
@@ -394,25 +399,20 @@ impl<R: Read> ConfigLoader<'_, R> {
                     //attempt to read past the limit. This IS possible and would not break the
                     //region limit but keeping that out for simplicity.
 
-                    //FIX: "cfg_at_end_straddling_read_limit_is_rejected_test" fails because @end
-                    //extends past length. Need to say "can_check" is false
                     let maybe_embed_slice =
                         // Since this is @ + @def, it ends one byte after @def, which is what we
                         // want since it's exclusive.
                         match self.slice(self.cursor..self.cursor + EMBEDDING_CLAUSE_SIZE) {
-                            Ok(sl_opt) => match sl_opt {
-                                Some(sl) => sl,
-                                None => break,
-                            },
+                            Ok(sl_opt) => sl_opt,
                             Err(e) => {
-                                let broken_region = self.create_region(None, !requires_end);
+                                let broken_region = self.create_region(None, !requires_end, self.actual_len());
                                 let config_load_err = ConfigLoadError::IO(e);
                                 return ConfigLoaderOutput::Broken(broken_region, config_load_err);
                             }
                         };
 
-                    let is_def = maybe_embed_slice == b"@def";
-                    let is_end = maybe_embed_slice == b"@end";
+                    let is_def = maybe_embed_slice == Some(b"@def");
+                    let is_end = maybe_embed_slice == Some(b"@end");
 
                     // Read this as claude 4 different times. I can't do this anymore.
                     let can_check = clause_end_pos < self.limit;
@@ -475,10 +475,6 @@ impl<R: Read> ConfigLoader<'_, R> {
                     if !requires_end && can_check && is_def {
                         requires_end = true;
                         self.script_start = self.cursor;
-
-                        // Can we derive?
-                        // Resets so that the max region size can be properly accounted for
-                        self.bytes_consumed_start_rel = 0;
                         // The last buffer may or may not have needed to push more than 64Kib to
                         // peek, slice, etc., so this carrires [@def..] to new buffer to corruption.
                         let carry_over = self.persistent_buffer[self.cursor..].to_vec();
@@ -486,6 +482,7 @@ impl<R: Read> ConfigLoader<'_, R> {
 
                         // Positioning to the relative byte after @def.
                         self.cursor = EMBEDDING_CLAUSE_SIZE;
+                        self.bytes_consumed_start_rel = self.cursor;
 
                         self.ln_num_tracker.freeze();
                         self.col_tracker.freeze();
@@ -518,22 +515,18 @@ impl<R: Read> ConfigLoader<'_, R> {
         // TODO: Assert this...
 
         //TEST: For consuming rest if there was a `break` before reading up to limit
-        // This allows for error msgs to look less confusing
+        // This allows for error msgs to look less confusing. This issue only applies after reaching
+        // eof since reaching eof implies the entire buffer should be consumed up to limit for the
+        // most accurate region.
         while let Ok(Some(_)) = self.advance() {}
 
-        let region = self.create_region(None, false);
+        let region = self.create_region(None, !requires_end, self.actual_len());
         debug_assert!(
             region.src_bytes.len() <= chrn_utils::MAX_REGION_SIZE,
             "Max region size exceeded"
         );
 
-        // If the loop was broken because the limit was reached, and there is a byte after the
-        // limit, that means it stopped because it reached the max read bytes not because of a valid
-        // script file. So if limit + 1 == Some then probably an error
-        //
-        // Does not conflict with @end since @end has it's own return environment.
-        //
-        // NOTE: Needs direct indexing because peek already reached it's limit
+        // NOTE: This is solely for warning. Whether or not this fails doesn't matter.
         if self.peek_no_limit().is_ok_and(|b| b.is_some()) {
             // Sole reason this is here
             let core_msg = "Amount of bytes in range exceeds max of 64KiB";
@@ -573,7 +566,7 @@ impl<R: Read> ConfigLoader<'_, R> {
             //
             //  cursor cannot exceed 64Kib so it is treated as the eof pos, rather than
             //  persistent_buffer.len()
-            let eof_pos = self.cursor as u32;
+            let eof_pos = self.actual_len() as u32;
 
             // Need to - 1 so that the spanning doesn't have a len of 0.
             // Cannot do + 1 to the end of the span or it extends one past len
@@ -642,11 +635,22 @@ impl<R: Read> ConfigLoader<'_, R> {
         }
     }
 
+    /// What the output bytes length would be, given the constraints of region sizes.
+    fn actual_len(&self) -> usize {
+        self.persistent_buffer
+            .len()
+            .min(chrn_utils::MAX_REGION_SIZE)
+    }
+
+    // Could just do create_region_with_end where it by default used actual_len.
     /// Helper for reducing region creation boiler-plate
     fn create_region(
         &mut self,
         serial_start_opt: Option<usize>,
         needs_reset: bool,
+        //WARN: All callers used `actual_len` for this, which may lower justification for using this
+        //in the first place, but this will remain.
+        end: usize,
     ) -> SourceRegion {
         // Resetting since this means there was no `@def` or `@end`
         // This needs to be done because the counter would otherwise remain at the last line and
@@ -661,7 +665,6 @@ impl<R: Read> ConfigLoader<'_, R> {
         //
         // For cases like broken regions there either needs to be a clamp or a complex system where
         // the max length of persistent_buffer shrinks when needed.
-        let end = self.cursor.min(chrn_utils::MAX_REGION_SIZE);
         SourceRegion::new(
             self.ln_num_tracker.val(),
             self.col_tracker.val(),
@@ -735,10 +738,7 @@ impl<R: Read> ConfigLoader<'_, R> {
 
             // Since the length of the buffer may or may not be > MAX_REGION_SIZE we need to
             // clamp it. The buffer itself does not promise to be < MAX_REGION_SIZE
-            let end = (self
-                .persistent_buffer
-                .len()
-                .min(chrn_utils::MAX_REGION_SIZE)) as u32;
+            let end = self.actual_len() as u32;
 
             let eof_span = SourceSpan::new(self.current_region_id, end - 1, end);
 
@@ -824,37 +824,18 @@ impl<R: Read> ConfigLoader<'_, R> {
         Ok(Some(self.persistent_buffer[self.cursor + amt]))
     }
 
+    /// Peeks and returns Ok(`None`) if bytes consumed == limit
     fn peek(&mut self) -> Result<Option<u8>, std::io::Error> {
         if self.bytes_consumed_start_rel == self.limit {
             return Ok(None);
         }
-        self.try_refill()?;
-
-        Ok(self.persistent_buffer.get(self.cursor).copied())
+        self.peek_no_limit()
     }
 
-    // This is just for the final peek since we need to be able to see if we're on a byte past the
-    // limit while maintaining the try_refill
+    /// Peeks without checking if the limit has been reached
     fn peek_no_limit(&mut self) -> Result<Option<u8>, std::io::Error> {
         self.try_refill()?;
         Ok(self.persistent_buffer.get(self.cursor).copied())
-    }
-
-    /// Ensures distance given is plaaaussifjblee
-    /// This is a helper over skip
-    /// Returns Ok(`true`) if the full skip was done. Ok(`false`) if reached EOF before full skip.
-    fn ensure_ahead(&mut self, amt: usize) -> Result<bool, std::io::Error> {
-        // let col = self.col_tracker.clone();
-        // let initial_pos = self.cursor;
-        // let ln_num = self.ln_num_tracker.clone();
-
-        if (self.cursor + amt) >= self.persistent_buffer.len() {
-            if !self.refill_until(amt + 1)? {
-                return Ok(false);
-            }
-        }
-
-        todo!()
     }
 
     //TEST: Would be mutable since we need to push to persistent buffer to actually continue
@@ -862,6 +843,9 @@ impl<R: Read> ConfigLoader<'_, R> {
     /// Does a slice that does not advance the cursor, but may or may not grow the
     /// persistent buffer to form the desired slice.
     fn slice(&mut self, range: Range<usize>) -> Result<Option<&[u8]>, std::io::Error> {
+        // Maybe method should make it clearer that this should only be used if starting from cursor
+        // onwards. It works like this because any other slice operation can just be a regular slice
+        // since the bytes have already been stored.
         debug_assert_eq!(range.start, self.cursor);
         if !self.refill_until(range.len())? {
             return Ok(None);
@@ -878,7 +862,6 @@ impl<R: Read> ConfigLoader<'_, R> {
         if self.cursor < self.persistent_buffer.len() {
             return Ok(());
         }
-        //TEST: New gimmick
         self.unchecked_refill()
     }
 

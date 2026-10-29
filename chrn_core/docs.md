@@ -67,7 +67,7 @@ fn main() {
 - The module `core` is a required and implicitly loaded module which defines types, functions, etc. 
 Some of what's in `core` like functions and generics are strictly compiler level concepts with no external way of declaration.
 
-- A chrn region/file can AT MOST be 32KB in size.
+- A chrn region/file can AT MOST be 64 KiB in size.
 
 Singline comments = //
 Multi-line comments = /* */
