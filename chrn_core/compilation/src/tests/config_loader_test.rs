@@ -368,8 +368,8 @@ fn start_and_serial_offset_test() {
 /// The loader reports an unclosed quote with an in-bounds opening-quote span.
 #[test]
 fn cfg_escape_straddling_read_limit_stops_at_cap_test() {
-    const LIMIT: usize = chrn_utils::MAX_REGION_SIZE; // 32KB == 32768
-    const TOTAL: usize = 64 * 1024;
+    const LIMIT: usize = chrn_utils::MAX_REGION_SIZE; // 64KiB == 65536
+    const TOTAL: usize = 2 * LIMIT;
 
     // Place the escape at the final byte in the region budget and its target beyond the budget.
     let mut input = String::with_capacity(TOTAL);
@@ -401,12 +401,12 @@ fn cfg_escape_straddling_read_limit_stops_at_cap_test() {
             assert_eq!(primary.span.end, 1, "span must be exactly 1 byte");
             assert!(
                 region.src_bytes.len() <= LIMIT,
-                "loader must stop at the 32KB cap, got {} bytes",
+                "loader must stop at the 64KiB cap, got {} bytes",
                 region.src_bytes.len()
             );
             assert!(
                 region.src_bytes.len() < input.len(),
-                "loader must not consume the entire 64KB buffer, consumed {}",
+                "loader must not consume the entire oversized input, consumed {}",
                 region.src_bytes.len()
             );
         }
@@ -416,11 +416,11 @@ fn cfg_escape_straddling_read_limit_stops_at_cap_test() {
     }
 }
 
-/// An unclosed multi-line comment at EOF must produce diagnostic spans within the recovered
-/// region, including when the opening delimiter reaches EOF.
+/// An unclosed multi-line comment's primary EOF span covers only the final byte, even when
+/// the opening delimiter reaches EOF; its secondary span covers the full opening delimiter.
 #[test]
 fn cfg_unclosed_multi_comment_eof_span_bounds_test() {
-    for (input, expected_span) in [("/*", 0..2), ("/* this comment never ends", 25..26)] {
+    for (input, expected_span) in [("/*", 1..2), ("/* this comment never ends", 25..26)] {
         let len = input.len() as u32;
         let res = load_cfg(input);
         match res {
@@ -443,7 +443,7 @@ fn cfg_unclosed_multi_comment_eof_span_bounds_test() {
                 assert_eq!(
                     primaries.len(),
                     1,
-                    "one primary for comment start in {input:?}"
+                    "one primary for EOF in {input:?}"
                 );
 
                 let secondary = secondaries[0];
@@ -482,14 +482,14 @@ fn cfg_unclosed_multi_comment_eof_span_bounds_test() {
 fn cfg_oversized_markerless_file_is_capped_test() {
     const LIMIT: usize = chrn_utils::MAX_REGION_SIZE;
     let input = vec![b'a'; LIMIT + 1024];
-    assert_eq!(input.len(), 33 * 1024);
+    assert_eq!(input.len(), 65 * 1024);
 
     match load_cfg_bytes(&input) {
         ConfigLoaderOutput::Success(region, _) => {
             assert_eq!(
                 region.src_bytes.len(),
                 LIMIT,
-                "marker-less region must be capped at exactly 32KiB"
+                "marker-less region must be capped at exactly 64KiB"
             );
             assert_eq!(region.src_bytes, input[..LIMIT]);
             assert_eq!(region.script_start, 0);
@@ -559,7 +559,7 @@ fn cfg_at_def_end_single_region_offsets_test() {
     );
 }
 
-/// The 32KiB limit applies to the chrn region beginning at `@def`, not to its
+/// The 64KiB limit applies to the chrn region beginning at `@def`, not to its
 /// absolute position in a file that contains a serialized-data prefix.
 #[test]
 fn cfg_at_end_budget_is_relative_to_nonzero_script_start_test() {
@@ -653,7 +653,8 @@ fn cfg_multi_comment_close_straddling_read_limit_is_unclosed_test() {
                 "the diagnostic must stop at the last byte inside the region budget"
             );
         }
-        ConfigLoaderOutput::Success(_, _) => {
+        ConfigLoaderOutput::Success(s, _) => {
+            dbg!(str::from_utf8(&s.src_bytes));
             panic!("a comment closed only beyond the region limit must not produce loader success")
         }
         ConfigLoaderOutput::UnrecoverableErr(err) => {
@@ -671,7 +672,7 @@ fn cfg_multi_comment_close_straddling_read_limit_is_unclosed_test() {
 /// multi-line comment in the embedding is recognized and the embedding closes successfully.
 #[test]
 fn cfg_multi_comment_past_search_limit_with_prefix_succeeds_test() {
-    const PREFIX_LEN: usize = 32_000;
+    const PREFIX_LEN: usize = chrn_utils::MAX_REGION_SIZE - 768;
     let mut input = vec![b'p'; PREFIX_LEN];
     input.extend_from_slice(b"@def ");
     input.extend(std::iter::repeat_n(b' ', 1_000));
@@ -686,7 +687,7 @@ fn cfg_multi_comment_past_search_limit_with_prefix_succeeds_test() {
 /// remain inside quoted strings and a valid embedding closes successfully.
 #[test]
 fn cfg_string_escape_past_search_limit_with_prefix_succeeds_test() {
-    const PREFIX_LEN: usize = 32_000;
+    const PREFIX_LEN: usize = chrn_utils::MAX_REGION_SIZE - 768;
     let mut input = vec![b'p'; PREFIX_LEN];
     input.extend_from_slice(b"@def ");
     input.extend(std::iter::repeat_n(b' ', 1_000));
@@ -713,7 +714,7 @@ fn cfg_at_end_straddling_read_limit_is_rejected_test() {
         ConfigLoaderOutput::Broken(region, ConfigLoadError::Diagnostic(diag)) => {
             assert!(
                 region.src_bytes.len() <= LIMIT,
-                "region must not exceed 32KiB cap, got {} bytes",
+                "region must not exceed 64KiB cap, got {} bytes",
                 region.src_bytes.len()
             );
             assert_eq!(diag.core_msg, "Could not find `@end` after `@def`");
@@ -729,6 +730,7 @@ fn cfg_unclosed_multi_comment_retains_final_byte_and_in_bounds_span_test() {
     let input = "/* hello";
     match load_cfg(input) {
         ConfigLoaderOutput::Broken(region, ConfigLoadError::Diagnostic(diag)) => {
+            dbg!(str::from_utf8(&region.src_bytes));
             assert_eq!(
                 region.src_bytes,
                 input.as_bytes(),

@@ -133,7 +133,7 @@ impl std::fmt::Debug for SharedU32 {
 
 /// Tracker that stores a "freeze" flag which takes the last bit in it's 32 bits, which allows it to stay 4
 /// bytes instead of memory padding from a `bool`.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct FreezeTrackerU32 {
     inner: u32,
 }

@@ -28,9 +28,10 @@ pub const MAX_RECURSIVE_DEPTH: u16 = 1024;
 /// Max expression nodes that can be consumed in a singule expression tree
 pub const MAX_EXPR_NODES: u32 = 1; // 5,000,000
 
+//WARN: 32Kib -> 64Kib
 /// Max size of any given region. This has nothing to do with file size overall, just how many bytes
 /// a given region can occupy, which may be a full file or just from `@def` to `@end`.
-pub const MAX_REGION_SIZE: usize = 1024 * 32;
+pub const MAX_REGION_SIZE: usize = 1024 * 64;
 
 /// File extension for `chrn`
 pub const CHRN_FILE_EXTENSION: &str = "chrn";
