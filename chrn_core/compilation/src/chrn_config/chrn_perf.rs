@@ -5,7 +5,7 @@ pub mod chrn_perf_concepts;
 use std::time::Instant;
 
 use chrn_utils::{
-    id_types::PathId, source_utils::source_manager::SourceManager,
+    id_types::SourceId, intern::Intern, source_utils::source_manager::SourceManager,
     utils::trackers::perf_tracker::PerfTracker,
 };
 
@@ -40,9 +40,9 @@ impl ChrnPerf {
     // What if this took in a stage, and if the stage on stop doesn't match the start then it fails
     // an assertion?
     /// Returns perf tracker to use for the current run
-    pub fn start(&mut self, path_id: PathId) {
+    pub fn start(&mut self, src_id: SourceId) {
         if self.can_use() {
-            let ident = ModuleIdentity::new(path_id);
+            let ident = ModuleIdentity::new(src_id);
             self.active_tracker = Some((ident, PerfTracker::new(Instant::now())));
         }
     }
@@ -55,7 +55,7 @@ impl ChrnPerf {
             let existing_opt = self
                 .tracked_mods
                 .iter_mut()
-                .find(|d| active_ident.path_id() == d.ident.path_id());
+                .find(|d| active_ident.src_id() == d.ident.src_id());
 
             let perf_data = if let Some(existing) = existing_opt {
                 existing
@@ -79,7 +79,11 @@ impl ChrnPerf {
         }
     }
 
-    pub fn form_report<'a>(&'a self, src_manager: &'a SourceManager) -> ChrnPerfReport<'a> {
+    pub fn form_report<'a>(
+        &'a self,
+        src_manager: &'a SourceManager,
+        interner: &'a Intern,
+    ) -> ChrnPerfReport<'a> {
         // global means
         let mut stage_means: [Option<ChrnPerfTimeReport>; STAGES_COUNT] = [None; STAGES_COUNT];
         // Wrapper for visualizing data
@@ -105,8 +109,8 @@ impl ChrnPerf {
                     }
                 }
             }
-            let path = src_manager.extract_path(mod_perf_data.ident.path_id());
-            let mod_report = ModulePerfReport::new(path, mod_perf_data);
+            let src_name = src_manager.display_source(mod_perf_data.ident.src_id(), interner);
+            let mod_report = ModulePerfReport::new(src_name, mod_perf_data);
             mod_reports.push(mod_report);
         }
         ChrnPerfReport::new(stage_means, mod_reports)

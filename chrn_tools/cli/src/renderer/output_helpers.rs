@@ -1,6 +1,6 @@
 //! Small string-mapping helpers shared by the structured (non-terminal)
 //! renderers. Centralizes how diagnostic field values are spelled out as
-//! plain strings and how a `SourceRegionId` is resolved to a path, so a
+//! plain strings and how a `SourceRegionId` is resolved to a source label, so a
 //! new `DiagnosticLevel` or `AnnotationKind` variant only needs to be wired
 //! up in one place.
 //!
@@ -12,6 +12,7 @@ use chrn_utils::{
     arena::Arena,
     err_codes,
     id_types::SourceRegionId,
+    intern::Intern,
     source_utils::source_manager::SourceManager,
     source_utils::{
         source_diagnostic::{DiagnosticLevel, annotations::AnnotationKind},
@@ -46,23 +47,23 @@ pub(super) fn annotation_kind_str(kind: AnnotationKind) -> &'static str {
     }
 }
 
-/// Resolves a `SourceRegionId` to its path string when both the region
+/// Resolves a `SourceRegionId` to its source label when both the region
 /// arena is available and the region is present in it.
 ///
 /// Returns `None` for either "no arena" or "region not found", which lets
 /// callers collapse both cases into a single "emit `null`" branch.
-pub(super) fn resolve_region_path(
+pub(super) fn resolve_region_source(
     region_arena_opt: Option<&Arena<SourceRegion, SourceRegionId>>,
     src_manager: &SourceManager,
+    interner: &Intern,
     region_id: SourceRegionId,
 ) -> Option<String> {
     let arena = region_arena_opt?;
     let region = arena.get(region_id)?;
     Some(
         src_manager
-            .extract_path(region.path_id)
-            .display()
-            .to_string(),
+            .display_source(region.src_id, interner)
+            .into_owned(),
     )
 }
 

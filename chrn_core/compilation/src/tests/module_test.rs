@@ -14,6 +14,7 @@ use crate::module::module_finder::ModuleFinder;
 use crate::script_compiler::reporter::Reporter;
 use chrn_utils::{
     core_error::ConfigLoadError,
+    source_utils::source_manager::PathTag,
     id_types::{ModuleId, PathId, SourceRegionId},
     intern::Intern,
     source_utils::{
@@ -141,7 +142,7 @@ fn modfinder_no_imports_or_bind() {
     let region = ConfigLoader::new(
         region_id,
         Cursor::new("let x = 5\nlet y = 10\n"),
-        path_id,
+        path_id.inner(),
         &cfg,
     )
     .load_config()
@@ -177,7 +178,7 @@ fn modfinder_single_import() {
     let region_id = SourceRegionId::new(0);
 
     let src = format!("import \"{}\"\nlet x = 5\n", sub_canonical);
-    let region = ConfigLoader::new(region_id, src.as_bytes(), path_id, &cfg)
+    let region = ConfigLoader::new(region_id, src.as_bytes(), path_id.inner(), &cfg)
         .load_config()
         .expect_success();
 
@@ -262,7 +263,7 @@ fn modfinder_multiple_imports() {
         "import \"{}\"\nimport \"{}\"\nlet x = 5\n",
         sub1_str, sub2_str
     );
-    let region = ConfigLoader::new(region_id, src.as_bytes(), path_id, &cfg)
+    let region = ConfigLoader::new(region_id, src.as_bytes(), path_id.inner(), &cfg)
         .load_config()
         .expect_success();
 
@@ -305,7 +306,7 @@ fn modfinder_import_with_alias() {
     let region_id = SourceRegionId::new(0);
 
     let src = format!("import \"{}\" as my_mod\nlet x = 5\n", sub_canonical);
-    let region = ConfigLoader::new(region_id, src.as_bytes(), path_id, &cfg)
+    let region = ConfigLoader::new(region_id, src.as_bytes(), path_id.inner(), &cfg)
         .load_config()
         .expect_success();
 
@@ -343,7 +344,7 @@ fn modfinder_bind() {
     let region_id = SourceRegionId::new(0);
 
     let src = format!("bind \"{}\"\nlet x = 5\n", bind_canonical);
-    let region = ConfigLoader::new(region_id, src.as_bytes(), path_id, &cfg)
+    let region = ConfigLoader::new(region_id, src.as_bytes(), path_id.inner(), &cfg)
         .load_config()
         .expect_success();
 
@@ -376,7 +377,7 @@ fn modfinder_backslash_error() {
     // Use a backslash in the import path — even though the real file exists,
     // the backslash triggers the error *before* canonicalization is attempted.
     let src = r#"import "bad\path" "#;
-    let region = ConfigLoader::new(region_id, src.as_bytes(), path_id, &cfg)
+    let region = ConfigLoader::new(region_id, src.as_bytes(), path_id.inner(), &cfg)
         .load_config()
         .expect_success();
 
@@ -410,7 +411,7 @@ fn modfinder_import_inside_line_comment() {
     let region_id = SourceRegionId::new(0);
 
     let src = Cursor::new(b"// import \"sub.chrn\"\nlet x = 5\n");
-    let region = ConfigLoader::new(region_id, src, path_id, &cfg)
+    let region = ConfigLoader::new(region_id, src, path_id.inner(), &cfg)
         .load_config()
         .expect_success();
 
@@ -434,7 +435,7 @@ fn modfinder_import_inside_block_comment() {
     let region_id = SourceRegionId::new(0);
 
     let src = Cursor::new(b"/* import \"sub.chrn\" */\nlet x = 5\n");
-    let region = ConfigLoader::new(region_id, src, path_id, &cfg)
+    let region = ConfigLoader::new(region_id, src, path_id.inner(), &cfg)
         .load_config()
         .expect_success();
 
@@ -467,7 +468,7 @@ fn modfinder_duplicate_import_path_reuses_mod_id() {
         "import \"{}\"\nimport \"{}\"\nlet x = 5\n",
         sub_canonical, sub_canonical
     );
-    let region = ConfigLoader::new(region_id, src.as_bytes(), path_id, &cfg)
+    let region = ConfigLoader::new(region_id, src.as_bytes(), path_id.inner(), &cfg)
         .load_config()
         .expect_success();
 
@@ -505,7 +506,7 @@ fn modfinder_nonexistent_path() {
     let region_id = SourceRegionId::new(0);
 
     let src = Cursor::new(b"import \"/does/not/exist.chrn\"\nlet x = 5\n");
-    let region = ConfigLoader::new(region_id, src, path_id, &cfg)
+    let region = ConfigLoader::new(region_id, src, path_id.inner(), &cfg)
         .load_config()
         .expect_success();
 
@@ -533,7 +534,7 @@ fn modfinder_import_inside_string_is_not_parsed() {
     let region_id = SourceRegionId::new(0);
 
     let src = Cursor::new(b"\"this has import inside a string\" let x = 5\n");
-    let region = ConfigLoader::new(region_id, src, path_id, &cfg)
+    let region = ConfigLoader::new(region_id, src, path_id.inner(), &cfg)
         .load_config()
         .expect_success();
 
@@ -2020,12 +2021,7 @@ fn reserved_core_alias_diagnostic_identifies_importer() {
             compiler.mods[ModuleId::new(0)].imports[usize::from(already_loaded)].kind,
             ImportKind::ErrorSource(_)
         ));
-        diagnostic_paths.push(
-            store
-                .src_manager
-                .extract_path(diag.path_id)
-                .to_path_buf(),
-        );
+        diagnostic_paths.push(store.src_manager.extract_path(diag.src_id.into_tagged::<PathTag>()).path.to_path_buf());
     }
     _ = fs::remove_dir_all(&dir);
     assert_eq!(
@@ -2076,7 +2072,7 @@ fn directory_import_diagnostic_identifies_importer() {
         compiler.mods[ModuleId::new(0)].imports[0].kind,
         ImportKind::ErrorSource(_)
     ));
-    assert_eq!(store.src_manager.extract_path(diag.path_id), main_path);
+    assert_eq!(store.src_manager.extract_path(diag.src_id.into_tagged::<PathTag>()).path, main_path);
 }
 
 /// A read error after opening an import must attribute its annotation to the
@@ -2123,7 +2119,7 @@ fn import_read_error_diagnostic_identifies_importer() {
         )
     );
     assert_eq!(
-        store.src_manager.extract_path(diag.path_id),
+        store.src_manager.extract_path(diag.src_id.into_tagged::<PathTag>()).path,
         main_path,
         "the read-error diagnostic must identify the file containing its annotation"
     );
@@ -2186,10 +2182,7 @@ fn reserved_core_entry_is_rejected() {
     };
     assert_eq!(diag.level, DiagnosticLevel::Error);
     assert_eq!(diag.core_msg, "`core` is a reserved module identifier");
-    assert_eq!(
-        init_err.src_manager.extract_path(diag.path_id),
-        main_path
-    );
+    assert_eq!(init_err.src_manager.extract_path(diag.src_id.into_tagged::<PathTag>()).path, main_path);
 }
 
 /// An import alias cannot bypass the prohibition on a source named `core`.
@@ -2226,7 +2219,7 @@ fn reserved_core_source_is_rejected_even_with_alias() {
             "reserved source rejection must hold when aliased={aliased}"
         );
         assert_eq!(
-            store.src_manager.extract_path(diags.diags[0].path_id),
+            store.src_manager.extract_path(diags.diags[0].src_id.into_tagged::<PathTag>()).path,
             main_path
         );
         assert_eq!(get_user_mod_count(&compiler), 2);

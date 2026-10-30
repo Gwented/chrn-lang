@@ -17,7 +17,7 @@ use std::{
 use chrn_utils::{
     core_error::ConfigLoadError,
     err_codes::ErrorCode,
-    id_types::{PathId, SourceRegionId},
+    id_types::{SourceId, SourceRegionId},
     source_utils::{
         source_diagnostic::{
             DiagnosticLevel, SourceDiagnostic, SourceDiagnosticSink, SourceDiagnosticSummary,
@@ -52,7 +52,7 @@ pub struct ConfigLoader<'a, R: Read> {
     // Since region ids are not used by the loader for diagnostics, this is safe. Only the path id
     // is used.
     current_region_id: SourceRegionId,
-    current_path_id: PathId,
+    current_src_id: SourceId,
     cfg: &'a ChrnConfig,
     ln_num_tracker: FreezeTrackerU32,
     col_tracker: FreezeTrackerU32,
@@ -101,13 +101,13 @@ impl<R: Read> ConfigLoader<'_, R> {
     pub fn new<'a>(
         current_region_id: SourceRegionId,
         handle: R,
-        current_path_id: PathId,
+        current_src_id: SourceId,
         cfg: &'a ChrnConfig,
     ) -> ConfigLoader<'a, R> {
         Self::with_capacity(
             current_region_id,
             handle,
-            current_path_id,
+            current_src_id,
             DEFAULT_BUFFER_SIZE,
             cfg,
         )
@@ -117,14 +117,14 @@ impl<R: Read> ConfigLoader<'_, R> {
     pub fn with_capacity<'a>(
         current_region_id: SourceRegionId,
         handle: R,
-        current_path_id: PathId,
+        current_src_id: SourceId,
         buf_cap: usize,
         cfg: &'a ChrnConfig,
     ) -> ConfigLoader<'a, R> {
         ConfigLoader {
             current_region_id,
             cfg,
-            current_path_id,
+            current_src_id,
             handle: BufReader::with_capacity(buf_cap.max(MIN_BUFFER_SIZE), handle),
             col_tracker: FreezeTrackerU32::new(1),
             ln_num_tracker: FreezeTrackerU32::new(1),
@@ -203,7 +203,7 @@ impl<R: Read> ConfigLoader<'_, R> {
                                 None,
                                 DiagnosticLevel::Error,
                                 core_msg,
-                                self.current_path_id,
+                                self.current_src_id,
                             )
                             .add_annotation(
                                 q_span,
@@ -408,7 +408,7 @@ impl<R: Read> ConfigLoader<'_, R> {
                 ErrorCode::CompilerInternals.into(),
                 DiagnosticLevel::Warn,
                 core_msg,
-                self.current_path_id,
+                self.current_src_id,
             )
             //WARN: Maybe change depending on if @def WAS actually used
             .add_note("Possibly missing @def or @end usage")
@@ -433,7 +433,7 @@ impl<R: Read> ConfigLoader<'_, R> {
                 ErrorCode::ConfigLoadErr.into(),
                 DiagnosticLevel::Error,
                 core_msg,
-                self.current_path_id,
+                self.current_src_id,
             )
             .add_annotation(
                 def_span,
@@ -528,7 +528,7 @@ impl<R: Read> ConfigLoader<'_, R> {
             self.col_tracker.val(),
             self.persistent_buffer[..end].to_vec(),
             self.current_region_id,
-            self.current_path_id,
+            self.current_src_id,
             self.script_start,
             serial_start_opt,
         )
@@ -602,7 +602,7 @@ impl<R: Read> ConfigLoader<'_, R> {
                 None,
                 DiagnosticLevel::Error,
                 core_msg,
-                self.current_path_id,
+                self.current_src_id,
             )
             .add_annotation(
                 comment_start_span,

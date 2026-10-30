@@ -1,5 +1,3 @@
-use std::path::Path;
-
 use chrn_utils::{
     err_codes::{self, ErrorCode},
     source_utils::source_diagnostic::{DiagnosticLevel, annotations::AnnotationKind},
@@ -124,10 +122,10 @@ pub(super) fn standardize_note(msg: &str, can_color: bool, terminal: TerminalCol
     format!("{cyan}note{nc}: {msg}")
 }
 
-/// Creates a template header with with given path
-pub(super) fn create_path_header(path: &Path, settings: &TerminalRenderConfig) -> String {
+/// Creates a source-label header using the existing PATH display format.
+pub(super) fn create_source_header(source: &str, settings: &TerminalRenderConfig) -> String {
     let (bold, nc) = color_type::get_bold(settings.can_color);
-    format!("{bold}PATH{nc} => \"{}\"", path.display())
+    format!("{bold}PATH{nc} => \"{}\"", source)
 }
 
 /// Creates a template header with the diagnostic level and msg given

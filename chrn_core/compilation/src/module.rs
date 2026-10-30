@@ -1,4 +1,4 @@
-use chrn_utils::source_utils::source_manager::SourceManager;
+use chrn_utils::{id_types::SourceId, source_utils::source_manager::SourceManager};
 use std::{collections::VecDeque, io::Read, path::Path};
 
 pub mod module_concepts;
@@ -70,10 +70,9 @@ pub fn extract_all_modules<R: Read>(
 ///
 /// NOTE: The corresponding `extract_modules` function expects the pure graph output from this
 /// function to be given to it, otherwise the behavior is undefined.
-//TODO: Add an abstracted source. There is a fundamental issue where paths must be canon, but it may
-//be better to allow for extensive means where files have different metadata, like one that is
-//virtual which doesn't actually need a path, only a source. Could also by proxy help LSPs and
-//anything else that may want to use these source of truth functions without needing to remake locally.
+//TODO: Separate these functions where tools (Like the current lsp) can use the same
+//functionalities outright rather than being forced to recreate themselves just because this expects
+//a path lookup.
 pub fn extract_main<R: Read>(
     main_path: &Path,
     main_src: R,
@@ -89,7 +88,7 @@ pub fn extract_main<R: Read>(
         Ok(p) => p,
         Err(e) => {
             let cfg_err = ConfigLoadError::IO(e);
-            let init_err = ModuleInitError::new(None, src_manager, cfg_err);
+            let init_err = ModuleInitError::new(None, src_manager, interner, cfg_err);
             return Err(init_err);
         }
     };
@@ -99,14 +98,15 @@ pub fn extract_main<R: Read>(
     // A little concerning here because you CAN stop after this point, meaning the timer doesn't
     // matter, but that should probably be factored in externally and just disallow perf entirely.
     // Or at least warn it's inaccurate, or just, separate stages.
-    cfg.perf_tracker_mut().start(main_path_id);
+    cfg.perf_tracker_mut().start(main_path_id.inner());
 
     let mut region_arena: Arena<SourceRegion, SourceRegionId> = Arena::with_capacity(1);
     let main_region_id = SourceRegionId::new(0);
 
     // Not sure if main should even recover from this beyond having an existent region
     let (main_region, main_mod_state) =
-        match ConfigLoader::new(main_region_id, main_src, main_path_id, &cfg).load_config() {
+        match ConfigLoader::new(main_region_id, main_src, main_path_id.inner(), &cfg).load_config()
+        {
             ConfigLoaderOutput::Success(region, loader_summary) => {
                 summary.merge(loader_summary);
                 (region, ModuleState::Loaded)
@@ -124,7 +124,7 @@ pub fn extract_main<R: Read>(
                             None,
                             DiagnosticLevel::Error,
                             err_str,
-                            main_path_id,
+                            main_path_id.inner(),
                         )
                         .build()
                     }
@@ -134,7 +134,7 @@ pub fn extract_main<R: Read>(
                 (broken_region, ModuleState::BrokenRegion)
             }
             ConfigLoaderOutput::UnrecoverableErr(cfg_err) => {
-                return Err(ModuleInitError::new(None, src_manager, cfg_err));
+                return Err(ModuleInitError::new(None, src_manager, interner, cfg_err));
             }
         };
 
@@ -149,7 +149,7 @@ pub fn extract_main<R: Read>(
 
             let src_diag =
                 // Would have code explaining that aliases can circumvent invalid utf8 file names
-                SourceDiagnostic::builder(ErrorCode::ImportErr.into(), DiagnosticLevel::Error, core_msg, main_path_id)
+                SourceDiagnostic::builder(ErrorCode::ImportErr.into(), DiagnosticLevel::Error, core_msg, main_path_id.inner())
                     .build();
 
             // The error itself does not point to anything so this should be fine to omit
@@ -162,6 +162,7 @@ pub fn extract_main<R: Read>(
             return Err(ModuleInitError::new(
                 Some(region_arena),
                 src_manager,
+                interner,
                 cfg_err,
             ));
         }
@@ -190,9 +191,9 @@ pub fn extract_main<R: Read>(
     region_arena.push(main_region);
 
     // Purposefully done after data is collected.
-    if let Err(builder) = ensure_not_reserved(main_name_id, main_path_id) {
+    if let Err(builder) = ensure_not_reserved(main_name_id, main_path_id.inner()) {
         let cfg_err = ConfigLoadError::Diagnostic(builder.build());
-        let init_err = ModuleInitError::new(Some(region_arena), src_manager, cfg_err);
+        let init_err = ModuleInitError::new(Some(region_arena), src_manager, interner, cfg_err);
         return Err(init_err);
     }
 
@@ -206,11 +207,6 @@ pub fn extract_main<R: Read>(
         main_imports,
         Some(main_region_id),
     );
-
-    // Maybe this shouldn't be done, not sure. But the intent of this being returned in such a way
-    // is so that callers can decide to use the pieces without loading the rest, not externally
-    // manage graph semantics, which is why it uses getters.
-    // let other_mods: Vec<Option<Module>> = Vec::with_capacity(main_mod.imports.len());
 
     let seen: Vec<PathId> = vec![main_path_id];
     let graph = ModuleGraph::new(region_arena, registered_mod_ids, seen, src_manager);
@@ -259,7 +255,7 @@ pub fn extract_modules(
         let importer_region_id = importer_mod
             .region_id
             .expect("Root module should have region id");
-        let importer_path_id = graph.region_arena[importer_region_id].path_id;
+        let importer_path_id = graph.region_arena[importer_region_id].src_id;
 
         // A module binds its own name, and only its imports can carry an alias, so this is never
         // an alias
@@ -299,7 +295,8 @@ pub fn extract_modules(
             // If is_importer, that means it shouldn't count as a duplicate identifier. So, if `main`
             // imports `main` and both mains are the same, no error is emitted because that would be
             // the wrong behavior. This is solely aa self import guard.
-            let is_importer = sp_path_id.inner == importer_path_id && imp.sp_alias_id.is_none();
+            let is_importer =
+                sp_path_id.inner.inner() == importer_path_id && imp.sp_alias_id.is_none();
 
             // The identifier of an import is mutually exclusive. If it has an alias, it can't use
             // the generated identifier, if it only has an identifier it only uses the identifier.
@@ -413,7 +410,7 @@ pub fn extract_modules(
                     ErrorCode::CompilerInternals.into(),
                     DiagnosticLevel::Error,
                     core_msg,
-                    sp_path_id.inner,
+                    sp_path_id.inner.inner(),
                 )
                 .add_note(format!("Last processed module was `{last_processed_name}`"));
 
@@ -560,7 +557,7 @@ fn resolve_module(
         unreachable!();
     };
 
-    let importer_path_id = graph.region_arena[sp_path_id.span.region_id].path_id;
+    let importer_path_id = graph.region_arena[sp_path_id.span.region_id].src_id;
 
     // Tracks the id of the current module by tracking however many imports were seen, which
     // all represent one module
@@ -571,7 +568,7 @@ fn resolve_module(
 
     //WARN: This can't fail, if the mod finder found it that means it normalized it, which means
     //it's a real path, which could be a dir I guess
-    let path = graph.src_manager.extract_path(sp_path_id.inner);
+    let path = &graph.src_manager.extract_path(sp_path_id.inner).path;
     let src = match file_ops::fopen(path) {
         Ok(f) => f,
         Err((_, err_msg)) => {
@@ -598,7 +595,7 @@ fn resolve_module(
 
     // Using region id before pushing
     let (sub_region, sub_state) =
-        match ConfigLoader::new(sub_region_id, src, sp_path_id.inner, cfg).load_config() {
+        match ConfigLoader::new(sub_region_id, src, sp_path_id.inner.inner(), cfg).load_config() {
             ConfigLoaderOutput::Success(region, new_summary) => {
                 summary.merge(new_summary);
                 (region, ModuleState::Loaded)
@@ -610,7 +607,7 @@ fn resolve_module(
                         summary.push_diag(diag);
                     }
                     ConfigLoadError::IO(e) => {
-                        let path = graph.src_manager.extract_path(sp_path_id.inner);
+                        let path = &graph.src_manager.extract_path(sp_path_id.inner).path;
                         let core_msg =
                             core_error::form_string_from_io_err(&e, path).unwrap_or(e.to_string());
                         let src_diag = SourceDiagnostic::builder(
@@ -633,7 +630,7 @@ fn resolve_module(
                         summary.push_diag(diag);
                     }
                     ConfigLoadError::IO(e) => {
-                        let path = graph.src_manager.extract_path(sp_path_id.inner);
+                        let path = &graph.src_manager.extract_path(sp_path_id.inner).path;
                         let core_msg =
                             core_error::form_string_from_io_err(&e, path).unwrap_or(e.to_string());
                         let src_diag = SourceDiagnostic::builder(
@@ -690,7 +687,7 @@ fn resolve_module(
 /// `path_id` is used to report
 fn ensure_not_reserved(
     name_id: InternedIdUTF8,
-    path_id: PathId,
+    src_id: SourceId,
 ) -> Result<(), SourceDiagnosticBuilder> {
     if name_id.inner().id == intern::INTERNED_CORE {
         let core_msg = "`core` is a reserved module identifier";
@@ -698,7 +695,7 @@ fn ensure_not_reserved(
             ErrorCode::CompilerInternals.into(),
             DiagnosticLevel::Error,
             core_msg,
-            path_id,
+            src_id,
         ));
     }
     Ok(())

@@ -105,8 +105,8 @@ async fn test_entry_preprocess_directive_controls_imports_and_resets_after_edits
             }
         }
         assert_ne!(
-            state.ty_errors.diags[0].path_id,
-            state.ty_errors.diags[1].path_id
+            state.ty_errors.diags[0].src_id,
+            state.ty_errors.diags[1].src_id
         );
     }
     assert!(session.diagnostics(&uri).iter().any(|diagnostic| {

@@ -14,7 +14,7 @@ fn lex_compound_tokens_with_exact_spans() {
     let mut cfg = ChrnConfig::default();
     let toks = Lexer::new(
         SourceRegionId::new(0),
-        SourceId::new(0).into_tagged::<PathTag>(),
+        SourceId::new(0),
         src,
         0,
         &mut cfg,
@@ -53,13 +53,13 @@ fn lex_tok_test() {
     let mut src_manager = SourceManager::new();
     let path_id = src_manager.register_path(Path::new(""));
     let region_id = SourceRegionId::new(0);
-    let metadata = ConfigLoader::new(region_id, text.as_bytes(), path_id, &ChrnConfig::default())
+    let metadata = ConfigLoader::new(region_id, text.as_bytes(), path_id.inner(), &ChrnConfig::default())
         .load_config()
         .expect_success();
 
     let toks = Lexer::new(
         metadata.self_id,
-        metadata.path_id,
+        metadata.src_id,
         &metadata.src_bytes,
         metadata.script_start,
         &mut ChrnConfig::default(),
@@ -113,7 +113,7 @@ fn lex_tok_test_rev() {
     let opt = ConfigLoader::new(
         region_id,
         correct.as_bytes(),
-        path_id,
+        path_id.inner(),
         &ChrnConfig::default(),
     )
     .load_config();
@@ -128,7 +128,7 @@ fn lex_tok_test_rev() {
 
     let toks = Lexer::new(
         region.self_id,
-        region.path_id,
+        region.src_id,
         &region.src_bytes,
         region.script_start,
         &mut ChrnConfig::default(),
@@ -158,7 +158,7 @@ fn lex_tok_test_rev() {
     // This malformed region must not destabilize diagnostic reporting.
     let wrong = r#"@defbind "./some/path""#;
 
-    let opt = ConfigLoader::new(region_id, wrong.as_bytes(), path_id, &ChrnConfig::default())
+    let opt = ConfigLoader::new(region_id, wrong.as_bytes(), path_id.inner(), &ChrnConfig::default())
         .load_config();
 
     match opt {
@@ -182,7 +182,7 @@ fn cfg_at_test() {
     let region = ConfigLoader::new(
         region_id,
         content.as_bytes(),
-        path_id,
+        path_id.inner(),
         &ChrnConfig::default(),
     )
     .load_config()
@@ -192,7 +192,7 @@ fn cfg_at_test() {
 
     let toks = Lexer::new(
         region_id,
-        region.path_id,
+        region.src_id,
         &region.src_bytes,
         region.script_start,
         &mut settings,
@@ -236,12 +236,12 @@ fn char_literal_test() {
     let path_id = src_manager.register_path(Path::new(""));
     let region_id = SourceRegionId::new(0);
 
-    let metadata = ConfigLoader::new(region_id, text.as_bytes(), path_id, &ChrnConfig::default())
+    let metadata = ConfigLoader::new(region_id, text.as_bytes(), path_id.inner(), &ChrnConfig::default())
         .load_config()
         .expect_success();
     let toks = Lexer::new(
         metadata.self_id,
-        metadata.path_id,
+        metadata.src_id,
         &metadata.src_bytes,
         metadata.script_start,
         &mut ChrnConfig::default(),
@@ -269,13 +269,13 @@ fn char_literal_test() {
     let path_id = src_manager.register_path(Path::new(""));
     let region_id = SourceRegionId::new(0);
 
-    let metadata = ConfigLoader::new(region_id, text.as_bytes(), path_id, &ChrnConfig::default())
+    let metadata = ConfigLoader::new(region_id, text.as_bytes(), path_id.inner(), &ChrnConfig::default())
         .load_config()
         .expect_success();
 
     let toks = Lexer::new(
         metadata.self_id,
-        metadata.path_id,
+        metadata.src_id,
         &metadata.src_bytes,
         metadata.script_start,
         &mut ChrnConfig::default(),
@@ -303,13 +303,13 @@ fn char_literal_test() {
     let path_id = src_manager.register_path(Path::new(""));
     let region_id = SourceRegionId::new(0);
 
-    let metadata = ConfigLoader::new(region_id, text.as_bytes(), path_id, &ChrnConfig::default())
+    let metadata = ConfigLoader::new(region_id, text.as_bytes(), path_id.inner(), &ChrnConfig::default())
         .load_config()
         .expect_success();
 
     let toks = Lexer::new(
         metadata.self_id,
-        metadata.path_id,
+        metadata.src_id,
         &metadata.src_bytes,
         metadata.script_start,
         &mut ChrnConfig::default(),
@@ -335,12 +335,12 @@ fn char_literal_test() {
     let mut src_manager = SourceManager::new();
     let path_id = src_manager.register_path(Path::new(""));
     let region_id = SourceRegionId::new(0);
-    let metadata = ConfigLoader::new(region_id, text.as_bytes(), path_id, &ChrnConfig::default())
+    let metadata = ConfigLoader::new(region_id, text.as_bytes(), path_id.inner(), &ChrnConfig::default())
         .load_config()
         .expect_success();
     let toks = Lexer::new(
         metadata.self_id,
-        metadata.path_id,
+        metadata.src_id,
         &metadata.src_bytes,
         metadata.script_start,
         &mut ChrnConfig::default(),
@@ -366,12 +366,12 @@ fn char_literal_test() {
     let mut src_manager = SourceManager::new();
     let path_id = src_manager.register_path(Path::new(""));
     let region_id = SourceRegionId::new(0);
-    let metadata = ConfigLoader::new(region_id, text.as_bytes(), path_id, &ChrnConfig::default())
+    let metadata = ConfigLoader::new(region_id, text.as_bytes(), path_id.inner(), &ChrnConfig::default())
         .load_config()
         .expect_success();
     let toks = Lexer::new(
         metadata.self_id,
-        metadata.path_id,
+        metadata.src_id,
         &metadata.src_bytes,
         metadata.script_start,
         &mut ChrnConfig::default(),
@@ -398,12 +398,12 @@ fn char_literal_test() {
     let mut src_manager = SourceManager::new();
     let path_id = src_manager.register_path(Path::new(""));
     let region_id = SourceRegionId::new(0);
-    let metadata = ConfigLoader::new(region_id, text.as_bytes(), path_id, &ChrnConfig::default())
+    let metadata = ConfigLoader::new(region_id, text.as_bytes(), path_id.inner(), &ChrnConfig::default())
         .load_config()
         .expect_success();
     let toks = Lexer::new(
         metadata.self_id,
-        metadata.path_id,
+        metadata.src_id,
         &metadata.src_bytes,
         metadata.script_start,
         &mut ChrnConfig::default(),
@@ -429,12 +429,12 @@ fn char_literal_test() {
     let mut src_manager = SourceManager::new();
     let path_id = src_manager.register_path(Path::new(""));
     let region_id = SourceRegionId::new(0);
-    let metadata = ConfigLoader::new(region_id, text.as_bytes(), path_id, &ChrnConfig::default())
+    let metadata = ConfigLoader::new(region_id, text.as_bytes(), path_id.inner(), &ChrnConfig::default())
         .load_config()
         .expect_success();
     let toks = Lexer::new(
         metadata.self_id,
-        metadata.path_id,
+        metadata.src_id,
         &metadata.src_bytes,
         metadata.script_start,
         &mut ChrnConfig::default(),
@@ -460,12 +460,12 @@ fn char_literal_test() {
     let mut src_manager = SourceManager::new();
     let path_id = src_manager.register_path(Path::new(""));
     let region_id = SourceRegionId::new(0);
-    let metadata = ConfigLoader::new(region_id, text.as_bytes(), path_id, &ChrnConfig::default())
+    let metadata = ConfigLoader::new(region_id, text.as_bytes(), path_id.inner(), &ChrnConfig::default())
         .load_config()
         .expect_success();
     let toks = Lexer::new(
         metadata.self_id,
-        metadata.path_id,
+        metadata.src_id,
         &metadata.src_bytes,
         metadata.script_start,
         &mut ChrnConfig::default(),
@@ -499,7 +499,7 @@ fn lex_hex_literal_consumes_decimal_digits() {
         let mut cfg = ChrnConfig::default();
         let toks = Lexer::new(
             SourceRegionId::new(0),
-            SourceId::new(0).into_tagged::<PathTag>(),
+            SourceId::new(0),
             src,
             0,
             &mut cfg,
@@ -552,7 +552,7 @@ fn lex_radix_literal_terminates_on_invalid_digit_or_empty_malformed() {
         let mut cfg = ChrnConfig::default();
         let toks = Lexer::new(
             SourceRegionId::new(0),
-            SourceId::new(0).into_tagged::<PathTag>(),
+            SourceId::new(0),
             src,
             0,
             &mut cfg,
@@ -665,7 +665,7 @@ fn lex_float_literal_fraction_and_scientific_notation() {
         let mut cfg = ChrnConfig::default();
         let toks = Lexer::new(
             SourceRegionId::new(0),
-            SourceId::new(0).into_tagged::<PathTag>(),
+            SourceId::new(0),
             src,
             0,
             &mut cfg,
@@ -733,7 +733,7 @@ fn lex_trailing_dot_numeric_literal_is_integer_and_dot() {
         let mut cfg = ChrnConfig::default();
         let toks = Lexer::new(
             SourceRegionId::new(0),
-            SourceId::new(0).into_tagged::<PathTag>(),
+            SourceId::new(0),
             src,
             0,
             &mut cfg,
@@ -831,7 +831,7 @@ fn lex_incomplete_scientific_notation_terminates_before_exponent() {
         let mut cfg = ChrnConfig::default();
         let toks = Lexer::new(
             SourceRegionId::new(0),
-            SourceId::new(0).into_tagged::<PathTag>(),
+            SourceId::new(0),
             src,
             0,
             &mut cfg,
@@ -945,7 +945,7 @@ fn lex_hex_literal_terminates_on_invalid_digit_or_empty_malformed() {
         let mut cfg = ChrnConfig::default();
         let toks = Lexer::new(
             SourceRegionId::new(0),
-            SourceId::new(0).into_tagged::<PathTag>(),
+            SourceId::new(0),
             src,
             0,
             &mut cfg,
@@ -1028,7 +1028,7 @@ fn lex_numeric_notation_maps_to_correct_token_and_notation_enum() {
         let mut cfg = ChrnConfig::default();
         let toks = Lexer::new(
             SourceRegionId::new(0),
-            SourceId::new(0).into_tagged::<PathTag>(),
+            SourceId::new(0),
             src,
             0,
             &mut cfg,
@@ -1140,13 +1140,13 @@ fn lex_notation_test() {
     let path_id = SourceId::new(0).into_tagged::<PathTag>();
     let region_id = SourceRegionId::new(0);
 
-    let metadata = ConfigLoader::new(region_id, text.as_bytes(), path_id, &ChrnConfig::default())
+    let metadata = ConfigLoader::new(region_id, text.as_bytes(), path_id.inner(), &ChrnConfig::default())
         .load_config()
         .expect_success();
 
     let toks = Lexer::new(
         metadata.self_id,
-        metadata.path_id,
+        metadata.src_id,
         &metadata.src_bytes,
         metadata.script_start,
         &mut ChrnConfig::default(),
@@ -1171,12 +1171,12 @@ fn lex_notation_test() {
 
     // Binary
     let text = "0b1010";
-    let metadata = ConfigLoader::new(region_id, text.as_bytes(), path_id, &ChrnConfig::default())
+    let metadata = ConfigLoader::new(region_id, text.as_bytes(), path_id.inner(), &ChrnConfig::default())
         .load_config()
         .expect_success();
     let toks = Lexer::new(
         metadata.self_id,
-        metadata.path_id,
+        metadata.src_id,
         &metadata.src_bytes,
         metadata.script_start,
         &mut ChrnConfig::default(),
@@ -1201,12 +1201,12 @@ fn lex_notation_test() {
 
     // Octal
     let text = "0o77";
-    let metadata = ConfigLoader::new(region_id, text.as_bytes(), path_id, &ChrnConfig::default())
+    let metadata = ConfigLoader::new(region_id, text.as_bytes(), path_id.inner(), &ChrnConfig::default())
         .load_config()
         .expect_success();
     let toks = Lexer::new(
         metadata.self_id,
-        metadata.path_id,
+        metadata.src_id,
         &metadata.src_bytes,
         metadata.script_start,
         &mut ChrnConfig::default(),
@@ -1231,12 +1231,12 @@ fn lex_notation_test() {
 
     // Decimal
     let text = "42";
-    let metadata = ConfigLoader::new(region_id, text.as_bytes(), path_id, &ChrnConfig::default())
+    let metadata = ConfigLoader::new(region_id, text.as_bytes(), path_id.inner(), &ChrnConfig::default())
         .load_config()
         .expect_success();
     let toks = Lexer::new(
         metadata.self_id,
-        metadata.path_id,
+        metadata.src_id,
         &metadata.src_bytes,
         metadata.script_start,
         &mut ChrnConfig::default(),
@@ -1261,12 +1261,12 @@ fn lex_notation_test() {
 
     // Float with decimal
     let text = "3.14";
-    let metadata = ConfigLoader::new(region_id, text.as_bytes(), path_id, &ChrnConfig::default())
+    let metadata = ConfigLoader::new(region_id, text.as_bytes(), path_id.inner(), &ChrnConfig::default())
         .load_config()
         .expect_success();
     let toks = Lexer::new(
         metadata.self_id,
-        metadata.path_id,
+        metadata.src_id,
         &metadata.src_bytes,
         metadata.script_start,
         &mut ChrnConfig::default(),
@@ -1291,12 +1291,12 @@ fn lex_notation_test() {
 
     // Positive Scientific Notation
     let text = "1e+23";
-    let metadata = ConfigLoader::new(region_id, text.as_bytes(), path_id, &ChrnConfig::default())
+    let metadata = ConfigLoader::new(region_id, text.as_bytes(), path_id.inner(), &ChrnConfig::default())
         .load_config()
         .expect_success();
     let toks = Lexer::new(
         metadata.self_id,
-        metadata.path_id,
+        metadata.src_id,
         &metadata.src_bytes,
         metadata.script_start,
         &mut ChrnConfig::default(),
@@ -1321,12 +1321,12 @@ fn lex_notation_test() {
 
     // Negative Scientific Notation
     let text = "1e-23";
-    let metadata = ConfigLoader::new(region_id, text.as_bytes(), path_id, &ChrnConfig::default())
+    let metadata = ConfigLoader::new(region_id, text.as_bytes(), path_id.inner(), &ChrnConfig::default())
         .load_config()
         .expect_success();
     let toks = Lexer::new(
         metadata.self_id,
-        metadata.path_id,
+        metadata.src_id,
         &metadata.src_bytes,
         metadata.script_start,
         &mut ChrnConfig::default(),
@@ -1351,12 +1351,12 @@ fn lex_notation_test() {
 
     // Underscored Numbers
     let text = "1_000_000";
-    let metadata = ConfigLoader::new(region_id, text.as_bytes(), path_id, &ChrnConfig::default())
+    let metadata = ConfigLoader::new(region_id, text.as_bytes(), path_id.inner(), &ChrnConfig::default())
         .load_config()
         .expect_success();
     let toks = Lexer::new(
         metadata.self_id,
-        metadata.path_id,
+        metadata.src_id,
         &metadata.src_bytes,
         metadata.script_start,
         &mut ChrnConfig::default(),
@@ -1381,12 +1381,12 @@ fn lex_notation_test() {
 
     // Underscored Hex
     let text = "0x_ff_ff";
-    let metadata = ConfigLoader::new(region_id, text.as_bytes(), path_id, &ChrnConfig::default())
+    let metadata = ConfigLoader::new(region_id, text.as_bytes(), path_id.inner(), &ChrnConfig::default())
         .load_config()
         .expect_success();
     let toks = Lexer::new(
         metadata.self_id,
-        metadata.path_id,
+        metadata.src_id,
         &metadata.src_bytes,
         metadata.script_start,
         &mut ChrnConfig::default(),
@@ -1417,7 +1417,7 @@ fn read_ident_includes_trailing_underscore() {
     let mut cfg = ChrnConfig::default();
     let mut lex = Lexer::new(
         SourceRegionId::new(0),
-        SourceId::new(0).into_tagged::<PathTag>(),
+        SourceId::new(0),
         src,
         0,
         &mut cfg,
@@ -1451,7 +1451,7 @@ fn read_ident_handles_bare_underscore() {
     let mut cfg = ChrnConfig::default();
     let mut lex = Lexer::new(
         SourceRegionId::new(0),
-        SourceId::new(0).into_tagged::<PathTag>(),
+        SourceId::new(0),
         src,
         0,
         &mut cfg,
@@ -1483,7 +1483,7 @@ fn read_ident_mixed_alphanumeric_and_underscore() {
     let mut cfg = ChrnConfig::default();
     let mut lex = Lexer::new(
         SourceRegionId::new(0),
-        SourceId::new(0).into_tagged::<PathTag>(),
+        SourceId::new(0),
         src,
         0,
         &mut cfg,
@@ -1546,7 +1546,7 @@ fn invalid_control_whitespace_recovery_makes_progress() {
     let mut cfg = ChrnConfig::default();
     let output = Lexer::new(
         SourceRegionId::new(0),
-        SourceId::new(0).into_tagged::<PathTag>(),
+        SourceId::new(0),
         src,
         0,
         &mut cfg,
@@ -1627,7 +1627,7 @@ fn invalid_token_count_matches_emitted_invalid_tokens() {
         let mut cfg = ChrnConfig::default();
         let output = Lexer::new(
             SourceRegionId::new(0),
-            SourceId::new(0).into_tagged::<PathTag>(),
+            SourceId::new(0),
             src,
             0,
             &mut cfg,
@@ -1673,7 +1673,7 @@ fn invalid_token_count_matches_emitted_invalid_tokens() {
     let mut cfg = ChrnConfig::default();
     let output = Lexer::new(
         SourceRegionId::new(0),
-        SourceId::new(0).into_tagged::<PathTag>(),
+        SourceId::new(0),
         &combined,
         0,
         &mut cfg,
@@ -1707,7 +1707,7 @@ fn invalid_escape_tokens_obey_invalid_token_cap_without_overflow() {
     let mut cfg = ChrnConfig::default();
     let output = Lexer::new(
         SourceRegionId::new(0),
-        SourceId::new(0).into_tagged::<PathTag>(),
+        SourceId::new(0),
         &src,
         0,
         &mut cfg,
@@ -1767,7 +1767,7 @@ fn trivia_whitespace_coalesces_spaces_and_unicode_whitespace() {
     let mut cfg = ChrnConfig::default();
     let output = Lexer::new(
         SourceRegionId::new(0),
-        SourceId::new(0).into_tagged::<PathTag>(),
+        SourceId::new(0),
         src,
         0,
         &mut cfg,
@@ -1788,7 +1788,7 @@ fn trivia_whitespace_coalesces_spaces_and_unicode_whitespace() {
     let src: &[u8] = b"    x";
     let output = Lexer::new(
         SourceRegionId::new(0),
-        SourceId::new(0).into_tagged::<PathTag>(),
+        SourceId::new(0),
         src,
         0,
         &mut cfg,
@@ -1810,7 +1810,7 @@ fn trivia_whitespace_coalesces_spaces_and_unicode_whitespace() {
     let src = src_str.as_bytes();
     let output = Lexer::new(
         SourceRegionId::new(0),
-        SourceId::new(0).into_tagged::<PathTag>(),
+        SourceId::new(0),
         src,
         0,
         &mut cfg,
@@ -1829,7 +1829,7 @@ fn trivia_whitespace_coalesces_spaces_and_unicode_whitespace() {
     let src = src_str.as_bytes();
     let output = Lexer::new(
         SourceRegionId::new(0),
-        SourceId::new(0).into_tagged::<PathTag>(),
+        SourceId::new(0),
         src,
         0,
         &mut cfg,
@@ -1851,7 +1851,7 @@ fn trivia_tabs_are_emitted_individually() {
     let mut cfg = ChrnConfig::default();
     let output = Lexer::new(
         SourceRegionId::new(0),
-        SourceId::new(0).into_tagged::<PathTag>(),
+        SourceId::new(0),
         src,
         0,
         &mut cfg,
@@ -1870,7 +1870,7 @@ fn trivia_tabs_are_emitted_individually() {
     let src: &[u8] = b" \t  \tx";
     let output = Lexer::new(
         SourceRegionId::new(0),
-        SourceId::new(0).into_tagged::<PathTag>(),
+        SourceId::new(0),
         src,
         0,
         &mut cfg,
@@ -1906,7 +1906,7 @@ fn trivia_newlines_lf_and_crlf() {
     let src: &[u8] = b"\nx";
     let output = Lexer::new(
         SourceRegionId::new(0),
-        SourceId::new(0).into_tagged::<PathTag>(),
+        SourceId::new(0),
         src,
         0,
         &mut cfg,
@@ -1922,7 +1922,7 @@ fn trivia_newlines_lf_and_crlf() {
     let src: &[u8] = b"\r\nx";
     let output = Lexer::new(
         SourceRegionId::new(0),
-        SourceId::new(0).into_tagged::<PathTag>(),
+        SourceId::new(0),
         src,
         0,
         &mut cfg,
@@ -1939,7 +1939,7 @@ fn trivia_newlines_lf_and_crlf() {
     let src: &[u8] = b"\r\n\n\r\nx";
     let output = Lexer::new(
         SourceRegionId::new(0),
-        SourceId::new(0).into_tagged::<PathTag>(),
+        SourceId::new(0),
         src,
         0,
         &mut cfg,
@@ -1971,7 +1971,7 @@ fn trivia_single_line_comments_basic() {
     let src: &[u8] = b"// a single line comment\nfoo";
     let output = Lexer::new(
         SourceRegionId::new(0),
-        SourceId::new(0).into_tagged::<PathTag>(),
+        SourceId::new(0),
         src,
         0,
         &mut cfg,
@@ -1997,7 +1997,7 @@ fn trivia_single_line_comments_basic() {
     let src: &[u8] = b"//\nfoo";
     let output = Lexer::new(
         SourceRegionId::new(0),
-        SourceId::new(0).into_tagged::<PathTag>(),
+        SourceId::new(0),
         src,
         0,
         &mut cfg,
@@ -2015,7 +2015,7 @@ fn trivia_single_line_comments_basic() {
     let src: &[u8] = b"foo // trailing at eof";
     let output = Lexer::new(
         SourceRegionId::new(0),
-        SourceId::new(0).into_tagged::<PathTag>(),
+        SourceId::new(0),
         src,
         0,
         &mut cfg,
@@ -2044,7 +2044,7 @@ fn trivia_single_line_comments_basic() {
     let src = src_str.as_bytes();
     let output = Lexer::new(
         SourceRegionId::new(0),
-        SourceId::new(0).into_tagged::<PathTag>(),
+        SourceId::new(0),
         src,
         0,
         &mut cfg,
@@ -2066,7 +2066,7 @@ fn trivia_multi_line_comments_basic() {
     let src: &[u8] = b"/* hello block */ foo";
     let output = Lexer::new(
         SourceRegionId::new(0),
-        SourceId::new(0).into_tagged::<PathTag>(),
+        SourceId::new(0),
         src,
         0,
         &mut cfg,
@@ -2092,7 +2092,7 @@ fn trivia_multi_line_comments_basic() {
     let src: &[u8] = b"/**/foo";
     let output = Lexer::new(
         SourceRegionId::new(0),
-        SourceId::new(0).into_tagged::<PathTag>(),
+        SourceId::new(0),
         src,
         0,
         &mut cfg,
@@ -2108,7 +2108,7 @@ fn trivia_multi_line_comments_basic() {
     let src: &[u8] = b"/* line 1\nline 2\r\nline 3 */foo";
     let output = Lexer::new(
         SourceRegionId::new(0),
-        SourceId::new(0).into_tagged::<PathTag>(),
+        SourceId::new(0),
         src,
         0,
         &mut cfg,
@@ -2124,7 +2124,7 @@ fn trivia_multi_line_comments_basic() {
     let src: &[u8] = b"/*** not close / nor * ***/foo";
     let output = Lexer::new(
         SourceRegionId::new(0),
-        SourceId::new(0).into_tagged::<PathTag>(),
+        SourceId::new(0),
         src,
         0,
         &mut cfg,
@@ -2146,7 +2146,7 @@ fn trivia_nested_multi_line_comments() {
     let src: &[u8] = b"/* outer /* inner */ outer */foo";
     let output = Lexer::new(
         SourceRegionId::new(0),
-        SourceId::new(0).into_tagged::<PathTag>(),
+        SourceId::new(0),
         src,
         0,
         &mut cfg,
@@ -2173,7 +2173,7 @@ fn trivia_empty_source_and_trivia_only_source() {
     let src: &[u8] = b"";
     let output = Lexer::new(
         SourceRegionId::new(0),
-        SourceId::new(0).into_tagged::<PathTag>(),
+        SourceId::new(0),
         src,
         0,
         &mut cfg,
@@ -2188,7 +2188,7 @@ fn trivia_empty_source_and_trivia_only_source() {
     let src: &[u8] = b"  // comment\n/* block */\n\t ";
     let output = Lexer::new(
         SourceRegionId::new(0),
-        SourceId::new(0).into_tagged::<PathTag>(),
+        SourceId::new(0),
         src,
         0,
         &mut cfg,
@@ -2219,7 +2219,7 @@ fn trivia_single_line_comment_crlf_handling() {
     let src: &[u8] = b"// comment\r\nfoo";
     let output = Lexer::new(
         SourceRegionId::new(0),
-        SourceId::new(0).into_tagged::<PathTag>(),
+        SourceId::new(0),
         src,
         0,
         &mut cfg,
@@ -2257,7 +2257,7 @@ fn trivia_nested_multi_line_comment_delimiter_tracking() {
     let src: &[u8] = b"/* a /*/ b */ foo";
     let output = Lexer::new(
         SourceRegionId::new(0),
-        SourceId::new(0).into_tagged::<PathTag>(),
+        SourceId::new(0),
         src,
         0,
         &mut cfg,
@@ -2288,7 +2288,7 @@ fn trivia_interleaved_mixed_sequence() {
     let src: &[u8] = b"  /* block */ \t // line\n\r\n\tbar";
     let output = Lexer::new(
         SourceRegionId::new(0),
-        SourceId::new(0).into_tagged::<PathTag>(),
+        SourceId::new(0),
         src,
         0,
         &mut cfg,
@@ -2345,7 +2345,7 @@ fn trivia_token_stream_contiguity_and_association() {
     let src: &[u8] = b"let x: int = 42 // assign\n/* next */ struct Point { x: int }";
     let output = Lexer::new(
         SourceRegionId::new(0),
-        SourceId::new(0).into_tagged::<PathTag>(),
+        SourceId::new(0),
         src,
         0,
         &mut cfg,
@@ -2422,7 +2422,7 @@ fn trivia_with_embedding_def_and_end() {
     let src: &[u8] = b"@def\n  var x = 1\n@end";
     let output = Lexer::new(
         SourceRegionId::new(0),
-        SourceId::new(0).into_tagged::<PathTag>(),
+        SourceId::new(0),
         src,
         0,
         &mut cfg,
@@ -2452,7 +2452,7 @@ fn trivia_associated_with_invalid_tokens() {
     let src: &[u8] = b"  $  valid";
     let output = Lexer::new(
         SourceRegionId::new(0),
-        SourceId::new(0).into_tagged::<PathTag>(),
+        SourceId::new(0),
         src,
         0,
         &mut cfg,
@@ -2484,7 +2484,7 @@ fn trivia_unclosed_multi_line_comment_at_eof() {
     let src: &[u8] = b"/* unclosed comment at eof";
     let output = Lexer::new(
         SourceRegionId::new(0),
-        SourceId::new(0).into_tagged::<PathTag>(),
+        SourceId::new(0),
         src,
         0,
         &mut cfg,
@@ -2510,7 +2510,7 @@ fn trivia_token_variety_leading_trivia_association() {
     let src: &[u8] = b"  ident  100  3.14  \"hello\"  'c'  true  ::  :=  ->  =>  ..=";
     let output = Lexer::new(
         SourceRegionId::new(0),
-        SourceId::new(0).into_tagged::<PathTag>(),
+        SourceId::new(0),
         src,
         0,
         &mut cfg,

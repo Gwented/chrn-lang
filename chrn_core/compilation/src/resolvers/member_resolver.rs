@@ -70,7 +70,7 @@ impl MemberResolver<'_> {
     /// only resolving their types
     // Would options be ok here?
     pub fn resolve(&mut self, env: &ResolverEnv) -> SourceDiagnosticSummary {
-        self.cfg.perf_tracker_mut().start(env.region.path_id);
+        self.cfg.perf_tracker_mut().start(env.region.src_id);
         // Re-used hashet when identifiers are checked for members.
         let mut ident_tracker: DuplicateTracker<SpannedContainer<InternedIdUTF8>> =
             DuplicateTracker::with_capacities(4, 0);
@@ -138,7 +138,7 @@ impl MemberResolver<'_> {
                             None,
                             DiagnosticLevel::Error,
                             core_msg,
-                            env.region.path_id,
+                            env.region.src_id,
                         )
                         .add_annotation(
                             field_typedef.sp_ty_expr.span,
@@ -279,7 +279,7 @@ impl MemberResolver<'_> {
                                 None,
                                 DiagnosticLevel::Error,
                                 core_msg,
-                                env.region.path_id,
+                                env.region.src_id,
                             )
                             .add_annotation(
                                 sp_ty_expr.span,

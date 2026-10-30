@@ -1,4 +1,4 @@
-use crate::id_types::{PathId, SourceRegionId};
+use crate::id_types::{SourceId, SourceRegionId};
 
 // Should these have identifiers?
 /// A `chrn` region.
@@ -14,11 +14,9 @@ pub struct SourceRegion {
     ///
     /// This is relative depending on if `@def` was used
     pub src_bytes: Vec<u8>,
-    //TODO: Maybe give it a "SourceId" instead of specifically path so that not in-memory data can
-    //be referred to through the source manager.
-    /// Path of this region
-    pub path_id: PathId,
-    // pub src_id: SourceId,
+    //TODO: Support loading in-memory sources through the module extraction entry points.
+    /// Source containing this region
+    pub src_id: SourceId,
     // / Amount of \n within config file so binary search can be done by error reporter
     // pub new_lines: Vec<usize>,
     /// The script language start which can be different depending on if @def is used
@@ -41,8 +39,7 @@ impl SourceRegion {
         abs_col_start: u32,
         src_bytes: Vec<u8>,
         self_id: SourceRegionId,
-        path_id: PathId,
-        // src_id: SoruceId,
+        src_id: SourceId,
         script_start: usize,
         serial_start: Option<usize>,
     ) -> SourceRegion {
@@ -52,7 +49,7 @@ impl SourceRegion {
             abs_ln_num_start,
             abs_col_start,
             src_bytes,
-            path_id,
+            src_id,
             self_id,
             script_start,
             serial_start,

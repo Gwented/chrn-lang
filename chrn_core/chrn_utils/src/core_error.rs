@@ -4,6 +4,7 @@ use std::path::Path;
 use crate::{
     arena::Arena,
     id_types::SourceRegionId,
+    intern::Intern,
     source_utils::source_manager::SourceManager,
     source_utils::{source_diagnostic::SourceDiagnostic, source_region::SourceRegion},
 };
@@ -58,6 +59,7 @@ impl From<std::io::Error> for ConfigLoadError {
 pub struct ModuleInitError {
     pub region: Option<Arena<SourceRegion, SourceRegionId>>,
     pub src_manager: SourceManager,
+    pub interner: Intern,
     pub cfg_err: ConfigLoadError,
 }
 
@@ -65,11 +67,13 @@ impl ModuleInitError {
     pub fn new(
         region: Option<Arena<SourceRegion, SourceRegionId>>,
         src_manager: SourceManager,
+        interner: Intern,
         cfg_err: ConfigLoadError,
     ) -> ModuleInitError {
         ModuleInitError {
             region,
             src_manager,
+            interner,
             cfg_err,
         }
     }

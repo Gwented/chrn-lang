@@ -84,7 +84,7 @@ impl NamespaceResolver<'_> {
         &mut self,
         env: &RegistrationEnv,
     ) -> (Vec<CompilationUnit>, SourceDiagnosticSummary) {
-        self.cfg.perf_tracker_mut().start(env.region.path_id);
+        self.cfg.perf_tracker_mut().start(env.region.src_id);
         // Storing all symbols created associated with the current module so that compilation
         // doens't have to depend on the ast to keep a coherent understanding of
         let mut comp_units: Vec<CompilationUnit> = Vec::with_capacity(env.ast_info.items.len());
@@ -607,7 +607,7 @@ impl NamespaceResolver<'_> {
             ErrorCode::ScopeErr.into(),
             DiagnosticLevel::Error,
             core_msg,
-            env.region.path_id,
+            env.region.src_id,
         )
         .add_annotation(
             orig_span,

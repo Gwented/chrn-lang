@@ -71,7 +71,7 @@ pub fn find_sym_id_with_static_ret_preset(
                 ErrorCode::GenericsErr.into(),
                 DiagnosticLevel::Error,
                 "Not expecting a type",
-                env.region.path_id,
+                env.region.src_id,
             )
             .add_annotation(last_seg.span, AnnotationKind::Primary, None);
             return Err(PresetErr::General(builder));

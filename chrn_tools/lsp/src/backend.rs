@@ -225,7 +225,7 @@ impl Backend {
         let region = match ConfigLoader::new(
             chrn_utils::id_types::SourceRegionId::new(0),
             Cursor::new(text.as_bytes()),
-            path_id,
+            path_id.inner(),
             &chrn_cfg,
         )
         .load_config()

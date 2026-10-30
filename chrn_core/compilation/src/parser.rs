@@ -52,7 +52,7 @@ pub fn parse(
     toks: &[SpannedToken],
     interner: &Intern,
 ) -> (AstInfo, SourceDiagnosticSummary) {
-    cfg.perf_tracker_mut().start(region.path_id);
+    cfg.perf_tracker_mut().start(region.src_id);
 
     // Not sure about this metric because 12 tokens, in relation to a complex section especially, is
     // possibly not even covering a config member. But to get more details, we'd need to carry known

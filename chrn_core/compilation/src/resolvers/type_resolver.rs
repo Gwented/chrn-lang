@@ -156,7 +156,7 @@ impl<'res> TypeResolver<'res> {
     /// allows for `TypeResolver` to maintain it's state throughout resolution while
     /// mutating off of given envs.
     pub fn resolve<'env>(&mut self, env: &'env ResolverEnv) -> SourceDiagnosticSummary {
-        self.cfg.perf_tracker_mut().start(env.region.path_id);
+        self.cfg.perf_tracker_mut().start(env.region.src_id);
         let speculated_seen = if env.comp_syms.len() > 0 { 4 } else { 0 };
         // Re-used hash-set for when identifiers are checked, like for configs, alias params, etc.
         let mut ident_tracker: DuplicateTracker<SpannedContainer<InternedIdUTF8>> =
@@ -1212,7 +1212,7 @@ impl<'res> TypeResolver<'res> {
                     ErrorCode::GenericsErr.into(),
                     DiagnosticLevel::Error,
                     "Config root must be a user defined type",
-                    env.region.path_id,
+                    env.region.src_id,
                 )
                 .add_annotation(last_seg.span, AnnotationKind::Primary, None);
                 self.summary.push_diag(builder.build());
@@ -1246,7 +1246,7 @@ impl<'res> TypeResolver<'res> {
                             ErrorCode::ConfigDeclErr.into(),
                             DiagnosticLevel::Error,
                             core_msg,
-                            env.region.path_id,
+                            env.region.src_id,
                         )
                         .add_annotation(
                             opt.name_span,
@@ -1327,7 +1327,7 @@ impl<'res> TypeResolver<'res> {
                         ErrorCode::ConfigDeclErr.into(),
                         DiagnosticLevel::Error,
                         core_msg,
-                        env.region.path_id,
+                        env.region.src_id,
                     )
                     .add_annotation(span, AnnotationKind::Primary, None);
                     self.summary.push_diag(builder.build());
@@ -1373,7 +1373,7 @@ impl<'res> TypeResolver<'res> {
                 ErrorCode::ConfigDeclErr.into(),
                 DiagnosticLevel::Error,
                 core_msg,
-                env.region.path_id,
+                env.region.src_id,
             )
             .add_annotation(last_seg.span, AnnotationKind::Primary, None)
             .add_note("Only user defined types and intrinsic namespaces are valid config roots");
@@ -1759,7 +1759,7 @@ impl<'res> TypeResolver<'res> {
                     ErrorCode::ConfigDeclErr.into(),
                     DiagnosticLevel::Error,
                     core_msg,
-                    env.region.path_id,
+                    env.region.src_id,
                 )
                 .add_annotation(
                     sp_path_span,
@@ -1878,7 +1878,7 @@ impl<'res> TypeResolver<'res> {
                             ErrorCode::ConfigDeclErr.into(),
                             DiagnosticLevel::Error,
                             core_msg,
-                            env.region.path_id,
+                            env.region.src_id,
                         )
                         .add_annotation(
                             abs_opt.name_span,
@@ -2038,7 +2038,7 @@ impl<'res> TypeResolver<'res> {
                                 None,
                                 DiagnosticLevel::Warn,
                                 core_msg,
-                                env.region.path_id,
+                                env.region.src_id,
                             )
                             .add_annotation(
                                 span,
@@ -2090,7 +2090,7 @@ impl<'res> TypeResolver<'res> {
                             ErrorCode::ConfigDeclErr.into(),
                             DiagnosticLevel::Error,
                             core_msg,
-                            env.region.path_id,
+                            env.region.src_id,
                         )
                         .add_annotation(
                             span,
@@ -2250,7 +2250,7 @@ impl<'res> TypeResolver<'res> {
                                         ErrorCode::ConfigDeclErr.into(),
                                         DiagnosticLevel::Error,
                                         core_msg,
-                                        env.region.path_id,
+                                        env.region.src_id,
                                     )
                                     // Pointing first nesting point
                                     .add_annotation(
@@ -2452,7 +2452,7 @@ impl<'res> TypeResolver<'res> {
                                         ErrorCode::ConfigDeclErr.into(),
                                         DiagnosticLevel::Error,
                                         core_msg,
-                                        env.region.path_id,
+                                        env.region.src_id,
                                     )
                                     .add_annotation(
                                         sp_parent_name_id.span,
@@ -3380,7 +3380,7 @@ impl<'res> TypeResolver<'res> {
                                         None,
                                         DiagnosticLevel::Error,
                                         core_msg,
-                                        env.region.path_id,
+                                        env.region.src_id,
                                     )
                                     .add_annotation(
                                         spanned_expr.span,
@@ -3481,7 +3481,7 @@ impl<'res> TypeResolver<'res> {
                                 None,
                                 DiagnosticLevel::Error,
                                 core_msg,
-                                env.region.path_id,
+                                env.region.src_id,
                             )
                             .add_annotation(
                                 spanned_expr.span,
@@ -3520,7 +3520,7 @@ impl<'res> TypeResolver<'res> {
                         ErrorCode::ScopeErr.into(),
                         DiagnosticLevel::Error,
                         core_msg,
-                        env.region.path_id,
+                        env.region.src_id,
                     )
                     .add_annotation(
                         spanned_expr.span,
@@ -4069,7 +4069,7 @@ impl<'res> TypeResolver<'res> {
                             ErrorCode::GenericsErr.into(),
                             DiagnosticLevel::Error,
                             core_msg,
-                            env.region.path_id,
+                            env.region.src_id,
                         )
                         .add_annotation(
                             last_seg.span,
@@ -4182,7 +4182,7 @@ impl<'res> TypeResolver<'res> {
                             None,
                             DiagnosticLevel::Error,
                             core_msg,
-                            env.region.path_id,
+                            env.region.src_id,
                         )
                         .add_annotation(
                             spanned_expr.span,
@@ -4345,7 +4345,7 @@ impl<'res> TypeResolver<'res> {
                     None,
                     DiagnosticLevel::Error,
                     core_msg,
-                    env.region.path_id,
+                    env.region.src_id,
                 )
                 .add_annotation(
                     cycled_span,

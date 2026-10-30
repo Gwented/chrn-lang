@@ -11,7 +11,7 @@ pub mod token;
 pub mod trivia;
 
 use chrn_utils::{
-    id_types::{PathId, SourceRegionId},
+    id_types::{SourceId, SourceRegionId},
     intern::{self, Intern},
     source_utils::source_span::SourceSpan,
 };
@@ -43,7 +43,7 @@ pub struct Lexer<'a> {
     cursor: BasicCursor<'a, u8>,
     script_start: usize,
     current_region_id: SourceRegionId,
-    current_path_id: PathId,
+    current_src_id: SourceId,
     cfg: &'a mut ChrnConfig,
     /// For threshold of invalid tokens before terminating lex
     invalid_toks: u8,
@@ -59,7 +59,7 @@ impl Lexer<'_> {
     // here should MAYBE be removed
     pub fn new<'a>(
         current_region_id: SourceRegionId,
-        current_path_id: PathId,
+        current_src_id: SourceId,
         src: &'a [u8],
         script_start: usize,
         cfg: &'a mut ChrnConfig,
@@ -69,7 +69,7 @@ impl Lexer<'_> {
         let speculated_trivia = src.len() / 25;
         Lexer {
             current_region_id,
-            current_path_id,
+            current_src_id,
             cursor: BasicCursor::new(src),
             script_start,
             trivia: Vec::with_capacity(speculated_trivia),
@@ -96,7 +96,7 @@ impl Lexer<'_> {
         let mut toks: Vec<SpannedToken> = Vec::with_capacity(speculated_toks);
         let mut hash_tok_indices: Vec<usize> = Vec::new();
 
-        self.cfg.perf_tracker_mut().start(self.current_path_id);
+        self.cfg.perf_tracker_mut().start(self.current_src_id);
 
         // Could be removed
         // let mut in_def = false;

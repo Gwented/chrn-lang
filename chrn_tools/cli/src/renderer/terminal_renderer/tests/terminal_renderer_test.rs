@@ -1,3 +1,4 @@
+use chrn_utils::intern::Intern;
 use chrn_utils::source_utils::source_diagnostic::footers::FooterKind;
 
 use crate::renderer::terminal_renderer::{
@@ -187,6 +188,7 @@ fn diagnostics_without_a_region_arena_render_header_only() {
         &[],
         None,
         &src_manager(),
+        &Intern::init(),
         &plain_cfg(),
     );
 

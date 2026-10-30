@@ -5,6 +5,7 @@ use chrn_utils::{
     arena::Arena,
     err_codes,
     id_types::SourceRegionId,
+    intern::Intern,
     source_utils::source_manager::SourceManager,
     source_utils::{
         source_diagnostic::{SourceDiagnostic, annotations::Annotation, footers::FooterKind},
@@ -15,7 +16,7 @@ use chrn_utils::{
 
 use crate::renderer::{
     output_helpers::{
-        self, annotation_kind_str, level_str, project_absolute_span, resolve_region_path,
+        annotation_kind_str, level_str, project_absolute_span, resolve_region_source,
     },
     yaml_renderer::{escape::push_yaml_str, yaml_config::YamlRenderConfig},
 };
@@ -30,9 +31,9 @@ const INDENT: &str = "  ";
 /// quoting rules).
 ///
 /// IDs are expanded the same way the JSON renderer expands them:
-/// - `SourceDiagnostic::path_id` is always resolved to its path string via
-///   the `SourceManager`.
-/// - `SourceSpan::region_id` is resolved to its region's path string when
+/// - `SourceDiagnostic::src_id` is resolved to its source display label via the
+///   `SourceManager` and its associated interner, and emitted in the existing `path` field.
+/// - `SourceSpan::region_id` is resolved to its region's source display label when
 ///   the `region_arena` is available, otherwise the field is emitted as
 ///   `null`.
 ///
@@ -51,6 +52,7 @@ pub(crate) fn render_yaml_diags(
     footers: &[FooterKind],
     region_arena_opt: Option<&Arena<SourceRegion, SourceRegionId>>,
     src_manager: &SourceManager,
+    interner: &Intern,
     cfg: &YamlRenderConfig,
 ) -> String {
     let mut out = String::with_capacity(128 + diags.len() * 256);
@@ -62,7 +64,15 @@ pub(crate) fn render_yaml_diags(
     if cfg.minify {
         out.push('{');
     }
-    write_diagnostics_list(&mut out, diags, region_arena_opt, src_manager, 0, cfg);
+    write_diagnostics_list(
+        &mut out,
+        diags,
+        region_arena_opt,
+        src_manager,
+        interner,
+        0,
+        cfg,
+    );
     if cfg.minify {
         out.push_str(", ");
     }
@@ -93,6 +103,7 @@ fn write_diagnostics_list(
     diags: &[SourceDiagnostic],
     region_arena_opt: Option<&Arena<SourceRegion, SourceRegionId>>,
     src_manager: &SourceManager,
+    interner: &Intern,
     level: usize,
     config: &YamlRenderConfig,
 ) {
@@ -107,7 +118,7 @@ fn write_diagnostics_list(
             if i > 0 {
                 out.push_str(", ");
             }
-            write_diagnostic(out, diag, region_arena_opt, src_manager, 0, config);
+            write_diagnostic(out, diag, region_arena_opt, src_manager, interner, 0, config);
         }
         out.push(']');
     } else {
@@ -124,6 +135,7 @@ fn write_diagnostics_list(
                 diag,
                 region_arena_opt,
                 src_manager,
+                interner,
                 level + 1,
                 config,
             );
@@ -143,12 +155,13 @@ fn write_diagnostic(
     diag: &SourceDiagnostic,
     region_arena_opt: Option<&Arena<SourceRegion, SourceRegionId>>,
     src_manager: &SourceManager,
+    interner: &Intern,
     level: usize,
     config: &YamlRenderConfig,
 ) {
     if config.minify {
         out.push('{');
-        write_diagnostic_fields_minify(out, diag, region_arena_opt, src_manager, config);
+        write_diagnostic_fields_minify(out, diag, region_arena_opt, src_manager, interner, config);
         out.push('}');
     } else {
         // Sequence marker + first key on the same line.
@@ -178,11 +191,11 @@ fn write_diagnostic(
         push_yaml_str(out, &diag.core_msg);
         out.push('\n');
 
-        let path = src_manager.extract_path(diag.path_id);
+        let path = src_manager.display_source(diag.src_id, interner);
         write_indent(out, key_level, config);
         push_yaml_str(out, "path");
         out.push_str(": ");
-        push_yaml_str(out, &path.display().to_string());
+        push_yaml_str(out, &path);
         out.push('\n');
 
         // `annotations` is a sub-list whose items live at `key_level + 1`.
@@ -193,6 +206,7 @@ fn write_diagnostic(
             &diag.annotations,
             region_arena_opt,
             src_manager,
+            interner,
             key_level,
             config,
         );
@@ -223,6 +237,7 @@ fn write_diagnostic_fields_minify(
     diag: &SourceDiagnostic,
     region_arena_opt: Option<&Arena<SourceRegion, SourceRegionId>>,
     src_manager: &SourceManager,
+    interner: &Intern,
     config: &YamlRenderConfig,
 ) {
     // level
@@ -247,10 +262,10 @@ fn write_diagnostic_fields_minify(
     out.push_str(", ");
 
     // path
-    let path = src_manager.extract_path(diag.path_id);
+    let path = src_manager.display_source(diag.src_id, interner);
     push_yaml_str(out, "path");
     out.push_str(": ");
-    push_yaml_str(out, &path.display().to_string());
+    push_yaml_str(out, &path);
     out.push_str(", ");
 
     // annotations: flow-style sequence of flow-style mappings
@@ -264,7 +279,7 @@ fn write_diagnostic_fields_minify(
             if i > 0 {
                 out.push_str(", ");
             }
-            write_annotation(out, ann, region_arena_opt, src_manager, 0, config);
+            write_annotation(out, ann, region_arena_opt, src_manager, interner, 0, config);
         }
         out.push(']');
     }
@@ -310,6 +325,7 @@ fn write_annotations_list(
     annotations: &[Annotation],
     region_arena_opt: Option<&Arena<SourceRegion, SourceRegionId>>,
     src_manager: &SourceManager,
+    interner: &Intern,
     level: usize,
     config: &YamlRenderConfig,
 ) {
@@ -323,7 +339,7 @@ fn write_annotations_list(
             if i > 0 {
                 out.push_str(", ");
             }
-            write_annotation(out, ann, region_arena_opt, src_manager, 0, config);
+            write_annotation(out, ann, region_arena_opt, src_manager, interner, 0, config);
         }
         out.push(']');
     } else {
@@ -334,6 +350,7 @@ fn write_annotations_list(
                 ann,
                 region_arena_opt,
                 src_manager,
+                interner,
                 level + 1,
                 config,
             );
@@ -351,6 +368,7 @@ fn write_annotation(
     ann: &Annotation,
     region_arena_opt: Option<&Arena<SourceRegion, SourceRegionId>>,
     src_manager: &SourceManager,
+    interner: &Intern,
     level: usize,
     config: &YamlRenderConfig,
 ) {
@@ -372,7 +390,7 @@ fn write_annotation(
         // span (sub-mapping in flow style)
         push_yaml_str(out, "span");
         out.push_str(": ");
-        write_span_inline(out, &ann.span, region_arena_opt, src_manager);
+        write_span_inline(out, &ann.span, region_arena_opt, src_manager, interner);
         out.push('}');
     } else {
         write_indent(out, level, config);
@@ -401,6 +419,7 @@ fn write_annotation(
             &ann.span,
             region_arena_opt,
             src_manager,
+            interner,
             key_level,
             config,
         );
@@ -418,6 +437,7 @@ fn write_span(
     span: &SourceSpan,
     region_arena_opt: Option<&Arena<SourceRegion, SourceRegionId>>,
     src_manager: &SourceManager,
+    interner: &Intern,
     level: usize,
     config: &YamlRenderConfig,
 ) {
@@ -427,7 +447,7 @@ fn write_span(
         // a dedicated inline writer so the wrapping `: { ... }` is
         // emitted consistently.
         out.push_str(": ");
-        write_span_inline(out, span, region_arena_opt, src_manager);
+        write_span_inline(out, span, region_arena_opt, src_manager, interner);
     } else {
         out.push_str(":\n");
 
@@ -436,7 +456,7 @@ fn write_span(
         write_indent(out, key_level, config);
         push_yaml_str(out, "region_path");
         out.push_str(": ");
-        match resolve_region_path(region_arena_opt, src_manager, span.region_id) {
+        match resolve_region_source(region_arena_opt, src_manager, interner, span.region_id) {
             Some(path) => push_yaml_str(out, &path),
             None => out.push_str("null"),
         }
@@ -470,11 +490,12 @@ fn write_span_inline(
     span: &SourceSpan,
     region_arena_opt: Option<&Arena<SourceRegion, SourceRegionId>>,
     src_manager: &SourceManager,
+    interner: &Intern,
 ) {
     out.push('{');
     push_yaml_str(out, "region_path");
     out.push_str(": ");
-    match resolve_region_path(region_arena_opt, src_manager, span.region_id) {
+    match resolve_region_source(region_arena_opt, src_manager, interner, span.region_id) {
         Some(path) => push_yaml_str(out, &path),
         None => out.push_str("null"),
     }
@@ -683,6 +704,7 @@ mod tests {
             &[],
             None,
             &src_manager,
+            &Intern::init(),
             &YamlRenderConfig::new(false),
         );
         assert_eq!(out, "diagnostics: []\nfooters: []\n");
@@ -699,7 +721,7 @@ mod tests {
             None,
             DiagnosticLevel::Error,
             "boom".to_string(),
-            path_id,
+            path_id.inner(),
             vec![ann],
             vec!["try this".to_string()],
             vec!["note one".to_string()],
@@ -710,6 +732,7 @@ mod tests {
             &[],
             None,
             &src_manager,
+            &Intern::init(),
             &YamlRenderConfig::new(false),
         );
         // First key of the diagnostic sits on the same line as `-`.
@@ -747,7 +770,7 @@ mod tests {
             None,
             DiagnosticLevel::Warn,
             String::new(),
-            path_id,
+            path_id.inner(),
             vec![ann],
             Vec::new(),
             Vec::new(),
@@ -758,6 +781,7 @@ mod tests {
             &[],
             None,
             &src_manager,
+            &Intern::init(),
             &YamlRenderConfig::new(false),
         );
         assert!(out.contains("        label: null\n"), "got:\n{out}");
@@ -771,6 +795,7 @@ mod tests {
             &[FooterKind::DiagnosticsExceeded(7)],
             None,
             &src_manager,
+            &Intern::init(),
             &YamlRenderConfig::new(false),
         );
         assert!(
@@ -793,7 +818,7 @@ mod tests {
             None,
             DiagnosticLevel::Error,
             "boom".to_string(),
-            path_id,
+            path_id.inner(),
             vec![ann],
             vec!["try this".to_string()],
             vec!["note one".to_string()],
@@ -804,6 +829,7 @@ mod tests {
             &[],
             None,
             &src_manager,
+            &Intern::init(),
             &YamlRenderConfig::new(true),
         );
         // Minified output is a single line, no indentation, no newlines.
@@ -838,6 +864,7 @@ mod tests {
             &[],
             None,
             &src_manager,
+            &Intern::init(),
             &YamlRenderConfig::new(true),
         );
         assert_eq!(out, "{diagnostics: [], footers: []}");
@@ -851,6 +878,7 @@ mod tests {
             &[FooterKind::DiagnosticsExceeded(7)],
             None,
             &src_manager,
+            &Intern::init(),
             &YamlRenderConfig::new(true),
         );
         assert_eq!(
@@ -867,6 +895,7 @@ mod tests {
             &[FooterKind::MaxModulesExceeded(256)],
             None,
             &src_manager,
+            &Intern::init(),
             &YamlRenderConfig::new(false),
         );
         assert!(
@@ -885,6 +914,7 @@ mod tests {
             &[FooterKind::MaxModulesExceeded(256)],
             None,
             &src_manager,
+            &Intern::init(),
             &YamlRenderConfig::new(true),
         );
         assert_eq!(
@@ -910,7 +940,7 @@ mod tests {
             1,
             b"@def\nhello\n@end\n".to_vec(),
             region_id,
-            path_id,
+            path_id.inner(),
             128,
             Some(140),
         );
@@ -922,7 +952,7 @@ mod tests {
             None,
             DiagnosticLevel::Error,
             "boom".to_string(),
-            path_id,
+            path_id.inner(),
             vec![ann],
             Vec::new(),
             Vec::new(),
@@ -933,6 +963,7 @@ mod tests {
             &[],
             Some(&arena),
             &src_manager,
+            &Intern::init(),
             &YamlRenderConfig::new(false),
         );
         assert!(
@@ -958,7 +989,7 @@ mod tests {
             1,
             b"@def\nhello\n@end\n".to_vec(),
             region_id,
-            path_id,
+            path_id.inner(),
             200,
             Some(212),
         );
@@ -970,7 +1001,7 @@ mod tests {
             None,
             DiagnosticLevel::Error,
             "boom".to_string(),
-            path_id,
+            path_id.inner(),
             vec![ann],
             Vec::new(),
             Vec::new(),
@@ -981,6 +1012,7 @@ mod tests {
             &[],
             Some(&arena),
             &src_manager,
+            &Intern::init(),
             &YamlRenderConfig::new(true),
         );
         // 4 + 200 == 204, 9 + 200 == 209
@@ -1012,7 +1044,7 @@ mod tests {
             None,
             DiagnosticLevel::Error,
             "boom".to_string(),
-            path_id,
+            path_id.inner(),
             vec![ann],
             Vec::new(),
             Vec::new(),
@@ -1023,6 +1055,7 @@ mod tests {
             &[],
             Some(&arena),
             &src_manager,
+            &Intern::init(),
             &YamlRenderConfig::new(false),
         );
         assert!(out.contains("          start: 4\n"), "got:\n{out}");

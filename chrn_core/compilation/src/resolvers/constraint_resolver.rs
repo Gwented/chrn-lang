@@ -76,7 +76,7 @@ impl<'a> ConstraintResolver<'a> {
     }
 
     pub fn resolve(&mut self, env: &ResolverEnv) -> SourceDiagnosticSummary {
-        self.cfg.perf_tracker_mut().start(env.region.path_id);
+        self.cfg.perf_tracker_mut().start(env.region.src_id);
         // Everything skipped is not a factor in this compilation step.
         for comp_unit in env.comp_syms.iter().cloned() {
             match comp_unit {
@@ -159,7 +159,7 @@ impl<'a> ConstraintResolver<'a> {
                     None,
                     DiagnosticLevel::Error,
                     core_msg,
-                    env.region.path_id,
+                    env.region.src_id,
                 )
                 .add_annotation(expr.meta.expect_user(), AnnotationKind::Primary, None)
                 .add_note("May change");
@@ -457,7 +457,7 @@ impl<'a> ConstraintResolver<'a> {
                             ErrorCode::SchemaOptionErr.into(),
                             DiagnosticLevel::Error,
                             core_msg,
-                            env.region.path_id,
+                            env.region.src_id,
                         )
                         .add_annotation(
                             err_span,
@@ -485,7 +485,7 @@ impl<'a> ConstraintResolver<'a> {
                             ErrorCode::SchemaOptionErr.into(),
                             DiagnosticLevel::Error,
                             core_msg,
-                            env.region.path_id,
+                            env.region.src_id,
                         )
                         .add_annotation(
                             err_span,
@@ -528,7 +528,7 @@ impl<'a> ConstraintResolver<'a> {
                             ErrorCode::SchemaOptionErr.into(),
                             DiagnosticLevel::Error,
                             core_msg,
-                            env.region.path_id,
+                            env.region.src_id,
                         )
                         .add_annotation(
                             err_span,
@@ -558,7 +558,7 @@ impl<'a> ConstraintResolver<'a> {
                             ErrorCode::SchemaOptionErr.into(),
                             DiagnosticLevel::Error,
                             core_msg,
-                            env.region.path_id,
+                            env.region.src_id,
                         )
                         .add_annotation(
                             cfg_name_span,
@@ -586,7 +586,7 @@ impl<'a> ConstraintResolver<'a> {
                             ErrorCode::SchemaOptionErr.into(),
                             DiagnosticLevel::Error,
                             core_msg,
-                            env.region.path_id,
+                            env.region.src_id,
                         )
                         .add_annotation(sp_opt_name_id.span, AnnotationKind::Primary, None)
                         .add_annotation(
@@ -635,7 +635,7 @@ impl<'a> ConstraintResolver<'a> {
                         None,
                         DiagnosticLevel::Error,
                         core_msg,
-                        env.region.path_id,
+                        env.region.src_id,
                         *ast_span,
                     );
                     self.summary.push_diag(src_diag);
@@ -1672,7 +1672,7 @@ impl<'a> ConstraintResolver<'a> {
                     None,
                     DiagnosticLevel::Error,
                     core_msg,
-                    env.region.path_id,
+                    env.region.src_id,
                     active_span,
                 );
                 Err(Some(PresetErr::General(src_diag)))

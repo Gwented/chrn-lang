@@ -1,3 +1,4 @@
+use chrn_utils::intern::Intern;
 use chrn_utils::{id_types::SourceId, source_utils::source_manager::PathTag};
 use std::path::Path;
 
@@ -60,7 +61,7 @@ pub(super) fn diag(core_msg: &str, annotations: Vec<Annotation>) -> SourceDiagno
         None,
         DiagnosticLevel::Error,
         core_msg.to_string(),
-        SourceId::new(0).into_tagged::<PathTag>(),
+        SourceId::new(0),
         annotations,
         Vec::new(),
         Vec::new(),
@@ -95,7 +96,7 @@ pub(super) fn region_arena(
         0,
         src.as_ref().to_vec(),
         REGION,
-        SourceId::new(0).into_tagged::<PathTag>(),
+        SourceId::new(0),
         0,
         None,
     ));
@@ -117,7 +118,7 @@ pub(super) fn render_at(
 ) -> String {
     let arena = region_arena(src, abs_ln_num_start);
     let src_manager = src_manager();
-    let rendered = render_terminal_diags(&[diag], &[], Some(&arena), &src_manager, &plain_cfg());
+    let rendered = render_terminal_diags(&[diag], &[], Some(&arena), &src_manager, &Intern::init(), &plain_cfg());
 
     assert_eq!(rendered.len(), 1, "one diagnostic in, one rendering out");
     rendered

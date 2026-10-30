@@ -5,6 +5,7 @@ use chrn_utils::{
     arena::Arena,
     err_codes,
     id_types::SourceRegionId,
+    intern::Intern,
     source_utils::source_manager::SourceManager,
     source_utils::{
         source_diagnostic::{SourceDiagnostic, annotations::Annotation, footers::FooterKind},
@@ -16,19 +17,21 @@ use chrn_utils::{
 use crate::renderer::{
     json_renderer::{escape::push_json_str, json_config::JsonRenderConfig},
     output_helpers::{
-        self, annotation_kind_str, level_str, project_absolute_span, resolve_region_path,
+        self, annotation_kind_str, level_str, project_absolute_span, resolve_region_source,
     },
 };
 
 /// Renders a slice of source diagnostics as a single pretty-printed JSON document.
 ///
 /// IDs are expanded where it adds value for a JSON consumer:
-/// - `SourceDiagnostic::path_id` is always resolved to its path string via the `SourceManager`.
-/// - `SourceSpan::region_id` is resolved to its region's path string when the
+/// - `SourceDiagnostic::src_id` is resolved to its source display label via the `SourceManager`
+///   and its associated interner; the label is emitted in the existing `path` field.
+/// - `SourceSpan::region_id` is resolved to its region's source display label when the
 ///   `region_arena` is available, otherwise the field is emitted as `null`.
 ///
-/// Internal arena indices are intentionally not emitted. The span keeps its raw
-/// byte offsets (`start`, `end`).
+/// Internal arena indices are intentionally not emitted. Span byte offsets
+/// (`start`, `end`) are projected through the owning region's `script_start`
+/// when available; otherwise they retain their region-relative values.
 ///
 /// When `cfg.minify` is `true`, the pretty output is post-processed to strip
 /// all insignificant whitespace (newlines, indentation, and the space after `:`
@@ -39,9 +42,10 @@ pub(crate) fn render_json_diags(
     footers: &[FooterKind],
     region_arena_opt: Option<&Arena<SourceRegion, SourceRegionId>>,
     src_manager: &SourceManager,
+    interner: &Intern,
     cfg: &JsonRenderConfig,
 ) -> String {
-    let pretty = render_json_diags_pretty(diags, footers, region_arena_opt, src_manager);
+    let pretty = render_json_diags_pretty(diags, footers, region_arena_opt, src_manager, interner);
     if cfg.minify {
         minify_json(&pretty)
     } else {
@@ -57,12 +61,13 @@ fn render_json_diags_pretty(
     footers: &[FooterKind],
     region_arena_opt: Option<&Arena<SourceRegion, SourceRegionId>>,
     src_manager: &SourceManager,
+    interner: &Intern,
 ) -> String {
     // Rough pre-allocation: header overhead + a small amount per diagnostic.
     let mut out = String::with_capacity(128 + diags.len() * 256);
     out.push_str("{\n");
 
-    write_diagnostics_array(&mut out, diags, region_arena_opt, src_manager, 1);
+    write_diagnostics_array(&mut out, diags, region_arena_opt, src_manager, interner, 1);
     out.push_str(",\n");
     write_footers_array(&mut out, footers, 1);
 
@@ -114,6 +119,7 @@ fn write_diagnostics_array(
     diags: &[SourceDiagnostic],
     region_arena_opt: Option<&Arena<SourceRegion, SourceRegionId>>,
     src_manager: &SourceManager,
+    interner: &Intern,
     depth: usize,
 ) {
     write_indent(out, depth);
@@ -132,7 +138,7 @@ fn write_diagnostics_array(
             out.push(',');
             out.push('\n');
         }
-        write_diagnostic(out, diag, region_arena_opt, src_manager, depth + 1);
+        write_diagnostic(out, diag, region_arena_opt, src_manager, interner, depth + 1);
     }
     out.push('\n');
     write_indent(out, depth);
@@ -144,6 +150,7 @@ fn write_diagnostic(
     diag: &SourceDiagnostic,
     region_arena_opt: Option<&Arena<SourceRegion, SourceRegionId>>,
     src_manager: &SourceManager,
+    interner: &Intern,
     depth: usize,
 ) {
     write_indent(out, depth);
@@ -177,12 +184,12 @@ fn write_diagnostic(
     out.push(',');
     out.push('\n');
 
-    // "path" (always expanded)
-    let path = src_manager.extract_path(diag.path_id);
+    // Keep the existing "path" key for the source display label.
+    let path = src_manager.display_source(diag.src_id, interner);
     write_indent(out, depth + 1);
     push_json_str(out, "path");
     out.push_str(": ");
-    push_json_str(out, &path.display().to_string());
+    push_json_str(out, &path);
     out.push(',');
     out.push('\n');
 
@@ -195,6 +202,7 @@ fn write_diagnostic(
         &diag.annotations,
         region_arena_opt,
         src_manager,
+        interner,
         depth + 1,
     );
     out.push(',');
@@ -224,6 +232,7 @@ fn write_annotations_array(
     annotations: &[Annotation],
     region_arena_opt: Option<&Arena<SourceRegion, SourceRegionId>>,
     src_manager: &SourceManager,
+    interner: &Intern,
     depth: usize,
 ) {
     if annotations.is_empty() {
@@ -238,7 +247,7 @@ fn write_annotations_array(
             out.push(',');
             out.push('\n');
         }
-        write_annotation(out, ann, region_arena_opt, src_manager, depth + 1);
+        write_annotation(out, ann, region_arena_opt, src_manager, interner, depth + 1);
     }
     out.push('\n');
     write_indent(out, depth);
@@ -250,6 +259,7 @@ fn write_annotation(
     ann: &Annotation,
     region_arena_opt: Option<&Arena<SourceRegion, SourceRegionId>>,
     src_manager: &SourceManager,
+    interner: &Intern,
     depth: usize,
 ) {
     write_indent(out, depth);
@@ -279,7 +289,14 @@ fn write_annotation(
     write_indent(out, depth + 1);
     push_json_str(out, "span");
     out.push_str(": ");
-    write_span(out, &ann.span, region_arena_opt, src_manager, depth + 1);
+    write_span(
+        out,
+        &ann.span,
+        region_arena_opt,
+        src_manager,
+        interner,
+        depth + 1,
+    );
 
     out.push('\n');
     write_indent(out, depth);
@@ -291,6 +308,7 @@ fn write_span(
     span: &SourceSpan,
     region_arena_opt: Option<&Arena<SourceRegion, SourceRegionId>>,
     src_manager: &SourceManager,
+    interner: &Intern,
     depth: usize,
 ) {
     out.push('{');
@@ -300,7 +318,7 @@ fn write_span(
     write_indent(out, depth + 1);
     push_json_str(out, "region_path");
     out.push_str(": ");
-    match resolve_region_path(region_arena_opt, src_manager, span.region_id) {
+    match resolve_region_source(region_arena_opt, src_manager, interner, span.region_id) {
         Some(path) => push_json_str(out, &path),
         None => out.push_str("null"),
     }
@@ -445,7 +463,7 @@ mod tests {
     use super::*;
     use chrn_utils::{
         arena::Arena,
-        id_types::{PathId, SourceRegionId},
+        id_types::SourceRegionId,
         source_utils::source_manager::SourceManager,
         source_utils::{
             source_diagnostic::{
@@ -465,6 +483,7 @@ mod tests {
             &[],
             None,
             &src_manager,
+            &Intern::init(),
             &JsonRenderConfig::new(false),
         );
         assert_eq!(out, "{\n  \"diagnostics\": [],\n  \"footers\": []\n}");
@@ -481,7 +500,7 @@ mod tests {
             None,
             DiagnosticLevel::Error,
             "boom".to_string(),
-            path_id,
+            path_id.inner(),
             vec![ann],
             vec!["try this".to_string()],
             vec!["note one".to_string()],
@@ -492,6 +511,7 @@ mod tests {
             &[],
             None,
             &src_manager,
+            &Intern::init(),
             &JsonRenderConfig::new(false),
         );
         assert!(out.contains("\"level\": \"error\""));
@@ -522,7 +542,7 @@ mod tests {
             None,
             DiagnosticLevel::Warn,
             String::new(),
-            path_id,
+            path_id.inner(),
             vec![ann],
             Vec::new(),
             Vec::new(),
@@ -533,6 +553,7 @@ mod tests {
             &[],
             None,
             &src_manager,
+            &Intern::init(),
             &JsonRenderConfig::new(false),
         );
         assert!(out.contains("\"label\": null"));
@@ -546,6 +567,7 @@ mod tests {
             &[FooterKind::DiagnosticsExceeded(7)],
             None,
             &src_manager,
+            &Intern::init(),
             &JsonRenderConfig::new(false),
         );
         assert!(out.contains("\"kind\": \"diagnostics_exceeded\""));
@@ -562,7 +584,7 @@ mod tests {
             None,
             DiagnosticLevel::Error,
             "boom".to_string(),
-            path_id,
+            path_id.inner(),
             vec![ann],
             vec!["try this".to_string()],
             vec!["note one".to_string()],
@@ -573,6 +595,7 @@ mod tests {
             &[],
             None,
             &src_manager,
+            &Intern::init(),
             &JsonRenderConfig::new(true),
         );
         // No newlines or indentation should remain.
@@ -604,7 +627,7 @@ mod tests {
             None,
             DiagnosticLevel::Error,
             "two  spaces  here".to_string(),
-            path_id,
+            path_id.inner(),
             Vec::new(),
             Vec::new(),
             Vec::new(),
@@ -615,6 +638,7 @@ mod tests {
             &[],
             None,
             &src_manager,
+            &Intern::init(),
             &JsonRenderConfig::new(true),
         );
         assert!(
@@ -631,6 +655,7 @@ mod tests {
             &[FooterKind::MaxModulesExceeded(256)],
             None,
             &src_manager,
+            &Intern::init(),
             &JsonRenderConfig::new(false),
         );
         assert!(out.contains("\"kind\": \"max_modules_exceeded\""));
@@ -645,6 +670,7 @@ mod tests {
             &[],
             None,
             &src_manager,
+            &Intern::init(),
             &JsonRenderConfig::new(true),
         );
         assert_eq!(out, r#"{"diagnostics":[],"footers":[]}"#);
@@ -676,7 +702,7 @@ mod tests {
             1,
             b"@def\nhello\n@end\n".to_vec(),
             region_id,
-            path_id,
+            path_id.inner(),
             128,
             Some(140),
         );
@@ -688,7 +714,7 @@ mod tests {
             None,
             DiagnosticLevel::Error,
             "boom".to_string(),
-            path_id,
+            path_id.inner(),
             vec![ann],
             Vec::new(),
             Vec::new(),
@@ -699,6 +725,7 @@ mod tests {
             &[],
             Some(&arena),
             &src_manager,
+            &Intern::init(),
             &JsonRenderConfig::new(false),
         );
         assert!(
@@ -723,7 +750,7 @@ mod tests {
             1,
             b"@def\nhello\n@end\n".to_vec(),
             region_id,
-            path_id,
+            path_id.inner(),
             200,
             Some(212),
         );
@@ -735,7 +762,7 @@ mod tests {
             None,
             DiagnosticLevel::Error,
             "boom".to_string(),
-            path_id,
+            path_id.inner(),
             vec![ann],
             Vec::new(),
             Vec::new(),
@@ -746,6 +773,7 @@ mod tests {
             &[],
             Some(&arena),
             &src_manager,
+            &Intern::init(),
             &JsonRenderConfig::new(true),
         );
         // 4 + 200 == 204, 9 + 200 == 209
@@ -777,7 +805,7 @@ mod tests {
             None,
             DiagnosticLevel::Error,
             "boom".to_string(),
-            path_id,
+            path_id.inner(),
             vec![ann],
             Vec::new(),
             Vec::new(),
@@ -788,6 +816,7 @@ mod tests {
             &[],
             Some(&arena),
             &src_manager,
+            &Intern::init(),
             &JsonRenderConfig::new(false),
         );
         assert!(out.contains("\"region_path\": null"), "got: {out}");

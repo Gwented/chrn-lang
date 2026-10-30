@@ -23,11 +23,9 @@ impl<'a> RenderGroupManager<'a> {
     }
 
     pub(crate) fn insert(&mut self, ln: &'a Line, annotation: &'a Annotation) {
-        if let Some(group) = self
-            .render_groups
-            .iter_mut()
-            .find(|group| group.ln.ln_num == ln.ln_num)
-        {
+        if let Some(group) = self.render_groups.iter_mut().find(|group| {
+            group.ln.ln_span.region_id == ln.ln_span.region_id && group.ln.ln_num == ln.ln_num
+        }) {
             group.annotations.push(annotation);
         } else {
             let group = RenderGroup::new(ln, vec![annotation]);

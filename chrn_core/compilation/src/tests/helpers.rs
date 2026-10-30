@@ -70,7 +70,7 @@ pub(super) fn mock_single_module_compiler_with_config(
     let path_id = SourceId::new(0).into_tagged::<PathTag>();
     let region_id = SourceRegionId::new(0);
 
-    let source_region = ConfigLoader::new(region_id, text.as_bytes(), path_id, &settings)
+    let source_region = ConfigLoader::new(region_id, text.as_bytes(), path_id.inner(), &settings)
         .load_config()
         .expect_success();
 
@@ -126,7 +126,7 @@ pub(super) fn mock_single_module(
     let path_id = src_manager.register_path(Path::new(path_name));
     let region_id = SourceRegionId::new(mod_id as u32);
 
-    let source_region = ConfigLoader::new(region_id, text.as_bytes(), path_id, &settings)
+    let source_region = ConfigLoader::new(region_id, text.as_bytes(), path_id.inner(), &settings)
         .load_config()
         .expect_success();
 
@@ -271,7 +271,7 @@ pub(super) use chrn_utils::{
     arena::Arena,
     budget::mem_budget::{BudgetResult, MemoryBudgetUsize},
     core_error::ConfigLoadError,
-    id_types::{InternedIdUTF8, ModuleId, PathId, SourceRegionId, SymbolId, ValueId},
+    id_types::{InternedIdUTF8, ModuleId, SourceRegionId, SymbolId, ValueId},
     intern::Intern,
     source_utils::{
         source_diagnostic::{DiagnosticLevel, SourceDiagnostic, SourceDiagnosticSummary},
@@ -552,7 +552,7 @@ fn build_asts(
 
         let toks = Lexer::new(
             region.self_id,
-            region.path_id,
+            region.src_id,
             &region.src_bytes,
             region.script_start,
             cfg,
@@ -661,7 +661,7 @@ pub(super) fn load_cfg_bytes(bytes: &[u8]) -> ConfigLoaderOutput {
     let mut src_manager = SourceManager::new();
     let path_id = src_manager.register_path(Path::new(""));
     let region_id = SourceRegionId::new(0);
-    ConfigLoader::new(region_id, bytes, path_id, &ChrnConfig::default()).load_config()
+    ConfigLoader::new(region_id, bytes, path_id.inner(), &ChrnConfig::default()).load_config()
 }
 
 /// Helper: runs the config loader on a string and returns the resulting region.
@@ -676,7 +676,7 @@ pub(super) fn make_diagnostics(amt: usize) -> Vec<SourceDiagnostic> {
             None,
             DiagnosticLevel::Error,
             Default::default(),
-            SourceId::new(i as u32).into_tagged::<PathTag>(),
+            SourceId::new(i as u32),
             Default::default(),
             Default::default(),
             Default::default(),

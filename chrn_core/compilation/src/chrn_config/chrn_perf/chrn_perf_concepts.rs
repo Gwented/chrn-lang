@@ -1,25 +1,22 @@
-use std::{
-    path::Path,
-    time::{Duration, Instant},
-};
+use std::{borrow::Cow, time::Duration};
 
-use chrn_utils::{id_types::PathId, utils::trackers::perf_tracker::PerfOutput};
+use chrn_utils::{id_types::SourceId, utils::trackers::perf_tracker::PerfOutput};
 
 use crate::chrn_config::chrn_perf::ChrnPerfStage;
 
 #[derive(Debug, Clone, Copy)]
 pub struct ModuleIdentity {
     // This is the only stable identifier
-    path_id: PathId,
+    src_id: SourceId,
 }
 
 impl ModuleIdentity {
-    pub fn new(path_id: PathId) -> Self {
-        Self { path_id }
+    pub fn new(src_id: SourceId) -> Self {
+        Self { src_id }
     }
 
-    pub fn path_id(&self) -> PathId {
-        self.path_id
+    pub fn src_id(&self) -> SourceId {
+        self.src_id
     }
 }
 
@@ -53,13 +50,13 @@ impl ModulePerfData {
 
 #[derive(Debug)]
 pub struct ModulePerfReport<'a> {
-    pub path: &'a Path,
+    pub src_name: Cow<'a, str>,
     pub data: &'a ModulePerfData,
 }
 
 impl<'a> ModulePerfReport<'a> {
-    pub fn new(path: &'a Path, data: &'a ModulePerfData) -> Self {
-        Self { path, data }
+    pub fn new(src_name: Cow<'a, str>, data: &'a ModulePerfData) -> Self {
+        Self { src_name, data }
     }
 }
 
@@ -108,7 +105,7 @@ impl<'a> ChrnPerfReport<'a> {
 
         for i in 0..self.mod_reports.len() {
             let mod_report = &self.mod_reports[i];
-            println!("path: {}\n", mod_report.path.display());
+            println!("path: {}\n", mod_report.src_name);
 
             for tracked_opt in &mod_report.data.tracked_stages {
                 separate_total = true;
@@ -127,7 +124,7 @@ impl<'a> ChrnPerfReport<'a> {
 
             println!("Total comptime = {:?}", mod_report.data.comp_time());
 
-            if i + 1 != self.stage_means.len() {
+            if i + 1 != self.mod_reports.len() {
                 Self::print_separators();
             }
         }

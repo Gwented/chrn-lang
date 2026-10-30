@@ -1,5 +1,6 @@
 mod arbitraries_test;
 mod budget_test;
+mod chrn_perf_test;
 mod config_loader_test;
 mod constraint_resolver_test;
 mod directives_test;

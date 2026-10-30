@@ -8,6 +8,7 @@ mod tests;
 use chrn_utils::{
     arena::Arena,
     id_types::SourceRegionId,
+    intern::Intern,
     source_utils::source_manager::SourceManager,
     source_utils::{
         line_mapping::{self, Line, LineView},
@@ -37,21 +38,22 @@ pub(crate) fn render_terminal_diags(
     footers: &[FooterKind],
     region_arena_opt: Option<&Arena<SourceRegion, SourceRegionId>>,
     src_manager: &SourceManager,
+    interner: &Intern,
     cfg: &TerminalRenderConfig,
 ) -> Vec<String> {
     let region_arena = match region_arena_opt {
         Some(arena) => arena,
-        // If no arena exists then it just makes basic error messages with at minimum a path and msg.
+        // If no arena exists then it just makes basic error messages with at minimum a src name and msg.
         None => {
             let mut rendered_diags: Vec<String> = Vec::new();
             for diag in diags {
-                let path = src_manager.extract_path(diag.path_id);
-                let path_header = style::create_path_header(path, cfg);
+                let src_name = src_manager.display_source(diag.src_id, interner);
+                let src_header = style::create_source_header(&src_name, cfg);
                 // Not really a header when it's using the message too
                 let level_header =
                     style::create_level_header(diag.err_code, diag.level, &diag.core_msg, cfg);
 
-                let header = format!("{path_header}\n{level_header}");
+                let header = format!("{src_header}\n{level_header}");
                 rendered_diags.push(header);
             }
 
@@ -102,6 +104,7 @@ pub(crate) fn render_terminal_diags(
             cfg,
             region_arena,
             src_manager,
+            interner,
         );
         rendered_diags.push(rendered_diag);
     }
@@ -124,6 +127,7 @@ fn form_diag(
     settings: &TerminalRenderConfig,
     region_arena: &Arena<SourceRegion, SourceRegionId>,
     src_manager: &SourceManager,
+    interner: &Intern,
 ) -> String {
     // For tracking max line width needed for rendering
     let mut highest_ln_num: u32 = 1;
@@ -182,6 +186,7 @@ fn form_diag(
         ln_num_width,
         region_arena,
         src_manager,
+        interner,
     )
 }
 
@@ -190,12 +195,13 @@ fn form_diag(
 fn render_text(
     diag: &SourceDiagnostic,
     ln_layouts: &[RenderLineLayout],
-    sources: &[&[u8]],
+    srcs: &[&[u8]],
     ln_views: &[LineView],
     render_cfg: &TerminalRenderConfig,
     ln_num_width: usize,
     region_arena: &Arena<SourceRegion, SourceRegionId>,
     src_manager: &SourceManager,
+    interner: &Intern,
 ) -> String {
     // Spaces prefixing the `---` gap separator (line-number column width). The bar lines use
     // one additional space so the `|` visually sits just after the line-number column.
@@ -210,7 +216,7 @@ fn render_text(
     // any line layouts and only has a header and basic error message
     let mut prev_region_id_opt: Option<SourceRegionId> =
         ln_layouts.first().map(|layout| layout.ln.ln_span.region_id);
-    let mut placed_path = false;
+    let mut placed_src_name = false;
 
     for (i, layout) in ln_layouts.iter().enumerate() {
         // Searching by key with the region id into ln_views, which corresponds with its source bytes
@@ -225,25 +231,25 @@ fn render_text(
         if let Some(prev_id) = prev_region_id_opt
             && prev_id != current_region_id
         {
-            placed_path = false;
+            placed_src_name = false;
         }
 
-        if !placed_path {
+        if !placed_src_name {
             let new_region = &region_arena[current_region_id];
-            let path = src_manager.extract_path(new_region.path_id);
-            let path_header_sep = style::create_path_header(path, render_cfg);
+            let src_name = src_manager.display_source(new_region.src_id, interner);
+            let src_header_sep = style::create_source_header(&src_name, render_cfg);
 
-            // Since this boolean controls the first path placed and any intermediate paths placed,
+            // Since this boolean controls the first src name placed and any intermediate names placed,
             // this condition is so that it doesn't push dashes for the first
             if i > 0 {
                 layout_text.push_str(&format!("\n{num_alignment}---"));
             }
 
-            layout_text.push_str(&format!("\n{path_header_sep}"));
+            layout_text.push_str(&format!("\n{src_header_sep}"));
             layout_text.push_str(&format!("\n{bar_spaces}|"));
 
             prev_region_id_opt = Some(current_region_id);
-            placed_path = true;
+            placed_src_name = true;
         } else if i > 0 {
             // Giving visual dashes if the distance between the previous and current line is > 1
             let prev_ln = ln_layouts[i - 1].ln.ln_num;
@@ -257,19 +263,19 @@ fn render_text(
         layout_text.push_str(&render_line_layout_text(
             layout,
             // Is this ok?
-            sources[current_ln_view_idx],
+            srcs[current_ln_view_idx],
             region_arena[current_region_id].abs_ln_num_start,
             render_cfg,
             ln_num_width,
         ));
     }
 
-    // Meaning there were no line layouts which skips the loop, but this still needs it's pat
-    // shown so this is done
+    // Meaning there were no line layouts which skips the loop, but this still needs it's src
+    // name shown
     if prev_region_id_opt.is_none() {
-        let path = src_manager.extract_path(diag.path_id);
-        let path_header_sep = style::create_path_header(path, render_cfg);
-        layout_text.push_str(&format!("\n{path_header_sep}"));
+        let src_name = src_manager.display_source(diag.src_id, interner);
+        let src_header_sep = style::create_source_header(&src_name, render_cfg);
+        layout_text.push_str(&format!("\n{src_header_sep}"));
     }
 
     let mut help = String::new();

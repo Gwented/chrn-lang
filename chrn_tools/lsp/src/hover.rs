@@ -531,8 +531,7 @@ fn module_hover(
         .map(|region| {
             state
                 .src_manager
-                .extract_path(region.path_id)
-                .display()
+                .display_source(region.src_id, interner)
                 .to_string()
         })
         .unwrap_or_else(|| "<builtin>".to_string());

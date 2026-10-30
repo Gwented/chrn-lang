@@ -5,23 +5,13 @@ pub mod footers;
 use crate::{
     budget::mem_cost::{self, MemoryCost},
     err_codes::ErrorCode,
-    id_types::PathId,
+    id_types::SourceId,
     source_utils::{
         source_diagnostic::annotations::{Annotation, AnnotationKind},
         source_span::SourceSpan,
     },
     utils::SharedU32,
 };
-
-// /// Although there are error types that say where the error came from, all of `CoreError` needs to
-// /// still returns `Diagnostic` as a vector, which could have other areas inside of it, making this
-// /// serve as persistent metadata.
-// #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-// pub enum Area {
-//     ConfigLoad,
-//     Script,
-//     Serial,
-// }
 
 /// Diagnostic intended to represent a set of instructions to be rendered.
 #[derive(Debug)]
@@ -31,9 +21,9 @@ pub struct SourceDiagnostic {
     pub level: DiagnosticLevel,
     /// Header message for this diagnostic
     pub core_msg: String,
-    /// Stores a `PathId` instead of `SourceRegionId` because a diagnostic can exist without a region
+    /// Stores a `SourceId` instead of `SourceRegionId` because a diagnostic can exist without a region
     /// existing, such as if there was an io error before being able to read any regions.
-    pub path_id: PathId,
+    pub src_id: SourceId,
     pub annotations: Vec<Annotation>,
     pub help: Vec<String>,
     pub notes: Vec<String>,
@@ -44,7 +34,7 @@ impl SourceDiagnostic {
         err_code: Option<ErrorCode>,
         level: DiagnosticLevel,
         core_msg: String,
-        path_id: PathId,
+        src_id: SourceId,
         annotations: Vec<Annotation>,
         help: Vec<String>,
         notes: Vec<String>,
@@ -53,7 +43,7 @@ impl SourceDiagnostic {
             err_code,
             level,
             core_msg,
-            path_id,
+            src_id,
             annotations,
             help,
             notes,
@@ -65,19 +55,19 @@ impl SourceDiagnostic {
         err_code: Option<ErrorCode>,
         level: DiagnosticLevel,
         core_msg: String,
-        path_id: PathId,
+        src_id: SourceId,
         span: SourceSpan,
     ) -> SourceDiagnostic {
         let annotations = vec![Annotation::new(span, AnnotationKind::Primary, None)];
-        SourceDiagnostic {
+        SourceDiagnostic::new(
             err_code,
             level,
             core_msg,
-            path_id,
+            src_id,
             annotations,
-            help: Default::default(),
-            notes: Default::default(),
-        }
+            Default::default(),
+            Default::default(),
+        )
     }
 
     /// Creates basic error where the given span vector gives all spans a primary level annotation
@@ -85,23 +75,22 @@ impl SourceDiagnostic {
         err_code: Option<ErrorCode>,
         level: DiagnosticLevel,
         core_msg: String,
-        path_id: PathId,
+        src_id: SourceId,
         spans: &[SourceSpan],
     ) -> SourceDiagnostic {
         let mut annotations = Vec::new();
         for span in spans {
             annotations.push(Annotation::new(*span, AnnotationKind::Primary, None));
         }
-
-        SourceDiagnostic {
+        SourceDiagnostic::new(
             err_code,
             level,
             core_msg,
-            path_id,
+            src_id,
             annotations,
-            help: Default::default(),
-            notes: Default::default(),
-        }
+            Default::default(),
+            Default::default(),
+        )
     }
 
     /// Creates basic error where the given span is the primary annotation with no extra details
@@ -109,7 +98,7 @@ impl SourceDiagnostic {
         err_code: Option<ErrorCode>,
         level: DiagnosticLevel,
         core_msg: String,
-        path_id: PathId,
+        src_id: SourceId,
         span: SourceSpan,
     ) -> SourceDiagnosticBuilder {
         let annotations = vec![Annotation::new(span, AnnotationKind::Primary, None)];
@@ -117,7 +106,7 @@ impl SourceDiagnostic {
             err_code,
             level,
             core_msg,
-            path_id,
+            src_id,
             annotations,
             help: Default::default(),
             notes: Default::default(),
@@ -128,13 +117,13 @@ impl SourceDiagnostic {
         err_code: Option<ErrorCode>,
         level: DiagnosticLevel,
         core_msg: S,
-        path_id: PathId,
+        src_id: SourceId,
     ) -> SourceDiagnosticBuilder {
         SourceDiagnosticBuilder {
             err_code,
             level,
             core_msg: core_msg.into(),
-            path_id,
+            src_id,
             annotations: Vec::new(),
             help: Vec::new(),
             notes: Vec::new(),
@@ -147,7 +136,7 @@ impl MemoryCost for SourceDiagnostic {
         // Yes this is 1 byte and will probably never have an inner but. But um. Um.
         let level_cost = size_of::<DiagnosticLevel>();
         let core_msg_cost = mem_cost::string_cost(&self.core_msg);
-        let path_id_cost = size_of::<PathId>();
+        let src_id_cost = size_of::<SourceId>();
         let ann_cost: usize = self.annotations.iter().map(|ann| ann.cost()).sum();
 
         let help_cost: usize = self
@@ -165,7 +154,7 @@ impl MemoryCost for SourceDiagnostic {
         // maybe DIAGNOSTIC_FIELDS can be asserted and enforce adding to the cost?
         // debug_assert!();
         // Ok this will definitely be checked eventually
-        level_cost + core_msg_cost + path_id_cost + ann_cost + help_cost + notes_cost
+        level_cost + core_msg_cost + src_id_cost + ann_cost + help_cost + notes_cost
     }
 }
 
@@ -176,7 +165,7 @@ pub struct SourceDiagnosticBuilder {
     err_code: Option<ErrorCode>,
     level: DiagnosticLevel,
     core_msg: String,
-    path_id: PathId,
+    src_id: SourceId,
     annotations: Vec<Annotation>,
     help: Vec<String>,
     notes: Vec<String>,
@@ -219,7 +208,7 @@ impl SourceDiagnosticBuilder {
             err_code: self.err_code,
             level: self.level,
             core_msg: self.core_msg,
-            path_id: self.path_id,
+            src_id: self.src_id,
             annotations: self.annotations,
             help: self.help,
             notes: self.notes,

@@ -156,7 +156,7 @@ impl<'a> ParserContext<'a> {
         core_msg: String,
     ) -> (SourceDiagnosticBuilder, Option<SemanticSituation>) {
         let builder =
-            SourceDiagnostic::builder(None, DiagnosticLevel::Error, core_msg, self.region.path_id)
+            SourceDiagnostic::builder(None, DiagnosticLevel::Error, core_msg, self.region.src_id)
                 .add_annotation(found.span, AnnotationKind::Primary, None);
         let situation_opt = if found.tok.kind().is_terminator() {
             Some(SemanticSituation::ReachedEOF)
@@ -461,7 +461,7 @@ impl<'a> ParserContext<'a> {
                     DiagnosticLevel::Error,
                     //Yeah, no? No?
                     builder.build().core_msg,
-                    self.region.path_id,
+                    self.region.src_id,
                 )
                 .add_annotation(
                     prev_span,

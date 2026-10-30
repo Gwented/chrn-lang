@@ -1,4 +1,5 @@
 use crate::config_loader::{ConfigLoader, ConfigLoaderOutput};
+use chrn_utils::id_types::SourceId;
 
 use super::helpers::*;
 use chrn_utils::source_utils::source_diagnostic::annotations::AnnotationKind;
@@ -263,7 +264,9 @@ fn cfg_incomplete_marker_preserves_unclosed_quote_diagnostic_test() {
                 b"\""
             );
         }
-        other => panic!("expected an unclosed-quote diagnostic after incomplete marker, got {other:?}"),
+        other => {
+            panic!("expected an unclosed-quote diagnostic after incomplete marker, got {other:?}")
+        }
     }
 }
 
@@ -348,7 +351,7 @@ fn multi_line_comment_test() {
     let correct = ConfigLoader::new(
         region_id,
         correct_input,
-        PathId::default(),
+        SourceId::default(),
         &ChrnConfig::default(),
     )
     .load_config();
@@ -356,7 +359,7 @@ fn multi_line_comment_test() {
     let wrong = ConfigLoader::new(
         region_id,
         wrong_input,
-        PathId::default(),
+        SourceId::default(),
         &ChrnConfig::default(),
     )
     .load_config();
@@ -393,7 +396,7 @@ fn start_and_serial_offset_test() {
     let metadata = ConfigLoader::new(
         region_id,
         text.as_bytes(),
-        PathId::default(),
+        SourceId::default(),
         &ChrnConfig::default(),
     )
     .load_config()
@@ -480,11 +483,7 @@ fn cfg_unclosed_multi_comment_eof_span_bounds_test() {
                     1,
                     "one secondary for comment start in {input:?}"
                 );
-                assert_eq!(
-                    primaries.len(),
-                    1,
-                    "one primary for EOF in {input:?}"
-                );
+                assert_eq!(primaries.len(), 1, "one primary for EOF in {input:?}");
 
                 let secondary = secondaries[0];
                 assert_eq!(

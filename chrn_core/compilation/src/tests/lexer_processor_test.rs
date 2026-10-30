@@ -41,7 +41,7 @@ fn preprocess_literal_syntax_agrees_with_parser() {
             let region = get_module_region(&arena, &compiler.mods[ModuleId::new(0)]);
             let output = Lexer::new(
                 region.self_id,
-                region.path_id,
+                region.src_id,
                 &region.src_bytes,
                 region.script_start,
                 &mut settings,
@@ -130,7 +130,7 @@ fn preprocess_schema_rejection_is_distinct_from_parser_syntax() {
         let region = get_module_region(&arena, &compiler.mods[ModuleId::new(0)]);
         let output = Lexer::new(
             region.self_id,
-            region.path_id,
+            region.src_id,
             &region.src_bytes,
             region.script_start,
             &mut settings,
@@ -200,7 +200,7 @@ fn preprocess_malformed_syntax_and_eof_are_rejected() {
         let region = get_module_region(&arena, &compiler.mods[ModuleId::new(0)]);
         let output = Lexer::new(
             region.self_id,
-            region.path_id,
+            region.src_id,
             &region.src_bytes,
             region.script_start,
             &mut settings,

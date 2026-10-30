@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     collections::HashMap,
     path::{Path, PathBuf},
 };
@@ -6,9 +7,10 @@ use std::{
 // Maybe most of this goes to compilation eventually
 use crate::{
     id_types::{
-        SourceId,
+        InternedIdUTF8, SourceId,
         id_tags::{ArenaIndexTag, TaggedId},
     },
+    intern::Intern,
     tag_decl,
 };
 
@@ -24,8 +26,22 @@ pub struct SourceManager {
 /// Possible sources to store and index
 #[derive(Debug)]
 pub enum SourceKind {
-    Path(PathBuf),
-    InMemory,
+    Path(SourcePath),
+    InMemory(SourceInMemory),
+}
+
+/// Metadata for a filesystem source.
+#[derive(Debug)]
+pub struct SourcePath {
+    pub path: PathBuf,
+}
+
+/// Metadata for an in-memory source.
+#[derive(Debug)]
+pub struct SourceInMemory {
+    /// Optional display label, interned in the associated string interner.
+    /// Labels do not determine source identity and need not be unique.
+    pub name: Option<InternedIdUTF8>,
 }
 
 impl SourceManager {
@@ -50,15 +66,20 @@ impl SourceManager {
 
         let id = SourceId::new(self.srcs.len() as u32).into_tagged::<PathTag>();
         let path = path.to_path_buf();
-        self.srcs.push(SourceKind::Path(path.clone()));
+        self.srcs
+            .push(SourceKind::Path(SourcePath { path: path.clone() }));
         self.path_to_src_id.insert(path, id);
         id
     }
 
-    /// Registers `SourceId` for a `SourceKind::InMemory`
-    pub fn register_in_memory(&mut self) -> TaggedId<SourceId, InMemoryTag> {
+    /// Registers a distinct in-memory source with an optional display label.
+    pub fn register_in_memory(
+        &mut self,
+        name: Option<InternedIdUTF8>,
+    ) -> TaggedId<SourceId, InMemoryTag> {
         let id = SourceId::new(self.srcs.len() as u32).into_tagged::<InMemoryTag>();
-        self.srcs.push(SourceKind::InMemory);
+        self.srcs
+            .push(SourceKind::InMemory(SourceInMemory { name }));
         id
     }
 
@@ -72,31 +93,44 @@ impl SourceManager {
         &self.srcs[id.id as usize]
     }
 
+    /// Returns a displayable name for the found `SourceKind`
+    pub fn display_source<'a>(&'a self, id: SourceId, interner: &'a Intern) -> Cow<'a, str> {
+        match self.extract_source(id) {
+            SourceKind::Path(src) => src.path.to_string_lossy(),
+            SourceKind::InMemory(src) => {
+                let src_name = src
+                    .name
+                    .map_or("source", |name_id| interner.extract_utf8_str(name_id));
+                Cow::Borrowed(src_name)
+            }
+        }
+    }
+
     /// Returns the stored path's ID if present
     pub fn get_source_id_from_path(&self, path: &Path) -> Option<TaggedId<SourceId, PathTag>> {
         self.path_to_src_id.get(path).copied()
     }
 
-    /// Returns the path assuming the ID exists
-    pub fn get_path(&self, id: TaggedId<SourceId, PathTag>) -> Option<&Path> {
+    /// Returns path metadata if the ID exists, trusting its path tag.
+    pub fn get_path(&self, id: TaggedId<SourceId, PathTag>) -> Option<&SourcePath> {
         match self.get_source(id.inner())? {
-            SourceKind::Path(path) => Some(path.as_path()),
-            SourceKind::InMemory => unreachable!("path-tagged source must contain a path"),
+            SourceKind::Path(src) => Some(src),
+            SourceKind::InMemory(_) => unreachable!("path-tagged source must contain a path"),
         }
     }
 
-    /// Returns the path assuming the id is valid
-    pub fn extract_path(&self, id: TaggedId<SourceId, PathTag>) -> &Path {
+    /// Returns path metadata, assuming the ID is valid.
+    pub fn extract_path(&self, id: TaggedId<SourceId, PathTag>) -> &SourcePath {
         match self.extract_source(id.inner()) {
-            SourceKind::Path(path) => path.as_path(),
-            SourceKind::InMemory => unreachable!("path-tagged source must contain a path"),
+            SourceKind::Path(src) => src,
+            SourceKind::InMemory(_) => unreachable!("path-tagged source must contain a path"),
         }
     }
 
-    /// Returns unit if the ID exists, trusting its in-memory tag.
-    pub fn get_in_memory(&self, id: TaggedId<SourceId, InMemoryTag>) -> Option<()> {
+    /// Returns in-memory metadata if the ID exists
+    pub fn get_in_memory(&self, id: TaggedId<SourceId, InMemoryTag>) -> Option<&SourceInMemory> {
         match self.get_source(id.inner())? {
-            SourceKind::InMemory => Some(()),
+            SourceKind::InMemory(src) => Some(src),
             SourceKind::Path(_) => unreachable!("in-memory-tagged source must be in memory"),
         }
     }

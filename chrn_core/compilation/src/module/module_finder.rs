@@ -115,7 +115,7 @@ impl ModuleFinder<'_> {
 
                             imports.push(import);
                         } else if c == b'b' && self.is_bind() {
-                            bind = match self.parse_bind(src_manager) {
+                            bind = match self.parse_bind(src_manager, interner) {
                                 Ok(b) => Some(b),
                                 Err(d) => {
                                     self.summary.push_diag(d);
@@ -188,7 +188,7 @@ impl ModuleFinder<'_> {
                 ErrorCode::ImportErr.into(),
                 DiagnosticLevel::Error,
                 core_msg,
-                self.current_region.path_id,
+                self.current_region.src_id,
             )
             .add_annotation(path_span, AnnotationKind::Primary, None)
             .build();
@@ -208,7 +208,7 @@ impl ModuleFinder<'_> {
                     ErrorCode::ImportErr.into(),
                     DiagnosticLevel::Error,
                     core_msg,
-                    self.current_region.path_id,
+                    self.current_region.src_id,
                 )
                 .add_annotation(path_span, AnnotationKind::Primary, None)
                 .build();
@@ -249,7 +249,7 @@ impl ModuleFinder<'_> {
                 ErrorCode::ImportErr.into(),
                 DiagnosticLevel::Error,
                 core_msg,
-                self.current_region.path_id,
+                self.current_region.src_id,
             )
             .add_annotation(path_span, AnnotationKind::Primary, None)
             //TODO: This is more of a warn than error because the compiler still functions
@@ -265,10 +265,10 @@ impl ModuleFinder<'_> {
 
         self.cfg.logger().log_dbg(|| {
             let import_name = interner.extract_utf8_str(name_id);
-            let region_path = src_manager.extract_path(self.current_region.path_id);
+            let region_path = src_manager.display_source(self.current_region.src_id, interner);
             format!(
                 "Created import `{import_name}` (region=\"{}\")",
-                region_path.display()
+                region_path
             )
         });
 
@@ -287,7 +287,7 @@ impl ModuleFinder<'_> {
                         None,
                         DiagnosticLevel::Error,
                         msg,
-                        self.current_region.path_id,
+                        self.current_region.src_id,
                     )
                     .build();
 
@@ -297,7 +297,11 @@ impl ModuleFinder<'_> {
         }
     }
 
-    fn parse_bind(&mut self, src_manager: &mut SourceManager) -> Result<Bind, SourceDiagnostic> {
+    fn parse_bind(
+        &mut self,
+        src_manager: &mut SourceManager,
+        interner: &Intern,
+    ) -> Result<Bind, SourceDiagnostic> {
         // skipping "
         self.cursor.skip(1);
         let start_cursor = self.cursor.pos();
@@ -336,7 +340,7 @@ impl ModuleFinder<'_> {
                 None,
                 DiagnosticLevel::Error,
                 core_msg,
-                self.current_region.path_id,
+                self.current_region.src_id,
             )
             .add_annotation(path_span, AnnotationKind::Primary, None)
             .build();
@@ -357,7 +361,7 @@ impl ModuleFinder<'_> {
                     None,
                     DiagnosticLevel::Error,
                     core_msg,
-                    self.current_region.path_id,
+                    self.current_region.src_id,
                 )
                 .add_annotation(path_span, AnnotationKind::Primary, None)
                 .build();
@@ -370,12 +374,12 @@ impl ModuleFinder<'_> {
         let bind = Bind::new(bind_path_id, path_span);
 
         self.cfg.logger().log_dbg(|| {
-            let bind_path = src_manager.extract_path(bind_path_id);
-            let region_path = src_manager.extract_path(self.current_region.path_id);
+            let bind_path = &src_manager.extract_path(bind_path_id).path;
+            let region_path = src_manager.display_source(self.current_region.src_id, interner);
             format!(
                 "Created bind which points to `{}` for region \"{}\"",
                 bind_path.display(),
-                region_path.display()
+                region_path
             )
         });
 

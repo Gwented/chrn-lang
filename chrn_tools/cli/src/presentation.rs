@@ -3,6 +3,7 @@
 use chrn_utils::{
     arena::Arena,
     id_types::SourceRegionId,
+    intern::Intern,
     source_utils::source_manager::SourceManager,
     source_utils::{source_diagnostic::footers::FooterKind, source_region::SourceRegion},
 };
@@ -50,6 +51,7 @@ pub(super) fn render_diags(
     reporter: &Reporter,
     region_arena: Option<&Arena<SourceRegion, SourceRegionId>>,
     src_manager: &SourceManager,
+    interner: &Intern,
     render_kind: &RenderKind,
 ) -> String {
     let footers = make_footers(&reporter);
@@ -58,6 +60,7 @@ pub(super) fn render_diags(
         &footers,
         region_arena,
         src_manager,
+        interner,
         render_kind,
     );
     rendered

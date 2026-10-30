@@ -21,7 +21,7 @@ fn parse_text(text: &str) -> (AstInfo, Intern) {
     };
     let toks = Lexer::new(
         region.self_id,
-        region.path_id,
+        region.src_id,
         &region.src_bytes,
         region.script_start,
         &mut settings,
@@ -41,7 +41,7 @@ fn parse_text_with_diags(text: &str) -> (AstInfo, Vec<SourceDiagnostic>, Intern)
     };
     let toks = Lexer::new(
         region.self_id,
-        region.path_id,
+        region.src_id,
         &region.src_bytes,
         region.script_start,
         &mut settings,
@@ -101,7 +101,10 @@ fn parse_param_directive_argument_delimiters() {
             .collect();
         assert_eq!(directives.len(), 1, "{arguments}");
         let directive = directives[0];
-        assert_eq!(interner.extract_utf8_str(directive.sp_name_id.inner), "chrn");
+        assert_eq!(
+            interner.extract_utf8_str(directive.sp_name_id.inner),
+            "chrn"
+        );
         let args = &directive.sp_args.inner;
         assert_eq!(args.len(), expected.len(), "{arguments}");
         for (element, expected) in args.iter().zip(expected) {

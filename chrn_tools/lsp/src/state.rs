@@ -36,7 +36,7 @@
 //! of cross-module dependency edges so that editing a shared import file correctly
 //! invalidates all documents that import it.
 
-use chrn_utils::source_utils::source_manager::SourceManager;
+use chrn_utils::source_utils::source_manager::{SourceKind, SourceManager};
 use compilation::chrn_config::ChrnConfig;
 use compilation::id_tag_decls::ConfigMemberTag;
 use compilation::lexer::Lexer;
@@ -90,7 +90,8 @@ pub(crate) const STATE_LOCK_TIMEOUT: Duration = Duration::from_millis(500);
 use chrn_utils::arena::Arena;
 use chrn_utils::budget::mem_budget::{BudgetResult, MemoryBudgetUsize};
 use chrn_utils::id_types::{
-    AstId, ImplId, ImplMemberId, InternedIdUTF8, ModuleId, PathId, SourceRegionId, SymbolId, TypeId,
+    AstId, ImplId, ImplMemberId, InternedIdUTF8, ModuleId, SourceId, SourceRegionId, SymbolId,
+    TypeId,
 };
 use chrn_utils::intern::Intern;
 use chrn_utils::source_utils::source_diagnostic::SourceDiagnosticSummary;
@@ -354,7 +355,7 @@ impl DocumentState {
             } else {
                 let lex_output = Lexer::new(
                     region.self_id,
-                    region.path_id,
+                    region.src_id,
                     &region.src_bytes,
                     region.script_start,
                     &mut chrn_cfg,
@@ -856,7 +857,7 @@ impl DocumentState {
             .region_arena
             .get(SourceRegionId::new(0))
             .map(|main_region| analyser::ForeignContext {
-                main_path_id: main_region.path_id,
+                main_src_id: main_region.src_id,
                 origins: &origins,
             });
 
@@ -917,7 +918,7 @@ impl DocumentState {
     /// a diagnostic from a transitively imported module points at the top-level
     /// import that brought the chain in. Returns an empty map before analysis has
     /// run, which leaves every diagnostic on the ordinary conversion path.
-    fn foreign_origins(&self) -> HashMap<PathId, analyser::ForeignOrigin> {
+    fn foreign_origins(&self) -> HashMap<SourceId, analyser::ForeignOrigin> {
         let mut origins = HashMap::new();
         let Some(compiler) = &self.compiler else {
             return origins;
@@ -949,16 +950,21 @@ impl DocumentState {
 
             if let Some(region_id) = module.region_id {
                 let region = &self.region_arena[region_id];
-                let label = self
-                    .src_manager
-                    .extract_path(region.path_id)
-                    .file_name()
-                    .and_then(|name| name.to_str())
-                    .unwrap_or("imported module")
-                    .to_string();
+                let label = match self.src_manager.extract_source(region.src_id) {
+                    SourceKind::Path(source) => source
+                        .path
+                        .file_name()
+                        .and_then(|name| name.to_str())
+                        .unwrap_or("imported module")
+                        .to_string(),
+                    SourceKind::InMemory(_) => self
+                        .src_manager
+                        .display_source(region.src_id, &self.interner)
+                        .into_owned(),
+                };
 
                 origins.insert(
-                    region.path_id,
+                    region.src_id,
                     analyser::ForeignOrigin {
                         anchor: Some(anchor),
                         label,
@@ -1043,18 +1049,20 @@ impl DocumentState {
         let ast = self.asts[owner_id].as_ref()?;
         let module = &compiler.mods[ModuleId::new(owner_id as u32)];
         let region = &self.region_arena[module.region_id?];
-        Some((
-            ast,
-            ast_id,
-            self.src_manager.extract_path(region.path_id),
-        ))
+        let SourceKind::Path(path) = self.src_manager.extract_source(region.src_id) else {
+            return None;
+        };
+        Some((ast, ast_id, path.path.as_path()))
     }
 
     /// Path of the file backing `mod_id`'s source region.
     fn module_path(&self, mod_id: ModuleId) -> Option<&Path> {
         let compiler = self.compiler.as_ref()?;
         let region = &self.region_arena[compiler.mods[mod_id].region_id?];
-        Some(self.src_manager.extract_path(region.path_id))
+        match self.src_manager.extract_source(region.src_id) {
+            SourceKind::Path(source) => Some(source.path.as_path()),
+            SourceKind::InMemory(_) => None,
+        }
     }
 
     /// Resolves a [`SemanticEntity`] to its definition site, borrowing the path
@@ -1450,7 +1458,7 @@ impl DocumentCache {
         let script_src = &text.as_bytes()[script_start..];
         let lex_output = Lexer::new(
             SourceRegionId::new(0),
-            path_id,
+            path_id.inner(),
             script_src,
             script_start,
             &mut chrn_cfg,

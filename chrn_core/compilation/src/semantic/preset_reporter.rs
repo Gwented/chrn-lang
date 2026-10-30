@@ -111,7 +111,7 @@ pub(crate) fn create_diag_builder_preset(
                 ErrorCode::DirectiveErr.into(),
                 DiagnosticLevel::Error,
                 core_msg,
-                region.path_id,
+                region.src_id,
             )
             .add_annotation(
                 sp_directive.span,
@@ -128,7 +128,7 @@ pub(crate) fn create_diag_builder_preset(
                 ErrorCode::DirectiveErr.into(),
                 DiagnosticLevel::Error,
                 core_msg,
-                region.path_id,
+                region.src_id,
             )
             .add_annotation(sp_interned_id.span, AnnotationKind::Primary, None);
 
@@ -157,7 +157,7 @@ pub(crate) fn create_diag_builder_preset(
                 sp_directive.inner.to_classified()
             );
 
-            SourceDiagnostic::builder(ErrorCode::DirectiveErr.into(), DiagnosticLevel::Error, core_msg,  region.path_id)
+            SourceDiagnostic::builder(ErrorCode::DirectiveErr.into(), DiagnosticLevel::Error, core_msg,  region.src_id)
                     .add_annotation(sp_directive.span, AnnotationKind::Primary, None)
                     .add_note("This is not allowed since it would overlap with any specifics directives given to a defined type from `nest->`")
         }
@@ -199,7 +199,7 @@ pub(crate) fn create_diag_builder_preset(
                 ErrorCode::DirectiveErr.into(),
                 DiagnosticLevel::Error,
                 core_msg,
-                region.path_id,
+                region.src_id,
             )
             .add_annotation(
                 sp_fmtted_parent.span,
@@ -227,13 +227,13 @@ pub(crate) fn create_diag_builder_preset(
             let invalid = interner.extract_utf8_str(sp_num.inner);
             let core_msg = format!("Failed to parse {fmtted_ty} \"{}\"", invalid);
 
-            SourceDiagnostic::builder(None, DiagnosticLevel::Error, core_msg, region.path_id)
+            SourceDiagnostic::builder(None, DiagnosticLevel::Error, core_msg, region.src_id)
                 .add_annotation(sp_num.span, AnnotationKind::Primary, None)
         }
         PresetErr::NumericLimitExceeded { spans, max_bits } => {
             let core_msg = format!("Numeric value exceeds the configured {max_bits}-bit limit");
             let mut builder =
-                SourceDiagnostic::builder(None, DiagnosticLevel::Error, core_msg, region.path_id);
+                SourceDiagnostic::builder(None, DiagnosticLevel::Error, core_msg, region.src_id);
             for span in spans {
                 builder = builder.add_annotation(span, AnnotationKind::Primary, None);
             }
@@ -247,7 +247,7 @@ pub(crate) fn create_diag_builder_preset(
                     sp_fmtted_ty.inner,
                 );
 
-                SourceDiagnostic::builder(None, DiagnosticLevel::Error, core_msg, region.path_id)
+                SourceDiagnostic::builder(None, DiagnosticLevel::Error, core_msg, region.src_id)
                     .add_annotation(sp_fmtted_ty.span, AnnotationKind::Primary, None)
             }
             LookupError::MemberNotFound {
@@ -263,7 +263,7 @@ pub(crate) fn create_diag_builder_preset(
                     None,
                     DiagnosticLevel::Error,
                     core_msg,
-                    region.path_id,
+                    region.src_id,
                 )
                 .add_annotation(
                     sp_searched_type_name_id.span,
@@ -282,7 +282,7 @@ pub(crate) fn create_diag_builder_preset(
             }
             LookupError::InvalidSymbolMemberAccess(sp_sym) => {
                 let core_msg = format!("`{}` cannot use member access", sp_sym.inner);
-                SourceDiagnostic::builder(None, DiagnosticLevel::Error, core_msg, region.path_id)
+                SourceDiagnostic::builder(None, DiagnosticLevel::Error, core_msg, region.src_id)
                     .add_annotation(sp_sym.span, AnnotationKind::Primary, None)
             }
             //TODO: Scope type passed in
@@ -324,7 +324,7 @@ pub(crate) fn create_diag_builder_preset(
                     ErrorCode::ScopeErr.into(),
                     DiagnosticLevel::Error,
                     core_msg,
-                    region.path_id,
+                    region.src_id,
                 )
                 .add_annotation(
                     sp_invalid_name_id.span,
@@ -366,7 +366,7 @@ pub(crate) fn create_diag_builder_preset(
                     None,
                     DiagnosticLevel::Error,
                     core_msg,
-                    region.path_id,
+                    region.src_id,
                 )
                 .add_annotation(
                     sp_invalid_name_id.span,
@@ -400,7 +400,7 @@ pub(crate) fn create_diag_builder_preset(
                     ErrorCode::PrivacyErr.into(),
                     DiagnosticLevel::Error,
                     core_msg,
-                    region.path_id,
+                    region.src_id,
                 )
                 .add_annotation(sp_found_type_id.span, AnnotationKind::Primary, None)
                 // Redundant?
@@ -426,7 +426,7 @@ pub(crate) fn create_diag_builder_preset(
                     None,
                     DiagnosticLevel::Error,
                     core_msg,
-                    region.path_id,
+                    region.src_id,
                 )
                 .add_annotation(sp_lhs.span, AnnotationKind::Primary, None)
                 .add_annotation(sp_rhs.span, AnnotationKind::Primary, None);
@@ -444,7 +444,7 @@ pub(crate) fn create_diag_builder_preset(
                     None,
                     DiagnosticLevel::Error,
                     core_msg,
-                    region.path_id,
+                    region.src_id,
                 )
                 .add_annotation(sp_operand.span, AnnotationKind::Primary, None);
                 static_enricher::enrich_unary_op(builder, op, sp_operand.inner)
@@ -453,14 +453,14 @@ pub(crate) fn create_diag_builder_preset(
             MathError::DivideByZero { lhs_span, rhs_span } => {
                 let core_msg = format!("Cannot divide by zero");
 
-                SourceDiagnostic::builder(None, DiagnosticLevel::Error, core_msg, region.path_id)
+                SourceDiagnostic::builder(None, DiagnosticLevel::Error, core_msg, region.src_id)
                     .add_annotation(lhs_span, AnnotationKind::Primary, None)
                     .add_annotation(rhs_span, AnnotationKind::Primary, None)
             }
             MathError::InvalidShift { lhs_span, rhs_span } => {
                 let core_msg = format!("Shift amount is out of range");
 
-                SourceDiagnostic::builder(None, DiagnosticLevel::Error, core_msg, region.path_id)
+                SourceDiagnostic::builder(None, DiagnosticLevel::Error, core_msg, region.src_id)
                     .add_annotation(lhs_span, AnnotationKind::Primary, None)
                     .add_annotation(rhs_span, AnnotationKind::Primary, None)
             }
@@ -487,7 +487,7 @@ pub(crate) fn create_diag_builder_preset(
                     ErrorCode::DirectiveErr.into(),
                     DiagnosticLevel::Error,
                     core_msg,
-                    region.path_id,
+                    region.src_id,
                 )
                 .add_annotation(
                     sp_found_val_kind.span,
@@ -520,7 +520,7 @@ pub(crate) fn create_diag_builder_preset(
         //TODO: Not done
         PresetErr::UndefinedMember(span) => {
             let core_msg = format!("Cannot infer member access");
-            SourceDiagnostic::builder(None, DiagnosticLevel::Error, core_msg, region.path_id)
+            SourceDiagnostic::builder(None, DiagnosticLevel::Error, core_msg, region.src_id)
                 .add_annotation(
                     span,
                     AnnotationKind::Primary,
@@ -539,7 +539,7 @@ pub(crate) fn create_diag_builder_preset(
                 expected_kind.to_classified(),
                 SymbolKind::to_classified(compiler, sp_found_sym_id.inner)
             );
-            SourceDiagnostic::builder(None, DiagnosticLevel::Error, core_msg, region.path_id)
+            SourceDiagnostic::builder(None, DiagnosticLevel::Error, core_msg, region.src_id)
                 .add_annotation(sp_found_sym_id.span, AnnotationKind::Primary, None)
         }
         PresetErr::TypeMismatch {
@@ -553,7 +553,7 @@ pub(crate) fn create_diag_builder_preset(
                 expected_kind.to_string(),
                 Type::to_classified(&compiler.types, sp_found_type_id.inner)
             );
-            SourceDiagnostic::builder(None, DiagnosticLevel::Error, core_msg, region.path_id)
+            SourceDiagnostic::builder(None, DiagnosticLevel::Error, core_msg, region.src_id)
                 .add_annotation(sp_found_type_id.span, AnnotationKind::Primary, None)
         }
         PresetErr::TypeBoundaryBoundConflict {
@@ -608,7 +608,7 @@ pub(crate) fn create_diag_builder_preset(
                 None,
                 DiagnosticLevel::Error,
                 core_msg,
-                region.path_id,
+                region.src_id,
             )
             .add_annotation(
                 sp_dup.span,
@@ -628,7 +628,7 @@ pub(crate) fn create_diag_builder_preset(
         } => {
             let s_suffix = s_suffix!(expected);
             let core_msg = format!("Expected {expected} argument{s_suffix}, found {found}");
-            SourceDiagnostic::builder(None, DiagnosticLevel::Error, core_msg, region.path_id)
+            SourceDiagnostic::builder(None, DiagnosticLevel::Error, core_msg, region.src_id)
                 .add_annotation(span, AnnotationKind::Primary, None)
         }
     }
@@ -723,7 +723,7 @@ pub fn type_expr_result_to_preset_err(
                 ErrorCode::GenericsErr.into(),
                 DiagnosticLevel::Error,
                 core_msg,
-                env.region.path_id,
+                env.region.src_id,
             )
             .add_annotation(*inputs_span, AnnotationKind::Primary, None);
 
@@ -737,7 +737,7 @@ pub fn type_expr_result_to_preset_err(
                 ErrorCode::GenericsErr.into(),
                 DiagnosticLevel::Error,
                 core_msg,
-                env.region.path_id,
+                env.region.src_id,
             )
             .add_annotation(sp_name_id.span, AnnotationKind::Primary, None)
             // Redundant?
@@ -778,7 +778,7 @@ pub fn static_access_result_to_preset_err(
                     ErrorCode::ScopeErr.into(),
                     DiagnosticLevel::Error,
                     core_msg,
-                    env.region.path_id,
+                    env.region.src_id,
                 )
                 .add_annotation(current_seg.span, AnnotationKind::Primary, None)
             } else {
@@ -788,7 +788,7 @@ pub fn static_access_result_to_preset_err(
                     ErrorCode::ScopeErr.into(),
                     DiagnosticLevel::Error,
                     core_msg,
-                    env.region.path_id,
+                    env.region.src_id,
                 )
                 .add_annotation(current_seg.span, AnnotationKind::Primary, None)
             };
@@ -803,7 +803,7 @@ pub fn static_access_result_to_preset_err(
                 ErrorCode::ScopeErr.into(),
                 DiagnosticLevel::Error,
                 core_msg,
-                env.region.path_id,
+                env.region.src_id,
             )
             .add_annotation(sp_name_id.span, AnnotationKind::Primary, None);
 
@@ -815,7 +815,7 @@ pub fn static_access_result_to_preset_err(
                 ErrorCode::GenericsErr.into(),
                 DiagnosticLevel::Error,
                 core_msg,
-                env.region.path_id,
+                env.region.src_id,
                 *generic_span,
             );
 

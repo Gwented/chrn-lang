@@ -245,7 +245,7 @@ fn integer_constraint_diagnostics_preserve_type_names_and_explicit_ranges() {
         );
         assert_eq!(diagnostic.err_code, Some(ErrorCode::DirectiveErr));
         assert_eq!(diagnostic.level, DiagnosticLevel::Error);
-        assert_eq!(diagnostic.path_id, region.path_id);
+        assert_eq!(diagnostic.src_id, region.src_id);
         assert_eq!(diagnostic.annotations.len(), 1);
         assert_eq!(diagnostic.annotations[0].span, span);
     }

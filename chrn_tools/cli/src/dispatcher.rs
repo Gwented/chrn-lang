@@ -19,7 +19,7 @@ use orchestration::{constructors, orchestrator};
 use crate::{
     args::{CheckCmd, Cli, Commands, DocCmd, EmbedCmd, FmtCmd, GlobalArgs, QueryCmd},
     config::CliConfig,
-    files, presentation, print_diags,
+    presentation, print_diags,
     renderer::{
         self,
         render_kind::{RenderKind, RenderKindFlat},
@@ -99,6 +99,7 @@ fn exec_check(
                     &footers,
                     init_err.region.as_ref(),
                     &init_err.src_manager,
+                    &init_err.interner,
                     &render_kind,
                 );
 
@@ -128,6 +129,7 @@ fn exec_check(
         &reporter,
         Some(&compiler_store.region_arena),
         &compiler_store.src_manager,
+        &compiler_store.interner,
         &render_kind,
     );
 
@@ -140,7 +142,7 @@ fn exec_check(
         let perf_report = compiler_store
             .cfg
             .perf_tracker()
-            .form_report(&compiler_store.src_manager);
+            .form_report(&compiler_store.src_manager, &compiler_store.interner);
         perf_report.print_all(ChrnPerfReportOptions::all());
     }
 
@@ -197,6 +199,7 @@ fn exec_query(
                         // reporter.budget.amt_exceeded,
                         init_err.region.as_ref(),
                         &init_err.src_manager,
+                        &init_err.interner,
                         &render_cfg,
                     );
 
@@ -229,6 +232,7 @@ fn exec_query(
                         &footers,
                         Some(&compiler_store.region_arena),
                         &compiler_store.src_manager,
+                        &compiler_store.interner,
                         &render_cfg,
                     );
 
@@ -331,6 +335,7 @@ fn exec_embed(
                         &reporter,
                         init_err.region.as_ref(),
                         &init_err.src_manager,
+                        &init_err.interner,
                         &render_kind,
                     );
                     eprintln!("{rendered}");
@@ -359,6 +364,7 @@ fn exec_embed(
             &reporter,
             Some(&compiler_store.region_arena),
             &compiler_store.src_manager,
+            &compiler_store.interner,
             &render_kind,
         );
 
@@ -383,6 +389,7 @@ fn exec_embed(
                     &reporter,
                     Some(&graph.region_arena),
                     &graph.src_manager,
+                    &interner,
                     &render_kind,
                 );
 
@@ -419,6 +426,7 @@ fn exec_embed(
                     &reporter,
                     init_err.region.as_ref(),
                     &init_err.src_manager,
+                    &init_err.interner,
                     &render_kind,
                 );
                 eprintln!("{rendered}");

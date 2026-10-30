@@ -56,10 +56,11 @@ use tower_lsp::lsp_types;
 use chrn_utils::arena::Arena;
 use chrn_utils::core_error::{self, ConfigLoadError};
 use chrn_utils::err_codes::ErrorCode;
-use chrn_utils::id_types::{InternedIdUTF8, ModuleId, PathId, SourceRegionId};
+use chrn_utils::id_types::{InternedIdUTF8, ModuleId, PathId, SourceId, SourceRegionId};
 use chrn_utils::intern::{self, Intern};
 use chrn_utils::source_utils::source_diagnostic::SourceDiagnostic;
 use chrn_utils::source_utils::source_diagnostic::SourceDiagnosticSummary;
+use chrn_utils::source_utils::source_manager::SourceKind;
 use chrn_utils::source_utils::source_region::SourceRegion;
 use chrn_utils::source_utils::source_span::SourceSpan;
 use compilation::chrn_config::ChrnConfig;
@@ -338,7 +339,7 @@ pub(crate) fn resolve_document_modules(
     // needs to surface them as LSP `Position`s.
     let lex_output = Lexer::new(
         SourceRegionId::new(0),
-        path_id,
+        path_id.inner(),
         &main_region.src_bytes,
         main_region.script_start,
         chrn_cfg,
@@ -409,8 +410,10 @@ pub(crate) fn resolve_document_modules(
         .filter_map(|m| {
             let region_id = m.region_id?;
             let region = &sub_regions[region_id.id as usize - 1];
-            let p = src_manager.extract_path(region.path_id);
-            Url::from_file_path(p).ok().map(|u| u.to_string())
+            let SourceKind::Path(p) = src_manager.extract_source(region.src_id) else {
+                return None;
+            };
+            Url::from_file_path(&p.path).ok().map(|u| u.to_string())
         })
         .collect();
 
@@ -557,7 +560,7 @@ fn analyze_document(
     let region = match ConfigLoader::new(
         SourceRegionId::new(0),
         Cursor::new(text.as_bytes()),
-        path_id,
+        path_id.inner(),
         &chrn_cfg,
     )
     .load_config()
@@ -726,20 +729,6 @@ async fn publish_if_current(
     }
 }
 
-/// Indexes each region's `script_start` by the `path_id` of the file it came from.
-///
-/// `script_start` is the absolute file byte position of a region's start, which is
-/// added to that region's relative diagnostic spans to put them in absolute file
-/// coordinates before being surfaced to the LSP client.
-///
-/// The arena is built from the same `Intern` instance that produced a diagnostic's
-/// `path_id` (see `DocumentState::ensure_analyzed`), so matching on `path_id` is
-/// correct.  Building the map once per call replaces a linear scan of the arena per
-/// diagnostic; a file importing many modules and emitting many diagnostics paid that
-/// scan for each one.
-///
-/// A diagnostic whose `path_id` is absent falls back to `0`: compiler-intrinsic
-/// diagnostics correspond to no user file, and a region may have been evicted.
 /// Folds loose diagnostics into `summary`, keeping its warn/error counts in step.
 ///
 /// `SourceDiagnosticSummary` only absorbs other summaries, but the import worklist
@@ -755,12 +744,15 @@ pub(crate) fn absorb_diags(
     summary.diags.append(diags);
 }
 
+/// Indexes each region's absolute script start by its owning source ID.
+/// Regions and diagnostics must use the same source manager. Sources without a
+/// region retain the caller's zero-offset fallback.
 pub(crate) fn region_script_starts(
     arena: &Arena<SourceRegion, SourceRegionId>,
-) -> HashMap<PathId, usize> {
+) -> HashMap<SourceId, usize> {
     let mut starts = HashMap::with_capacity(arena.items.len());
     for region in &arena.items {
-        starts.entry(region.path_id).or_insert(region.script_start);
+        starts.entry(region.src_id).or_insert(region.script_start);
     }
     starts
 }
@@ -776,13 +768,13 @@ pub(crate) fn region_script_starts(
 ///
 /// # Region resolution
 ///
-/// Each `SourceDiagnostic` carries a `path_id` identifying which file the
+/// Each `SourceDiagnostic` carries a `src_id` identifying which source the
 /// diagnostic came from. The byte spans in its annotations are offsets into
 /// *that* file's bytes, not the main document's. To produce a correct LSP
 /// range, we look up the matching [`SourceRegion`](chrn_utils::source_utils::source_region::SourceRegion)
 /// in `arena` and convert the span against that region's text.
 ///
-/// Diagnostics whose `path_id` does not match any region (e.g. compiler-intrinsic
+/// Diagnostics whose `src_id` does not match any region (e.g. compiler-intrinsic
 /// diagnostics, or regions that have been evicted) fall back to `fallback_text`.
 ///
 /// # Parameters
@@ -839,11 +831,11 @@ pub(crate) struct ForeignOrigin {
 
 /// The main document's identity plus every foreign file it can attribute a diagnostic to.
 ///
-/// A `path_id` absent from `origins` is not foreign — it is a compiler-intrinsic
+/// A `src_id` absent from `origins` is not foreign — it is a compiler-intrinsic
 /// diagnostic with no region of its own, which keeps the existing fallback.
 pub(crate) struct ForeignContext<'a> {
-    pub main_path_id: PathId,
-    pub origins: &'a HashMap<PathId, ForeignOrigin>,
+    pub main_src_id: SourceId,
+    pub origins: &'a HashMap<SourceId, ForeignOrigin>,
 }
 
 /// Converts one diagnostic that belongs to another file into a single LSP diagnostic
@@ -907,7 +899,7 @@ fn push_foreign_diagnostic(
 pub(crate) fn push_diagnostic_inner(
     lsp_diags: &mut Vec<tower_lsp::lsp_types::Diagnostic>,
     diags: &[SourceDiagnostic],
-    script_starts: &HashMap<PathId, usize>,
+    script_starts: &HashMap<SourceId, usize>,
     lines: &crate::text::LineIndex,
     doc_len: usize,
     source: &str,
@@ -920,10 +912,10 @@ pub(crate) fn push_diagnostic_inner(
         // owning region's `script_start` alone does not fix that. Anchor it on the
         // import instead.
         if let Some(ctx) = foreign
-            && core_diag.path_id != ctx.main_path_id
-            && let Some(origin) = ctx.origins.get(&core_diag.path_id)
+            && core_diag.src_id != ctx.main_src_id
+            && let Some(origin) = ctx.origins.get(&core_diag.src_id)
         {
-            let main_script_start = script_starts.get(&ctx.main_path_id).copied().unwrap_or(0);
+            let main_script_start = script_starts.get(&ctx.main_src_id).copied().unwrap_or(0);
             push_foreign_diagnostic(
                 lsp_diags,
                 core_diag,
@@ -938,8 +930,8 @@ pub(crate) fn push_diagnostic_inner(
 
         // A diagnostic originating in an imported module has spans relative to
         // that module's region, so the shift has to come from the region matching
-        // this diagnostic's `path_id`, not from the main document's.
-        let script_start = script_starts.get(&core_diag.path_id).copied().unwrap_or(0);
+        // this diagnostic's `src_id`, not from the main document's.
+        let script_start = script_starts.get(&core_diag.src_id).copied().unwrap_or(0);
 
         let severity = match core_diag.level {
             DiagnosticLevel::Error => lsp_types::DiagnosticSeverity::ERROR,
@@ -1167,7 +1159,7 @@ pub(crate) fn resolve_modules_lsp(
                     None,
                     DiagnosticLevel::Warn,
                     core_msg,
-                    current_path_id,
+                    current_path_id.inner(),
                 )
                 .add_annotation(
                     official_span,
@@ -1201,7 +1193,7 @@ pub(crate) fn resolve_modules_lsp(
                     ErrorCode::CompilerInternals.into(),
                     DiagnosticLevel::Error,
                     core_msg,
-                    path_id,
+                    path_id.inner(),
                 )
                 .build();
                 diags.push(src_diag);
@@ -1217,7 +1209,7 @@ pub(crate) fn resolve_modules_lsp(
             // into `ErrorSource`. This mirrors `extract_modules`/`resolve_module`.
             seen.push(path_id);
 
-            let path_owned = src_manager.extract_path(path_id).to_path_buf();
+            let path_owned = src_manager.extract_path(path_id).path.to_path_buf();
             let path = path_owned.as_path();
 
             // Try to get from doc_cache first
@@ -1243,7 +1235,7 @@ pub(crate) fn resolve_modules_lsp(
                                     None,
                                     DiagnosticLevel::Error,
                                     core_msg,
-                                    current_path_id,
+                                    current_path_id.inner(),
                                 )
                                 .add_annotation(
                                     path_span,
@@ -1261,7 +1253,7 @@ pub(crate) fn resolve_modules_lsp(
                                     None,
                                     DiagnosticLevel::Error,
                                     core_msg,
-                                    current_path_id,
+                                    current_path_id.inner(),
                                 )
                                 .add_annotation(
                                     path_span,
@@ -1289,7 +1281,7 @@ pub(crate) fn resolve_modules_lsp(
                         None,
                         DiagnosticLevel::Error,
                         core_msg,
-                        current_path_id,
+                        current_path_id.inner(),
                     )
                     .add_annotation(path_span, AnnotationKind::Primary, None)
                     .build();
@@ -1319,7 +1311,7 @@ pub(crate) fn resolve_modules_lsp(
                             None,
                             DiagnosticLevel::Error,
                             core_msg,
-                            current_path_id,
+                            current_path_id.inner(),
                         )
                         .add_annotation(
                             path_span,
@@ -1337,9 +1329,13 @@ pub(crate) fn resolve_modules_lsp(
             // so a user module may never bind that identifier.
             if official_name_id.inner().id == intern::INTERNED_CORE {
                 let core_msg = "`core` is a reserved module identifier";
-                let src_diag =
-                    SourceDiagnostic::builder(None, DiagnosticLevel::Error, core_msg, path_id)
-                        .build();
+                let src_diag = SourceDiagnostic::builder(
+                    None,
+                    DiagnosticLevel::Error,
+                    core_msg,
+                    path_id.inner(),
+                )
+                .build();
                 diags.push(src_diag);
                 importer_mod.imports[i].kind = ImportKind::ErrorSource(sp_path_id.clone());
                 continue;
@@ -1350,62 +1346,68 @@ pub(crate) fn resolve_modules_lsp(
             // document region.
             let sub_region_id = SourceRegionId::new((sub_regions.len() + 1) as u32);
 
-            let (sub_region, sub_state) =
-                match ConfigLoader::new(sub_region_id, src, path_id, settings).load_config() {
-                    ConfigLoaderOutput::Success(region, summary) => {
-                        diags.extend(summary.diags);
-                        (region, ModuleState::Loaded)
-                    }
-                    ConfigLoaderOutput::Broken(broken_region, cfg_err) => {
-                        match cfg_err {
-                            ConfigLoadError::Diagnostic(diag) => {
-                                diags.push(diag);
-                            }
-                            ConfigLoadError::IO(e) => {
-                                let path = src_manager.extract_path(path_id);
-                                let core_msg = core_error::form_string_from_io_err(&e, path)
-                                    .unwrap_or(e.to_string());
-                                let src_diag = SourceDiagnostic::builder(
-                                    None,
-                                    DiagnosticLevel::Error,
-                                    core_msg,
-                                    current_path_id,
-                                )
-                                .add_annotation(path_span, AnnotationKind::Primary, None)
-                                .build();
-                                diags.push(src_diag);
-                            }
+            let (sub_region, sub_state) = match ConfigLoader::new(
+                sub_region_id,
+                src,
+                path_id.inner(),
+                settings,
+            )
+            .load_config()
+            {
+                ConfigLoaderOutput::Success(region, summary) => {
+                    diags.extend(summary.diags);
+                    (region, ModuleState::Loaded)
+                }
+                ConfigLoaderOutput::Broken(broken_region, cfg_err) => {
+                    match cfg_err {
+                        ConfigLoadError::Diagnostic(diag) => {
+                            diags.push(diag);
                         }
-                        // The broken region is kept so its diagnostics stay
-                        // resolvable, but the module must not be re-parsed by the
-                        // later stages — same contract as the compiler's
-                        // `ModuleState::BrokenRegion`.
-                        (broken_region, ModuleState::BrokenRegion)
-                    }
-                    ConfigLoaderOutput::UnrecoverableErr(cfg_err) => {
-                        importer_mod.imports[i].kind = ImportKind::ErrorSource(sp_path_id.clone());
-                        match cfg_err {
-                            ConfigLoadError::Diagnostic(diag) => {
-                                diags.push(diag);
-                            }
-                            ConfigLoadError::IO(e) => {
-                                let path = src_manager.extract_path(path_id);
-                                let core_msg = core_error::form_string_from_io_err(&e, path)
-                                    .unwrap_or(e.to_string());
-                                let src_diag = SourceDiagnostic::builder(
-                                    None,
-                                    DiagnosticLevel::Error,
-                                    core_msg,
-                                    current_path_id,
-                                )
-                                .add_annotation(path_span, AnnotationKind::Primary, None)
-                                .build();
-                                diags.push(src_diag);
-                            }
+                        ConfigLoadError::IO(e) => {
+                            let path = &src_manager.extract_path(path_id).path;
+                            let core_msg = core_error::form_string_from_io_err(&e, path)
+                                .unwrap_or(e.to_string());
+                            let src_diag = SourceDiagnostic::builder(
+                                None,
+                                DiagnosticLevel::Error,
+                                core_msg,
+                                current_path_id.inner(),
+                            )
+                            .add_annotation(path_span, AnnotationKind::Primary, None)
+                            .build();
+                            diags.push(src_diag);
                         }
-                        continue;
                     }
-                };
+                    // The broken region is kept so its diagnostics stay
+                    // resolvable, but the module must not be re-parsed by the
+                    // later stages — same contract as the compiler's
+                    // `ModuleState::BrokenRegion`.
+                    (broken_region, ModuleState::BrokenRegion)
+                }
+                ConfigLoaderOutput::UnrecoverableErr(cfg_err) => {
+                    importer_mod.imports[i].kind = ImportKind::ErrorSource(sp_path_id.clone());
+                    match cfg_err {
+                        ConfigLoadError::Diagnostic(diag) => {
+                            diags.push(diag);
+                        }
+                        ConfigLoadError::IO(e) => {
+                            let path = &src_manager.extract_path(path_id).path;
+                            let core_msg = core_error::form_string_from_io_err(&e, path)
+                                .unwrap_or(e.to_string());
+                            let src_diag = SourceDiagnostic::builder(
+                                None,
+                                DiagnosticLevel::Error,
+                                core_msg,
+                                current_path_id.inner(),
+                            )
+                            .add_annotation(path_span, AnnotationKind::Primary, None)
+                            .build();
+                            diags.push(src_diag);
+                        }
+                    }
+                    continue;
+                }
+            };
 
             // The module is now certain to exist, so it takes the next id. Reserving
             // earlier — before the open, the `core` rejection, the file-prefix check
@@ -1479,7 +1481,7 @@ pub(crate) fn resolve_modules_lsp(
                 ErrorCode::ImportErr.into(),
                 DiagnosticLevel::Error,
                 core_msg,
-                current_path_id,
+                current_path_id.inner(),
             )
             .add_annotation(dup_span, AnnotationKind::Primary, None);
 
