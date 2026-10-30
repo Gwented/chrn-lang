@@ -9,7 +9,7 @@ use crate::id_types::{
     id_tags::{ArenaIndexTag, MaybeUTF8Tag, TaggedId, UTF8Tag},
 };
 
-// Um
+// Do we want to change these all to InternedId?
 pub const INTERNED_SELF: u32 = 0;
 pub const INTERNED_STRUCT: u32 = 1;
 pub const INTERNED_ENUM: u32 = 2;

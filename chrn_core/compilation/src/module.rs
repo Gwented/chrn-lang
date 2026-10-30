@@ -18,8 +18,8 @@ use chrn_utils::{
     intern::{self, Intern},
     source_map::{
         source_diagnostic::{
-            DiagnosticLevel, SourceDiagnostic, SourceDiagnosticSink, SourceDiagnosticSummary,
-            annotations::AnnotationKind,
+            DiagnosticLevel, SourceDiagnostic, SourceDiagnosticBuilder, SourceDiagnosticSink,
+            SourceDiagnosticSummary, annotations::AnnotationKind,
         },
         source_region::SourceRegion,
     },
@@ -69,6 +69,10 @@ pub fn extract_all_modules<R: Read>(
 ///
 /// NOTE: The corresponding `extract_modules` function expects the pure graph output from this
 /// function to be given to it, otherwise the behavior is undefined.
+//TODO: Add an abstracted source. There is a fundamental issue where paths must be canon, but it may
+//be better to allow for extensive means where files have different metadata, like one that is
+//virtual which doesn't actually need a path, only a source. Could also by proxy help LSPs and
+//anything else that may want to use these source of truth functions without needing to remake locally.
 pub fn extract_main<R: Read>(
     main_path: &Path,
     main_src: R,
@@ -78,6 +82,15 @@ pub fn extract_main<R: Read>(
 
     // Maybe the reporter should just be used
     let mut summary = SourceDiagnosticSummary::default();
+
+    let main_path = match main_path.canonicalize() {
+        Ok(p) => p,
+        Err(e) => {
+            let cfg_err = ConfigLoadError::IO(e);
+            let init_err = ModuleInitError::new(None, interner, cfg_err);
+            return Err(init_err);
+        }
+    };
 
     let main_path_id = interner.intern_path(&main_path);
 
@@ -102,7 +115,7 @@ pub fn extract_main<R: Read>(
                 let diag = match cfg_err {
                     ConfigLoadError::Diagnostic(diag) => diag,
                     ConfigLoadError::IO(io_err) => {
-                        let err_str = core_error::form_string_from_io_err(&io_err, main_path)
+                        let err_str = core_error::form_string_from_io_err(&io_err, &main_path)
                             .unwrap_or(io_err.to_string());
                         SourceDiagnostic::builder(
                             //TODO: Should this have a code?
@@ -148,6 +161,7 @@ pub fn extract_main<R: Read>(
         }
     };
 
+    //TODO: Aliases for main. Ensure if named core, doesn't matter since alias doesn't align. Beep.
     let main_name_id = interner.intern_str(file_name);
     let main_mod_id = ModuleId::new(0);
 
@@ -167,6 +181,13 @@ pub fn extract_main<R: Read>(
 
     // Pushing main's region
     region_arena.push(main_region);
+
+    // Purposefully done after data is collected.
+    if let Err(builder) = ensure_not_reserved(main_name_id, main_path_id) {
+        let cfg_err = ConfigLoadError::Diagnostic(builder.build());
+        let init_err = ModuleInitError::new(Some(region_arena), interner, cfg_err);
+        return Err(init_err);
+    }
 
     // No errors are immediately terminal after this point since the main entry point now exists and
     // can be viewed even if it's the only module that was successfully created
@@ -248,6 +269,26 @@ pub fn extract_modules(
                 unreachable!();
             };
 
+            //NOTE: If this were allowed, some odd behavior would exist, which should likely just
+            //be omitted entirely. This is the only location where anything "core" in identifier is stopped.
+            if let Err(mut builder) = ensure_not_reserved(imp.name_id, importer_path_id) {
+                builder = builder.add_annotation(sp_path_id.span, AnnotationKind::Primary, None);
+                summary.push_diag(builder.build());
+                importer_mod.imports[imp_idx].kind = ImportKind::ErrorSource(sp_path_id.clone());
+                continue;
+            }
+
+            if let Some(sp_alias_id) = imp.sp_alias_id.clone() {
+                if let Err(mut builder) = ensure_not_reserved(sp_alias_id.inner, importer_path_id) {
+                    builder =
+                        builder.add_annotation(sp_alias_id.span, AnnotationKind::Primary, None);
+                    summary.push_diag(builder.build());
+                    importer_mod.imports[imp_idx].kind =
+                        ImportKind::ErrorSource(sp_path_id.clone());
+                    continue;
+                }
+            }
+
             // If is_importer, that means it shouldn't count as a duplicate identifier. So, if `main`
             // imports `main` and both mains are the same, no error is emitted because that would be
             // the wrong behavior. This is solely aa self import guard.
@@ -288,16 +329,17 @@ pub fn extract_modules(
             }
 
             // If the path from a given import was seen already then it skips
-            if graph.seen.binary_search(&sp_path_id.inner).is_ok() {
+            if graph.seen.contains(&sp_path_id.inner) {
                 // Checking if there is a module id associated with it's path before skipping so
                 // that the import can be updated if possible.
-                let mod_id_res = graph
+                let mod_id_opt = graph
                     .registered_mod_ids
-                    .binary_search_by_key(&sp_path_id.inner, |(p_id, _)| *p_id)
-                    .map(|idx| graph.registered_mod_ids[idx].1);
+                    .iter()
+                    .find(|(p_id, _)| *p_id == sp_path_id.inner)
+                    .map(|(_, m_id)| *m_id);
 
                 // Valid import
-                if let Ok(mod_id) = mod_id_res {
+                if let Some(mod_id) = mod_id_opt {
                     importer_mod.imports[imp_idx].kind =
                         ImportKind::Source(sp_path_id.clone(), mod_id);
                 } else {
@@ -495,7 +537,7 @@ pub fn extract_modules(
 /// which means new `PathId`s need to be interned.
 fn resolve_module(
     // The import to turn into a module
-    import: Import,
+    imp: Import,
     official_ident: InternedIdUTF8,
     // Module that imported this module, which triggered this module's processing,
     // importer_mod: &Module,
@@ -507,9 +549,12 @@ fn resolve_module(
     //WARN: If there is ever an instance where reserved_mod_ids reserves a module id that is valid,
     //but fails with "Err(())" below, it has broken module id alignment
 
-    let ImportKind::UnresolvedSource(sp_path_id) = import.kind.clone() else {
+    let ImportKind::UnresolvedSource(sp_path_id) = imp.kind.clone() else {
         unreachable!();
     };
+
+    let importer_path_id = graph.region_arena[sp_path_id.span.region_id].path_id;
+
     // Tracks the id of the current module by tracking however many imports were seen, which
     // all represent one module
     //
@@ -523,14 +568,18 @@ fn resolve_module(
     let src = match file_ops::fopen(path) {
         Ok(f) => f,
         Err((_, err_msg)) => {
-            let src_diag =
-                SourceDiagnostic::builder(None, DiagnosticLevel::Error, err_msg, sp_path_id.inner)
-                    .add_annotation(
-                        sp_path_id.span,
-                        AnnotationKind::Primary,
-                        "Caused by this import".to_string().into(),
-                    )
-                    .build();
+            let src_diag = SourceDiagnostic::builder(
+                ErrorCode::ImportErr.into(),
+                DiagnosticLevel::Error,
+                err_msg,
+                importer_path_id,
+            )
+            .add_annotation(
+                sp_path_id.span,
+                AnnotationKind::Primary,
+                "Caused by this import".to_string().into(),
+            )
+            .build();
 
             summary.push_diag(src_diag);
             return Err(());
@@ -539,20 +588,6 @@ fn resolve_module(
 
     // Creating region id for the current module on this level in the recursive stacke
     let sub_region_id = graph.region_arena.make_id();
-
-    //NOTE: If this were allowed, some odd behavior would exist, which should likely just
-    //be omitted entirely. This is the only location where anything "core" in identifier is stopped.
-    if official_ident.inner().id == intern::INTERNED_CORE {
-        let core_msg = "`core` is a reserved module identifier";
-        let builder = SourceDiagnostic::builder(
-            ErrorCode::CompilerInternals.into(),
-            DiagnosticLevel::Error,
-            core_msg,
-            sp_path_id.inner,
-        );
-        summary.push_diag(builder.build());
-        return Err(());
-    }
 
     // Using region id before pushing
     let (sub_region, sub_state) =
@@ -575,7 +610,7 @@ fn resolve_module(
                             None,
                             DiagnosticLevel::Error,
                             core_msg,
-                            sp_path_id.inner,
+                            importer_path_id,
                         )
                         .add_annotation(sp_path_id.span, AnnotationKind::Primary, None)
                         .build();
@@ -598,7 +633,7 @@ fn resolve_module(
                             None,
                             DiagnosticLevel::Error,
                             core_msg,
-                            sp_path_id.inner,
+                            importer_path_id,
                         )
                         .add_annotation(sp_path_id.span, AnnotationKind::Primary, None)
                         .build();
@@ -632,7 +667,7 @@ fn resolve_module(
     graph.region_arena.push(sub_region);
 
     let sub_mod = Module::new(
-        official_ident,
+        imp.name_id,
         sub_state,
         current_mod_id,
         bind,
@@ -641,4 +676,22 @@ fn resolve_module(
     );
 
     Ok(sub_mod)
+}
+
+/// Returns `SourceDiagnosticBuilder` if `name_id` is the same as a reserved identifier
+/// `path_id` is used to report
+fn ensure_not_reserved(
+    name_id: InternedIdUTF8,
+    path_id: PathId,
+) -> Result<(), SourceDiagnosticBuilder> {
+    if name_id.inner().id == intern::INTERNED_CORE {
+        let core_msg = "`core` is a reserved module identifier";
+        return Err(SourceDiagnostic::builder(
+            ErrorCode::CompilerInternals.into(),
+            DiagnosticLevel::Error,
+            core_msg,
+            path_id,
+        ));
+    }
+    Ok(())
 }

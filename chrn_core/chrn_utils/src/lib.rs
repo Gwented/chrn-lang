@@ -19,7 +19,7 @@ pub mod utils;
 /// general.
 pub const MAX_LOOPS: u32 = 10000004;
 
-/// Max modules that can be in memory at once
+/// Max user modules that can be in memory at once
 pub const MAX_MODULES: u16 = 800;
 
 /// Max recursive descent that can be done
@@ -28,7 +28,6 @@ pub const MAX_RECURSIVE_DEPTH: u16 = 1024;
 /// Max expression nodes that can be consumed in a singule expression tree
 pub const MAX_EXPR_NODES: u32 = 1; // 5,000,000
 
-//WARN: 32Kib -> 64Kib
 /// Max size of any given region. This has nothing to do with file size overall, just how many bytes
 /// a given region can occupy, which may be a full file or just from `@def` to `@end`.
 pub const MAX_REGION_SIZE: usize = 1024 * 64;

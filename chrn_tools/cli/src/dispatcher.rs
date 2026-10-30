@@ -57,8 +57,7 @@ fn exec_check(
     let chrn_cfg = builder.build();
 
     let mut reporter = Reporter::new(crate::MAX_DIAGNOSTICS);
-    let path = files::make_canon(&check_cmd.path)?;
-    let src = match file_ops::fopen(&path) {
+    let src = match file_ops::fopen(&check_cmd.path) {
         Ok(f) => f,
         Err((_, err_msg)) => {
             let msg = format!("Process exited unsuccessfully.\nReason: {err_msg}");
@@ -70,7 +69,12 @@ fn exec_check(
 
     // Please please please
     let (mut compiler, mut compiler_store, mut compiler_cache) =
-        match constructors::create_compiler_with_cache(&path, src, &mut reporter, chrn_cfg) {
+        match constructors::create_compiler_with_cache(
+            &check_cmd.path,
+            src,
+            &mut reporter,
+            chrn_cfg,
+        ) {
             Ok(data) => data,
             Err(init_err) => {
                 let msg_opt = match init_err.cfg_err {
@@ -162,8 +166,7 @@ fn exec_query(
     let chrn_cfg = ChrnConfig::default();
 
     let mut reporter = Reporter::new(crate::MAX_DIAGNOSTICS);
-    let path = files::make_canon(&query_cmd.path)?;
-    let src = match file_ops::fopen(&path) {
+    let src = match file_ops::fopen(&query_cmd.path) {
         Ok(f) => f,
         Err((_, err_msg)) => {
             let msg = format!("Process exited unsuccessfully.\nReason: {err_msg}");
@@ -175,7 +178,12 @@ fn exec_query(
 
     // Please please please
     let (mut compiler, mut compiler_store, mut compiler_cache) =
-        match constructors::create_compiler_with_cache(&path, src, &mut reporter, chrn_cfg) {
+        match constructors::create_compiler_with_cache(
+            &query_cmd.path,
+            src,
+            &mut reporter,
+            chrn_cfg,
+        ) {
             Ok(data) => data,
             Err(init_err) => match init_err.cfg_err {
                 ConfigLoadError::Diagnostic(diag) => {
@@ -285,16 +293,15 @@ fn exec_embed(
         cli_cfg.terminal_color_type,
     ));
 
-    let src_path = files::make_canon(&embed_cmd.src_path)?;
-    let dest_path = files::make_canon(&embed_cmd.dest_path)?;
-
-    let src = match file_ops::fopen(&src_path) {
+    let src = match file_ops::fopen(&embed_cmd.src_path) {
         Ok(f) => f,
         Err((_, err_msg)) => {
             let msg = format!("Process exited unsuccessfully.\nReason: {err_msg}");
             return Err(msg.into());
         }
     };
+
+    let (src_path, dest_path) = (&embed_cmd.src_path, &embed_cmd.dest_path);
 
     // Maybe allow the different ouputs for checking
     //
@@ -459,9 +466,9 @@ fn exec_embed(
     }
 
     let res = if embed_cmd.in_memory {
-        filesc::write_bytes_front(&dest_path, &embed_portion)
+        filesc::write_bytes_front(&embed_cmd.dest_path, &embed_portion)
     } else {
-        filesc::write_bytes_front_stream(&dest_path, &embed_portion, "chrnstream-".into())
+        filesc::write_bytes_front_stream(&embed_cmd.dest_path, &embed_portion, "chrnstream-".into())
     };
 
     match res {

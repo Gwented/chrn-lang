@@ -12,8 +12,13 @@ use crate::module::module_concepts::{ImportKind, Module, ModuleState};
 use crate::module::module_finder::ModuleFinder;
 use crate::script_compiler::reporter::Reporter;
 use chrn_utils::{
+    core_error::ConfigLoadError,
     id_types::{ModuleId, PathId, SourceRegionId},
     intern::Intern,
+    source_map::{
+        source_diagnostic::{DiagnosticLevel, annotations::AnnotationKind},
+        source_span::SourceSpan,
+    },
 };
 
 // ---------------------------------------------------------------------------
@@ -725,23 +730,6 @@ fn extract_main_broken_config() {
     );
     let has_missing_end = diags.diags.iter().any(|d| d.core_msg.contains("@end"));
     assert!(has_missing_end, "diagnostic should mention missing @end");
-
-    _ = fs::remove_dir_all(&dir);
-}
-
-/// `extract_main` must accept an arbitrary path when the caller supplies the source via `R: Read`.
-#[test]
-fn extract_main_missing_file() {
-    let dir = create_temp_dir("extract_main_missing");
-    let non_existent = dir.join("does_not_exist.chrn");
-    let mut cfg = ChrnConfig::default();
-
-    // Passing a Cursor source so extract_main doesn't need to open the file
-    let result = extract_main(&non_existent, Cursor::new(b"let x = 5\n"), &mut cfg);
-    assert!(
-        result.is_ok(),
-        "extract_main should succeed even when the file does not exist, since the source is provided separately"
-    );
 
     _ = fs::remove_dir_all(&dir);
 }
@@ -1864,5 +1852,364 @@ fn duplicate_tracking_is_per_module() {
         "identifiers in different modules must not collide",
     );
 
+    _ = fs::remove_dir_all(&dir);
+}
+
+/// A bind can intern a module's path before its first import. Repeated imports
+/// must still share one module even when path IDs differ from discovery order.
+#[test]
+fn bind_path_interning_preserves_module_deduplication() {
+    let dir = create_temp_dir("bind_path_dedup");
+    let shared = create_chrn_file(&dir, "shared.chrn", "@end\n{}\n");
+    let a = create_chrn_file(&dir, "a.chrn", &format!("{}\n", import_stmt(&shared)));
+    let main_path = create_chrn_file(
+        &dir,
+        "main.chrn",
+        &format!(
+            "bind \"{}\"\n{}\n{}\n",
+            shared.display(),
+            import_stmt(&a),
+            import_stmt(&shared),
+        ),
+    );
+    let mut reporter = Reporter::new(100);
+    let (compiler, store, diags) = extract_all_modules(
+        &main_path,
+        fs::File::open(&main_path).unwrap(),
+        ChrnConfig::default(),
+        &mut reporter,
+    )
+    .expect("module extraction must succeed");
+    _ = fs::remove_dir_all(&dir);
+
+    assert!(diags.diags.is_empty(), "unexpected diagnostics: {diags:?}");
+    assert_eq!(get_user_mod_count(&compiler), 3, "main, a, and shared only");
+    let main_mod = &compiler.mods[ModuleId::new(0)];
+    let a_mod = find_module_by_name(&compiler, &store.interner, "a").unwrap();
+    let shared_mod = find_module_by_name(&compiler, &store.interner, "shared").unwrap();
+    assert_eq!(
+        import_mod_id(&main_mod.imports[1]),
+        Some(shared_mod.self_id)
+    );
+    assert_eq!(import_mod_id(&a_mod.imports[0]), Some(shared_mod.self_id));
+}
+
+/// An alias belongs to its importing module and must not collide with an
+/// otherwise distinct import inside the aliased module.
+#[test]
+fn parent_import_alias_does_not_rename_child_module() {
+    let dir = create_temp_dir("parent_alias_scope");
+    let x = create_chrn_file(&dir, "x.chrn", "let value = 1\n");
+    let a = create_chrn_file(&dir, "a.chrn", &format!("{}\n", import_stmt(&x)));
+    let main_path = make_main_with(&dir, &[import_stmt_as(&a, "x")]);
+    let mut reporter = Reporter::new(100);
+    let (compiler, store, diags) = extract_all_modules(
+        &main_path,
+        fs::File::open(&main_path).unwrap(),
+        ChrnConfig::default(),
+        &mut reporter,
+    )
+    .expect("module extraction must succeed");
+    _ = fs::remove_dir_all(&dir);
+
+    assert!(
+        diags.diags.is_empty(),
+        "parent aliases are local to the parent: {diags:?}"
+    );
+    assert_eq!(get_user_mod_count(&compiler), 3);
+    assert_eq!(
+        store
+            .interner
+            .extract_utf8_str(compiler.mods[ModuleId::new(1)].name_id),
+        "a"
+    );
+    assert_eq!(
+        import_mod_id(&compiler.mods[ModuleId::new(1)].imports[0]),
+        Some(ModuleId::new(2))
+    );
+}
+
+/// Loading a path through another name must not let a later import claim the
+/// compiler-owned `core` identifier.
+#[test]
+fn reserved_core_alias_is_rejected_for_already_loaded_path() {
+    let dir = create_temp_dir("core_alias_seen_path");
+    let sub = make_sub_script(&dir);
+    let main_path = make_main_with(&dir, &[import_stmt(&sub), import_stmt_as(&sub, "core")]);
+    let mut reporter = Reporter::new(100);
+    let (compiler, _, diags) = extract_all_modules(
+        &main_path,
+        fs::File::open(&main_path).unwrap(),
+        ChrnConfig::default(),
+        &mut reporter,
+    )
+    .expect("module extraction must recover from the reserved alias");
+    _ = fs::remove_dir_all(&dir);
+
+    let messages: Vec<_> = diags
+        .diags
+        .iter()
+        .map(|diag| diag.core_msg.as_str())
+        .collect();
+    assert_eq!(messages, ["`core` is a reserved module identifier"]);
+    assert!(diags.has_err());
+    assert_eq!(get_user_mod_count(&compiler), 2);
+    let main_mod = &compiler.mods[ModuleId::new(0)];
+    assert_eq!(import_mod_id(&main_mod.imports[0]), Some(ModuleId::new(1)));
+    assert!(matches!(
+        main_mod.imports[1].kind,
+        ImportKind::ErrorSource(_)
+    ));
+    assert!(matches!(main_mod.imports[2].kind, ImportKind::Core(_)));
+}
+
+/// A reserved alias is an error in the importing source, regardless of whether
+/// its target has already been loaded through another import.
+#[test]
+fn reserved_core_alias_diagnostic_identifies_importer() {
+    let dir = fs::canonicalize(create_temp_dir("core_alias_diag_importer")).unwrap();
+    let sub = make_sub_script(&dir);
+    let mut diagnostic_paths = Vec::new();
+    for already_loaded in [false, true] {
+        let mut imports = Vec::new();
+        if already_loaded {
+            imports.push(import_stmt(&sub));
+        }
+        imports.push(import_stmt_as(&sub, "core"));
+        let main_path = make_main_with(&dir, &imports);
+        let mut reporter = Reporter::new(100);
+        let (compiler, store, diags) = extract_all_modules(
+            &main_path,
+            fs::File::open(&main_path).unwrap(),
+            ChrnConfig::default(),
+            &mut reporter,
+        )
+        .expect("reserved aliases must allow extraction to recover");
+        assert_eq!(diags.diags.len(), 1);
+        let diag = &diags.diags[0];
+        assert_eq!(diag.core_msg, "`core` is a reserved module identifier");
+        assert_eq!(diag.level, DiagnosticLevel::Error);
+        assert!(matches!(
+            compiler.mods[ModuleId::new(0)].imports[usize::from(already_loaded)].kind,
+            ImportKind::ErrorSource(_)
+        ));
+        diagnostic_paths.push(
+            store
+                .interner
+                .extract_path_from_path_id(diag.path_id)
+                .to_path_buf(),
+        );
+    }
+    _ = fs::remove_dir_all(&dir);
+    assert_eq!(
+        diagnostic_paths,
+        [dir.join("main.chrn"), dir.join("main.chrn")]
+    );
+}
+
+/// An import-open error must locate the import statement in its source file,
+/// rather than pairing that source's annotation with the target directory.
+#[cfg(unix)]
+#[test]
+fn directory_import_diagnostic_identifies_importer() {
+    let dir = create_temp_dir("directory_import_diag");
+    let target = dir.join("target");
+    fs::create_dir_all(&target).unwrap();
+    let target = fs::canonicalize(target).unwrap();
+    let main_path = make_main_with(&dir, &[import_stmt(&target)]);
+    let mut reporter = Reporter::new(100);
+    let (compiler, store, diags) = extract_all_modules(
+        &main_path,
+        fs::File::open(&main_path).unwrap(),
+        ChrnConfig::default(),
+        &mut reporter,
+    )
+    .expect("an import-open failure must allow extraction to recover");
+    _ = fs::remove_dir_all(&dir);
+
+    assert_eq!(get_user_mod_count(&compiler), 1);
+    assert_eq!(diags.diags.len(), 1);
+    let diag = &diags.diags[0];
+    assert_eq!(diag.level, DiagnosticLevel::Error);
+    assert_eq!(
+        diag.core_msg,
+        format!("The path \"{}\" is a directory", target.display())
+    );
+    assert_eq!(diag.annotations.len(), 1);
+    assert_eq!(diag.annotations[0].kind, AnnotationKind::Primary);
+    assert_eq!(
+        diag.annotations[0].span,
+        SourceSpan::new(
+            SourceRegionId::new(0),
+            8,
+            8 + target.as_os_str().len() as u32
+        )
+    );
+    assert!(matches!(
+        compiler.mods[ModuleId::new(0)].imports[0].kind,
+        ImportKind::ErrorSource(_)
+    ));
+    assert_eq!(
+        store.interner.extract_path_from_path_id(diag.path_id),
+        main_path
+    );
+}
+
+/// A read error after opening an import must attribute its annotation to the
+/// importer, just like an import-open error. Linux procfs exposes a file that
+/// opens successfully but reliably returns EIO when read at offset zero.
+#[cfg(target_os = "linux")]
+#[test]
+fn import_read_error_diagnostic_identifies_importer() {
+    let dir = create_temp_dir("import_read_error_diag");
+    let target = fs::canonicalize("/proc/self/mem").unwrap();
+    let main_path = make_main_with(&dir, &[import_stmt(&target)]);
+    let mut reporter = Reporter::new(100);
+    let (compiler, store, diags) = extract_all_modules(
+        &main_path,
+        fs::File::open(&main_path).unwrap(),
+        ChrnConfig::default(),
+        &mut reporter,
+    )
+    .expect("an import-read failure must allow extraction to recover");
+    _ = fs::remove_dir_all(&dir);
+
+    assert_eq!(get_user_mod_count(&compiler), 1);
+    assert_eq!(store.region_arena.len(), 1);
+    assert!(matches!(
+        compiler.mods[ModuleId::new(0)].imports[0].kind,
+        ImportKind::ErrorSource(_)
+    ));
+    assert_eq!(diags.diags.len(), 1);
+    let diag = &diags.diags[0];
+    assert_eq!(diag.level, DiagnosticLevel::Error);
+    // EIO proves the file opened and reached ConfigLoader's read-error path.
+    assert_eq!(
+        diag.core_msg,
+        std::io::Error::from_raw_os_error(5).to_string()
+    );
+    assert_eq!(diag.annotations.len(), 1);
+    assert_eq!(diag.annotations[0].kind, AnnotationKind::Primary);
+    assert_eq!(
+        diag.annotations[0].span,
+        SourceSpan::new(
+            SourceRegionId::new(0),
+            8,
+            8 + target.as_os_str().len() as u32
+        )
+    );
+    assert_eq!(
+        store.interner.extract_path_from_path_id(diag.path_id),
+        main_path,
+        "the read-error diagnostic must identify the file containing its annotation"
+    );
+}
+
+/// Different spellings of the entry file must still resolve a self import to
+/// module zero, without loading the same declarations in a second module.
+#[test]
+fn noncanonical_entry_path_preserves_self_import_identity() {
+    let dir = create_temp_dir("noncanonical_entry_identity");
+    fs::create_dir_all(dir.join("nested")).unwrap();
+    let main_path = create_chrn_file(&dir, "main.chrn", "let x = 5\n");
+    write_file(
+        &main_path,
+        &format!("{}\nlet x = 5\n", import_stmt(&main_path)),
+    );
+    let entry_path = dir.join("nested/../main.chrn");
+    let mut reporter = Reporter::new(100);
+    let (compiler, _, diags) = extract_all_modules(
+        &entry_path,
+        fs::File::open(&entry_path).unwrap(),
+        ChrnConfig::default(),
+        &mut reporter,
+    )
+    .expect("a valid entry path containing a parent component must load");
+    _ = fs::remove_dir_all(&dir);
+
+    assert_eq!(
+        get_user_mod_count(&compiler),
+        1,
+        "a self import must not load the entry file twice"
+    );
+    assert_eq!(
+        import_mod_id(&compiler.mods[ModuleId::new(0)].imports[0]),
+        Some(ModuleId::new(0))
+    );
+    assert_eq!(diags.diags.len(), 1);
+    assert_eq!(diags.diags[0].level, DiagnosticLevel::Warn);
+    assert_eq!(diags.diags[0].core_msg, "Self imports have no effect");
+}
+
+/// A source named `core` cannot be used as the entry module.
+#[test]
+fn reserved_core_entry_is_rejected() {
+    let dir = create_temp_dir("reserved_core_entry");
+    let main_path = create_chrn_file(&dir, "core.chrn", "let value = 1\n");
+    let result = extract_main(
+        &main_path,
+        fs::File::open(&main_path).unwrap(),
+        &mut ChrnConfig::default(),
+    );
+    _ = fs::remove_dir_all(&dir);
+
+    let init_err = match result {
+        Err(init_err) => init_err,
+        Ok(_) => panic!("a source named core must terminate entry-module extraction"),
+    };
+    let ConfigLoadError::Diagnostic(diag) = init_err.cfg_err else {
+        panic!("a reserved entry-module name must produce a language diagnostic");
+    };
+    assert_eq!(diag.level, DiagnosticLevel::Error);
+    assert_eq!(diag.core_msg, "`core` is a reserved module identifier");
+    assert_eq!(
+        init_err.interner.extract_path_from_path_id(diag.path_id),
+        main_path
+    );
+}
+
+/// An import alias cannot bypass the prohibition on a source named `core`.
+/// Rejecting that source must preserve unrelated imports and dense module IDs.
+#[test]
+fn reserved_core_source_is_rejected_even_with_alias() {
+    let dir = create_temp_dir("reserved_core_source");
+    let core_source = create_chrn_file(&dir, "core.chrn", "let value = 1\n");
+    let valid_source = make_sub_script(&dir);
+    for (aliased, core_import) in [
+        (false, import_stmt(&core_source)),
+        (true, import_stmt_as(&core_source, "defs")),
+    ] {
+        let main_path = make_main_with(&dir, &[core_import, import_stmt(&valid_source)]);
+        let mut reporter = Reporter::new(100);
+        let (compiler, store, diags) = extract_all_modules(
+            &main_path,
+            fs::File::open(&main_path).unwrap(),
+            ChrnConfig::default(),
+            &mut reporter,
+        )
+        .expect("a prohibited import must allow extraction of unrelated modules");
+        let messages: Vec<_> = diags
+            .diags
+            .iter()
+            .map(|diag| (diag.level, diag.core_msg.as_str()))
+            .collect();
+        assert_eq!(
+            messages,
+            [(DiagnosticLevel::Error, "`core` is a reserved module identifier")],
+            "reserved source rejection must hold when aliased={aliased}"
+        );
+        assert_eq!(
+            store.interner.extract_path_from_path_id(diags.diags[0].path_id),
+            main_path
+        );
+        assert_eq!(get_user_mod_count(&compiler), 2);
+        let main_mod = &compiler.mods[ModuleId::new(0)];
+        assert!(matches!(main_mod.imports[0].kind, ImportKind::ErrorSource(_)));
+        assert_eq!(import_mod_id(&main_mod.imports[1]), Some(ModuleId::new(1)));
+        assert_eq!(
+            compiler.mods[ModuleId::new(1)].name_id,
+            store.interner.get_interned_id_from_str("sub").unwrap()
+        );
+    }
     _ = fs::remove_dir_all(&dir);
 }
