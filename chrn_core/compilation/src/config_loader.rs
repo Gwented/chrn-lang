@@ -1,5 +1,3 @@
-// 65540 SHOULD be the maximum amount of bytes, given that lookahead wise at most the buffer will
-// allow lookahead. Or not. Depends.
 //! This module represents the stage of `chrn` processing where there it may read an entire file, or
 //! it may read between `@def` and `@end`. This exists so that if there is serial data within the
 //! file, the entire file isn't forced to be loaded into memory, which would be a net negative.
@@ -11,7 +9,6 @@
 
 //! Uses a configurable buffer that grows-..
 pub mod config_loader_summary;
-//TODO: Need relative spanning in renderers
 use std::{
     io::{BufRead, BufReader, Read},
     ops::Range,
@@ -46,19 +43,11 @@ const MAX_SEARCH_READ: usize = 1024 * 64;
 /// Minimum size the buffer can be set to.
 const MIN_BUFFER_SIZE: usize = 1;
 
-//FIX: Change to 64Kib since this will be a choice so now it'sj ust default 64Kib I'm in a vehicle.
-//I'm not in a vehicle. Maybe we can go for 128Kib directly since that is literally nothing.
-//Using 32Kib to ensure smalelr sizes workrkkrk
 /// ~40 Kib buffer
 const DEFAULT_BUFFER_SIZE: usize = (128 * 1024) / 3;
 // const DEFAULT_BUFFER_SIZE: usize = 1;
 
-// Can read at most 32 KB before an @def, can read at most 32 KB after an @def
-
 //Call this RegionLoader?
-//TODO: A script start should dictate how many bytes can be read.
-//So, if script_start is 2048, total_buffer is now starting at byte 2048 of handle, and it has 16KB
-//from that point forward.
 pub struct ConfigLoader<'a, R: Read> {
     // Since region ids are not used by the loader for diagnostics, this is safe. Only the path id
     // is used.
@@ -69,19 +58,16 @@ pub struct ConfigLoader<'a, R: Read> {
     col_tracker: FreezeTrackerU32,
     /// Cursor for navigating `persistent_buffer`
     cursor: usize,
-    /// Absolute position in file
-    abs_pos: usize,
     /// The limit of bytes that can be consumed
     limit: usize,
-    // Need to keep script_start to have this be a method where we have the abs version by default.
-    /// Bytes consumed relative to `@def` if present, otherwise it's relative to the start of file,
-    /// 0.
-    bytes_consumed_start_rel: usize,
+    // This isn't currently needed because the cursor is adjusted according to `persistent_buffer`
+    // to the point where it does the same thing as a bytes consumed tracker would
+    // bytes_consumed_start_rel: usize,
     /// Buffer that may or may not exceed 64 Kib which is where operations should index from.
     persistent_buffer: Vec<u8>,
     /// Buffer that refills `persistent_buffer`. This should never be indexed.
     handle: BufReader<R>,
-    /// The absolute start of the file which may be 0 or starting at the d in @def
+    /// The absolute start of the file which may be 0 or starting at the @ in @def
     script_start: usize,
 }
 
@@ -143,24 +129,19 @@ impl<R: Read> ConfigLoader<'_, R> {
             col_tracker: FreezeTrackerU32::new(1),
             ln_num_tracker: FreezeTrackerU32::new(1),
             cursor: 0,
-            abs_pos: 0,
             limit: MAX_SEARCH_READ,
-            bytes_consumed_start_rel: 0,
             persistent_buffer: Vec::new(),
             script_start: 0,
         }
     }
 
-    /// Returns a Success value of the bytes to Lex, the offset of where to start lexing if an
-    /// `@def` is present, and the offset of where to start reading the serialized data if an
-    /// `@def` and `@end` is present. Returns a `ConfigLoadError` upon failure that has internal
-    /// error details.
-    pub fn load_config(&mut self) -> ConfigLoaderOutput {
+    /// Attempts to load config using the data present in `Self`
+    pub fn load_config(mut self) -> ConfigLoaderOutput {
         // Doesn't NEED definition but will error if declared and not closed
         let mut requires_end = false;
 
         // Setup to allow for unclosed quotes to be tracked since this stage is very sensitive to
-        // such errors.
+        // such errors. This is unused for now.
         let mut first_double_quote = None;
         let mut first_single_quote = None;
 
@@ -169,24 +150,21 @@ impl<R: Read> ConfigLoader<'_, R> {
 
         let mut def_span: Option<SourceSpan> = None;
 
-        // This is here because technically, a warn CAN be emitted, and should be kept track of.
+        // This is here because a warn CAN be emitted, and should be kept track of.
         // But it's not owned by the loader itself because the loader can only emit one error
-        // at a time all of them are terminal
+        // at a time since almost all of them are terminal.
         let mut diag_summary = SourceDiagnosticSummary::default();
 
         loop {
             let b = match self.peek() {
-                Ok(b_opt) => match b_opt {
-                    Some(b) => b,
-                    None => break,
-                },
+                Ok(Some(b)) => b,
+                Ok(None) => break,
                 Err(e) => {
                     let out = if self.persistent_buffer.is_empty() {
                         let cfg_err = ConfigLoadError::IO(e);
                         ConfigLoaderOutput::UnrecoverableErr(cfg_err)
                     } else {
-                        let broken_region =
-                            self.create_region(None, !requires_end, self.actual_len());
+                        let broken_region = self.create_region(None, !requires_end);
                         let cfg_err = ConfigLoadError::IO(e);
                         ConfigLoaderOutput::Broken(broken_region, cfg_err)
                     };
@@ -197,77 +175,17 @@ impl<R: Read> ConfigLoader<'_, R> {
             let span_start = self.cursor;
 
             match b {
-                // May reduce duplication by using mini-state that keeps track of quotes but fine
-                // for now
-                b'"' => {
+                b'"' | b'\'' => {
                     let quote_start = self.cursor;
-                    // Confirmed by match arm
                     let Ok(Some(quote_type)) = self.advance() else {
                         unreachable!()
                     };
 
-                    double_quotes_seen += 1;
-
-                    // Is there a reason for lines_read to be printed if there are multiple quotes?
-                    // When are there ever NOT multiple quotes if it's in a serialized file?
-                    match self.read_quotes(quote_type) {
-                        QuoteResult::Success => (),
-                        QuoteResult::Unclosed => {
-                            let core_msg = "Unclosed quotes reached end of read limit".to_string();
-
-                            let rel_q_start = quote_start as u32;
-                            let q_span = SourceSpan::new(
-                                self.current_region_id,
-                                rel_q_start,
-                                rel_q_start + 1,
-                            );
-
-                            let mut builder = SourceDiagnostic::builder(
-                                None,
-                                DiagnosticLevel::Error,
-                                core_msg,
-                                self.current_path_id,
-                            )
-                            .add_annotation(
-                                q_span,
-                                AnnotationKind::Primary,
-                                "Possible start of unclosed quote".to_string().into(),
-                            );
-
-                            if double_quotes_seen > 1 {
-                                let note = "There are other quotes within the file so the line given could be incorrect".to_string();
-                                builder = builder.add_note(note);
-                            };
-
-                            let src_diag = builder.build();
-                            let broken_region =
-                                self.create_region(None, !requires_end, self.actual_len());
-
-                            return ConfigLoaderOutput::Broken(
-                                broken_region,
-                                ConfigLoadError::Diagnostic(src_diag),
-                            );
-                        }
-                        QuoteResult::IO(e) => {
-                            let broken_region =
-                                self.create_region(None, !requires_end, self.actual_len());
-                            let config_load_err = ConfigLoadError::IO(e);
-                            return ConfigLoaderOutput::Broken(broken_region, config_load_err);
-                        }
+                    if quote_type == b'"' {
+                        double_quotes_seen += 1;
+                    } else {
+                        single_quotes_seen += 1;
                     }
-
-                    if double_quotes_seen == 1 {
-                        first_double_quote = Some(quote_start)
-                    };
-                }
-                b'\'' => {
-                    let quote_start = self.cursor;
-                    let Ok(Some(quote_type)) = self.advance() else {
-                        // Confirmed by match arm
-                        unreachable!()
-                    };
-
-                    single_quotes_seen += 1;
 
                     match self.read_quotes(quote_type) {
                         QuoteResult::Success => (),
@@ -293,15 +211,16 @@ impl<R: Read> ConfigLoader<'_, R> {
                                 "Possible start of unclosed quote".to_string().into(),
                             );
 
-                            if single_quotes_seen > 1 {
+                            if (quote_type == b'"' && double_quotes_seen > 1)
+                                || (quote_type == b'\'' && single_quotes_seen > 1)
+                            {
                                 let note = "There are other quotes within the file so the line given could be incorrect".to_string();
                                 diag_builder = diag_builder.add_note(note);
-                            };
+                            }
 
                             let src_diag = diag_builder.build();
 
-                            let broken_region =
-                                self.create_region(None, !requires_end, self.actual_len());
+                            let broken_region = self.create_region(None, !requires_end);
 
                             return ConfigLoaderOutput::Broken(
                                 broken_region,
@@ -309,30 +228,26 @@ impl<R: Read> ConfigLoader<'_, R> {
                             );
                         }
                         QuoteResult::IO(e) => {
-                            let broken_region =
-                                self.create_region(None, !requires_end, self.actual_len());
+                            let broken_region = self.create_region(None, !requires_end);
                             let cfg_err = ConfigLoadError::IO(e);
                             return ConfigLoaderOutput::Broken(broken_region, cfg_err);
                         }
                     }
 
-                    if single_quotes_seen == 1 {
+                    if quote_type == b'"' && double_quotes_seen == 1 {
+                        first_double_quote = Some(quote_start);
+                    } else if quote_type == b'\'' && single_quotes_seen == 1 {
                         first_single_quote = Some(quote_start)
-                    };
+                    }
                 }
                 b'/' => {
-                    // Should there be an advance unchecked? For scenarios like this we already have
-                    // the byte in memory making it impossible to fail
                     _ = self.advance();
 
                     let current_byte = match self.peek() {
-                        Ok(b_opt) => match b_opt {
-                            Some(b) => b,
-                            None => break,
-                        },
+                        Ok(Some(b)) => b,
+                        Ok(None) => break,
                         Err(e) => {
-                            let broken_region =
-                                self.create_region(None, !requires_end, self.actual_len());
+                            let broken_region = self.create_region(None, !requires_end);
                             let cfg_err = ConfigLoadError::IO(e);
                             return ConfigLoaderOutput::Broken(broken_region, cfg_err);
                         }
@@ -343,8 +258,7 @@ impl<R: Read> ConfigLoader<'_, R> {
                         match self.handle_comment() {
                             Ok(_) => (),
                             Err(e) => {
-                                let broken_region =
-                                    self.create_region(None, !requires_end, self.actual_len());
+                                let broken_region = self.create_region(None, !requires_end);
                                 let config_load_err = ConfigLoadError::IO(e);
                                 return ConfigLoaderOutput::Broken(broken_region, config_load_err);
                             }
@@ -354,14 +268,12 @@ impl<R: Read> ConfigLoader<'_, R> {
                         match self.handle_multi_comment() {
                             MultiCommentResult::Success => (),
                             MultiCommentResult::Diagnostic(diag) => {
-                                let region =
-                                    self.create_region(None, !requires_end, self.actual_len());
+                                let region = self.create_region(None, !requires_end);
                                 let cfg_err = ConfigLoadError::Diagnostic(diag);
                                 return ConfigLoaderOutput::Broken(region, cfg_err);
                             }
                             MultiCommentResult::IO(e) => {
-                                let region =
-                                    self.create_region(None, !requires_end, self.actual_len());
+                                let region = self.create_region(None, !requires_end);
                                 let cfg_err = ConfigLoadError::IO(e);
                                 return ConfigLoaderOutput::Broken(region, cfg_err);
                             }
@@ -371,41 +283,16 @@ impl<R: Read> ConfigLoader<'_, R> {
                 b'@' => {
                     // This @ is not skipped for the sake of keeping self.pos at the same starting point.
 
-                    // The limit is relative to 32Kib so we need a rel version
-
-                    // NOTE: Why is this - 1 here?
-                    // I think it was something related to since self.cursor is at @, and embedding
-                    // clause is @ + def, not using -1 technically means we're looking at @defn
-                    // where n is a random byte. EMBEDDING_CLAUSE_SIZE encodes '@' but we are
-                    // already at '@' meaning we need to cut off the extra '@'.
-                    // Meaning, it's going from @ + @def to @ + def.
-                    let clause_end_pos = self.cursor + (EMBEDDING_CLAUSE_SIZE - 1);
-
-                    //TODO: Help msg for if an @ was seen but it would exceed size
-                    // Helper boolean
-                    //
-                    // Possible source of indexing bug could be that ANNOTATION_CLAUSE_SIZE, which
-                    // is sliced exclusively here, would exceed the length since it didn't ensure
-                    // it's length was inside the constraints of the buffer.
-                    //
-                    // This is hard to track since the overwhelming majority of the time, there's at
-                    // least a '\n' after @def and @end, making most operations succeed anyways
-                    // since it's impossible to get the error unless the environment specifically
-                    // does not have at most one extra byte
-                    //
-                    // Checks if < self.limit to prevent over-stepping 32Kib limit
-
                     //NOTE: If we are at say 1 byte below 65536 (64Kib) @def/@end readings will NOT
                     //attempt to read past the limit. This IS possible and would not break the
                     //region limit but keeping that out for simplicity.
-
                     let maybe_embed_slice =
                         // Since this is @ + @def, it ends one byte after @def, which is what we
                         // want since it's exclusive.
                         match self.slice(self.cursor..self.cursor + EMBEDDING_CLAUSE_SIZE) {
                             Ok(sl_opt) => sl_opt,
                             Err(e) => {
-                                let broken_region = self.create_region(None, !requires_end, self.actual_len());
+                                let broken_region = self.create_region(None, !requires_end);
                                 let config_load_err = ConfigLoadError::IO(e);
                                 return ConfigLoaderOutput::Broken(broken_region, config_load_err);
                             }
@@ -414,9 +301,6 @@ impl<R: Read> ConfigLoader<'_, R> {
                     let is_def = maybe_embed_slice == Some(b"@def");
                     let is_end = maybe_embed_slice == Some(b"@end");
 
-                    // Read this as claude 4 different times. I can't do this anymore.
-                    let can_check = clause_end_pos < self.limit;
-
                     // -- OLD BEHAVIOR THAT MAY BE RE-APPLIED --
                     // If `@def` was seen, there is enough space to check, and `@end` aligns with
                     // the bytes seen, set the serial start to the position 1 after `@end`
@@ -424,10 +308,7 @@ impl<R: Read> ConfigLoader<'_, R> {
                     //
                     // This no longer requires @def first for now, so files can end with @end
                     // without any `@def` start syntax.
-                    //
-                    // Probably should not be allowed since the behavior from this is fairly
-                    // non-deterministic unless someone is actively counting bytes
-                    if can_check && is_end {
+                    if is_end {
                         // Starts exactly 1 byte after "@end"
                         // This variable is proof there was a script block, but does not imply
                         // serial data. This is more like "script_end" where script_end is where
@@ -446,18 +327,12 @@ impl<R: Read> ConfigLoader<'_, R> {
                             self.col_tracker.reset_soft();
                         }
 
-                        //WARN: Doesn't use helper because the helper doesn't take in a position
-                        //argument. It doesn't take one because it doesn't seem meaningful, it seems
-                        //like a forced compatibility later for this one singular case.
-                        let region = SourceRegion::new(
-                            self.ln_num_tracker.val(),
-                            self.col_tracker.val(),
-                            self.persistent_buffer[..serial_start_rel].to_vec(),
-                            self.current_region_id,
-                            self.current_path_id,
-                            self.script_start,
+                        let region = self.create_region_with_end(
                             Some(serial_start_abs),
+                            false,
+                            serial_start_rel,
                         );
+
                         debug_assert!(
                             region.src_bytes.len() <= chrn_utils::MAX_REGION_SIZE,
                             "Max region size exceeded [Found {}]",
@@ -472,7 +347,7 @@ impl<R: Read> ConfigLoader<'_, R> {
                     // the "@" in "@def", skip "@def", then set the Option def_span to the current
                     // position span
 
-                    if !requires_end && can_check && is_def {
+                    if !requires_end && is_def {
                         requires_end = true;
                         self.script_start = self.cursor;
                         // The last buffer may or may not have needed to push more than 64Kib to
@@ -482,7 +357,6 @@ impl<R: Read> ConfigLoader<'_, R> {
 
                         // Positioning to the relative byte after @def.
                         self.cursor = EMBEDDING_CLAUSE_SIZE;
-                        self.bytes_consumed_start_rel = self.cursor;
 
                         self.ln_num_tracker.freeze();
                         self.col_tracker.freeze();
@@ -520,7 +394,7 @@ impl<R: Read> ConfigLoader<'_, R> {
         // most accurate region.
         while let Ok(Some(_)) = self.advance() {}
 
-        let region = self.create_region(None, !requires_end, self.actual_len());
+        let region = self.create_region(None, !requires_end);
         debug_assert!(
             region.src_bytes.len() <= chrn_utils::MAX_REGION_SIZE,
             "Max region size exceeded"
@@ -548,28 +422,11 @@ impl<R: Read> ConfigLoader<'_, R> {
         if !requires_end {
             ConfigLoaderOutput::Success(region, diag_summary)
         } else {
-            // Case of end <eof> being reached, which means it is within `READ_LIMIT` since it
-            // didn't actively reach it
             let core_msg = "Could not find `@end` after `@def`";
 
             let def_span = def_span.expect("@def must exist for this branch to be seen");
-            // Explicitly declaring this so the end of the file can be pointed at too
 
-            // Ensuring an indexable character is the last character
-            //WARN: Need to make sure this doesn't break things
-            // WARN: ENSURE THIS DOES NOT BREAK ANYTHING
-
-            // (inclusive, exclusive) end
-            //
-            //  If we have "text<eof>", it advances "t" stopping at "<eof>", which naturally fits
-            //  exclusive since eof is just a byte position that will never be touched
-            //
-            //  cursor cannot exceed 64Kib so it is treated as the eof pos, rather than
-            //  persistent_buffer.len()
             let eof_pos = self.actual_len() as u32;
-
-            // Need to - 1 so that the spanning doesn't have a len of 0.
-            // Cannot do + 1 to the end of the span or it extends one past len
             let eof_span = SourceSpan::new(self.current_region_id, eof_pos - 1, eof_pos);
 
             let src_diag = SourceDiagnostic::builder(
@@ -594,27 +451,20 @@ impl<R: Read> ConfigLoader<'_, R> {
         }
     }
 
-    // What a useful bit of documentation that describes the exact enum present
     // Also this should be encoded differently but not sure if we really want to start making domain
     // specific enums per method.
-    /// Returns Ok(`true`) on success, Ok(`false`) on unclosed quotes (Maybe?)
-    /// Returns `Err` upon io error
+    /// Expects to start one after the quote type
     // TODO: LEXER SHOULD ALSO HANDLE THIS ALONE
     fn read_quotes(&mut self, quote_type: u8) -> QuoteResult {
         loop {
             let b = match self.peek() {
-                Ok(b_opt) => match b_opt {
-                    Some(b) => b,
-                    None => return QuoteResult::Unclosed,
-                },
+                Ok(Some(b)) => b,
+                Ok(None) => return QuoteResult::Unclosed,
                 Err(e) => return QuoteResult::IO(e),
             };
 
             match b {
                 b'\\' => {
-                    // If this isn't checked for then in the scenario "Hello\" it'll go past eof
-                    // since it's assuming something is being escaped.
-
                     let fully_skipped = match self.skip(2) {
                         Ok(res) => res,
                         Err(e) => return QuoteResult::IO(e),
@@ -642,9 +492,17 @@ impl<R: Read> ConfigLoader<'_, R> {
             .min(chrn_utils::MAX_REGION_SIZE)
     }
 
-    // Could just do create_region_with_end where it by default used actual_len.
-    /// Helper for reducing region creation boiler-plate
+    /// Creates a region using `self.actual_len()` as `end`
     fn create_region(
+        &mut self,
+        serial_start_opt: Option<usize>,
+        needs_reset: bool,
+    ) -> SourceRegion {
+        self.create_region_with_end(serial_start_opt, needs_reset, self.actual_len())
+    }
+
+    /// Helper for reducing region creation boiler-plate
+    fn create_region_with_end(
         &mut self,
         serial_start_opt: Option<usize>,
         needs_reset: bool,
@@ -676,6 +534,7 @@ impl<R: Read> ConfigLoader<'_, R> {
         )
     }
 
+    /// Expects to start at 'n' in "//n"
     fn handle_comment(&mut self) -> Result<(), std::io::Error> {
         // Should this skip \n itself? Does it matter? (No)
         while let Some(b) = self.peek()?
@@ -695,10 +554,8 @@ impl<R: Read> ConfigLoader<'_, R> {
         let comment_start_rel = (self.cursor - 2) as u32;
         while depth > 0 {
             let current_byte = match self.peek() {
-                Ok(b_opt) => match b_opt {
-                    Some(b) => b,
-                    None => break,
-                },
+                Ok(Some(b)) => b,
+                Ok(None) => break,
                 Err(e) => return MultiCommentResult::IO(e),
             };
 
@@ -725,7 +582,6 @@ impl<R: Read> ConfigLoader<'_, R> {
             }
         }
 
-        //FIXME: Definitely broken
         if depth > 0 {
             let core_msg = "Unclosed multi-line comment";
 
@@ -788,8 +644,7 @@ impl<R: Read> ConfigLoader<'_, R> {
         Ok(true)
     }
 
-    // This skip operation has only be used safely in this context. It's only used in scenarios like
-    // multi-comments where look-ahead was already done to know that 2 bytes at most exist.
+    /// Skips without checking if any errors occurred
     fn skip_unchecked(&mut self, amt: usize) {
         // Uses this so othat it can re-use `advance()` since it still needs to '\n' and col track
         for _ in 0..amt {
@@ -797,8 +652,8 @@ impl<R: Read> ConfigLoader<'_, R> {
         }
     }
 
+    /// Advances, refilling if needed
     fn advance(&mut self) -> Result<Option<u8>, std::io::Error> {
-        //WARN: Check my semantics
         let Some(b) = self.peek()? else {
             return Ok(None);
         };
@@ -809,12 +664,11 @@ impl<R: Read> ConfigLoader<'_, R> {
             self.col_tracker.increment();
         }
         self.cursor += 1;
-        self.abs_pos += 1;
-        self.bytes_consumed_start_rel += 1;
 
         Ok(Some(b))
     }
 
+    /// Peeks ahead the buffer, refilling if needed
     fn peek_ahead(&mut self, amt: usize) -> Result<Option<u8>, std::io::Error> {
         // Include the byte being inspected in the exclusive end.
         if !self.refill_until(amt + 1)? {
@@ -826,7 +680,7 @@ impl<R: Read> ConfigLoader<'_, R> {
 
     /// Peeks and returns Ok(`None`) if bytes consumed == limit
     fn peek(&mut self) -> Result<Option<u8>, std::io::Error> {
-        if self.bytes_consumed_start_rel == self.limit {
+        if self.cursor == self.limit {
             return Ok(None);
         }
         self.peek_no_limit()
@@ -838,8 +692,6 @@ impl<R: Read> ConfigLoader<'_, R> {
         Ok(self.persistent_buffer.get(self.cursor).copied())
     }
 
-    //TEST: Would be mutable since we need to push to persistent buffer to actually continue
-    //reading.
     /// Does a slice that does not advance the cursor, but may or may not grow the
     /// persistent buffer to form the desired slice.
     fn slice(&mut self, range: Range<usize>) -> Result<Option<&[u8]>, std::io::Error> {
@@ -857,8 +709,6 @@ impl<R: Read> ConfigLoader<'_, R> {
 
     /// Refills only if the entire buffer has been read
     fn try_refill(&mut self) -> Result<(), std::io::Error> {
-        //NOTE: What about peek aheads? We need the thing where we refill and always ahead enough
-        //where peek ahead is never an issue.
         if self.cursor < self.persistent_buffer.len() {
             return Ok(());
         }
@@ -893,13 +743,10 @@ impl<R: Read> ConfigLoader<'_, R> {
         // It's the src of truth because peek_ahead needs a dependable source
         let buf_len = self.handle.buffer().len();
         self.handle.consume(buf_len);
-        match self.handle.fill_buf() {
-            Ok(buf) => {
-                self.persistent_buffer.extend_from_slice(buf);
-                Ok(())
-            }
-            Err(e) => Err(e),
-        }
+
+        let buf = self.handle.fill_buf()?;
+        self.persistent_buffer.extend_from_slice(buf);
+        Ok(())
     }
 }
 
