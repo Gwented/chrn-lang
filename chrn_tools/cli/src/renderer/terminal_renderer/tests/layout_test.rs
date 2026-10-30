@@ -1,4 +1,4 @@
-use chrn_utils::source_map::source_diagnostic::annotations::Annotation;
+use chrn_utils::source_utils::source_diagnostic::annotations::Annotation;
 use unicode_width::UnicodeWidthStr;
 
 use crate::renderer::terminal_renderer::{

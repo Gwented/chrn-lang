@@ -1,3 +1,4 @@
+use chrn_utils::source_utils::source_manager::SourceManager;
 use std::{collections::VecDeque, io::Read, path::Path};
 
 pub mod module_concepts;
@@ -16,7 +17,7 @@ use chrn_utils::{
     files::file_ops,
     id_types::{InternedIdUTF8, ModuleId, PathId, SourceRegionId},
     intern::{self, Intern},
-    source_map::{
+    source_utils::{
         source_diagnostic::{
             DiagnosticLevel, SourceDiagnostic, SourceDiagnosticBuilder, SourceDiagnosticSink,
             SourceDiagnosticSummary, annotations::AnnotationKind,
@@ -79,6 +80,7 @@ pub fn extract_main<R: Read>(
     cfg: &mut ChrnConfig,
 ) -> Result<(Module, ModuleGraph, Intern, SourceDiagnosticSummary), ModuleInitError> {
     let mut interner = Intern::init();
+    let mut src_manager = SourceManager::new();
 
     // Maybe the reporter should just be used
     let mut summary = SourceDiagnosticSummary::default();
@@ -87,12 +89,12 @@ pub fn extract_main<R: Read>(
         Ok(p) => p,
         Err(e) => {
             let cfg_err = ConfigLoadError::IO(e);
-            let init_err = ModuleInitError::new(None, interner, cfg_err);
+            let init_err = ModuleInitError::new(None, src_manager, cfg_err);
             return Err(init_err);
         }
     };
 
-    let main_path_id = interner.intern_path(&main_path);
+    let main_path_id = src_manager.register_path(&main_path);
 
     // A little concerning here because you CAN stop after this point, meaning the timer doesn't
     // matter, but that should probably be factored in externally and just disallow perf entirely.
@@ -132,7 +134,7 @@ pub fn extract_main<R: Read>(
                 (broken_region, ModuleState::BrokenRegion)
             }
             ConfigLoaderOutput::UnrecoverableErr(cfg_err) => {
-                return Err(ModuleInitError::new(None, interner, cfg_err));
+                return Err(ModuleInitError::new(None, src_manager, cfg_err));
             }
         };
 
@@ -157,7 +159,11 @@ pub fn extract_main<R: Read>(
             //NOTE: Not sure what behavior to expect from this since, the region is available, but
             //the cli renderer may or may not properly innately just create a diagnostic that
             //simply has no extra information besides the error msg
-            return Err(ModuleInitError::new(Some(region_arena), interner, cfg_err));
+            return Err(ModuleInitError::new(
+                Some(region_arena),
+                src_manager,
+                cfg_err,
+            ));
         }
     };
 
@@ -176,7 +182,8 @@ pub fn extract_main<R: Read>(
     // the main variable to then collect future diagnostics?
     // Maybe not?
     let (main_bind, main_imports, mut finder_summary) =
-        ModuleFinder::new(&main_region.src_bytes, cfg, &main_region).collect_imports(&mut interner);
+        ModuleFinder::new(&main_region.src_bytes, cfg, &main_region)
+            .collect_imports(&mut interner, &mut src_manager);
     summary.append_summary(&mut finder_summary);
 
     // Pushing main's region
@@ -185,7 +192,7 @@ pub fn extract_main<R: Read>(
     // Purposefully done after data is collected.
     if let Err(builder) = ensure_not_reserved(main_name_id, main_path_id) {
         let cfg_err = ConfigLoadError::Diagnostic(builder.build());
-        let init_err = ModuleInitError::new(Some(region_arena), interner, cfg_err);
+        let init_err = ModuleInitError::new(Some(region_arena), src_manager, cfg_err);
         return Err(init_err);
     }
 
@@ -206,7 +213,7 @@ pub fn extract_main<R: Read>(
     // let other_mods: Vec<Option<Module>> = Vec::with_capacity(main_mod.imports.len());
 
     let seen: Vec<PathId> = vec![main_path_id];
-    let graph = ModuleGraph::new(region_arena, registered_mod_ids, seen);
+    let graph = ModuleGraph::new(region_arena, registered_mod_ids, seen, src_manager);
 
     Ok((main_mod, graph, interner, summary))
 }
@@ -517,6 +524,7 @@ pub fn extract_modules(
         cfg,
         graph.region_arena,
         interner,
+        graph.src_manager,
         Vec::with_capacity(store_capacity),
         Vec::with_capacity(store_capacity),
         Vec::with_capacity(store_capacity),
@@ -533,8 +541,7 @@ pub fn extract_modules(
 /// not both.
 /// graph: State management system for processing modules.
 ///
-/// `interner` is mutable because this function needs to collect the imports of the created module,
-/// which means new `PathId`s need to be interned.
+/// Import collection registers paths in the graph's source manager and names in the interner.
 fn resolve_module(
     // The import to turn into a module
     imp: Import,
@@ -564,7 +571,7 @@ fn resolve_module(
 
     //WARN: This can't fail, if the mod finder found it that means it normalized it, which means
     //it's a real path, which could be a dir I guess
-    let path = interner.extract_path_from_path_id(sp_path_id.inner);
+    let path = graph.src_manager.extract_path(sp_path_id.inner);
     let src = match file_ops::fopen(path) {
         Ok(f) => f,
         Err((_, err_msg)) => {
@@ -603,7 +610,7 @@ fn resolve_module(
                         summary.push_diag(diag);
                     }
                     ConfigLoadError::IO(e) => {
-                        let path = interner.extract_path_from_path_id(sp_path_id.inner);
+                        let path = graph.src_manager.extract_path(sp_path_id.inner);
                         let core_msg =
                             core_error::form_string_from_io_err(&e, path).unwrap_or(e.to_string());
                         let src_diag = SourceDiagnostic::builder(
@@ -626,7 +633,7 @@ fn resolve_module(
                         summary.push_diag(diag);
                     }
                     ConfigLoadError::IO(e) => {
-                        let path = interner.extract_path_from_path_id(sp_path_id.inner);
+                        let path = graph.src_manager.extract_path(sp_path_id.inner);
                         let core_msg =
                             core_error::form_string_from_io_err(&e, path).unwrap_or(e.to_string());
                         let src_diag = SourceDiagnostic::builder(
@@ -659,7 +666,8 @@ fn resolve_module(
         .push((sp_path_id.inner, current_mod_id));
 
     let (bind, sub_imports, finder_summary) =
-        ModuleFinder::new(&sub_region.src_bytes, cfg, &sub_region).collect_imports(interner);
+        ModuleFinder::new(&sub_region.src_bytes, cfg, &sub_region)
+            .collect_imports(interner, &mut graph.src_manager);
     summary.merge(finder_summary);
 
     // As opposed to how modules are pushed, regions are pushed before recursively descending

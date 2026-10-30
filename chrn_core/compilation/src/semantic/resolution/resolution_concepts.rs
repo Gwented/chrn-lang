@@ -3,7 +3,7 @@
 
 use chrn_utils::{
     id_types::{ModuleId, SymbolId, TypeId, InternedIdUTF8},
-    source_map::source_span::SourceSpan,
+    source_utils::source_span::SourceSpan,
     utils::containers::SpannedContainer,
 };
 

@@ -1,6 +1,6 @@
 //! Compiler generated compiler-specific helpers
 
-use chrn_utils::id_types::{InternedId, id_tags::UTF8Tag};
+use chrn_utils::{id_types::InternedId, intern::UTF8Tag};
 use chrn_utils::intern;
 use dashu_int::IBig;
 use lang::types::{boundaries::TypeBoundaryFlags, builtins::BuiltinType};

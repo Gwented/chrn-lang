@@ -5,7 +5,7 @@ use chrn_utils::{
     id_types::{DirectiveId, ModuleId},
     intern,
     intern::Intern,
-    source_map::{source_diagnostic::DiagnosticLevel, source_span::SourceSpan},
+    source_utils::{source_diagnostic::DiagnosticLevel, source_span::SourceSpan},
     utils::containers::SpannedContainer,
 };
 use lang::directive_consts::BUILTIN_DIRECTIVE_STRS;

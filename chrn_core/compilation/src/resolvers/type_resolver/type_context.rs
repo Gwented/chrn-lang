@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use chrn_utils::{
     id_types::{ExprId, SymbolId},
     intern::Intern,
-    source_map::source_diagnostic::SourceDiagnosticSummary,
+    source_utils::source_diagnostic::SourceDiagnosticSummary,
 };
 
 use crate::{chrn_config::ChrnConfig, script_compiler::ScriptCompiler};

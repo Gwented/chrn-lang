@@ -11,8 +11,8 @@ use crate::semantic::hir::hir_symbols::SymbolKind;
 use crate::semantic::values::ValueInfo;
 use crate::walk_type_id_deferred;
 use chrn_utils::id_types::TypeId;
-use chrn_utils::source_map::source_diagnostic::annotations::AnnotationKind;
-use chrn_utils::source_map::source_span::SourceSpan;
+use chrn_utils::source_utils::source_diagnostic::annotations::AnnotationKind;
+use chrn_utils::source_utils::source_span::SourceSpan;
 use lang::types::builtins::BuiltinType;
 
 fn config_with_numeric_limit(max_numeric_bits: u32) -> ChrnConfig {

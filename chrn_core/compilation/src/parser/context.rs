@@ -4,7 +4,7 @@ use chrn_utils::{
     err_codes::ErrorCode,
     id_types::InternedIdUTF8,
     intern::Intern,
-    source_map::{
+    source_utils::{
         source_diagnostic::{
             DiagnosticLevel, SourceDiagnostic, SourceDiagnosticBuilder, SourceDiagnosticSink,
             SourceDiagnosticSummary, annotations::AnnotationKind,

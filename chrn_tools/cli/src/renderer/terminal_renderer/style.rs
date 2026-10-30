@@ -2,7 +2,7 @@ use std::path::Path;
 
 use chrn_utils::{
     err_codes::{self, ErrorCode},
-    source_map::source_diagnostic::{DiagnosticLevel, annotations::AnnotationKind},
+    source_utils::source_diagnostic::{DiagnosticLevel, annotations::AnnotationKind},
 };
 use colorc::color_type::{self, TerminalColorType};
 

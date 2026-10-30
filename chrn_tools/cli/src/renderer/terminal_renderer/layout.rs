@@ -1,6 +1,6 @@
 use chrn_utils::{
     id_types::SourceRegionId,
-    source_map::{
+    source_utils::{
         line_mapping::{self, Line, LineView},
         source_diagnostic::{
             SourceDiagnostic,

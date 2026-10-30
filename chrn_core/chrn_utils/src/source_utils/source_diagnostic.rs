@@ -6,7 +6,7 @@ use crate::{
     budget::mem_cost::{self, MemoryCost},
     err_codes::ErrorCode,
     id_types::PathId,
-    source_map::{
+    source_utils::{
         source_diagnostic::annotations::{Annotation, AnnotationKind},
         source_span::SourceSpan,
     },

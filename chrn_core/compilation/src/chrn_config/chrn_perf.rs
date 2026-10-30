@@ -4,7 +4,10 @@ pub mod chrn_perf_concepts;
 
 use std::time::Instant;
 
-use chrn_utils::{id_types::PathId, intern::Intern, utils::trackers::perf_tracker::PerfTracker};
+use chrn_utils::{
+    id_types::PathId, source_utils::source_manager::SourceManager,
+    utils::trackers::perf_tracker::PerfTracker,
+};
 
 use crate::chrn_config::chrn_perf::chrn_perf_concepts::{
     ChrnPerfReport, ChrnPerfTimeReport, ModuleIdentity, ModulePerfData, ModulePerfReport,
@@ -76,7 +79,7 @@ impl ChrnPerf {
         }
     }
 
-    pub fn form_report<'a>(&'a self, interner: &'a Intern) -> ChrnPerfReport<'a> {
+    pub fn form_report<'a>(&'a self, src_manager: &'a SourceManager) -> ChrnPerfReport<'a> {
         // global means
         let mut stage_means: [Option<ChrnPerfTimeReport>; STAGES_COUNT] = [None; STAGES_COUNT];
         // Wrapper for visualizing data
@@ -102,7 +105,7 @@ impl ChrnPerf {
                     }
                 }
             }
-            let path = interner.extract_path_from_path_id(mod_perf_data.ident.path_id());
+            let path = src_manager.extract_path(mod_perf_data.ident.path_id());
             let mod_report = ModulePerfReport::new(path, mod_perf_data);
             mod_reports.push(mod_report);
         }

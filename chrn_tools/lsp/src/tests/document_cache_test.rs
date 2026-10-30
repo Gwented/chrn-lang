@@ -12,6 +12,7 @@ fn detached_state(text: Arc<String>, version: u64) -> DocumentState {
         Vec::new(),
         Vec::new(),
         Intern::init(),
+        chrn_utils::source_utils::source_manager::SourceManager::new(),
         0,
         None,
         version,

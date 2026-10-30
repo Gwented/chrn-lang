@@ -1,9 +1,9 @@
-use chrn_utils::id_types::{InternedId, id_tags::UTF8Tag};
+use chrn_utils::{id_types::InternedId, intern::UTF8Tag};
 use chrn_utils::{
     arena::Arena,
     id_types::{InternedIdUTF8, ScopeId, TypeId, VariableId},
     intern::{self, Intern},
-    source_map::source_span::SourceSpan,
+    source_utils::source_span::SourceSpan,
     utils::containers::SpannedContainer,
 };
 use dashu_int::IBig;

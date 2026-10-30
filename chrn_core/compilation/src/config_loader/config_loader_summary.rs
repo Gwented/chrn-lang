@@ -1,4 +1,4 @@
-use chrn_utils::source_map::source_diagnostic::SourceDiagnosticSummary;
+use chrn_utils::source_utils::source_diagnostic::SourceDiagnosticSummary;
 
 #[derive(Default)]
 pub struct ConfigLoaderSummary {

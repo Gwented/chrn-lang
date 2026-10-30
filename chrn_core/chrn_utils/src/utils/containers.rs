@@ -1,7 +1,7 @@
 /// Whatever type inside this container is guaranteed to be valid in whatever the appropriate context
 /// is.
 // Should this be read-only? What is reading?
-use crate::source_map::source_span::SourceSpan;
+use crate::source_utils::source_span::SourceSpan;
 
 //TODO: Move me again?
 /// Generic structure for attaching a span to any type

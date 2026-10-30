@@ -1,5 +1,6 @@
 use crate::types::externs::{java_types::JavaTypeKind, rust_types::RustTypeKind};
-use chrn_utils::id_types::{InternedId, id_tags::UTF8Tag};
+use chrn_utils::id_types::InternedId;
+use chrn_utils::intern::UTF8Tag;
 use chrn_utils::{id_types::InternedIdUTF8, intern};
 //TEST: None of this is finalityily finallliality final. Question mark.
 

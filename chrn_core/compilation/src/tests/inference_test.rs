@@ -6,7 +6,7 @@ use crate::semantic::hir::hir_concepts::Type;
 use crate::semantic::hir::hir_symbols::SymbolKind;
 use crate::semantic::inference::{infer_type_from_binary_op, infer_type_from_val};
 use chrn_utils::arena::Arena;
-use chrn_utils::id_types::{InternedId, id_tags::UTF8Tag};
+use chrn_utils::{id_types::InternedId, intern::UTF8Tag};
 use chrn_utils::{
     id_types::{SymbolId, TypeId},
     intern,

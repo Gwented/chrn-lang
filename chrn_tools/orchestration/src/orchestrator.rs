@@ -2,7 +2,7 @@ use chrn_utils::{
     arena::Arena,
     core_error::ScriptError,
     id_types::{ModuleId, SourceRegionId},
-    source_map::{source_diagnostic::SourceDiagnosticSummary, source_region::SourceRegion},
+    source_utils::{source_diagnostic::SourceDiagnosticSummary, source_region::SourceRegion},
 };
 use compilation::{
     lexer::{Lexer, lexer_output::LexerOutput, token::SpannedToken},

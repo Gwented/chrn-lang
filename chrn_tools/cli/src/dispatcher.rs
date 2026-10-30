@@ -4,7 +4,7 @@ use chrn_utils::{
     core_error::{ConfigLoadError, ScriptError},
     files::file_ops,
     id_types::SourceRegionId,
-    source_map::source_region::SourceRegion,
+    source_utils::source_region::SourceRegion,
 };
 use compilation::{
     chrn_config::{ChrnConfig, chrn_perf::chrn_perf_concepts::ChrnPerfReportOptions},
@@ -98,7 +98,7 @@ fn exec_check(
                     reporter.diag_summary().diags(),
                     &footers,
                     init_err.region.as_ref(),
-                    &init_err.interner,
+                    &init_err.src_manager,
                     &render_kind,
                 );
 
@@ -127,7 +127,7 @@ fn exec_check(
     let rendered = presentation::render_diags(
         &reporter,
         Some(&compiler_store.region_arena),
-        &compiler_store.interner,
+        &compiler_store.src_manager,
         &render_kind,
     );
 
@@ -140,7 +140,7 @@ fn exec_check(
         let perf_report = compiler_store
             .cfg
             .perf_tracker()
-            .form_report(&compiler_store.interner);
+            .form_report(&compiler_store.src_manager);
         perf_report.print_all(ChrnPerfReportOptions::all());
     }
 
@@ -196,7 +196,7 @@ fn exec_query(
                         &footers,
                         // reporter.budget.amt_exceeded,
                         init_err.region.as_ref(),
-                        &init_err.interner,
+                        &init_err.src_manager,
                         &render_cfg,
                     );
 
@@ -228,7 +228,7 @@ fn exec_query(
                         &reporter.diag_summary().diags(),
                         &footers,
                         Some(&compiler_store.region_arena),
-                        &compiler_store.interner,
+                        &compiler_store.src_manager,
                         &render_cfg,
                     );
 
@@ -330,7 +330,7 @@ fn exec_embed(
                     let rendered = presentation::render_diags(
                         &reporter,
                         init_err.region.as_ref(),
-                        &init_err.interner,
+                        &init_err.src_manager,
                         &render_kind,
                     );
                     eprintln!("{rendered}");
@@ -358,7 +358,7 @@ fn exec_embed(
         let rendered = presentation::render_diags(
             &reporter,
             Some(&compiler_store.region_arena),
-            &compiler_store.interner,
+            &compiler_store.src_manager,
             &render_kind,
         );
 
@@ -382,7 +382,7 @@ fn exec_embed(
                 let rendered = presentation::render_diags(
                     &reporter,
                     Some(&graph.region_arena),
-                    &interner,
+                    &graph.src_manager,
                     &render_kind,
                 );
 
@@ -418,7 +418,7 @@ fn exec_embed(
                 let rendered = presentation::render_diags(
                     &reporter,
                     init_err.region.as_ref(),
-                    &init_err.interner,
+                    &init_err.src_manager,
                     &render_kind,
                 );
                 eprintln!("{rendered}");

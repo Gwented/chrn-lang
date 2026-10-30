@@ -1,10 +1,12 @@
+use chrn_utils::source_utils::source_manager::SourceManager;
 use chrn_utils::{
     arena::Arena,
     id_types::{InternedIdUTF8, ModuleId, PathId, ScopeId, SourceRegionId, SymbolId},
-    source_map::{source_region::SourceRegion, source_span::SourceSpan},
+    source_utils::{source_region::SourceRegion, source_span::SourceSpan},
     utils::containers::SpannedContainer,
 };
 
+//TODO: This is hard to find where should this go
 /// All known prefixes for strings such as p""
 pub static STR_PREFIXES: [u8; 1] = [b'p'];
 
@@ -89,6 +91,7 @@ pub enum ModuleState {
 //TODO: Methods
 /// State needed to build the module graph from main to all sub modules
 pub struct ModuleGraph {
+    pub src_manager: SourceManager,
     /// Arena
     pub region_arena: Arena<SourceRegion, SourceRegionId>,
     /// This is a Vector relationship stored where, the path id of an import is stored along with a
@@ -106,11 +109,13 @@ impl ModuleGraph {
         region_arena: Arena<SourceRegion, SourceRegionId>,
         registered_mod_ids: Vec<(PathId, ModuleId)>,
         seen: Vec<PathId>,
+        src_manager: SourceManager,
     ) -> ModuleGraph {
         ModuleGraph {
             region_arena,
             registered_mod_ids,
             seen,
+            src_manager,
         }
     }
     // THEY MADE ME DO IT

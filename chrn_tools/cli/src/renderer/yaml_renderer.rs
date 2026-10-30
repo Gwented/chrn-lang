@@ -5,8 +5,8 @@ use chrn_utils::{
     arena::Arena,
     err_codes,
     id_types::SourceRegionId,
-    intern::Intern,
-    source_map::{
+    source_utils::source_manager::SourceManager,
+    source_utils::{
         source_diagnostic::{SourceDiagnostic, annotations::Annotation, footers::FooterKind},
         source_region::SourceRegion,
         source_span::SourceSpan,
@@ -31,7 +31,7 @@ const INDENT: &str = "  ";
 ///
 /// IDs are expanded the same way the JSON renderer expands them:
 /// - `SourceDiagnostic::path_id` is always resolved to its path string via
-///   the `Intern`.
+///   the `SourceManager`.
 /// - `SourceSpan::region_id` is resolved to its region's path string when
 ///   the `region_arena` is available, otherwise the field is emitted as
 ///   `null`.
@@ -50,7 +50,7 @@ pub(crate) fn render_yaml_diags(
     diags: &[SourceDiagnostic],
     footers: &[FooterKind],
     region_arena_opt: Option<&Arena<SourceRegion, SourceRegionId>>,
-    interner: &Intern,
+    src_manager: &SourceManager,
     cfg: &YamlRenderConfig,
 ) -> String {
     let mut out = String::with_capacity(128 + diags.len() * 256);
@@ -62,7 +62,7 @@ pub(crate) fn render_yaml_diags(
     if cfg.minify {
         out.push('{');
     }
-    write_diagnostics_list(&mut out, diags, region_arena_opt, interner, 0, cfg);
+    write_diagnostics_list(&mut out, diags, region_arena_opt, src_manager, 0, cfg);
     if cfg.minify {
         out.push_str(", ");
     }
@@ -92,7 +92,7 @@ fn write_diagnostics_list(
     out: &mut String,
     diags: &[SourceDiagnostic],
     region_arena_opt: Option<&Arena<SourceRegion, SourceRegionId>>,
-    interner: &Intern,
+    src_manager: &SourceManager,
     level: usize,
     config: &YamlRenderConfig,
 ) {
@@ -107,7 +107,7 @@ fn write_diagnostics_list(
             if i > 0 {
                 out.push_str(", ");
             }
-            write_diagnostic(out, diag, region_arena_opt, interner, 0, config);
+            write_diagnostic(out, diag, region_arena_opt, src_manager, 0, config);
         }
         out.push(']');
     } else {
@@ -119,7 +119,14 @@ fn write_diagnostics_list(
         }
         out.push('\n');
         for diag in diags {
-            write_diagnostic(out, diag, region_arena_opt, interner, level + 1, config);
+            write_diagnostic(
+                out,
+                diag,
+                region_arena_opt,
+                src_manager,
+                level + 1,
+                config,
+            );
         }
     }
 }
@@ -135,13 +142,13 @@ fn write_diagnostic(
     out: &mut String,
     diag: &SourceDiagnostic,
     region_arena_opt: Option<&Arena<SourceRegion, SourceRegionId>>,
-    interner: &Intern,
+    src_manager: &SourceManager,
     level: usize,
     config: &YamlRenderConfig,
 ) {
     if config.minify {
         out.push('{');
-        write_diagnostic_fields_minify(out, diag, region_arena_opt, interner, config);
+        write_diagnostic_fields_minify(out, diag, region_arena_opt, src_manager, config);
         out.push('}');
     } else {
         // Sequence marker + first key on the same line.
@@ -171,7 +178,7 @@ fn write_diagnostic(
         push_yaml_str(out, &diag.core_msg);
         out.push('\n');
 
-        let path = interner.extract_path_from_path_id(diag.path_id);
+        let path = src_manager.extract_path(diag.path_id);
         write_indent(out, key_level, config);
         push_yaml_str(out, "path");
         out.push_str(": ");
@@ -185,7 +192,7 @@ fn write_diagnostic(
             out,
             &diag.annotations,
             region_arena_opt,
-            interner,
+            src_manager,
             key_level,
             config,
         );
@@ -215,7 +222,7 @@ fn write_diagnostic_fields_minify(
     out: &mut String,
     diag: &SourceDiagnostic,
     region_arena_opt: Option<&Arena<SourceRegion, SourceRegionId>>,
-    interner: &Intern,
+    src_manager: &SourceManager,
     config: &YamlRenderConfig,
 ) {
     // level
@@ -240,7 +247,7 @@ fn write_diagnostic_fields_minify(
     out.push_str(", ");
 
     // path
-    let path = interner.extract_path_from_path_id(diag.path_id);
+    let path = src_manager.extract_path(diag.path_id);
     push_yaml_str(out, "path");
     out.push_str(": ");
     push_yaml_str(out, &path.display().to_string());
@@ -257,7 +264,7 @@ fn write_diagnostic_fields_minify(
             if i > 0 {
                 out.push_str(", ");
             }
-            write_annotation(out, ann, region_arena_opt, interner, 0, config);
+            write_annotation(out, ann, region_arena_opt, src_manager, 0, config);
         }
         out.push(']');
     }
@@ -302,7 +309,7 @@ fn write_annotations_list(
     out: &mut String,
     annotations: &[Annotation],
     region_arena_opt: Option<&Arena<SourceRegion, SourceRegionId>>,
-    interner: &Intern,
+    src_manager: &SourceManager,
     level: usize,
     config: &YamlRenderConfig,
 ) {
@@ -316,13 +323,20 @@ fn write_annotations_list(
             if i > 0 {
                 out.push_str(", ");
             }
-            write_annotation(out, ann, region_arena_opt, interner, 0, config);
+            write_annotation(out, ann, region_arena_opt, src_manager, 0, config);
         }
         out.push(']');
     } else {
         out.push_str(":\n");
         for ann in annotations {
-            write_annotation(out, ann, region_arena_opt, interner, level + 1, config);
+            write_annotation(
+                out,
+                ann,
+                region_arena_opt,
+                src_manager,
+                level + 1,
+                config,
+            );
         }
     }
 }
@@ -336,7 +350,7 @@ fn write_annotation(
     out: &mut String,
     ann: &Annotation,
     region_arena_opt: Option<&Arena<SourceRegion, SourceRegionId>>,
-    interner: &Intern,
+    src_manager: &SourceManager,
     level: usize,
     config: &YamlRenderConfig,
 ) {
@@ -358,7 +372,7 @@ fn write_annotation(
         // span (sub-mapping in flow style)
         push_yaml_str(out, "span");
         out.push_str(": ");
-        write_span_inline(out, &ann.span, region_arena_opt, interner);
+        write_span_inline(out, &ann.span, region_arena_opt, src_manager);
         out.push('}');
     } else {
         write_indent(out, level, config);
@@ -386,7 +400,7 @@ fn write_annotation(
             out,
             &ann.span,
             region_arena_opt,
-            interner,
+            src_manager,
             key_level,
             config,
         );
@@ -403,7 +417,7 @@ fn write_span(
     out: &mut String,
     span: &SourceSpan,
     region_arena_opt: Option<&Arena<SourceRegion, SourceRegionId>>,
-    interner: &Intern,
+    src_manager: &SourceManager,
     level: usize,
     config: &YamlRenderConfig,
 ) {
@@ -413,7 +427,7 @@ fn write_span(
         // a dedicated inline writer so the wrapping `: { ... }` is
         // emitted consistently.
         out.push_str(": ");
-        write_span_inline(out, span, region_arena_opt, interner);
+        write_span_inline(out, span, region_arena_opt, src_manager);
     } else {
         out.push_str(":\n");
 
@@ -422,7 +436,7 @@ fn write_span(
         write_indent(out, key_level, config);
         push_yaml_str(out, "region_path");
         out.push_str(": ");
-        match resolve_region_path(region_arena_opt, interner, span.region_id) {
+        match resolve_region_path(region_arena_opt, src_manager, span.region_id) {
             Some(path) => push_yaml_str(out, &path),
             None => out.push_str("null"),
         }
@@ -455,12 +469,12 @@ fn write_span_inline(
     out: &mut String,
     span: &SourceSpan,
     region_arena_opt: Option<&Arena<SourceRegion, SourceRegionId>>,
-    interner: &Intern,
+    src_manager: &SourceManager,
 ) {
     out.push('{');
     push_yaml_str(out, "region_path");
     out.push_str(": ");
-    match resolve_region_path(region_arena_opt, interner, span.region_id) {
+    match resolve_region_path(region_arena_opt, src_manager, span.region_id) {
         Some(path) => push_yaml_str(out, &path),
         None => out.push_str("null"),
     }
@@ -650,8 +664,8 @@ mod tests {
     use chrn_utils::{
         arena::Arena,
         id_types::SourceRegionId,
-        intern::Intern,
-        source_map::{
+        source_utils::source_manager::SourceManager,
+        source_utils::{
             source_diagnostic::{
                 DiagnosticLevel, SourceDiagnostic,
                 annotations::{Annotation, AnnotationKind},
@@ -663,15 +677,21 @@ mod tests {
 
     #[test]
     fn empty_diags_and_footers_produces_valid_shape() {
-        let interner = Intern::init();
-        let out = render_yaml_diags(&[], &[], None, &interner, &YamlRenderConfig::new(false));
+        let src_manager = SourceManager::new();
+        let out = render_yaml_diags(
+            &[],
+            &[],
+            None,
+            &src_manager,
+            &YamlRenderConfig::new(false),
+        );
         assert_eq!(out, "diagnostics: []\nfooters: []\n");
     }
 
     #[test]
     fn diagnostic_fields_and_annotation_are_emitted() {
-        let mut interner = Intern::init();
-        let path_id = interner.intern_path(std::path::Path::new("/tmp/a.chrn"));
+        let mut src_manager = SourceManager::new();
+        let path_id = src_manager.register_path(std::path::Path::new("/tmp/a.chrn"));
 
         let span = SourceSpan::new(SourceRegionId::new(0), 4, 9);
         let ann = Annotation::new(span, AnnotationKind::Primary, Some("here".to_string()));
@@ -685,7 +705,13 @@ mod tests {
             vec!["note one".to_string()],
         );
 
-        let out = render_yaml_diags(&[diag], &[], None, &interner, &YamlRenderConfig::new(false));
+        let out = render_yaml_diags(
+            &[diag],
+            &[],
+            None,
+            &src_manager,
+            &YamlRenderConfig::new(false),
+        );
         // First key of the diagnostic sits on the same line as `-`.
         assert!(
             out.contains("- level: error\n"),
@@ -713,8 +739,8 @@ mod tests {
 
     #[test]
     fn null_label_is_emitted() {
-        let mut interner = Intern::init();
-        let path_id = interner.intern_path(std::path::Path::new("/tmp/b.chrn"));
+        let mut src_manager = SourceManager::new();
+        let path_id = src_manager.register_path(std::path::Path::new("/tmp/b.chrn"));
         let span = SourceSpan::new(SourceRegionId::new(0), 0, 1);
         let ann = Annotation::new(span, AnnotationKind::Secondary, None);
         let diag = SourceDiagnostic::new(
@@ -727,18 +753,24 @@ mod tests {
             Vec::new(),
         );
 
-        let out = render_yaml_diags(&[diag], &[], None, &interner, &YamlRenderConfig::new(false));
+        let out = render_yaml_diags(
+            &[diag],
+            &[],
+            None,
+            &src_manager,
+            &YamlRenderConfig::new(false),
+        );
         assert!(out.contains("        label: null\n"), "got:\n{out}");
     }
 
     #[test]
     fn diagnostics_exceeded_footer_is_emitted() {
-        let interner = Intern::init();
+        let src_manager = SourceManager::new();
         let out = render_yaml_diags(
             &[],
             &[FooterKind::DiagnosticsExceeded(7)],
             None,
-            &interner,
+            &src_manager,
             &YamlRenderConfig::new(false),
         );
         assert!(
@@ -753,8 +785,8 @@ mod tests {
 
     #[test]
     fn minified_output_is_single_line_flow_style() {
-        let mut interner = Intern::init();
-        let path_id = interner.intern_path(std::path::Path::new("/tmp/a.chrn"));
+        let mut src_manager = SourceManager::new();
+        let path_id = src_manager.register_path(std::path::Path::new("/tmp/a.chrn"));
         let span = SourceSpan::new(SourceRegionId::new(0), 4, 9);
         let ann = Annotation::new(span, AnnotationKind::Primary, Some("here".to_string()));
         let diag = SourceDiagnostic::new(
@@ -767,7 +799,13 @@ mod tests {
             vec!["note one".to_string()],
         );
 
-        let out = render_yaml_diags(&[diag], &[], None, &interner, &YamlRenderConfig::new(true));
+        let out = render_yaml_diags(
+            &[diag],
+            &[],
+            None,
+            &src_manager,
+            &YamlRenderConfig::new(true),
+        );
         // Minified output is a single line, no indentation, no newlines.
         assert!(!out.contains('\n'), "minified output had a newline: {out}");
         assert!(
@@ -794,19 +832,25 @@ mod tests {
 
     #[test]
     fn minified_empty_diags_and_footers_is_compact() {
-        let interner = Intern::init();
-        let out = render_yaml_diags(&[], &[], None, &interner, &YamlRenderConfig::new(true));
+        let src_manager = SourceManager::new();
+        let out = render_yaml_diags(
+            &[],
+            &[],
+            None,
+            &src_manager,
+            &YamlRenderConfig::new(true),
+        );
         assert_eq!(out, "{diagnostics: [], footers: []}");
     }
 
     #[test]
     fn minified_footer_is_emitted_in_flow_style() {
-        let interner = Intern::init();
+        let src_manager = SourceManager::new();
         let out = render_yaml_diags(
             &[],
             &[FooterKind::DiagnosticsExceeded(7)],
             None,
-            &interner,
+            &src_manager,
             &YamlRenderConfig::new(true),
         );
         assert_eq!(
@@ -817,12 +861,12 @@ mod tests {
 
     #[test]
     fn max_modules_exceeded_footer_is_emitted() {
-        let interner = Intern::init();
+        let src_manager = SourceManager::new();
         let out = render_yaml_diags(
             &[],
             &[FooterKind::MaxModulesExceeded(256)],
             None,
-            &interner,
+            &src_manager,
             &YamlRenderConfig::new(false),
         );
         assert!(
@@ -835,12 +879,12 @@ mod tests {
 
     #[test]
     fn minified_max_modules_exceeded_footer_is_emitted_in_flow_style() {
-        let interner = Intern::init();
+        let src_manager = SourceManager::new();
         let out = render_yaml_diags(
             &[],
             &[FooterKind::MaxModulesExceeded(256)],
             None,
-            &interner,
+            &src_manager,
             &YamlRenderConfig::new(true),
         );
         assert_eq!(
@@ -857,8 +901,8 @@ mod tests {
         // region. The renderer must add the region's `script_start` to
         // those relative offsets so external tooling sees an absolute
         // file position.
-        let mut interner = Intern::init();
-        let path_id = interner.intern_path(std::path::Path::new("/tmp/a.chrn"));
+        let mut src_manager = SourceManager::new();
+        let path_id = src_manager.register_path(std::path::Path::new("/tmp/a.chrn"));
         let region_id = SourceRegionId::new(0);
 
         let region = SourceRegion::new(
@@ -888,7 +932,7 @@ mod tests {
             &[diag],
             &[],
             Some(&arena),
-            &interner,
+            &src_manager,
             &YamlRenderConfig::new(false),
         );
         assert!(
@@ -905,8 +949,8 @@ mod tests {
     fn span_offsets_are_projected_to_absolute_in_minified_output() {
         // Same projection must hold for the minify path so flow-style
         // consumers also receive absolute byte offsets.
-        let mut interner = Intern::init();
-        let path_id = interner.intern_path(std::path::Path::new("/tmp/a.chrn"));
+        let mut src_manager = SourceManager::new();
+        let path_id = src_manager.register_path(std::path::Path::new("/tmp/a.chrn"));
         let region_id = SourceRegionId::new(0);
 
         let region = SourceRegion::new(
@@ -936,7 +980,7 @@ mod tests {
             &[diag],
             &[],
             Some(&arena),
-            &interner,
+            &src_manager,
             &YamlRenderConfig::new(true),
         );
         // 4 + 200 == 204, 9 + 200 == 209
@@ -957,8 +1001,8 @@ mod tests {
         // must still emit a well-formed document with the raw relative
         // values, rather than crashing or silently shifting the offset
         // by an unknown amount.
-        let mut interner = Intern::init();
-        let path_id = interner.intern_path(std::path::Path::new("/tmp/a.chrn"));
+        let mut src_manager = SourceManager::new();
+        let path_id = src_manager.register_path(std::path::Path::new("/tmp/a.chrn"));
 
         let arena: Arena<SourceRegion, SourceRegionId> = Arena::new();
 
@@ -978,7 +1022,7 @@ mod tests {
             &[diag],
             &[],
             Some(&arena),
-            &interner,
+            &src_manager,
             &YamlRenderConfig::new(false),
         );
         assert!(out.contains("          start: 4\n"), "got:\n{out}");

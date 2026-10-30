@@ -2,11 +2,11 @@ use crate::backend::{ConfigCompletionCandidate, config_completion_items};
 use crate::document::Document;
 use crate::state::{DocumentState, SemanticEntity};
 use crate::tests::session::{Session, TempWorkspace, position_of};
-use chrn_utils::id_types::{InternedId, id_tags::UTF8Tag};
-use chrn_utils::id_types::{SourceRegionId};
+use chrn_utils::id_types::SourceRegionId;
 use chrn_utils::intern::INTERNED_MAX_NUMERIC_BITS;
 use chrn_utils::intern::Intern;
-use chrn_utils::source_map::source_span::SourceSpan;
+use chrn_utils::source_utils::source_span::SourceSpan;
+use chrn_utils::{id_types::InternedId, intern::UTF8Tag};
 use compilation::script_compiler::ScriptCompiler;
 use std::sync::Arc;
 use tokio::runtime::Builder;
@@ -22,6 +22,7 @@ fn nested_config_without_a_member_type_still_offers_member_options() {
         Vec::new(),
         Vec::new(),
         Intern::init(),
+        chrn_utils::source_utils::source_manager::SourceManager::new(),
         0,
         None,
         0,
@@ -538,6 +539,7 @@ fn config_option_completion_inserts_assignment_syntax() {
         Vec::new(),
         Vec::new(),
         Intern::init(),
+        chrn_utils::source_utils::source_manager::SourceManager::new(),
         0,
         None,
         0,

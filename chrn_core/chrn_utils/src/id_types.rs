@@ -2,11 +2,19 @@
 //bout this is generararlajral
 use std::{fmt::Debug, hash::Hash};
 
-use crate::id_types::id_tags::{ArenaIndexTag, TaggedId};
+use crate::{
+    id_types::id_tags::{ArenaIndexTag, TaggedId},
+    intern,
+};
 pub mod id_tags;
 
+//TODO: And this
+/// A source ID proven to refer to a path.
+pub type PathId = TaggedId<SourceId, crate::source_utils::source_manager::PathTag>;
+
+//TODO: Move this
 /// An interned ID whose bytes are UTF-8 text.
-pub type InternedIdUTF8 = TaggedId<InternedId, id_tags::UTF8Tag>;
+pub type InternedIdUTF8 = TaggedId<InternedId, intern::UTF8Tag>;
 
 /// Represents a type that can be turned into `usize`
 ///
@@ -50,6 +58,7 @@ macro_rules! arena_idx_impl_u16 {
     }
 }
 
+// This is most definitely too specific and should have some ids declared in compilation
 arena_idx_impl_u32!(
     InternedId,
     SourceRegionId,
@@ -64,9 +73,9 @@ arena_idx_impl_u32!(
     ModuleId,
     ValueId,
     ImplId,
-    PathId,
     ImplMemberId,
     ExternTypeId,
+    SourceId,
 );
 
 // All id type instantiations of u16
@@ -115,7 +124,6 @@ macro_rules! id_type_impl_u16 {
 id_type_impl_u32!(
     InternedId,
     SourceRegionId,
-    PathId,
     TypeId,
     ExternTypeId,
     VariableId,
@@ -129,6 +137,7 @@ id_type_impl_u32!(
     ValueId,
     ImplId,
     ImplMemberId,
+    SourceId,
 );
 // All id type instantiations of u16
 id_type_impl_u16!(ScopeId);

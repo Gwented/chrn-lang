@@ -5,8 +5,8 @@ use chrn_utils::{
     arena::Arena,
     err_codes,
     id_types::SourceRegionId,
-    intern::Intern,
-    source_map::{
+    source_utils::source_manager::SourceManager,
+    source_utils::{
         source_diagnostic::{SourceDiagnostic, annotations::Annotation, footers::FooterKind},
         source_region::SourceRegion,
         source_span::SourceSpan,
@@ -23,7 +23,7 @@ use crate::renderer::{
 /// Renders a slice of source diagnostics as a single pretty-printed JSON document.
 ///
 /// IDs are expanded where it adds value for a JSON consumer:
-/// - `SourceDiagnostic::path_id` is always resolved to its path string via the `Intern`.
+/// - `SourceDiagnostic::path_id` is always resolved to its path string via the `SourceManager`.
 /// - `SourceSpan::region_id` is resolved to its region's path string when the
 ///   `region_arena` is available, otherwise the field is emitted as `null`.
 ///
@@ -38,10 +38,10 @@ pub(crate) fn render_json_diags(
     diags: &[SourceDiagnostic],
     footers: &[FooterKind],
     region_arena_opt: Option<&Arena<SourceRegion, SourceRegionId>>,
-    interner: &Intern,
+    src_manager: &SourceManager,
     cfg: &JsonRenderConfig,
 ) -> String {
-    let pretty = render_json_diags_pretty(diags, footers, region_arena_opt, interner);
+    let pretty = render_json_diags_pretty(diags, footers, region_arena_opt, src_manager);
     if cfg.minify {
         minify_json(&pretty)
     } else {
@@ -56,13 +56,13 @@ fn render_json_diags_pretty(
     diags: &[SourceDiagnostic],
     footers: &[FooterKind],
     region_arena_opt: Option<&Arena<SourceRegion, SourceRegionId>>,
-    interner: &Intern,
+    src_manager: &SourceManager,
 ) -> String {
     // Rough pre-allocation: header overhead + a small amount per diagnostic.
     let mut out = String::with_capacity(128 + diags.len() * 256);
     out.push_str("{\n");
 
-    write_diagnostics_array(&mut out, diags, region_arena_opt, interner, 1);
+    write_diagnostics_array(&mut out, diags, region_arena_opt, src_manager, 1);
     out.push_str(",\n");
     write_footers_array(&mut out, footers, 1);
 
@@ -113,7 +113,7 @@ fn write_diagnostics_array(
     out: &mut String,
     diags: &[SourceDiagnostic],
     region_arena_opt: Option<&Arena<SourceRegion, SourceRegionId>>,
-    interner: &Intern,
+    src_manager: &SourceManager,
     depth: usize,
 ) {
     write_indent(out, depth);
@@ -132,7 +132,7 @@ fn write_diagnostics_array(
             out.push(',');
             out.push('\n');
         }
-        write_diagnostic(out, diag, region_arena_opt, interner, depth + 1);
+        write_diagnostic(out, diag, region_arena_opt, src_manager, depth + 1);
     }
     out.push('\n');
     write_indent(out, depth);
@@ -143,7 +143,7 @@ fn write_diagnostic(
     out: &mut String,
     diag: &SourceDiagnostic,
     region_arena_opt: Option<&Arena<SourceRegion, SourceRegionId>>,
-    interner: &Intern,
+    src_manager: &SourceManager,
     depth: usize,
 ) {
     write_indent(out, depth);
@@ -178,7 +178,7 @@ fn write_diagnostic(
     out.push('\n');
 
     // "path" (always expanded)
-    let path = interner.extract_path_from_path_id(diag.path_id);
+    let path = src_manager.extract_path(diag.path_id);
     write_indent(out, depth + 1);
     push_json_str(out, "path");
     out.push_str(": ");
@@ -194,7 +194,7 @@ fn write_diagnostic(
         out,
         &diag.annotations,
         region_arena_opt,
-        interner,
+        src_manager,
         depth + 1,
     );
     out.push(',');
@@ -223,7 +223,7 @@ fn write_annotations_array(
     out: &mut String,
     annotations: &[Annotation],
     region_arena_opt: Option<&Arena<SourceRegion, SourceRegionId>>,
-    interner: &Intern,
+    src_manager: &SourceManager,
     depth: usize,
 ) {
     if annotations.is_empty() {
@@ -238,7 +238,7 @@ fn write_annotations_array(
             out.push(',');
             out.push('\n');
         }
-        write_annotation(out, ann, region_arena_opt, interner, depth + 1);
+        write_annotation(out, ann, region_arena_opt, src_manager, depth + 1);
     }
     out.push('\n');
     write_indent(out, depth);
@@ -249,7 +249,7 @@ fn write_annotation(
     out: &mut String,
     ann: &Annotation,
     region_arena_opt: Option<&Arena<SourceRegion, SourceRegionId>>,
-    interner: &Intern,
+    src_manager: &SourceManager,
     depth: usize,
 ) {
     write_indent(out, depth);
@@ -279,7 +279,7 @@ fn write_annotation(
     write_indent(out, depth + 1);
     push_json_str(out, "span");
     out.push_str(": ");
-    write_span(out, &ann.span, region_arena_opt, interner, depth + 1);
+    write_span(out, &ann.span, region_arena_opt, src_manager, depth + 1);
 
     out.push('\n');
     write_indent(out, depth);
@@ -290,7 +290,7 @@ fn write_span(
     out: &mut String,
     span: &SourceSpan,
     region_arena_opt: Option<&Arena<SourceRegion, SourceRegionId>>,
-    interner: &Intern,
+    src_manager: &SourceManager,
     depth: usize,
 ) {
     out.push('{');
@@ -300,7 +300,7 @@ fn write_span(
     write_indent(out, depth + 1);
     push_json_str(out, "region_path");
     out.push_str(": ");
-    match resolve_region_path(region_arena_opt, interner, span.region_id) {
+    match resolve_region_path(region_arena_opt, src_manager, span.region_id) {
         Some(path) => push_json_str(out, &path),
         None => out.push_str("null"),
     }
@@ -446,8 +446,8 @@ mod tests {
     use chrn_utils::{
         arena::Arena,
         id_types::{PathId, SourceRegionId},
-        intern::Intern,
-        source_map::{
+        source_utils::source_manager::SourceManager,
+        source_utils::{
             source_diagnostic::{
                 DiagnosticLevel, SourceDiagnostic,
                 annotations::{Annotation, AnnotationKind},
@@ -459,15 +459,21 @@ mod tests {
 
     #[test]
     fn empty_diags_and_footers_produces_valid_shape() {
-        let interner = Intern::init();
-        let out = render_json_diags(&[], &[], None, &interner, &JsonRenderConfig::new(false));
+        let src_manager = SourceManager::new();
+        let out = render_json_diags(
+            &[],
+            &[],
+            None,
+            &src_manager,
+            &JsonRenderConfig::new(false),
+        );
         assert_eq!(out, "{\n  \"diagnostics\": [],\n  \"footers\": []\n}");
     }
 
     #[test]
     fn diagnostic_fields_and_annotation_are_emitted() {
-        let mut interner = Intern::init();
-        let path_id = interner.intern_path(std::path::Path::new("/tmp/a.chrn"));
+        let mut src_manager = SourceManager::new();
+        let path_id = src_manager.register_path(std::path::Path::new("/tmp/a.chrn"));
 
         let span = SourceSpan::new(SourceRegionId::new(0), 4, 9);
         let ann = Annotation::new(span, AnnotationKind::Primary, Some("here".to_string()));
@@ -481,7 +487,13 @@ mod tests {
             vec!["note one".to_string()],
         );
 
-        let out = render_json_diags(&[diag], &[], None, &interner, &JsonRenderConfig::new(false));
+        let out = render_json_diags(
+            &[diag],
+            &[],
+            None,
+            &src_manager,
+            &JsonRenderConfig::new(false),
+        );
         assert!(out.contains("\"level\": \"error\""));
         assert!(out.contains("\"err_code\": null"));
         assert!(out.contains("\"message\": \"boom\""));
@@ -502,8 +514,8 @@ mod tests {
 
     #[test]
     fn null_label_is_emitted() {
-        let mut interner = Intern::init();
-        let path_id = interner.intern_path(std::path::Path::new("/tmp/b.chrn"));
+        let mut src_manager = SourceManager::new();
+        let path_id = src_manager.register_path(std::path::Path::new("/tmp/b.chrn"));
         let span = SourceSpan::new(SourceRegionId::new(0), 0, 1);
         let ann = Annotation::new(span, AnnotationKind::Secondary, None);
         let diag = SourceDiagnostic::new(
@@ -516,18 +528,24 @@ mod tests {
             Vec::new(),
         );
 
-        let out = render_json_diags(&[diag], &[], None, &interner, &JsonRenderConfig::new(false));
+        let out = render_json_diags(
+            &[diag],
+            &[],
+            None,
+            &src_manager,
+            &JsonRenderConfig::new(false),
+        );
         assert!(out.contains("\"label\": null"));
     }
 
     #[test]
     fn diagnostics_exceeded_footer_is_emitted() {
-        let interner = Intern::init();
+        let src_manager = SourceManager::new();
         let out = render_json_diags(
             &[],
             &[FooterKind::DiagnosticsExceeded(7)],
             None,
-            &interner,
+            &src_manager,
             &JsonRenderConfig::new(false),
         );
         assert!(out.contains("\"kind\": \"diagnostics_exceeded\""));
@@ -536,8 +554,8 @@ mod tests {
 
     #[test]
     fn minified_output_strips_insignificant_whitespace() {
-        let mut interner = Intern::init();
-        let path_id = interner.intern_path(std::path::Path::new("/tmp/a.chrn"));
+        let mut src_manager = SourceManager::new();
+        let path_id = src_manager.register_path(std::path::Path::new("/tmp/a.chrn"));
         let span = SourceSpan::new(SourceRegionId::new(0), 4, 9);
         let ann = Annotation::new(span, AnnotationKind::Primary, Some("here".to_string()));
         let diag = SourceDiagnostic::new(
@@ -550,7 +568,13 @@ mod tests {
             vec!["note one".to_string()],
         );
 
-        let out = render_json_diags(&[diag], &[], None, &interner, &JsonRenderConfig::new(true));
+        let out = render_json_diags(
+            &[diag],
+            &[],
+            None,
+            &src_manager,
+            &JsonRenderConfig::new(true),
+        );
         // No newlines or indentation should remain.
         assert!(!out.contains('\n'), "minified output had a newline: {out}");
         assert!(
@@ -574,8 +598,8 @@ mod tests {
     fn minified_output_preserves_whitespace_inside_string_values() {
         // A message with internal whitespace must survive minification intact,
         // because that whitespace is part of the JSON string literal.
-        let mut interner = Intern::init();
-        let path_id = interner.intern_path(std::path::Path::new("/tmp/a.chrn"));
+        let mut src_manager = SourceManager::new();
+        let path_id = src_manager.register_path(std::path::Path::new("/tmp/a.chrn"));
         let diag = SourceDiagnostic::new(
             None,
             DiagnosticLevel::Error,
@@ -586,7 +610,13 @@ mod tests {
             Vec::new(),
         );
 
-        let out = render_json_diags(&[diag], &[], None, &interner, &JsonRenderConfig::new(true));
+        let out = render_json_diags(
+            &[diag],
+            &[],
+            None,
+            &src_manager,
+            &JsonRenderConfig::new(true),
+        );
         assert!(
             out.contains(r#""message":"two  spaces  here""#),
             "internal whitespace in string was mangled: {out}"
@@ -595,12 +625,12 @@ mod tests {
 
     #[test]
     fn max_modules_exceeded_footer_is_emitted() {
-        let interner = Intern::init();
+        let src_manager = SourceManager::new();
         let out = render_json_diags(
             &[],
             &[FooterKind::MaxModulesExceeded(256)],
             None,
-            &interner,
+            &src_manager,
             &JsonRenderConfig::new(false),
         );
         assert!(out.contains("\"kind\": \"max_modules_exceeded\""));
@@ -609,8 +639,14 @@ mod tests {
 
     #[test]
     fn minified_empty_diags_and_footers_is_compact() {
-        let interner = Intern::init();
-        let out = render_json_diags(&[], &[], None, &interner, &JsonRenderConfig::new(true));
+        let src_manager = SourceManager::new();
+        let out = render_json_diags(
+            &[],
+            &[],
+            None,
+            &src_manager,
+            &JsonRenderConfig::new(true),
+        );
         assert_eq!(out, r#"{"diagnostics":[],"footers":[]}"#);
     }
 
@@ -631,8 +667,8 @@ mod tests {
         // region. The renderer must add the region's `script_start` to
         // those relative offsets so external tooling sees an absolute
         // file position.
-        let mut interner = Intern::init();
-        let path_id = interner.intern_path(std::path::Path::new("/tmp/a.chrn"));
+        let mut src_manager = SourceManager::new();
+        let path_id = src_manager.register_path(std::path::Path::new("/tmp/a.chrn"));
         let region_id = SourceRegionId::new(0);
 
         let region = SourceRegion::new(
@@ -662,7 +698,7 @@ mod tests {
             &[diag],
             &[],
             Some(&arena),
-            &interner,
+            &src_manager,
             &JsonRenderConfig::new(false),
         );
         assert!(
@@ -678,8 +714,8 @@ mod tests {
     fn span_offsets_are_projected_to_absolute_in_minified_output() {
         // Same projection must hold for the minify path so flow-style
         // consumers also receive absolute byte offsets.
-        let mut interner = Intern::init();
-        let path_id = interner.intern_path(std::path::Path::new("/tmp/a.chrn"));
+        let mut src_manager = SourceManager::new();
+        let path_id = src_manager.register_path(std::path::Path::new("/tmp/a.chrn"));
         let region_id = SourceRegionId::new(0);
 
         let region = SourceRegion::new(
@@ -709,7 +745,7 @@ mod tests {
             &[diag],
             &[],
             Some(&arena),
-            &interner,
+            &src_manager,
             &JsonRenderConfig::new(true),
         );
         // 4 + 200 == 204, 9 + 200 == 209
@@ -730,8 +766,8 @@ mod tests {
         // must still emit a well-formed document with the raw relative
         // values, rather than crashing or silently shifting the offset
         // by an unknown amount.
-        let mut interner = Intern::init();
-        let path_id = interner.intern_path(std::path::Path::new("/tmp/a.chrn"));
+        let mut src_manager = SourceManager::new();
+        let path_id = src_manager.register_path(std::path::Path::new("/tmp/a.chrn"));
 
         let arena: Arena<SourceRegion, SourceRegionId> = Arena::new();
 
@@ -751,7 +787,7 @@ mod tests {
             &[diag],
             &[],
             Some(&arena),
-            &interner,
+            &src_manager,
             &JsonRenderConfig::new(false),
         );
         assert!(out.contains("\"region_path\": null"), "got: {out}");

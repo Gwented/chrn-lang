@@ -1,4 +1,4 @@
-use chrn_utils::{id_types::AstId, intern::Intern, source_map::source_span::SourceSpan};
+use chrn_utils::{id_types::AstId, intern::Intern, source_utils::source_span::SourceSpan};
 use compilation::{
     lexer::{
         token::{SpannedToken, Token},

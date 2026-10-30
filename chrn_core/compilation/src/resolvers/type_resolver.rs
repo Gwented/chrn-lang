@@ -22,11 +22,11 @@ use chrn_utils::id_types::{
     TypeId,
 };
 use chrn_utils::intern::Intern;
-use chrn_utils::source_map::source_diagnostic::annotations::AnnotationKind;
-use chrn_utils::source_map::source_diagnostic::{
+use chrn_utils::source_utils::source_diagnostic::annotations::AnnotationKind;
+use chrn_utils::source_utils::source_diagnostic::{
     DiagnosticLevel, SourceDiagnostic, SourceDiagnosticSink, SourceDiagnosticSummary,
 };
-use chrn_utils::source_map::source_span::{self, SourceSpan};
+use chrn_utils::source_utils::source_span::{self, SourceSpan};
 use chrn_utils::utils::containers::{SpannedContainer, SpannedContainerRef};
 use lang::chrn_classifier::ChrnClassified;
 use lang::types::builtins::BuiltinType;

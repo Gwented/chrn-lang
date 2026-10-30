@@ -1,7 +1,7 @@
 use crate::state::{DocumentCache, DocumentState, SemanticEntity};
 use crate::tests::session::{Session, TempWorkspace, hover_text, position_of};
 use chrn_utils::id_types::{SourceRegionId, SymbolId};
-use chrn_utils::source_map::source_span::SourceSpan;
+use chrn_utils::source_utils::source_span::SourceSpan;
 use std::sync::Arc;
 use tower_lsp::lsp_types::{
     DocumentHighlight, DocumentHighlightKind, GotoDefinitionResponse, OneOf, Position, Range,
@@ -466,7 +466,7 @@ fn test_find_matching_entities_propagates_script_start() {
         DocumentState::find_matching_entities(
             &cache,
             std::path::Path::new("<no-match>"),
-            chrn_utils::source_map::source_span::SourceSpan::new(
+            chrn_utils::source_utils::source_span::SourceSpan::new(
                 chrn_utils::id_types::SourceRegionId::new(0),
                 0,
                 1,

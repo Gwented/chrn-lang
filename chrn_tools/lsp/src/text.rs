@@ -19,7 +19,7 @@
 //! in addition to alphanumeric characters.  This matches how the Chern lexer
 //! tokenises identifiers and directives such as `@def`, `#warn`, and `var->`.
 
-use chrn_utils::source_map::source_span::SourceSpan;
+use chrn_utils::source_utils::source_span::SourceSpan;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tower_lsp::lsp_types::Position;

@@ -1,5 +1,5 @@
 use chrn_utils::{
-    id_types::InternedIdUTF8, source_map::source_span::SourceSpan,
+    id_types::InternedIdUTF8, source_utils::source_span::SourceSpan,
     utils::containers::SpannedContainer,
 };
 

@@ -1,14 +1,11 @@
-use chrn_utils::id_types::InternedId;
+use chrn_utils::{
+    id_types::{InternedId, InternedIdUTF8, id_tags::TaggedId},
+    intern::MaybeUTF8Tag,
+};
 // TRIVIA IS NOT A LANGUAGE CONCEPT
 use std::{fmt::Display, ops::Range};
 
-use chrn_utils::{
-    id_types::{
-        InternedIdUTF8,
-        id_tags::{MaybeUTF8Tag, TaggedId},
-    },
-    source_map::source_span::SourceSpan,
-};
+use chrn_utils::source_utils::source_span::SourceSpan;
 use lang::keywords::Keyword;
 
 use crate::{

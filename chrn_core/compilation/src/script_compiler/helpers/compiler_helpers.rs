@@ -1,4 +1,4 @@
-use chrn_utils::id_types::{InternedId, id_tags::UTF8Tag};
+use chrn_utils::{id_types::InternedId, intern::UTF8Tag};
 // Not really a deep distinction from core since core is compiler generated, but core is a library
 // intrinsically needed by the compiler. Directives are not a part of a library of any kind, but
 // what if it was?

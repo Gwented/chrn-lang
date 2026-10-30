@@ -18,7 +18,7 @@ use chrn_utils::{
     core_error::ConfigLoadError,
     err_codes::ErrorCode,
     id_types::{PathId, SourceRegionId},
-    source_map::{
+    source_utils::{
         source_diagnostic::{
             DiagnosticLevel, SourceDiagnostic, SourceDiagnosticSink, SourceDiagnosticSummary,
             annotations::AnnotationKind,

@@ -2,8 +2,8 @@ use crate::renderer::render_kind::{RenderKind, RenderKindFlat};
 use chrn_utils::{
     arena::Arena,
     id_types::SourceRegionId,
-    intern::Intern,
-    source_map::{
+    source_utils::source_manager::SourceManager,
+    source_utils::{
         source_diagnostic::{SourceDiagnostic, footers::FooterKind},
         source_region::SourceRegion,
     },
@@ -23,7 +23,7 @@ pub fn render(
     diags: &[SourceDiagnostic],
     footers: &[FooterKind],
     region_arena_opt: Option<&Arena<SourceRegion, SourceRegionId>>,
-    interner: &Intern,
+    src_manager: &SourceManager,
     render_kind: &RenderKind,
 ) -> String {
     match render_kind {
@@ -32,15 +32,15 @@ pub fn render(
             diags,
             footers,
             region_arena_opt,
-            interner,
+            src_manager,
             &cfg,
         )
         .join("\n"),
         RenderKind::Json(cfg) => {
-            json_renderer::render_json_diags(diags, footers, region_arena_opt, interner, &cfg)
+            json_renderer::render_json_diags(diags, footers, region_arena_opt, src_manager, &cfg)
         }
         RenderKind::Yaml(cfg) => {
-            yaml_renderer::render_yaml_diags(diags, footers, region_arena_opt, interner, &cfg)
+            yaml_renderer::render_yaml_diags(diags, footers, region_arena_opt, src_manager, &cfg)
         }
     }
 }

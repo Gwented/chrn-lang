@@ -23,7 +23,7 @@
 //! index directly into these arrays; an out-of-bounds index will panic at runtime.
 
 #[cfg(test)]
-use chrn_utils::id_types::{InternedId, id_tags::UTF8Tag};
+use chrn_utils::{id_types::InternedId, intern::UTF8Tag};
 use chrn_utils::{
     id_types::InternedIdUTF8,
     intern::{

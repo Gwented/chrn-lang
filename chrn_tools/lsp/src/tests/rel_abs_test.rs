@@ -1,6 +1,6 @@
 use crate::text::{abs_to_rel_offset, abs_to_rel_span, rel_to_abs_offset, rel_to_abs_span};
 use chrn_utils::id_types::SourceRegionId;
-use chrn_utils::source_map::source_span::SourceSpan;
+use chrn_utils::source_utils::source_span::SourceSpan;
 
 #[test]
 fn test_rel_abs_offset_zero_script_start() {

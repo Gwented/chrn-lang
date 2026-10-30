@@ -1,4 +1,5 @@
-use chrn_utils::id_types::{InternedId, id_tags::UTF8Tag};
+use chrn_utils::source_utils::source_manager::SourceManager;
+use chrn_utils::{id_types::InternedId, intern::UTF8Tag};
 use std::env;
 use std::fs;
 use std::io::Cursor;
@@ -15,7 +16,7 @@ use chrn_utils::{
     core_error::ConfigLoadError,
     id_types::{ModuleId, PathId, SourceRegionId},
     intern::Intern,
-    source_map::{
+    source_utils::{
         source_diagnostic::{DiagnosticLevel, annotations::AnnotationKind},
         source_span::SourceSpan,
     },
@@ -132,8 +133,9 @@ fn import_mod_id(import: &Import) -> Option<ModuleId> {
 #[test]
 fn modfinder_no_imports_or_bind() {
     let mut interner = Intern::init();
+    let mut src_manager = SourceManager::new();
     let cfg = ChrnConfig::default();
-    let path_id = interner.intern_path(Path::new("dummy.chrn"));
+    let path_id = src_manager.register_path(Path::new("dummy.chrn"));
     let region_id = SourceRegionId::new(0);
 
     let region = ConfigLoader::new(
@@ -145,8 +147,8 @@ fn modfinder_no_imports_or_bind() {
     .load_config()
     .expect_success();
 
-    let (bind, imports, diags) =
-        ModuleFinder::new(&region.src_bytes, &cfg, &region).collect_imports(&mut interner);
+    let (bind, imports, diags) = ModuleFinder::new(&region.src_bytes, &cfg, &region)
+        .collect_imports(&mut interner, &mut src_manager);
 
     assert!(bind.is_none(), "no bind expected, got {:?}", bind);
     assert!(
@@ -169,8 +171,9 @@ fn modfinder_single_import() {
     let sub_canonical = sub_path.to_string_lossy();
 
     let mut interner = Intern::init();
+    let mut src_manager = SourceManager::new();
     let cfg = ChrnConfig::default();
-    let path_id = interner.intern_path(Path::new("main.chrn"));
+    let path_id = src_manager.register_path(Path::new("main.chrn"));
     let region_id = SourceRegionId::new(0);
 
     let src = format!("import \"{}\"\nlet x = 5\n", sub_canonical);
@@ -178,8 +181,8 @@ fn modfinder_single_import() {
         .load_config()
         .expect_success();
 
-    let (bind, imports, diags) =
-        ModuleFinder::new(&region.src_bytes, &cfg, &region).collect_imports(&mut interner);
+    let (bind, imports, diags) = ModuleFinder::new(&region.src_bytes, &cfg, &region)
+        .collect_imports(&mut interner, &mut src_manager);
 
     assert!(bind.is_none(), "no bind expected");
     assert!(
@@ -190,7 +193,7 @@ fn modfinder_single_import() {
     assert_eq!(imports.len(), 1, "exactly one import expected");
 
     let import = &imports[0];
-    let sub_path_id = interner.intern_path(&sub_path);
+    let sub_path_id = src_manager.register_path(&sub_path);
     // ModuleFinder returns UnresolvedSource imports (module id is assigned
     // during module resolution). Verify the import kind carries the correct path
     // id and span.
@@ -250,8 +253,9 @@ fn modfinder_multiple_imports() {
     let sub2_str = sub2_path.to_string_lossy();
 
     let mut interner = Intern::init();
+    let mut src_manager = SourceManager::new();
     let cfg = ChrnConfig::default();
-    let path_id = interner.intern_path(Path::new("main.chrn"));
+    let path_id = src_manager.register_path(Path::new("main.chrn"));
     let region_id = SourceRegionId::new(0);
 
     let src = format!(
@@ -262,8 +266,8 @@ fn modfinder_multiple_imports() {
         .load_config()
         .expect_success();
 
-    let (bind, imports, diags) =
-        ModuleFinder::new(&region.src_bytes, &cfg, &region).collect_imports(&mut interner);
+    let (bind, imports, diags) = ModuleFinder::new(&region.src_bytes, &cfg, &region)
+        .collect_imports(&mut interner, &mut src_manager);
 
     assert!(bind.is_none());
     assert!(
@@ -295,8 +299,9 @@ fn modfinder_import_with_alias() {
     let sub_canonical = sub_path.to_string_lossy();
 
     let mut interner = Intern::init();
+    let mut src_manager = SourceManager::new();
     let cfg = ChrnConfig::default();
-    let path_id = interner.intern_path(Path::new("main.chrn"));
+    let path_id = src_manager.register_path(Path::new("main.chrn"));
     let region_id = SourceRegionId::new(0);
 
     let src = format!("import \"{}\" as my_mod\nlet x = 5\n", sub_canonical);
@@ -304,8 +309,8 @@ fn modfinder_import_with_alias() {
         .load_config()
         .expect_success();
 
-    let (_, imports, diags) =
-        ModuleFinder::new(&region.src_bytes, &cfg, &region).collect_imports(&mut interner);
+    let (_, imports, diags) = ModuleFinder::new(&region.src_bytes, &cfg, &region)
+        .collect_imports(&mut interner, &mut src_manager);
 
     assert!(
         diags.diags.is_empty(),
@@ -332,8 +337,9 @@ fn modfinder_bind() {
     let bind_canonical = bind_target.to_string_lossy();
 
     let mut interner = Intern::init();
+    let mut src_manager = SourceManager::new();
     let cfg = ChrnConfig::default();
-    let path_id = interner.intern_path(Path::new("main.chrn"));
+    let path_id = src_manager.register_path(Path::new("main.chrn"));
     let region_id = SourceRegionId::new(0);
 
     let src = format!("bind \"{}\"\nlet x = 5\n", bind_canonical);
@@ -341,15 +347,15 @@ fn modfinder_bind() {
         .load_config()
         .expect_success();
 
-    let (bind, imports, diags) =
-        ModuleFinder::new(&region.src_bytes, &cfg, &region).collect_imports(&mut interner);
+    let (bind, imports, diags) = ModuleFinder::new(&region.src_bytes, &cfg, &region)
+        .collect_imports(&mut interner, &mut src_manager);
 
     assert!(diags.diags.is_empty(), "no diagnostics expected");
     assert!(imports.is_empty(), "no imports expected");
     assert!(bind.is_some(), "bind should be present");
     assert_eq!(
         bind.as_ref().unwrap().path_id,
-        interner.intern_path(&bind_target),
+        src_manager.register_path(&bind_target),
         "bind path must match target"
     );
 
@@ -362,8 +368,9 @@ fn modfinder_bind() {
 fn modfinder_backslash_error() {
     let dir = create_temp_dir("modfinder_backslash");
     let mut interner = Intern::init();
+    let mut src_manager = SourceManager::new();
     let cfg = ChrnConfig::default();
-    let path_id = interner.intern_path(Path::new("main.chrn"));
+    let path_id = src_manager.register_path(Path::new("main.chrn"));
     let region_id = SourceRegionId::new(0);
 
     // Use a backslash in the import path — even though the real file exists,
@@ -373,8 +380,8 @@ fn modfinder_backslash_error() {
         .load_config()
         .expect_success();
 
-    let (_bind, imports, diags) =
-        ModuleFinder::new(&region.src_bytes, &cfg, &region).collect_imports(&mut interner);
+    let (_bind, imports, diags) = ModuleFinder::new(&region.src_bytes, &cfg, &region)
+        .collect_imports(&mut interner, &mut src_manager);
 
     assert!(
         imports.is_empty(),
@@ -397,8 +404,9 @@ fn modfinder_backslash_error() {
 #[test]
 fn modfinder_import_inside_line_comment() {
     let mut interner = Intern::init();
+    let mut src_manager = SourceManager::new();
     let cfg = ChrnConfig::default();
-    let path_id = interner.intern_path(Path::new("dummy.chrn"));
+    let path_id = src_manager.register_path(Path::new("dummy.chrn"));
     let region_id = SourceRegionId::new(0);
 
     let src = Cursor::new(b"// import \"sub.chrn\"\nlet x = 5\n");
@@ -406,8 +414,8 @@ fn modfinder_import_inside_line_comment() {
         .load_config()
         .expect_success();
 
-    let (_bind, imports, diags) =
-        ModuleFinder::new(&region.src_bytes, &cfg, &region).collect_imports(&mut interner);
+    let (_bind, imports, diags) = ModuleFinder::new(&region.src_bytes, &cfg, &region)
+        .collect_imports(&mut interner, &mut src_manager);
 
     assert!(
         imports.is_empty(),
@@ -420,8 +428,9 @@ fn modfinder_import_inside_line_comment() {
 #[test]
 fn modfinder_import_inside_block_comment() {
     let mut interner = Intern::init();
+    let mut src_manager = SourceManager::new();
     let cfg = ChrnConfig::default();
-    let path_id = interner.intern_path(Path::new("dummy.chrn"));
+    let path_id = src_manager.register_path(Path::new("dummy.chrn"));
     let region_id = SourceRegionId::new(0);
 
     let src = Cursor::new(b"/* import \"sub.chrn\" */\nlet x = 5\n");
@@ -429,8 +438,8 @@ fn modfinder_import_inside_block_comment() {
         .load_config()
         .expect_success();
 
-    let (_bind, imports, diags) =
-        ModuleFinder::new(&region.src_bytes, &cfg, &region).collect_imports(&mut interner);
+    let (_bind, imports, diags) = ModuleFinder::new(&region.src_bytes, &cfg, &region)
+        .collect_imports(&mut interner, &mut src_manager);
 
     assert!(
         imports.is_empty(),
@@ -448,8 +457,9 @@ fn modfinder_duplicate_import_path_reuses_mod_id() {
     let sub_canonical = sub_path.to_string_lossy();
 
     let mut interner = Intern::init();
+    let mut src_manager = SourceManager::new();
     let cfg = ChrnConfig::default();
-    let path_id = interner.intern_path(Path::new("main.chrn"));
+    let path_id = src_manager.register_path(Path::new("main.chrn"));
     let region_id = SourceRegionId::new(0);
 
     // Two imports to the same path
@@ -461,9 +471,9 @@ fn modfinder_duplicate_import_path_reuses_mod_id() {
         .load_config()
         .expect_success();
 
-    let sub_path_id = interner.intern_path(&sub_path);
-    let (_bind, imports, diags) =
-        ModuleFinder::new(&region.src_bytes, &cfg, &region).collect_imports(&mut interner);
+    let sub_path_id = src_manager.register_path(&sub_path);
+    let (_bind, imports, diags) = ModuleFinder::new(&region.src_bytes, &cfg, &region)
+        .collect_imports(&mut interner, &mut src_manager);
 
     assert!(
         diags.diags.is_empty(),
@@ -489,8 +499,9 @@ fn modfinder_duplicate_import_path_reuses_mod_id() {
 #[test]
 fn modfinder_nonexistent_path() {
     let mut interner = Intern::init();
+    let mut src_manager = SourceManager::new();
     let cfg = ChrnConfig::default();
-    let path_id = interner.intern_path(Path::new("dummy.chrn"));
+    let path_id = src_manager.register_path(Path::new("dummy.chrn"));
     let region_id = SourceRegionId::new(0);
 
     let src = Cursor::new(b"import \"/does/not/exist.chrn\"\nlet x = 5\n");
@@ -498,8 +509,8 @@ fn modfinder_nonexistent_path() {
         .load_config()
         .expect_success();
 
-    let (_bind, imports, diags) =
-        ModuleFinder::new(&region.src_bytes, &cfg, &region).collect_imports(&mut interner);
+    let (_bind, imports, diags) = ModuleFinder::new(&region.src_bytes, &cfg, &region)
+        .collect_imports(&mut interner, &mut src_manager);
 
     assert!(
         imports.is_empty(),
@@ -516,8 +527,9 @@ fn modfinder_nonexistent_path() {
 #[test]
 fn modfinder_import_inside_string_is_not_parsed() {
     let mut interner = Intern::init();
+    let mut src_manager = SourceManager::new();
     let cfg = ChrnConfig::default();
-    let path_id = interner.intern_path(Path::new("dummy.chrn"));
+    let path_id = src_manager.register_path(Path::new("dummy.chrn"));
     let region_id = SourceRegionId::new(0);
 
     let src = Cursor::new(b"\"this has import inside a string\" let x = 5\n");
@@ -525,8 +537,8 @@ fn modfinder_import_inside_string_is_not_parsed() {
         .load_config()
         .expect_success();
 
-    let (_bind, imports, diags) =
-        ModuleFinder::new(&region.src_bytes, &cfg, &region).collect_imports(&mut interner);
+    let (_bind, imports, diags) = ModuleFinder::new(&region.src_bytes, &cfg, &region)
+        .collect_imports(&mut interner, &mut src_manager);
 
     assert!(
         imports.is_empty(),
@@ -548,7 +560,7 @@ fn extract_main_simple_script() {
     let main_path = make_simple_script(&dir);
     let mut cfg = ChrnConfig::default();
 
-    let (main_mod, graph, mut interner, diags) = extract_main(
+    let (main_mod, graph, interner, diags) = extract_main(
         &main_path,
         std::fs::File::open(&main_path).unwrap(),
         &mut cfg,
@@ -579,7 +591,10 @@ fn extract_main_simple_script() {
 
     // ---- Graph assertions ----
     // reserved_mod_ids must contain main's path -> mod_id 0
-    let main_path_id = interner.intern_path(&main_path);
+    let main_path_id = graph
+        .src_manager
+        .get_source_id_from_path(&main_path)
+        .unwrap();
     let main_entry = mod_id_for_path(graph.registered_mod_ids(), main_path_id);
     assert_eq!(main_entry, Some(ModuleId::new(0)));
     assert_eq!(graph.registered_mod_ids().len(), 1, "only main in reserved");
@@ -607,7 +622,7 @@ fn extract_main_with_import() {
     let main_path = make_importing_script(&dir, &sub_path);
     let mut cfg = ChrnConfig::default();
 
-    let (main_mod, graph, mut interner, diags) = extract_main(
+    let (main_mod, graph, _interner, diags) = extract_main(
         &main_path,
         std::fs::File::open(&main_path).unwrap(),
         &mut cfg,
@@ -625,7 +640,10 @@ fn extract_main_with_import() {
     // Imports returned by extract_main are UnresolvedSource; no module id
     // is assigned yet.
     let import = &main_mod.imports[0];
-    let sub_path_id = interner.intern_path(&sub_path);
+    let sub_path_id = graph
+        .src_manager
+        .get_source_id_from_path(&sub_path)
+        .unwrap();
     let sub_path_str = sub_path.to_string_lossy();
     let import_span = match &import.kind {
         ImportKind::UnresolvedSource(sp_path_id) => {
@@ -664,7 +682,10 @@ fn extract_main_with_import() {
 
     // reserved_mod_ids only contains main (sub is registered later in
     // extract_modules by resolve_module).
-    let main_path_id = interner.intern_path(&main_path);
+    let main_path_id = graph
+        .src_manager
+        .get_source_id_from_path(&main_path)
+        .unwrap();
     assert_eq!(graph.registered_mod_ids().len(), 1, "only main in reserved");
     assert!(
         graph
@@ -743,7 +764,7 @@ fn extract_main_with_bind() {
     let main_path = make_bind_script(&dir, &bind_target);
     let mut cfg = ChrnConfig::default();
 
-    let (main_mod, _graph, mut interner, diags) = extract_main(
+    let (main_mod, graph, _interner, diags) = extract_main(
         &main_path,
         std::fs::File::open(&main_path).unwrap(),
         &mut cfg,
@@ -756,7 +777,10 @@ fn extract_main_with_bind() {
         "bind should be present in the module"
     );
     let bind = main_mod.bind.as_ref().unwrap();
-    let expected_path_id = interner.intern_path(&bind_target);
+    let expected_path_id = graph
+        .src_manager
+        .get_source_id_from_path(&bind_target)
+        .unwrap();
     assert_eq!(
         bind.path_id, expected_path_id,
         "bind path must match the target file"
@@ -1162,14 +1186,17 @@ fn module_graph_initial_state() {
     let main_path = make_simple_script(&dir);
     let mut cfg = ChrnConfig::default();
 
-    let (_main_mod, graph, mut interner, diags) = extract_main(
+    let (_main_mod, graph, _interner, diags) = extract_main(
         &main_path,
         std::fs::File::open(&main_path).unwrap(),
         &mut cfg,
     )
     .expect("extract_main must succeed");
 
-    let main_path_id = interner.intern_path(&main_path);
+    let main_path_id = graph
+        .src_manager
+        .get_source_id_from_path(&main_path)
+        .unwrap();
 
     assert_eq!(
         graph.region_arena().len(),
@@ -1995,8 +2022,8 @@ fn reserved_core_alias_diagnostic_identifies_importer() {
         ));
         diagnostic_paths.push(
             store
-                .interner
-                .extract_path_from_path_id(diag.path_id)
+                .src_manager
+                .extract_path(diag.path_id)
                 .to_path_buf(),
         );
     }
@@ -2049,10 +2076,7 @@ fn directory_import_diagnostic_identifies_importer() {
         compiler.mods[ModuleId::new(0)].imports[0].kind,
         ImportKind::ErrorSource(_)
     ));
-    assert_eq!(
-        store.interner.extract_path_from_path_id(diag.path_id),
-        main_path
-    );
+    assert_eq!(store.src_manager.extract_path(diag.path_id), main_path);
 }
 
 /// A read error after opening an import must attribute its annotation to the
@@ -2099,7 +2123,7 @@ fn import_read_error_diagnostic_identifies_importer() {
         )
     );
     assert_eq!(
-        store.interner.extract_path_from_path_id(diag.path_id),
+        store.src_manager.extract_path(diag.path_id),
         main_path,
         "the read-error diagnostic must identify the file containing its annotation"
     );
@@ -2163,7 +2187,7 @@ fn reserved_core_entry_is_rejected() {
     assert_eq!(diag.level, DiagnosticLevel::Error);
     assert_eq!(diag.core_msg, "`core` is a reserved module identifier");
     assert_eq!(
-        init_err.interner.extract_path_from_path_id(diag.path_id),
+        init_err.src_manager.extract_path(diag.path_id),
         main_path
     );
 }
@@ -2195,16 +2219,22 @@ fn reserved_core_source_is_rejected_even_with_alias() {
             .collect();
         assert_eq!(
             messages,
-            [(DiagnosticLevel::Error, "`core` is a reserved module identifier")],
+            [(
+                DiagnosticLevel::Error,
+                "`core` is a reserved module identifier"
+            )],
             "reserved source rejection must hold when aliased={aliased}"
         );
         assert_eq!(
-            store.interner.extract_path_from_path_id(diags.diags[0].path_id),
+            store.src_manager.extract_path(diags.diags[0].path_id),
             main_path
         );
         assert_eq!(get_user_mod_count(&compiler), 2);
         let main_mod = &compiler.mods[ModuleId::new(0)];
-        assert!(matches!(main_mod.imports[0].kind, ImportKind::ErrorSource(_)));
+        assert!(matches!(
+            main_mod.imports[0].kind,
+            ImportKind::ErrorSource(_)
+        ));
         assert_eq!(import_mod_id(&main_mod.imports[1]), Some(ModuleId::new(1)));
         assert_eq!(
             compiler.mods[ModuleId::new(1)].name_id,

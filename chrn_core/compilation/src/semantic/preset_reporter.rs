@@ -23,13 +23,13 @@ use crate::semantic::preset_reporter::preset_err::{
 use crate::semantic::resolution::resolution_concepts::{StaticAccessResult, TypeExprResult};
 use crate::semantic::values::ValueKind;
 use chrn_utils::err_codes::ErrorCode;
-use chrn_utils::source_map::source_diagnostic::annotations::AnnotationKind;
-use chrn_utils::source_map::source_diagnostic::{
+use chrn_utils::source_utils::source_diagnostic::annotations::AnnotationKind;
+use chrn_utils::source_utils::source_diagnostic::{
     DiagnosticLevel, SourceDiagnosticBuilder, SourceDiagnosticSink,
 };
 use chrn_utils::{
     intern::Intern,
-    source_map::{source_diagnostic::SourceDiagnostic, source_region::SourceRegion},
+    source_utils::{source_diagnostic::SourceDiagnostic, source_region::SourceRegion},
 };
 use lang::chrn_classifier::ChrnClassifiable;
 use macrosc::s_suffix;

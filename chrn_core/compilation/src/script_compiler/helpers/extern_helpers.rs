@@ -1,5 +1,5 @@
 //! Holds external type instantiation helpers
-use chrn_utils::id_types::{InternedId, id_tags::UTF8Tag};
+use chrn_utils::{id_types::InternedId, intern::UTF8Tag};
 pub mod java_helpers;
 pub mod rust_helpers;
 use lang::types::externs::ExternPlatformType;

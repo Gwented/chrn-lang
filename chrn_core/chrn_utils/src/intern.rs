@@ -1,13 +1,15 @@
-use std::{
-    collections::HashMap,
-    ops::Range,
-    path::{Path, PathBuf},
+use std::{collections::HashMap, ops::Range};
+
+use crate::{
+    id_types::{
+        InternedId, InternedIdUTF8,
+        id_tags::{ArenaIndexTag, TaggedId},
+    },
+    tag_decl,
 };
 
-use crate::id_types::{
-    InternedId, InternedIdUTF8, PathId,
-    id_tags::{ArenaIndexTag, MaybeUTF8Tag, TaggedId, UTF8Tag},
-};
+// Needs to be moved but fine here for now
+tag_decl!(UTF8Tag, MaybeUTF8Tag,);
 
 // Do we want to change these all to InternedId?
 pub const INTERNED_SELF: u32 = 0;
@@ -347,9 +349,9 @@ pub static PRELOADED_STRINGS: [(&str, u32); INTERNER_PRELOAD_SIZE] = [
 #[derive(Debug)]
 struct InternedOffsetData {
     /// Bytes occupied in `Intern`'s flat `Vec<u8>`
+    // u32?
     range: Range<usize>,
     /// Whether or not `Self` was stored as utf8
-    // u32?
     is_utf8: bool,
 }
 
@@ -362,9 +364,6 @@ pub struct Intern {
     id_map: HashMap<Vec<u8>, TaggedId<InternedId, MaybeUTF8Tag>>,
     id_map_offset_data: Vec<InternedOffsetData>,
     stored_bytes: Vec<u8>,
-    //TODO: Not sure what to do with these yet
-    path_map: HashMap<PathBuf, u32>,
-    stored_paths: Vec<PathBuf>,
 }
 
 pub const INTERNER_PRELOAD_SIZE: usize = (INTERNED_MAX_NUMERIC_BITS + 1) as usize;
@@ -376,8 +375,6 @@ impl Intern {
             id_map: HashMap::with_capacity(INTERNER_PRELOAD_SIZE),
             stored_bytes: Vec::new(),
             id_map_offset_data: Vec::with_capacity(INTERNER_PRELOAD_SIZE),
-            path_map: HashMap::new(),
-            stored_paths: Vec::new(),
         };
 
         // Pre-loading every language required string literal
@@ -455,24 +452,7 @@ impl Intern {
         Self::assume_utf8(bytes, id)
     }
 
-    /// Stores path and returns it's assigned `PathId`
-    /// If the path is already stored, returns the existent `PathId`
-    pub fn intern_path(&mut self, p: &Path) -> PathId {
-        if let Some(id) = self.path_map.get(p) {
-            return PathId::new(*id);
-        }
-
-        let id = self.stored_paths.len() as u32;
-
-        let new_path = p.to_path_buf();
-
-        self.path_map.insert(new_path.clone(), id);
-        self.stored_paths.push(new_path);
-
-        PathId::new(id)
-    }
-
-    /// Appends `self` intern all of `other`'s stored strings and paths
+    /// Appends `self` intern all of `other`'s stored strings
     pub fn append(&mut self, other: &Intern) {
         for i in INTERNER_PRELOAD_SIZE..other.id_map_offset_data.len() {
             let bytes = &other.stored_bytes[other.id_map_offset_data[i].range.clone()];
@@ -482,10 +462,6 @@ impl Intern {
             } else {
                 self.intern_bytes(bytes);
             }
-        }
-
-        for i in 0..other.stored_paths.len() {
-            self.intern_path(&other.stored_paths[i]);
         }
     }
 
@@ -497,22 +473,10 @@ impl Intern {
             .then(|| id.inner().into_tagged::<UTF8Tag>())
     }
 
-    /// Returns the path if the id exists
-    pub fn get_path_from_path_id(&self, path_id: PathId) -> Option<&Path> {
-        self.stored_paths
-            .get(path_id.id as usize)
-            .map(PathBuf::as_path)
-    }
-
     // Not sure if this is actually the best way to do it.
     // Rust book mentions wrapping unsafe with safe, given a proper invariant so this is here.
     fn assume_utf8(bytes: &[u8], _: InternedIdUTF8) -> &str {
         // SAFETY: the UTF-8 tag denotes validity
         unsafe { str::from_utf8_unchecked(bytes) }
-    }
-
-    /// Extracts a path, assuming the id exists
-    pub fn extract_path_from_path_id(&self, path_id: PathId) -> &Path {
-        &self.stored_paths[path_id.id as usize]
     }
 }

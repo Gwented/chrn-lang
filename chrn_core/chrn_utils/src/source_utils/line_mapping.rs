@@ -1,9 +1,9 @@
-use std::{collections::HashSet, ops::RangeInclusive};
+use std::ops::RangeInclusive;
 //WARN: Handles EOF in a possibly weird manner
 
 use unicode_width::UnicodeWidthChar;
 
-use crate::{id_types::SourceRegionId, source_map::source_span::SourceSpan};
+use crate::{id_types::SourceRegionId, source_utils::source_span::SourceSpan};
 
 /// High level struct of all byte and line number data for each line inside of it
 #[derive(Debug)]
@@ -21,96 +21,6 @@ pub struct LineView {
 pub struct Line {
     pub ln_num: u32,
     pub ln_span: SourceSpan,
-}
-
-/// Helper struct that stores a line number and spans associated with the line number
-#[derive(Debug)]
-struct LineGroup {
-    ln_num: u32,
-    spans: Vec<SourceSpan>,
-}
-
-impl LineGroup {
-    fn new(ln_num: u32, spans: Vec<SourceSpan>) -> LineGroup {
-        LineGroup { ln_num, spans }
-    }
-}
-
-/// Helper struct for using methods for indexing `LineGroup` as a HashMap without allocating for a
-/// HashMap
-#[derive(Debug)]
-pub struct LineGroupManager {
-    // For vectors on the same line to be grouped in the same diagnostic
-    span_groups: Vec<LineGroup>,
-}
-
-impl LineGroupManager {
-    fn new() -> LineGroupManager {
-        LineGroupManager {
-            span_groups: Vec::new(),
-        }
-    }
-
-    /// Inserts and immediately sorts the given span within it's correct line vector.
-    /// This method also ensures no duplicates are stored.
-    fn insert(&mut self, ln_key: u32, span: &SourceSpan) {
-        // Checking if the line key already exists before making a new pair
-        if let Some(pair) = self
-            .span_groups
-            .iter_mut()
-            .find(|group| group.ln_num == ln_key)
-        {
-            //FIX: Do not insert duplicates
-            if pair.spans.iter().any(|s| s == span) {
-                return;
-            };
-
-            pair.spans.push(*span);
-
-            pair.spans.sort_by_key(|s| s.start);
-        } else {
-            self.span_groups
-                .push(LineGroup::new(ln_key as u32, vec![*span]));
-        }
-    }
-
-    /// Removes any remaining overlapping spans so that the last_span_start math does not exhibit
-    /// undefined behavior
-    fn curate(&mut self) {
-        // No
-        let mut removable_indices: HashSet<usize> = HashSet::new();
-        for span_group in self.span_groups.iter_mut().map(|group| &mut group.spans) {
-            for i in 0..span_group.len() {
-                for j in 0..span_group.len() {
-                    if j < span_group.len() && span_group[i].contains(span_group[j]) {
-                        if j == i {
-                            continue;
-                        }
-
-                        removable_indices.insert(j);
-                    }
-                }
-            }
-
-            // I know. I know.
-            // I. Know.
-            if !removable_indices.is_empty() {
-                let mut filtered_group: Vec<SourceSpan> = Vec::new();
-
-                for (i, span) in span_group.iter().enumerate() {
-                    if removable_indices.contains(&i) {
-                        continue;
-                    }
-
-                    filtered_group.push(*span);
-                }
-
-                *span_group = filtered_group;
-
-                removable_indices.clear();
-            }
-        }
-    }
 }
 
 /// Goes from the start to the end of the span collecting all line data so that any sort of later
@@ -273,8 +183,6 @@ pub fn form_ln_view(src_bytes: &[u8], span: &SourceSpan) -> LineView {
     let ln_num_range =
         RangeInclusive::new(first_ln_num as u32, lines[lines.len() - 1].ln_num as u32);
 
-    // dbg!(lines);
-    // panic!();
     LineView {
         ln_num_range,
         lines,

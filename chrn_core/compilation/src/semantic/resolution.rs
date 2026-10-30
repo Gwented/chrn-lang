@@ -1,13 +1,13 @@
 //! Module intended for storing free functions that perform general resolution tasks
 
-use chrn_utils::id_types::{InternedId, id_tags::UTF8Tag};
+use chrn_utils::{id_types::InternedId, intern::UTF8Tag};
 pub(crate) mod resolution_concepts;
 pub(crate) mod resolution_helpers;
 
 use chrn_utils::{
     id_types::{TypeId},
     intern,
-    source_map::source_span::SourceSpan,
+    source_utils::source_span::SourceSpan,
     utils::containers::SpannedContainer,
 };
 use lang::types::builtins::{BuiltinType, BuiltinTypeKind};

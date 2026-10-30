@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use chrn_utils::{id_types::TypeId, source_map::source_span::SourceSpan};
+use chrn_utils::{id_types::TypeId, source_utils::source_span::SourceSpan};
 use lang::{chrn_classifier::ChrnClassifiable, types::boundaries::TypeBoundaryFlags};
 
 use crate::{

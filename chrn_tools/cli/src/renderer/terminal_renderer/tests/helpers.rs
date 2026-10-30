@@ -1,10 +1,11 @@
+use chrn_utils::{id_types::SourceId, source_utils::source_manager::PathTag};
 use std::path::Path;
 
 use chrn_utils::{
     arena::Arena,
     id_types::{PathId, SourceRegionId},
-    intern::Intern,
-    source_map::{
+    source_utils::source_manager::SourceManager,
+    source_utils::{
         line_mapping::{self, Line, LineView},
         source_diagnostic::{
             DiagnosticLevel, SourceDiagnostic,
@@ -23,7 +24,7 @@ use crate::renderer::terminal_renderer::{
 
 /// Every fixture here uses one region, so its id is fixed.
 pub(super) const REGION: SourceRegionId = SourceRegionId::new(0);
-/// Path the fixture interner registers at `PathId(0)`.
+/// Path the fixture src_manager registers at `PathId(0)`.
 pub(super) const TEST_PATH: &str = "/test/fixture.chrn";
 
 /// Span in the fixture region.
@@ -59,7 +60,7 @@ pub(super) fn diag(core_msg: &str, annotations: Vec<Annotation>) -> SourceDiagno
         None,
         DiagnosticLevel::Error,
         core_msg.to_string(),
-        PathId::new(0),
+        SourceId::new(0).into_tagged::<PathTag>(),
         annotations,
         Vec::new(),
         Vec::new(),
@@ -71,15 +72,15 @@ pub(super) fn plain_cfg() -> TerminalRenderConfig {
     TerminalRenderConfig::new(false, TerminalColorType::Ansi4)
 }
 
-pub(super) fn interner() -> Intern {
-    let mut intern = Intern::init();
-    let path_id = intern.intern_path(Path::new(TEST_PATH));
+pub(super) fn src_manager() -> SourceManager {
+    let mut sources = SourceManager::new();
+    let path_id = sources.register_path(Path::new(TEST_PATH));
     assert_eq!(
         path_id,
-        PathId::new(0),
-        "fixtures assume the path interns first"
+        SourceId::new(0).into_tagged::<PathTag>(),
+        "fixtures assume the path registers first"
     );
-    intern
+    sources
 }
 
 /// Single-region arena over `src`. `abs_ln_num_start` is what `@def` extraction would record: 1
@@ -94,7 +95,7 @@ pub(super) fn region_arena(
         0,
         src.as_ref().to_vec(),
         REGION,
-        PathId::new(0),
+        SourceId::new(0).into_tagged::<PathTag>(),
         0,
         None,
     ));
@@ -115,8 +116,8 @@ pub(super) fn render_at(
     abs_ln_num_start: u32,
 ) -> String {
     let arena = region_arena(src, abs_ln_num_start);
-    let interner = interner();
-    let rendered = render_terminal_diags(&[diag], &[], Some(&arena), &interner, &plain_cfg());
+    let src_manager = src_manager();
+    let rendered = render_terminal_diags(&[diag], &[], Some(&arena), &src_manager, &plain_cfg());
 
     assert_eq!(rendered.len(), 1, "one diagnostic in, one rendering out");
     rendered

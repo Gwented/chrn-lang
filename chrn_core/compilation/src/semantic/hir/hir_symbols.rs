@@ -1,9 +1,9 @@
 use chrn_utils::{
     id_types::{
-        AstId, DirectiveId, ExprId, MemberId, ModuleId, ScopeId, SymbolId, TypeId, InternedIdUTF8,
+        AstId, DirectiveId, ExprId, InternedIdUTF8, MemberId, ModuleId, ScopeId, SymbolId, TypeId,
         ValueId, VariableId, id_tags::TaggedId,
     },
-    source_map::source_span::SourceSpan,
+    source_utils::source_span::SourceSpan,
     utils::containers::SpannedContainer,
 };
 use lang::{

@@ -1,4 +1,4 @@
-use chrn_utils::source_map::source_span::SourceSpan;
+use chrn_utils::source_utils::source_span::SourceSpan;
 
 /// Structure to represent data that would not be important to semantic data, and instead useful to
 /// external tooling since it preserves positions for characters like new lines and ocmments.

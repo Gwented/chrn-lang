@@ -1,4 +1,4 @@
-use chrn_utils::id_types::{InternedId, id_tags::UTF8Tag};
+use chrn_utils::{id_types::InternedId, intern::UTF8Tag};
 use std::borrow::Cow;
 
 use chrn_utils::{

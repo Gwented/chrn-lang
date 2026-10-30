@@ -1,5 +1,7 @@
+use chrn_utils::source_utils::source_manager::SourceManager;
 use chrn_utils::{
-    arena::Arena, id_types::SourceRegionId, intern::Intern, source_map::source_region::SourceRegion,
+    arena::Arena, id_types::SourceRegionId, intern::Intern,
+    source_utils::source_region::SourceRegion,
 };
 
 use crate::{
@@ -28,6 +30,7 @@ pub struct ScriptCompilerStore {
     pub region_arena: Arena<SourceRegion, SourceRegionId>,
     /// Interner
     pub interner: Intern,
+    pub src_manager: SourceManager,
     /// These are `Option` types due to modules being stored in a dense array
     pub toks: Vec<Option<Vec<SpannedToken>>>,
     /// These are `Option` types due to modules being stored in a dense array
@@ -44,6 +47,7 @@ impl ScriptCompilerStore {
         cfg: ChrnConfig,
         region_arena: Arena<SourceRegion, SourceRegionId>,
         interner: Intern,
+        src_manager: SourceManager,
         toks: Vec<Option<Vec<SpannedToken>>>,
         trivias: Vec<Option<Vec<Trivia>>>,
         asts: Vec<Option<AstInfo>>,
@@ -54,6 +58,7 @@ impl ScriptCompilerStore {
             directive_store: DirectivePreprocessStore::new(),
             region_arena,
             interner,
+            src_manager,
             toks,
             trivias,
             asts,

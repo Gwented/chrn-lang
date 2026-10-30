@@ -1,4 +1,4 @@
-use chrn_utils::source_map::source_span::SourceSpan;
+use chrn_utils::source_utils::source_span::SourceSpan;
 use compilation::lexer::trivia::CommentLocation;
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]

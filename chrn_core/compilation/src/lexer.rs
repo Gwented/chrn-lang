@@ -13,7 +13,7 @@ pub mod trivia;
 use chrn_utils::{
     id_types::{PathId, SourceRegionId},
     intern::{self, Intern},
-    source_map::source_span::SourceSpan,
+    source_utils::source_span::SourceSpan,
 };
 use lang::keywords::{self, Keyword};
 use toolsc::cursors::BasicCursor;
@@ -104,7 +104,7 @@ impl Lexer<'_> {
         loop {
             self.handle_trivia();
 
-            //TODO: Maybe deal with this NUL byte, but, um
+            //TODO: What if the compiler just made things up?
             if self.peek() == b'\0' || self.invalid_toks > MAX_INVALID_TOKS {
                 // Over-indexes if not subtracted
                 // Could be an empty file so needs saturation
@@ -114,12 +114,12 @@ impl Lexer<'_> {
                 //1 will be a breaking sub, and it won't actually have a feasible span.
                 //Trying something.
                 //Will probably just remove spanning from EOF.
-                let eof_pos = self.cursor.len().saturating_sub(1) as u32;
+                let eof_start = (self.cursor.len().saturating_sub(1)) as u32;
 
                 toks.push(SpannedToken {
                     tok: Token::EOF,
-                    //WARN: CHANGED TO + 1
-                    span: SourceSpan::new(self.current_region_id, eof_pos, eof_pos + 1),
+                    //WARN: Is this a pointing to non-utf8 token because eof is only one byte issue?
+                    span: SourceSpan::new(self.current_region_id, eof_start, eof_start + 1),
                     leading_trivia_indices: self.trivia_start_idx as u32
                         ..self.trivia_end_idx as u32,
                 });
@@ -156,7 +156,6 @@ impl Lexer<'_> {
                     let start = self.cursor.pos() as u32;
                     // New advance
 
-                    //WARN: CHANGED TO SKIP
                     // :=
                     let tok = if self.peek_ahead(1) == b'=' {
                         self.cursor.skip(2);
@@ -647,7 +646,6 @@ impl Lexer<'_> {
         let end = self.cursor.pos();
         // Enforces utf-8 but module paths themselves don't need to be valid utf-8, am I
 
-        // hallucinating?
         let id_str = match str::from_utf8(&self.cursor.items[start..end]) {
             Ok(s) => s,
             Err(_) => {
@@ -671,18 +669,22 @@ impl Lexer<'_> {
         //WARN: USES END WITHOUT - 1
         let span = SourceSpan::new(self.current_region_id, span_start, end as u32);
 
-        if interned_id.inner().id == intern::INTERNED_TRUE && !is_escaped {
-            return SpannedToken {
-                tok: Token::BoolLiteral(true),
-                span,
-                leading_trivia_indices: self.trivia_start_idx as u32..self.trivia_end_idx as u32,
-            };
-        } else if interned_id.inner().id == intern::INTERNED_FALSE && !is_escaped {
-            return SpannedToken {
-                tok: Token::BoolLiteral(false),
-                span,
-                leading_trivia_indices: self.trivia_start_idx as u32..self.trivia_end_idx as u32,
-            };
+        if !is_escaped {
+            if interned_id.inner().id == intern::INTERNED_TRUE {
+                return SpannedToken {
+                    tok: Token::BoolLiteral(true),
+                    span,
+                    leading_trivia_indices: self.trivia_start_idx as u32
+                        ..self.trivia_end_idx as u32,
+                };
+            } else if interned_id.inner().id == intern::INTERNED_FALSE {
+                return SpannedToken {
+                    tok: Token::BoolLiteral(false),
+                    span,
+                    leading_trivia_indices: self.trivia_start_idx as u32
+                        ..self.trivia_end_idx as u32,
+                };
+            }
         }
 
         match Keyword::try_from_interned_id(interned_id) {
@@ -828,10 +830,10 @@ impl Lexer<'_> {
             }
         };
 
-        //TODO: Notation scientific preservation
         let (id_str, num_notation) =
             if (notation & (NOTATION_HEX | NOTATION_BIN | NOTATION_OCTAL)) != 0 {
                 // Cuts off notation syntax and returns the notation for later
+                // TODO: If replace finds no pattern to remove keeps &
                 let digits = raw_str[2..].replace('_', "");
 
                 if digits.is_empty() {
@@ -853,7 +855,7 @@ impl Lexer<'_> {
                     IntegerNotation::Octal
                 };
 
-                (digits.to_string(), num_notation.into())
+                (digits, num_notation.into())
             } else {
                 //coverage
                 let n = if (notation & NOTATION_FLOAT) != 0 {
@@ -923,14 +925,13 @@ impl Lexer<'_> {
             }
         }
 
-        //WARN: IS - 1 BECAUSE THE QUOTE IS SKIPPED PAST
+        //WARN: Is - 1 because the 'n' in input `"Hello"n` would be the current location, which
+        //would include the '"' in the slice without sub.
         let end = self.cursor.pos() - 1;
 
         let slice = &self.cursor.items[start..end];
 
         // This is to keep the quotes captured.
-        // TODO:  Maybe  capture the p in p""?
-        //WARN: CHANGED END TO END + 1 SO THAT IT MATCHES END QUOTE CAPTURING BEHAVIOR FOR SPANNING
         let span = SourceSpan::new(self.current_region_id, (start - 1) as u32, (end + 1) as u32);
 
         match form {
@@ -1134,6 +1135,7 @@ impl Lexer<'_> {
         }
     }
 
+    // TWO BYTES OPTION? NO. (Overreaction)
     fn peek(&self) -> u8 {
         self.cursor.peek_owned_checked().unwrap_or(b'\0')
     }

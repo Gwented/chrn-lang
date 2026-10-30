@@ -1,7 +1,7 @@
 use crate::config_loader::{ConfigLoader, ConfigLoaderOutput};
 
 use super::helpers::*;
-use chrn_utils::source_map::source_diagnostic::annotations::AnnotationKind;
+use chrn_utils::source_utils::source_diagnostic::annotations::AnnotationKind;
 
 #[test]
 fn cfg_at_def_no_separator_before_at_end_test() {

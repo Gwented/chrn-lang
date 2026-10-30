@@ -2,7 +2,7 @@ use chrn_utils::{
     err_codes::ErrorCode,
     id_types::InternedIdUTF8,
     intern::Intern,
-    source_map::source_diagnostic::{
+    source_utils::source_diagnostic::{
         DiagnosticLevel, SourceDiagnostic, annotations::AnnotationKind,
     },
     utils::containers::SpannedContainer,

@@ -1,11 +1,6 @@
-use std::path::Path;
-
 use crate::{
-    id_types::{
-        InternedId, InternedIdUTF8, PathId,
-        id_tags::{MaybeUTF8Tag, UTF8Tag},
-    },
-    intern::{self, Intern},
+    id_types::{InternedId, InternedIdUTF8},
+    intern::{self, Intern, MaybeUTF8Tag, UTF8Tag},
 };
 
 #[test]
@@ -143,8 +138,6 @@ fn append_does_not_read_out_of_bounds() {
     donor.intern_str("shared_é");
     donor.intern_bytes(&[0xff, 0x00, 0x80]);
     donor.intern_str("");
-    donor.intern_path(Path::new("shared/module.chrn"));
-    donor.intern_path(Path::new("donor/module.chrn"));
     for i in 0..200 {
         donor.intern_str(&format!("user_string_{i}"));
     }
@@ -152,7 +145,6 @@ fn append_does_not_read_out_of_bounds() {
     let mut receiver = Intern::init();
     let shared = receiver.intern_bytes("shared_é".as_bytes());
     let receiver_only = receiver.intern_str("receiver_only");
-    let shared_path = receiver.intern_path(Path::new("shared/module.chrn"));
     receiver.append(&donor);
 
     // Appending text must preserve the receiver's existing byte entry and UTF-8 guarantee.
@@ -179,16 +171,6 @@ fn append_does_not_read_out_of_bounds() {
         assert_eq!(id.inner().id, empty.inner().id + i + 1, "ID for {original}");
         assert_eq!(receiver.extract_utf8_str(id), original);
     }
-    assert_eq!(
-        receiver.intern_path(Path::new("shared/module.chrn")),
-        shared_path
-    );
-    let donor_path = receiver.intern_path(Path::new("donor/module.chrn"));
-    assert_eq!(donor_path.id, shared_path.id + 1);
-    assert_eq!(
-        receiver.extract_path_from_path_id(donor_path),
-        Path::new("donor/module.chrn")
-    );
 
     receiver.append(&donor);
     assert_eq!(receiver.intern_bytes(&[0xff, 0x00, 0x80]), binary);
@@ -346,7 +328,6 @@ fn checked_access_handles_missing_ids_and_promoted_byte_first_text() {
     assert_eq!(interner.get_bytes(missing), None);
     assert_eq!(get_utf8_str(&interner, missing_text), None);
     assert_eq!(interner.get_interned_id_from_str("missing"), None);
-    assert_eq!(interner.get_path_from_path_id(PathId::new(0)), None);
 
     for value in ["", "é\0水"] {
         let id = interner.intern_bytes(value.as_bytes());
@@ -373,14 +354,6 @@ fn checked_access_handles_missing_ids_and_promoted_byte_first_text() {
     assert_eq!(get_utf8_str(&interner, after_binary_text), None);
     assert_eq!(interner.get_interned_id_from_str("missing"), None);
     assert_eq!(interner.intern_bytes(b"missing"), after_binary);
-
-    let path = Path::new("checked/module.chrn");
-    let path_id = interner.intern_path(path);
-    assert_eq!(path_id, PathId::new(0));
-    assert_eq!(interner.get_path_from_path_id(path_id), Some(path));
-    assert_eq!(interner.extract_path_from_path_id(path_id), path);
-    assert_eq!(interner.get_path_from_path_id(PathId::new(1)), None);
-    assert_eq!(interner.intern_path(path), path_id);
 }
 
 #[test]

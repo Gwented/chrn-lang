@@ -1,11 +1,13 @@
 //! Module graph building parser that understands just enough to get `Bind` and `Import`
-use std::{ffi::OsStr, path::PathBuf, str::FromStr};
+//FIXME: Brkoenj
+use chrn_utils::source_utils::source_manager::SourceManager;
+use std::path::PathBuf;
 
 use chrn_utils::err_codes::ErrorCode;
+use chrn_utils::platform::files;
 use chrn_utils::platform::files::error::PathConversionErrorKind;
-use chrn_utils::platform::{self, files};
-use chrn_utils::source_map::source_diagnostic::annotations::AnnotationKind;
-use chrn_utils::source_map::source_diagnostic::{
+use chrn_utils::source_utils::source_diagnostic::annotations::AnnotationKind;
+use chrn_utils::source_utils::source_diagnostic::{
     DiagnosticLevel, SourceDiagnosticSink, SourceDiagnosticSummary,
 };
 use chrn_utils::utils::containers::SpannedContainer;
@@ -13,7 +15,7 @@ use chrn_utils::{
     core_error::{self},
     id_types::InternedIdUTF8,
     intern::Intern,
-    source_map::{
+    source_utils::{
         source_diagnostic::SourceDiagnostic, source_region::SourceRegion, source_span::SourceSpan,
     },
 };
@@ -56,6 +58,7 @@ impl ModuleFinder<'_> {
     pub fn collect_imports(
         &mut self,
         interner: &mut Intern,
+        src_manager: &mut SourceManager,
     ) -> (Option<Bind>, Vec<Import>, SourceDiagnosticSummary) {
         let mut imports: Vec<Import> = Vec::new();
         let mut bind: Option<Bind> = None;
@@ -102,7 +105,7 @@ impl ModuleFinder<'_> {
 
                     if can_check {
                         if c == b'i' && self.is_import() {
-                            let import = match self.parse_import(interner) {
+                            let import = match self.parse_import(interner, src_manager) {
                                 Ok(i) => i,
                                 Err(d) => {
                                     self.summary.push_diag(d);
@@ -112,7 +115,7 @@ impl ModuleFinder<'_> {
 
                             imports.push(import);
                         } else if c == b'b' && self.is_bind() {
-                            bind = match self.parse_bind(interner) {
+                            bind = match self.parse_bind(src_manager) {
                                 Ok(b) => Some(b),
                                 Err(d) => {
                                     self.summary.push_diag(d);
@@ -137,7 +140,11 @@ impl ModuleFinder<'_> {
     }
 
     /// Assumes the starting point is at the start quote
-    fn parse_import(&mut self, interner: &mut Intern) -> Result<Import, SourceDiagnostic> {
+    fn parse_import(
+        &mut self,
+        interner: &mut Intern,
+        src_manager: &mut SourceManager,
+    ) -> Result<Import, SourceDiagnostic> {
         self.cursor.skip(1);
         let start_cursor = self.cursor.pos();
         // Boolean to track if a "\" was seen since only "/" can be used to separate
@@ -214,7 +221,7 @@ impl ModuleFinder<'_> {
         //TODO:
         let file_name_opt = import_path.file_prefix().map(|n| n.to_str()).flatten();
 
-        let path_id = interner.intern_path(&import_path);
+        let path_id = src_manager.register_path(&import_path);
 
         let alias_id: Option<SpannedContainer<InternedIdUTF8>> = if self.is_as() {
             self.skip_whitespace();
@@ -235,7 +242,7 @@ impl ModuleFinder<'_> {
         } else if let Some(SpannedContainer { inner, .. }) = alias_id {
             inner
         } else {
-            let core_msg = format!("Path \"{}\" contains Non-UTF-8", import_path.display());
+            let core_msg = format!("Path \"{}\" contains non-UTF-8", import_path.display());
 
             //TODO: Aliasing
             let src_diag = SourceDiagnostic::builder(
@@ -258,7 +265,7 @@ impl ModuleFinder<'_> {
 
         self.cfg.logger().log_dbg(|| {
             let import_name = interner.extract_utf8_str(name_id);
-            let region_path = interner.extract_path_from_path_id(self.current_region.path_id);
+            let region_path = src_manager.extract_path(self.current_region.path_id);
             format!(
                 "Created import `{import_name}` (region=\"{}\")",
                 region_path.display()
@@ -290,7 +297,7 @@ impl ModuleFinder<'_> {
         }
     }
 
-    fn parse_bind(&mut self, interner: &mut Intern) -> Result<Bind, SourceDiagnostic> {
+    fn parse_bind(&mut self, src_manager: &mut SourceManager) -> Result<Bind, SourceDiagnostic> {
         // skipping "
         self.cursor.skip(1);
         let start_cursor = self.cursor.pos();
@@ -359,12 +366,12 @@ impl ModuleFinder<'_> {
             }
         };
 
-        let bind_path_id = interner.intern_path(&bind_path);
+        let bind_path_id = src_manager.register_path(&bind_path);
         let bind = Bind::new(bind_path_id, path_span);
 
         self.cfg.logger().log_dbg(|| {
-            let bind_path = interner.extract_path_from_path_id(bind_path_id);
-            let region_path = interner.extract_path_from_path_id(self.current_region.path_id);
+            let bind_path = src_manager.extract_path(bind_path_id);
+            let region_path = src_manager.extract_path(self.current_region.path_id);
             format!(
                 "Created bind which points to `{}` for region \"{}\"",
                 bind_path.display(),

@@ -1,4 +1,4 @@
-use chrn_utils::id_types::{InternedId, id_tags::UTF8Tag};
+use chrn_utils::id_types::InternedId;
 pub mod compiler_consts;
 pub(crate) mod helpers;
 pub mod reporter;
@@ -7,6 +7,7 @@ pub mod script_compiler_summary;
 #[cfg(test)]
 mod tests;
 
+use chrn_utils::intern::UTF8Tag;
 use chrn_utils::{
     arena::Arena,
     budget::mem_cost::MemoryCost,
@@ -15,7 +16,7 @@ use chrn_utils::{
         ModuleId, ScopeId, SymbolId, TypeId, ValueId, VariableId, id_tags::TaggedId,
     },
     intern,
-    source_map::source_span::SourceSpan,
+    source_utils::source_span::SourceSpan,
 };
 use lang::types::{boundaries::TypeBoundaryFlags, builtins::BuiltinType};
 

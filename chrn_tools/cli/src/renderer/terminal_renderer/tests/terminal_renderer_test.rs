@@ -1,9 +1,9 @@
-use chrn_utils::source_map::source_diagnostic::footers::FooterKind;
+use chrn_utils::source_utils::source_diagnostic::footers::FooterKind;
 
 use crate::renderer::terminal_renderer::{
     render_terminal_diags,
     tests::helpers::{
-        TEST_PATH, body, diag, interner, plain_cfg, primary, render, render_at, secondary,
+        TEST_PATH, body, diag, plain_cfg, primary, render, render_at, secondary, src_manager,
     },
 };
 
@@ -186,7 +186,7 @@ fn diagnostics_without_a_region_arena_render_header_only() {
         &[diag("could not read file", Vec::new())],
         &[],
         None,
-        &interner(),
+        &src_manager(),
         &plain_cfg(),
     );
 

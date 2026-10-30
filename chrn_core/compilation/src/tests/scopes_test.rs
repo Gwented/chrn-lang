@@ -8,7 +8,7 @@ use crate::script_compiler::compiler_consts::builtin_ty_to_id;
 use crate::script_compiler::helpers::core_helpers::CORE_BUILTIN_TYPES_DATASET;
 use crate::semantic::hir::hir_concepts::Type;
 use crate::semantic::hir::hir_symbols::SymbolKind;
-use chrn_utils::id_types::{InternedId, id_tags::UTF8Tag};
+use chrn_utils::{id_types::InternedId, intern::UTF8Tag};
 use chrn_utils::id_types::{ScopeId, SymbolId, TypeId};
 use chrn_utils::intern;
 use lang::types::builtins::BuiltinTypeKind;

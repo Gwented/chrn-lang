@@ -2,13 +2,14 @@ use crate::analyser::{config_load_error_to_diagnostics, push_diagnostic, version
 use crate::tests::session::{Session, TempWorkspace, position_of};
 use chrn_utils::arena::Arena;
 use chrn_utils::core_error::ConfigLoadError;
-use chrn_utils::id_types::{PathId, SourceRegionId};
-use chrn_utils::source_map::source_diagnostic::DiagnosticLevel;
-use chrn_utils::source_map::source_diagnostic::SourceDiagnostic;
-use chrn_utils::source_map::source_diagnostic::SourceDiagnosticSink;
-use chrn_utils::source_map::source_diagnostic::annotations::AnnotationKind;
-use chrn_utils::source_map::source_region::SourceRegion;
-use chrn_utils::source_map::source_span::SourceSpan;
+use chrn_utils::id_types::SourceRegionId;
+use chrn_utils::source_utils::source_diagnostic::DiagnosticLevel;
+use chrn_utils::source_utils::source_diagnostic::SourceDiagnostic;
+use chrn_utils::source_utils::source_diagnostic::SourceDiagnosticSink;
+use chrn_utils::source_utils::source_diagnostic::annotations::AnnotationKind;
+use chrn_utils::source_utils::source_region::SourceRegion;
+use chrn_utils::source_utils::source_span::SourceSpan;
+use chrn_utils::{id_types::SourceId, source_utils::source_manager::PathTag};
 use tower_lsp::lsp_types::{DiagnosticSeverity, Position, Range};
 
 #[test]
@@ -40,7 +41,7 @@ fn test_config_load_error_to_diagnostics_uses_absolute_positions() {
         None,
         DiagnosticLevel::Error,
         "test error".to_string(),
-        PathId::new(0),
+        SourceId::new(0).into_tagged::<PathTag>(),
     )
     .add_annotation(primary_span, AnnotationKind::Primary, None)
     .build();
@@ -72,7 +73,7 @@ fn test_config_load_error_to_diagnostics_no_script_start_is_identity() {
         None,
         DiagnosticLevel::Error,
         "identity test".to_string(),
-        PathId::new(0),
+        SourceId::new(0).into_tagged::<PathTag>(),
     )
     .add_annotation(primary_span, AnnotationKind::Primary, None)
     .build();
@@ -94,7 +95,7 @@ fn test_config_load_error_to_diagnostics_secondary_annotation_shifted() {
         None,
         DiagnosticLevel::Error,
         "secondary test".to_string(),
-        PathId::new(0),
+        SourceId::new(0).into_tagged::<PathTag>(),
     )
     .add_annotation(primary_span, AnnotationKind::Primary, None)
     .add_annotation(
@@ -136,7 +137,7 @@ fn test_push_diagnostic_relative_to_absolute_via_region() {
         1,
         b"let x = 1\n".to_vec(),
         SourceRegionId::new(0),
-        PathId::new(0),
+        SourceId::new(0).into_tagged::<PathTag>(),
         5,
         None,
     );
@@ -148,7 +149,7 @@ fn test_push_diagnostic_relative_to_absolute_via_region() {
         None,
         DiagnosticLevel::Error,
         "type check failed".to_string(),
-        PathId::new(0),
+        SourceId::new(0).into_tagged::<PathTag>(),
     )
     .add_annotation(
         SourceSpan::new(SourceRegionId::new(0), 0, 1),
@@ -187,7 +188,7 @@ fn test_push_diagnostic_import_error_uses_importing_module_region() {
         1,
         b"import \"missing\"\n".to_vec(),
         SourceRegionId::new(0),
-        PathId::new(0),
+        SourceId::new(0).into_tagged::<PathTag>(),
         5,
         None,
     );
@@ -196,7 +197,7 @@ fn test_push_diagnostic_import_error_uses_importing_module_region() {
         1,
         b"let unused = 0\n".to_vec(),
         SourceRegionId::new(1),
-        PathId::new(1),
+        SourceId::new(1).into_tagged::<PathTag>(),
         0,
         None,
     );
@@ -209,7 +210,7 @@ fn test_push_diagnostic_import_error_uses_importing_module_region() {
         None,
         DiagnosticLevel::Error,
         "import not found".to_string(),
-        PathId::new(0),
+        SourceId::new(0).into_tagged::<PathTag>(),
     )
     .add_annotation(
         SourceSpan::new(SourceRegionId::new(0), 8, 15),
@@ -248,7 +249,7 @@ fn test_push_diagnostic_no_matching_region_uses_fallback() {
         1,
         b"let x = 1\n".to_vec(),
         SourceRegionId::new(0),
-        PathId::new(1),
+        SourceId::new(1).into_tagged::<PathTag>(),
         0,
         None,
     );
@@ -260,7 +261,7 @@ fn test_push_diagnostic_no_matching_region_uses_fallback() {
         None,
         DiagnosticLevel::Warn,
         "fallback test".to_string(),
-        PathId::new(0),
+        SourceId::new(0).into_tagged::<PathTag>(),
     )
     .add_annotation(
         SourceSpan::new(SourceRegionId::new(0), 4, 5),
@@ -694,7 +695,7 @@ fn test_get_lsp_diagnostics_budgets_the_published_set() {
                 None,
                 DiagnosticLevel::Error,
                 "boom".to_string(),
-                PathId::new(0),
+                SourceId::new(0).into_tagged::<PathTag>(),
             )
             .build(),
         );

@@ -1,7 +1,7 @@
 use crate::id_types::{PathId, SourceRegionId};
 
 // Should these have identifiers?
-/// Represents a `chrn` region.
+/// A `chrn` region.
 #[derive(Debug)]
 pub struct SourceRegion {
     /// Absolute starting line number of this region.
@@ -10,12 +10,15 @@ pub struct SourceRegion {
     pub abs_col_start: u32,
     /// Index of `self`
     pub self_id: SourceRegionId,
-    /// Bytes assocaited with this region, which specifically point to the script portion
+    /// Bytes associated with this region, which specifically point to the script portion
     ///
-    /// This is relative
+    /// This is relative depending on if `@def` was used
     pub src_bytes: Vec<u8>,
+    //TODO: Maybe give it a "SourceId" instead of specifically path so that not in-memory data can
+    //be referred to through the source manager.
     /// Path of this region
     pub path_id: PathId,
+    // pub src_id: SourceId,
     // / Amount of \n within config file so binary search can be done by error reporter
     // pub new_lines: Vec<usize>,
     /// The script language start which can be different depending on if @def is used
@@ -39,6 +42,7 @@ impl SourceRegion {
         src_bytes: Vec<u8>,
         self_id: SourceRegionId,
         path_id: PathId,
+        // src_id: SoruceId,
         script_start: usize,
         serial_start: Option<usize>,
     ) -> SourceRegion {

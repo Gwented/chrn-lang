@@ -1,7 +1,7 @@
 // REPORTER IS BACK 🦅🦅🦅🦅🦅𐔌
 use chrn_utils::{
     budget::mem_budget::{BudgetResult, MemoryBudgetUsize},
-    source_map::source_diagnostic::{
+    source_utils::source_diagnostic::{
         SourceDiagnostic, SourceDiagnosticSink, SourceDiagnosticSummary,
     },
 };

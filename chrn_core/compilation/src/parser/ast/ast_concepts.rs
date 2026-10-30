@@ -1,7 +1,7 @@
 use chrn_utils::{
     arena::Arena,
     id_types::{AstId, InternedIdUTF8},
-    source_map::source_span::SourceSpan,
+    source_utils::source_span::SourceSpan,
     utils::containers::SpannedContainer,
 };
 use lang::{

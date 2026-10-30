@@ -36,8 +36,9 @@
 //! avoiding unnecessary LSP notifications for no-op edits while keeping the
 //! per-entry memory cost to 8 bytes instead of the full JSON payload.
 
-use chrn_utils::source_map::source_diagnostic::DiagnosticLevel;
-use chrn_utils::source_map::source_diagnostic::annotations::AnnotationKind;
+use chrn_utils::source_utils::source_diagnostic::DiagnosticLevel;
+use chrn_utils::source_utils::source_diagnostic::annotations::AnnotationKind;
+use chrn_utils::source_utils::source_manager::SourceManager;
 use compilation::config_loader::{ConfigLoader, ConfigLoaderOutput};
 use compilation::lexer::Lexer;
 use compilation::module::{
@@ -57,10 +58,10 @@ use chrn_utils::core_error::{self, ConfigLoadError};
 use chrn_utils::err_codes::ErrorCode;
 use chrn_utils::id_types::{InternedIdUTF8, ModuleId, PathId, SourceRegionId};
 use chrn_utils::intern::{self, Intern};
-use chrn_utils::source_map::source_diagnostic::SourceDiagnostic;
-use chrn_utils::source_map::source_diagnostic::SourceDiagnosticSummary;
-use chrn_utils::source_map::source_region::SourceRegion;
-use chrn_utils::source_map::source_span::SourceSpan;
+use chrn_utils::source_utils::source_diagnostic::SourceDiagnostic;
+use chrn_utils::source_utils::source_diagnostic::SourceDiagnosticSummary;
+use chrn_utils::source_utils::source_region::SourceRegion;
+use chrn_utils::source_utils::source_span::SourceSpan;
 use compilation::chrn_config::ChrnConfig;
 use std::io::Cursor;
 use tower_lsp::lsp_types::Url;
@@ -259,9 +260,9 @@ pub(crate) struct ModuleResolution {
 
 /// The filesystem path a document URI names.
 ///
-/// [`Url::path`] stays percent-encoded, so it is not the path to intern: a document
+/// [`Url::path`] stays percent-encoded, so it is not the path to register: a document
 /// under `/my dir/a.chrn` comes back as `/my%20dir/a.chrn`. Every entry point that
-/// interns a document path must go through here, or the same file is interned twice
+/// registers a document path must go through here, or the same file is registered twice
 /// under two different [`PathId`]s and region lookup, definition paths and self-import
 /// detection all split depending on which entry point analyzed the document.
 ///
@@ -304,11 +305,9 @@ pub(crate) fn dependency_snapshots_are_current(
 /// acquire any `DocumentState` lock, so it can safely call `DocumentCache::get_text`
 /// without risking the deadlock described in [`ModuleResolution`].
 ///
-/// The `interner` is the one that was already used for the initial config load of
-/// `main_region`, guaranteeing that `main_region.path_id` is valid in the same
-/// interner the resulting `DocumentState` owns.  (Previously a second interner was
-/// created here, which only worked because both interners happened to assign id 0
-/// to the first path interned.)
+/// The source manager is the one used for the initial config load of `main_region`.
+/// Keep it through module resolution and move it into the resulting `DocumentState`,
+/// so every region and diagnostic retains the same source identity.
 ///
 /// `main_state` must reflect the outcome of the caller's config load (`Loaded` on
 /// `Success`, `BrokenRegion` on `Broken`), matching how `extract_main` states the
@@ -326,9 +325,10 @@ pub(crate) fn resolve_document_modules(
     open_docs: &RwLock<HashMap<String, Arc<String>>>,
     version: u64,
     mut interner: Intern,
+    mut src_manager: SourceManager,
 ) -> PreparedDocument {
     let path_buf = uri_to_path(uri);
-    let path_id = interner.intern_path(&path_buf);
+    let path_id = src_manager.register_path(&path_buf);
 
     // The lexer is given the *relative* `src_bytes` (the script section only) and
     // the *absolute* `script_start` (the byte position in the file where the
@@ -362,7 +362,7 @@ pub(crate) fn resolve_document_modules(
 
     let (bind, main_imports, mut finder_summary) =
         ModuleFinder::new(&main_region.src_bytes, chrn_cfg, &main_region)
-            .collect_imports(&mut interner);
+            .collect_imports(&mut interner, &mut src_manager);
 
     let mut config_errors = SourceDiagnosticSummary::default();
     if !finder_summary.diags.is_empty() {
@@ -392,6 +392,7 @@ pub(crate) fn resolve_document_modules(
         &mut main_mod,
         chrn_cfg,
         &mut interner,
+        &mut src_manager,
         doc_cache,
         open_docs,
         &mut dependency_snapshots,
@@ -408,7 +409,7 @@ pub(crate) fn resolve_document_modules(
         .filter_map(|m| {
             let region_id = m.region_id?;
             let region = &sub_regions[region_id.id as usize - 1];
-            let p = interner.extract_path_from_path_id(region.path_id);
+            let p = src_manager.extract_path(region.path_id);
             Url::from_file_path(p).ok().map(|u| u.to_string())
         })
         .collect();
@@ -418,6 +419,7 @@ pub(crate) fn resolve_document_modules(
         tokens,
         trivia,
         interner,
+        src_manager,
         main_region.script_start,
         main_region.serial_start,
         version,
@@ -534,13 +536,11 @@ fn analyze_document(
 
     // 1. Initial config load to find boundaries.
     //
-    // A single `Intern` is used for the whole analysis: the `path_id` carried by
-    // the region is interned in the same interner that later stages (module
-    // resolution, parsing, diagnostics) read from, so the ids always line up.
-    // The interner is then moved into the `DocumentState` instead of allocating
-    // a second, throwaway interner per analysis run.
-    let mut interner = Intern::init();
-    let path_id = interner.intern_path(&path_buf);
+    // Keep the source manager from config loading through module resolution and
+    // document analysis so every path ID belongs to the same manager.
+    let interner = Intern::init();
+    let mut src_manager = SourceManager::new();
+    let path_id = src_manager.register_path(&path_buf);
 
     // Config-load diagnostics produced on the recoverable `Broken` path.  They
     // are folded into the final publish at the end of the task rather than
@@ -589,7 +589,7 @@ fn analyze_document(
     // 2. Resolve imported modules and build a pre-analysis state **without**
     //    holding any DocumentState lock.  This breaks the previous deadlock cycle
     //    where ensure_analyzed held the per-document write lock while calling
-    //    DocumentCache::get_text.  The interner is moved in here.
+    //    DocumentCache::get_text. The interner and source manager are moved in here.
     let mut prepared = resolve_document_modules(
         &uri,
         Arc::clone(&text),
@@ -600,6 +600,7 @@ fn analyze_document(
         &open_docs,
         version,
         interner,
+        src_manager,
     );
 
     // Merge config-loader warnings from the Success path into the
@@ -778,7 +779,7 @@ pub(crate) fn region_script_starts(
 /// Each `SourceDiagnostic` carries a `path_id` identifying which file the
 /// diagnostic came from. The byte spans in its annotations are offsets into
 /// *that* file's bytes, not the main document's. To produce a correct LSP
-/// range, we look up the matching [`SourceRegion`](chrn_utils::source_map::source_region::SourceRegion)
+/// range, we look up the matching [`SourceRegion`](chrn_utils::source_utils::source_region::SourceRegion)
 /// in `arena` and convert the span against that region's text.
 ///
 /// Diagnostics whose `path_id` does not match any region (e.g. compiler-intrinsic
@@ -1091,6 +1092,7 @@ pub(crate) fn resolve_modules_lsp(
     main_mod: &mut Module,
     settings: &ChrnConfig,
     interner: &mut Intern,
+    src_manager: &mut SourceManager,
     doc_cache: &DocumentCache,
     open_docs: &RwLock<HashMap<String, Arc<String>>>,
     dependency_snapshots: &mut Vec<(String, Option<Arc<String>>)>,
@@ -1215,7 +1217,7 @@ pub(crate) fn resolve_modules_lsp(
             // into `ErrorSource`. This mirrors `extract_modules`/`resolve_module`.
             seen.push(path_id);
 
-            let path_owned = interner.extract_path_from_path_id(path_id).to_path_buf();
+            let path_owned = src_manager.extract_path(path_id).to_path_buf();
             let path = path_owned.as_path();
 
             // Try to get from doc_cache first
@@ -1360,7 +1362,7 @@ pub(crate) fn resolve_modules_lsp(
                                 diags.push(diag);
                             }
                             ConfigLoadError::IO(e) => {
-                                let path = interner.extract_path_from_path_id(path_id);
+                                let path = src_manager.extract_path(path_id);
                                 let core_msg = core_error::form_string_from_io_err(&e, path)
                                     .unwrap_or(e.to_string());
                                 let src_diag = SourceDiagnostic::builder(
@@ -1387,7 +1389,7 @@ pub(crate) fn resolve_modules_lsp(
                                 diags.push(diag);
                             }
                             ConfigLoadError::IO(e) => {
-                                let path = interner.extract_path_from_path_id(path_id);
+                                let path = src_manager.extract_path(path_id);
                                 let core_msg = core_error::form_string_from_io_err(&e, path)
                                     .unwrap_or(e.to_string());
                                 let src_diag = SourceDiagnostic::builder(
@@ -1418,7 +1420,7 @@ pub(crate) fn resolve_modules_lsp(
 
             let (bind, sub_imports, mut finder_summary) =
                 ModuleFinder::new(&sub_region.src_bytes, settings, &sub_region)
-                    .collect_imports(interner);
+                    .collect_imports(interner, src_manager);
 
             diags.append(&mut finder_summary.diags);
 

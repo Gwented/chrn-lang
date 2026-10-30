@@ -4,7 +4,7 @@
 
 //TODO: General presets for engines to run to reduce boiler-plate
 
-use chrn_utils::{intern::Intern, source_map::source_diagnostic::SourceDiagnosticBuilder};
+use chrn_utils::{intern::Intern, source_utils::source_diagnostic::SourceDiagnosticBuilder};
 use macrosc::s_suffix;
 
 use crate::{

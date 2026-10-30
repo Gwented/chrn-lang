@@ -8,8 +8,8 @@ mod tests;
 use chrn_utils::{
     arena::Arena,
     id_types::SourceRegionId,
-    intern::Intern,
-    source_map::{
+    source_utils::source_manager::SourceManager,
+    source_utils::{
         line_mapping::{self, Line, LineView},
         source_diagnostic::{SourceDiagnostic, annotations::Annotation, footers::FooterKind},
         source_region::SourceRegion,
@@ -36,7 +36,7 @@ pub(crate) fn render_terminal_diags(
     diags: &[SourceDiagnostic],
     footers: &[FooterKind],
     region_arena_opt: Option<&Arena<SourceRegion, SourceRegionId>>,
-    interner: &Intern,
+    src_manager: &SourceManager,
     cfg: &TerminalRenderConfig,
 ) -> Vec<String> {
     let region_arena = match region_arena_opt {
@@ -45,7 +45,7 @@ pub(crate) fn render_terminal_diags(
         None => {
             let mut rendered_diags: Vec<String> = Vec::new();
             for diag in diags {
-                let path = interner.extract_path_from_path_id(diag.path_id);
+                let path = src_manager.extract_path(diag.path_id);
                 let path_header = style::create_path_header(path, cfg);
                 // Not really a header when it's using the message too
                 let level_header =
@@ -95,7 +95,14 @@ pub(crate) fn render_terminal_diags(
     // Final step of rendering and returning the text
     let mut rendered_diags: Vec<String> = Vec::with_capacity(diags.len());
     for diag in diags {
-        let rendered_diag = form_diag(diag, &all_src_bytes, &ln_views, cfg, region_arena, interner);
+        let rendered_diag = form_diag(
+            diag,
+            &all_src_bytes,
+            &ln_views,
+            cfg,
+            region_arena,
+            src_manager,
+        );
         rendered_diags.push(rendered_diag);
     }
 
@@ -116,7 +123,7 @@ fn form_diag(
     ln_views: &[LineView],
     settings: &TerminalRenderConfig,
     region_arena: &Arena<SourceRegion, SourceRegionId>,
-    interner: &Intern,
+    src_manager: &SourceManager,
 ) -> String {
     // For tracking max line width needed for rendering
     let mut highest_ln_num: u32 = 1;
@@ -174,7 +181,7 @@ fn form_diag(
         settings,
         ln_num_width,
         region_arena,
-        interner,
+        src_manager,
     )
 }
 
@@ -188,7 +195,7 @@ fn render_text(
     render_cfg: &TerminalRenderConfig,
     ln_num_width: usize,
     region_arena: &Arena<SourceRegion, SourceRegionId>,
-    interner: &Intern,
+    src_manager: &SourceManager,
 ) -> String {
     // Spaces prefixing the `---` gap separator (line-number column width). The bar lines use
     // one additional space so the `|` visually sits just after the line-number column.
@@ -223,7 +230,7 @@ fn render_text(
 
         if !placed_path {
             let new_region = &region_arena[current_region_id];
-            let path = interner.extract_path_from_path_id(new_region.path_id);
+            let path = src_manager.extract_path(new_region.path_id);
             let path_header_sep = style::create_path_header(path, render_cfg);
 
             // Since this boolean controls the first path placed and any intermediate paths placed,
@@ -260,7 +267,7 @@ fn render_text(
     // Meaning there were no line layouts which skips the loop, but this still needs it's pat
     // shown so this is done
     if prev_region_id_opt.is_none() {
-        let path = interner.extract_path_from_path_id(diag.path_id);
+        let path = src_manager.extract_path(diag.path_id);
         let path_header_sep = style::create_path_header(path, render_cfg);
         layout_text.push_str(&format!("\n{path_header_sep}"));
     }

@@ -1,4 +1,7 @@
-use chrn_utils::id_types::{InternedId, InternedIdUTF8, id_tags::UTF8Tag};
+use chrn_utils::{
+    id_types::{InternedId, InternedIdUTF8},
+    intern::UTF8Tag,
+};
 use std::fmt::Display;
 
 //TODO: Adjust behavior as needed for the type system since some oddities from the original

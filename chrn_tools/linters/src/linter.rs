@@ -1,5 +1,5 @@
 pub mod inconsistent_comma;
-use chrn_utils::source_map::source_diagnostic::SourceDiagnostic;
+use chrn_utils::source_utils::source_diagnostic::SourceDiagnostic;
 use compilation::script_compiler::{ScriptCompiler, script_compiler_store::ScriptCompilerStore};
 
 use crate::linter_config::LinterConfig;

@@ -5,7 +5,7 @@ use chrn_utils::{
     err_codes::ErrorCode,
     id_types::{ExprId, ImplId, InternedIdUTF8, SymbolId, TypeId, id_tags::TaggedId},
     intern::Intern,
-    source_map::{
+    source_utils::{
         source_diagnostic::{
             DiagnosticLevel, SourceDiagnostic, SourceDiagnosticSink, SourceDiagnosticSummary,
             annotations::AnnotationKind,

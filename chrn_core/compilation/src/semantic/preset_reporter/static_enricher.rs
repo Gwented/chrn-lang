@@ -6,7 +6,7 @@
 //! Example: If we have " "che" + "rn" ", it can say that string concatenation is not available
 //! rather than emit a basic error that says it can't be applied.
 
-use chrn_utils::source_map::source_diagnostic::SourceDiagnosticBuilder;
+use chrn_utils::source_utils::source_diagnostic::SourceDiagnosticBuilder;
 
 use crate::{
     parser::ast::ast_concepts::{BinaryOp, UnaryOp},

@@ -38,8 +38,9 @@
 //! were spawned for; stale results are discarded before cache mutation and in
 //! [`crate::analyser::publish_if_current`].
 
-use chrn_utils::id_types::{InternedId, id_tags::UTF8Tag};
-use chrn_utils::source_map::source_span::SourceSpan;
+use chrn_utils::source_utils::source_manager::SourceManager;
+use chrn_utils::source_utils::source_span::SourceSpan;
+use chrn_utils::{id_types::InternedId, intern::UTF8Tag};
 use compilation::config_loader::{ConfigLoader, ConfigLoaderOutput};
 use compilation::id_tag_decls::ConfigMemberTag;
 use compilation::lexer::token::Token as ScriptToken;
@@ -67,7 +68,7 @@ use tower_lsp::lsp_types::{
 use tower_lsp::{Client, LanguageServer, jsonrpc};
 
 use chrn_utils::id_types::{
-    ImplMemberId, ModuleId, ScopeId, SymbolId, TypeId, InternedIdUTF8, id_tags::TaggedId,
+    ImplMemberId, InternedIdUTF8, ModuleId, ScopeId, SymbolId, TypeId, id_tags::TaggedId,
 };
 use lang::config_schemas::{ConfigSchemaKind, get_cfg_schema};
 
@@ -80,7 +81,7 @@ use crate::text::apply_text_change;
 // Semantic token support (keyword/string/number highlighting)
 use crate::state::SemanticEntity;
 use chrn_utils::intern::Intern;
-use chrn_utils::source_map::source_diagnostic::SourceDiagnosticSummary;
+use chrn_utils::source_utils::source_diagnostic::SourceDiagnosticSummary;
 use compilation::chrn_config::ChrnConfig;
 use lang::types::builtins::BuiltinTypeKind as ChBuiltinTypeKind;
 use std::io::Cursor;
@@ -207,15 +208,16 @@ impl Backend {
             }
         }
 
-        // Shared with `resolve_document_modules` so both entry points intern the
-        // same string: `Url::path` stays percent-encoded, and interning that form
+        // Shared with `resolve_document_modules` so both entry points register the
+        // same path: `Url::path` stays percent-encoded, and registering that form
         // here gave the same file two `PathId`s depending on which entry point
         // analyzed it.
         let path_buf = crate::analyser::uri_to_path(uri);
         let mut chrn_cfg = ChrnConfig::default();
 
-        let mut interner = Intern::init();
-        let path_id = interner.intern_path(&path_buf);
+        let interner = Intern::init();
+        let mut src_manager = SourceManager::new();
+        let path_id = src_manager.register_path(&path_buf);
         let mut cfg_loader_warns = SourceDiagnosticSummary::default();
         // Mirrors `extract_main`: a recovered-but-malformed region leaves the main
         // module in `BrokenRegion`, which later stages treat as "do not re-parse".
@@ -269,8 +271,8 @@ impl Backend {
         // Resolve imported modules outside the DocumentState write lock.  This is
         // the same pre-analysis step used by the async analysis task and prevents
         // the deadlock where `ensure_analyzed` held the per-document lock while
-        // calling `DocumentCache::get_text`.  The interner from the config load
-        // is moved in so a second one is not allocated.
+        // calling `DocumentCache::get_text`. Move in the original source manager
+        // so config-load paths and imported paths share one identity space.
         let mut prepared = resolve_document_modules(
             uri,
             Arc::clone(&text),
@@ -281,6 +283,7 @@ impl Backend {
             &self.docs,
             my_version,
             interner,
+            src_manager,
         );
 
         // Merge config-loader warnings from the Success path into the

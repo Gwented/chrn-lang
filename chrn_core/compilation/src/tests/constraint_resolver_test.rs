@@ -298,7 +298,9 @@ fn all_operators_test() {
 fn arithmetic_error_test() {
     use crate::parser::ast::ast_concepts::BinaryOp;
     use crate::semantic::evaluator::{BinaryOpResult, apply_binary_op, apply_binary_op_with_limit};
-    use chrn_utils::{source_map::source_span::SourceSpan, utils::containers::SpannedContainerRef};
+    use chrn_utils::{
+        source_utils::source_span::SourceSpan, utils::containers::SpannedContainerRef,
+    };
 
     // Arithmetic errors originate in `TypeResolver::register_expr`, so `Stage::Type`
     // already surfaces them without running the constraint stage.
@@ -339,7 +341,7 @@ fn arithmetic_error_test() {
 
     // Direct guard contracts on the evaluator, independent of resolution plumbing.
     {
-        let mut interner = mock_interner(0, 1);
+        let mut interner = mock_interner(0);
         let span = SourceSpan::default();
 
         let lhs = Value::ArbitraryInt(ArbitraryIntKind::I64(10));

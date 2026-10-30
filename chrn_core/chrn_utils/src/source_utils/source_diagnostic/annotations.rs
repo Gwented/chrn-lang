@@ -1,6 +1,6 @@
 use crate::{
     budget::mem_cost::{self, MemoryCost},
-    source_map::source_span::SourceSpan,
+    source_utils::source_span::SourceSpan,
 };
 
 #[derive(Debug)]

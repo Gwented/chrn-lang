@@ -1,6 +1,6 @@
 use chrn_utils::{
     id_types::{AstId, ExprId, SymbolId, TypeId, ValueId},
-    source_map::source_span::SourceSpan,
+    source_utils::source_span::SourceSpan,
 };
 
 use crate::parser::ast::ast_concepts::{BinaryOp, UnaryOp};

@@ -12,8 +12,8 @@ use chrn_utils::{
     arena::Arena,
     err_codes,
     id_types::SourceRegionId,
-    intern::Intern,
-    source_map::{
+    source_utils::source_manager::SourceManager,
+    source_utils::{
         source_diagnostic::{DiagnosticLevel, annotations::AnnotationKind},
         source_region::SourceRegion,
         source_span::SourceSpan,
@@ -53,12 +53,17 @@ pub(super) fn annotation_kind_str(kind: AnnotationKind) -> &'static str {
 /// callers collapse both cases into a single "emit `null`" branch.
 pub(super) fn resolve_region_path(
     region_arena_opt: Option<&Arena<SourceRegion, SourceRegionId>>,
-    interner: &Intern,
+    src_manager: &SourceManager,
     region_id: SourceRegionId,
 ) -> Option<String> {
     let arena = region_arena_opt?;
     let region = arena.get(region_id)?;
-    Some(interner.extract_path_from_path_id(region.path_id).display().to_string())
+    Some(
+        src_manager
+            .extract_path(region.path_id)
+            .display()
+            .to_string(),
+    )
 }
 
 /// Projects a span's `start`/`end` from region-relative offsets to

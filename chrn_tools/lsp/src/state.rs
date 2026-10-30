@@ -36,6 +36,7 @@
 //! of cross-module dependency edges so that editing a shared import file correctly
 //! invalidates all documents that import it.
 
+use chrn_utils::source_utils::source_manager::SourceManager;
 use compilation::chrn_config::ChrnConfig;
 use compilation::id_tag_decls::ConfigMemberTag;
 use compilation::lexer::Lexer;
@@ -89,12 +90,12 @@ pub(crate) const STATE_LOCK_TIMEOUT: Duration = Duration::from_millis(500);
 use chrn_utils::arena::Arena;
 use chrn_utils::budget::mem_budget::{BudgetResult, MemoryBudgetUsize};
 use chrn_utils::id_types::{
-    AstId, ImplId, ImplMemberId, ModuleId, PathId, SourceRegionId, SymbolId, TypeId, InternedIdUTF8,
+    AstId, ImplId, ImplMemberId, InternedIdUTF8, ModuleId, PathId, SourceRegionId, SymbolId, TypeId,
 };
 use chrn_utils::intern::Intern;
-use chrn_utils::source_map::source_diagnostic::SourceDiagnosticSummary;
-use chrn_utils::source_map::source_region::SourceRegion;
-use chrn_utils::source_map::source_span::SourceSpan;
+use chrn_utils::source_utils::source_diagnostic::SourceDiagnosticSummary;
+use chrn_utils::source_utils::source_region::SourceRegion;
+use chrn_utils::source_utils::source_span::SourceSpan;
 use chrn_utils::utils::containers::SpannedContainer;
 
 /// Identifies the semantic construct that occupies a particular source span.
@@ -165,8 +166,10 @@ pub struct DocumentState {
     pub tokens: Vec<SpannedToken>,
     /// Trivia (comments, whitespace) from lexing; used for `offset_in_comment`.
     pub trivia: Vec<Trivia>,
-    /// String/path interner shared by all analysis stages for this document.
+    /// String interner shared by all analysis stages for this document.
     pub interner: Intern,
+    /// Source identities shared by config loading, module resolution, and diagnostics.
+    pub src_manager: SourceManager,
     /// Arena holding the `SourceRegion` for this file and every imported file.
     pub region_arena: Arena<SourceRegion, SourceRegionId>,
     /// Byte offset of the first token in the script section (`@def`).
@@ -214,6 +217,7 @@ impl DocumentState {
         tokens: Vec<SpannedToken>,
         trivia: Vec<Trivia>,
         interner: Intern,
+        src_manager: SourceManager,
         // Byte offset of the first script token.
         script_start: usize,
         // Byte offset of the serial section, or `None`.
@@ -225,6 +229,7 @@ impl DocumentState {
             tokens,
             trivia,
             interner,
+            src_manager,
             region_arena: Arena::new(),
             script_start,
             serial_start,
@@ -945,8 +950,8 @@ impl DocumentState {
             if let Some(region_id) = module.region_id {
                 let region = &self.region_arena[region_id];
                 let label = self
-                    .interner
-                    .extract_path_from_path_id(region.path_id)
+                    .src_manager
+                    .extract_path(region.path_id)
                     .file_name()
                     .and_then(|name| name.to_str())
                     .unwrap_or("imported module")
@@ -1041,7 +1046,7 @@ impl DocumentState {
         Some((
             ast,
             ast_id,
-            self.interner.extract_path_from_path_id(region.path_id),
+            self.src_manager.extract_path(region.path_id),
         ))
     }
 
@@ -1049,11 +1054,11 @@ impl DocumentState {
     fn module_path(&self, mod_id: ModuleId) -> Option<&Path> {
         let compiler = self.compiler.as_ref()?;
         let region = &self.region_arena[compiler.mods[mod_id].region_id?];
-        Some(self.interner.extract_path_from_path_id(region.path_id))
+        Some(self.src_manager.extract_path(region.path_id))
     }
 
     /// Resolves a [`SemanticEntity`] to its definition site, borrowing the path
-    /// out of the interner instead of allocating it.
+    /// out of the source manager instead of allocating it.
     ///
     /// Returns `(file_path, span, owning_symbol_id)` where:
     /// * `file_path` is the path of the file containing the definition.
@@ -1162,7 +1167,7 @@ impl DocumentState {
                 if !entity_may_define(ent, def_span, def_owner_sym_id) {
                     continue;
                 }
-                // `definition_site` borrows the path out of the interner, so this
+                // `definition_site` borrows the path out of the source manager, so this
                 // runs allocation-free — one `String` per symbol-map entry per
                 // cached document used to be built here just to be compared away.
                 // The two integer fields are checked first because they reject
@@ -1435,11 +1440,12 @@ impl DocumentCache {
         // (`get_token_at_offset`, `offset_in_comment`, `find_matching_entities`,
         // `hover`, `references`, `rename`) treats as relative.
         let mut interner = Intern::init();
+        let mut src_manager = SourceManager::new();
         let path_buf = tower_lsp::lsp_types::Url::parse(uri)
             .ok()
             .map(|u| crate::analyser::uri_to_path(&u))
             .unwrap_or_else(|| PathBuf::from(uri));
-        let path_id = interner.intern_path(&path_buf);
+        let path_id = src_manager.register_path(&path_buf);
         let mut chrn_cfg = ChrnConfig::default();
         let script_src = &text.as_bytes()[script_start..];
         let lex_output = Lexer::new(
@@ -1468,6 +1474,7 @@ impl DocumentCache {
             tokens,
             trivia,
             interner,
+            src_manager,
             script_start,
             serial_start,
             version,

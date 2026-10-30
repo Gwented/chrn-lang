@@ -20,7 +20,7 @@ use crate::state::STATE_LOCK_TIMEOUT;
 use crate::state::{DocumentCache, DocumentState, SemanticEntity};
 use crate::text::{LineIndex, position_to_offset};
 use chrn_utils::id_types::SymbolId;
-use chrn_utils::source_map::source_span::SourceSpan;
+use chrn_utils::source_utils::source_span::SourceSpan;
 use tower_lsp::lsp_types::{
     DocumentHighlight, DocumentHighlightKind, Location, Position, Range, Url,
 };

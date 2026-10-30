@@ -8,20 +8,16 @@ pub(super) use crate::{
     script_compiler::{ScriptCompiler, reporter::Reporter},
     semantic::hir::hir_symbols::{VarDef, VariableMetadata, VariableState},
 };
+use chrn_utils::source_utils::source_manager::SourceManager;
+use chrn_utils::{id_types::SourceId, source_utils::source_manager::PathTag};
 // -- Helpers --
 /// Creates fake strings for the amounts given
-pub(super) fn mock_interner(str_amt: usize, path_amt: usize) -> Intern {
+pub(super) fn mock_interner(str_amt: usize) -> Intern {
     let mut interner = Intern::init();
 
     for idx in 0..str_amt {
         let s = format!("dummyname{idx}");
         interner.intern_str(&s);
-    }
-
-    for idx in 0..path_amt {
-        let p = format!("dummyimport{idx}");
-        let p = Path::new(&p);
-        interner.intern_path(&p);
     }
 
     interner
@@ -70,8 +66,8 @@ pub(super) fn mock_single_module_compiler_with_config(
     ChrnConfig,
     ScriptCompiler,
 ) {
-    let interner = mock_interner(0, 1);
-    let path_id = PathId::new(0);
+    let interner = mock_interner(0);
+    let path_id = SourceId::new(0).into_tagged::<PathTag>();
     let region_id = SourceRegionId::new(0);
 
     let source_region = ConfigLoader::new(region_id, text.as_bytes(), path_id, &settings)
@@ -101,10 +97,11 @@ pub(super) fn mock_import(
     mod_id: ModuleId,
     alias_id: Option<&str>,
     interner: &mut Intern,
+    src_manager: &mut SourceManager,
 ) -> Import {
     let kind = ImportKind::Source(
         SpannedContainer::new(
-            interner.intern_path(&Path::new(path_name)),
+            src_manager.register_path(&Path::new(path_name)),
             SourceSpan::default(),
         ),
         mod_id,
@@ -123,9 +120,10 @@ pub(super) fn mock_single_module(
     mod_id: u32,
     text: &str,
     interner: &mut Intern,
+    src_manager: &mut SourceManager,
 ) -> (Module, SourceRegion) {
     let settings = ChrnConfig::default();
-    let path_id = interner.intern_path(Path::new(path_name));
+    let path_id = src_manager.register_path(Path::new(path_name));
     let region_id = SourceRegionId::new(mod_id as u32);
 
     let source_region = ConfigLoader::new(region_id, text.as_bytes(), path_id, &settings)
@@ -152,7 +150,7 @@ pub(super) fn mock_multiple_module_compiler(
     ChrnConfig,
     ScriptCompiler,
 ) {
-    let interner = mock_interner(0, modules_with_regions.len());
+    let interner = mock_interner(0);
     let settings = ChrnConfig::default();
 
     let (modules, regions): (Vec<Module>, Vec<SourceRegion>) =
@@ -275,7 +273,7 @@ pub(super) use chrn_utils::{
     core_error::ConfigLoadError,
     id_types::{InternedIdUTF8, ModuleId, PathId, SourceRegionId, SymbolId, ValueId},
     intern::Intern,
-    source_map::{
+    source_utils::{
         source_diagnostic::{DiagnosticLevel, SourceDiagnostic, SourceDiagnosticSummary},
         source_region::SourceRegion,
         source_span::SourceSpan,
@@ -476,6 +474,7 @@ pub(super) fn resolve_single_module_with_config(
 /// `sub_module` by path.
 pub(super) fn resolve_cross_module(main_text: &str, sub_text: &str, upto: Stage) -> Resolution {
     let mut interner = Intern::init();
+    let mut src_manager = SourceManager::new();
 
     let import = mock_import(
         "sub_module",
@@ -483,6 +482,7 @@ pub(super) fn resolve_cross_module(main_text: &str, sub_text: &str, upto: Stage)
         ModuleId::new(1),
         None,
         &mut interner,
+        &mut src_manager,
     );
 
     let (main_mod, main_region) = mock_single_module(
@@ -492,6 +492,7 @@ pub(super) fn resolve_cross_module(main_text: &str, sub_text: &str, upto: Stage)
         0,
         main_text,
         &mut interner,
+        &mut src_manager,
     );
 
     let (sub_mod, sub_region) = mock_single_module(
@@ -501,6 +502,7 @@ pub(super) fn resolve_cross_module(main_text: &str, sub_text: &str, upto: Stage)
         1,
         sub_text,
         &mut interner,
+        &mut src_manager,
     );
 
     let (arena, _, mut cfg, mut compiler) =
@@ -655,8 +657,9 @@ pub(super) fn values_eq(left: &Value, right: &Value) -> bool {
 }
 
 pub(super) fn load_cfg_bytes(bytes: &[u8]) -> ConfigLoaderOutput {
-    let mut interner = mock_interner(0, 1);
-    let path_id = interner.intern_path(Path::new(""));
+    let mut interner = mock_interner(0);
+    let mut src_manager = SourceManager::new();
+    let path_id = src_manager.register_path(Path::new(""));
     let region_id = SourceRegionId::new(0);
     ConfigLoader::new(region_id, bytes, path_id, &ChrnConfig::default()).load_config()
 }
@@ -673,7 +676,7 @@ pub(super) fn make_diagnostics(amt: usize) -> Vec<SourceDiagnostic> {
             None,
             DiagnosticLevel::Error,
             Default::default(),
-            PathId::new(i as u32),
+            SourceId::new(i as u32).into_tagged::<PathTag>(),
             Default::default(),
             Default::default(),
             Default::default(),

@@ -3,8 +3,8 @@
 use chrn_utils::{
     arena::Arena,
     id_types::SourceRegionId,
-    intern::Intern,
-    source_map::{source_diagnostic::footers::FooterKind, source_region::SourceRegion},
+    source_utils::source_manager::SourceManager,
+    source_utils::{source_diagnostic::footers::FooterKind, source_region::SourceRegion},
 };
 use compilation::script_compiler::reporter::Reporter;
 
@@ -49,7 +49,7 @@ pub(super) fn make_footers(reporter: &Reporter) -> Vec<FooterKind> {
 pub(super) fn render_diags(
     reporter: &Reporter,
     region_arena: Option<&Arena<SourceRegion, SourceRegionId>>,
-    interner: &Intern,
+    src_manager: &SourceManager,
     render_kind: &RenderKind,
 ) -> String {
     let footers = make_footers(&reporter);
@@ -57,7 +57,7 @@ pub(super) fn render_diags(
         reporter.diag_summary().diags(),
         &footers,
         region_arena,
-        interner,
+        src_manager,
         render_kind,
     );
     rendered

@@ -529,8 +529,9 @@ fn module_hover(
         .region_id
         .map(|region_id| &state.region_arena[region_id])
         .map(|region| {
-            interner
-                .extract_path_from_path_id(region.path_id)
+            state
+                .src_manager
+                .extract_path(region.path_id)
                 .display()
                 .to_string()
         })

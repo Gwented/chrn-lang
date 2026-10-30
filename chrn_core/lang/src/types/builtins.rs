@@ -1,4 +1,5 @@
-use chrn_utils::id_types::{InternedId, id_tags::UTF8Tag};
+use chrn_utils::id_types::InternedId;
+use chrn_utils::intern::UTF8Tag;
 use chrn_utils::{
     id_types::{InternedIdUTF8, TypeId},
     intern,

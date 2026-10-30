@@ -150,6 +150,10 @@ impl<'a, T> BasicCursor<'a, T> {
         }
     }
 
+    pub const fn is_empty(&self) -> bool {
+        self.items.is_empty()
+    }
+
     pub const fn pos(&self) -> usize {
         self.pos
     }

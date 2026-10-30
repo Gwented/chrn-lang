@@ -2,7 +2,7 @@ use chrn_utils::{
     err_codes::ErrorCode,
     id_types::{AstId, DirectiveId, ImplId, SymbolId, TypeId, id_tags::TaggedId},
     intern::Intern,
-    source_map::source_diagnostic::{
+    source_utils::source_diagnostic::{
         DiagnosticLevel, SourceDiagnostic, SourceDiagnosticSink, SourceDiagnosticSummary,
         annotations::AnnotationKind,
     },
