@@ -1,4 +1,3 @@
-use chrn_utils::{id_types::InternedId, intern::UTF8Tag};
 use chrn_utils::{
     arena::Arena,
     id_types::{InternedIdUTF8, ScopeId, TypeId, VariableId},
@@ -6,6 +5,7 @@ use chrn_utils::{
     source_utils::source_span::SourceSpan,
     utils::containers::SpannedContainer,
 };
+use chrn_utils::{id_types::InternedId, intern::UTF8Tag};
 use dashu_int::IBig;
 use lang::types::{
     builtins::{BuiltinType, BuiltinTypeKind},
@@ -537,7 +537,7 @@ fn registered_constant<'a>(
         panic!("`{name_id:?}` in {scope_id:?} has no known value");
     };
 
-    let val = &compiler.vals[val_id];
+    let val = &compiler.val_infos[val_id];
     let expr = &compiler.exprs[val.expr_id];
 
     RegisteredConstant {
@@ -829,7 +829,10 @@ fn representative_core_namespace_values_are_registered() {
             matches!(found.expr.expr_hir, ExprHir::LiteralVal(val_id) if val_id == found.expr.val_id)
         );
         assert!(matches!(found.expr.meta, ResolvedExprMetadata::Generated));
-        assert_eq!(compiler.vals[found.expr.val_id].expr_id, found.val.expr_id);
+        assert_eq!(
+            compiler.val_infos[found.expr.val_id].expr_id,
+            found.val.expr_id
+        );
     }
 }
 
@@ -870,7 +873,11 @@ fn core_namespace_arenas_are_reserved_exactly() {
     for (label, len, capacity) in [
         ("variables", compiler.vars.len(), compiler.vars.capacity()),
         ("exprs", compiler.exprs.len(), compiler.exprs.capacity()),
-        ("values", compiler.vals.len(), compiler.vals.capacity()),
+        (
+            "values",
+            compiler.val_infos.len(),
+            compiler.val_infos.capacity(),
+        ),
     ] {
         assert_eq!(len, ns_counts.variables, "{label} length");
         assert_eq!(capacity, ns_counts.variables, "{label} capacity");

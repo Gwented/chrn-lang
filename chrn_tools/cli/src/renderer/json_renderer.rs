@@ -18,16 +18,16 @@ use crate::renderer::{
     json_renderer::{escape::push_json_str, json_config::JsonRenderConfig},
     output_helpers::{
         self, annotation_kind_str, level_str, project_absolute_span, resolve_region_source,
+        resolve_source,
     },
 };
 
 /// Renders a slice of source diagnostics as a single pretty-printed JSON document.
 ///
-/// IDs are expanded where it adds value for a JSON consumer:
-/// - `SourceDiagnostic::src_id` is resolved to its source display label via the `SourceManager`
-///   and its associated interner; the label is emitted in the existing `path` field.
-/// - `SourceSpan::region_id` is resolved to its region's source display label when the
-///   `region_arena` is available, otherwise the field is emitted as `null`.
+/// Source metadata follows `SourceKind`: `source_name` is the optional stored
+/// in-memory name and `path` is the filesystem path. Unavailable values are `null`.
+/// Spans use `region_source_name` and `region_path` from their own source region;
+/// both are `null` when that region is unavailable.
 ///
 /// Internal arena indices are intentionally not emitted. Span byte offsets
 /// (`start`, `end`) are projected through the owning region's `script_start`
@@ -138,7 +138,14 @@ fn write_diagnostics_array(
             out.push(',');
             out.push('\n');
         }
-        write_diagnostic(out, diag, region_arena_opt, src_manager, interner, depth + 1);
+        write_diagnostic(
+            out,
+            diag,
+            region_arena_opt,
+            src_manager,
+            interner,
+            depth + 1,
+        );
     }
     out.push('\n');
     write_indent(out, depth);
@@ -184,14 +191,20 @@ fn write_diagnostic(
     out.push(',');
     out.push('\n');
 
-    // Keep the existing "path" key for the source display label.
-    let path = src_manager.display_source(diag.src_id, interner);
-    write_indent(out, depth + 1);
-    push_json_str(out, "path");
-    out.push_str(": ");
-    push_json_str(out, &path);
-    out.push(',');
-    out.push('\n');
+    let source = resolve_source(src_manager, interner, diag.src_id);
+    for (key, value) in [
+        ("source_name", source.name),
+        ("path", source.path.as_deref()),
+    ] {
+        write_indent(out, depth + 1);
+        push_json_str(out, key);
+        out.push_str(": ");
+        match value {
+            Some(value) => push_json_str(out, value),
+            None => out.push_str("null"),
+        }
+        out.push_str(",\n");
+    }
 
     // "annotations"
     write_indent(out, depth + 1);
@@ -314,16 +327,20 @@ fn write_span(
     out.push('{');
     out.push('\n');
 
-    // "region_path" (expanded when arena is available, else null)
-    write_indent(out, depth + 1);
-    push_json_str(out, "region_path");
-    out.push_str(": ");
-    match resolve_region_source(region_arena_opt, src_manager, interner, span.region_id) {
-        Some(path) => push_json_str(out, &path),
-        None => out.push_str("null"),
+    let source = resolve_region_source(region_arena_opt, src_manager, interner, span.region_id);
+    for (key, value) in [
+        ("region_source_name", source.name),
+        ("region_path", source.path.as_deref()),
+    ] {
+        write_indent(out, depth + 1);
+        push_json_str(out, key);
+        out.push_str(": ");
+        match value {
+            Some(value) => push_json_str(out, value),
+            None => out.push_str("null"),
+        }
+        out.push_str(",\n");
     }
-    out.push(',');
-    out.push('\n');
 
     // "start" / "end" (last fields, no trailing comma). The pipeline emits
     // relative offsets into the owning region, so the renderer projects

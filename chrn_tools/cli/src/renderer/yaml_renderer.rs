@@ -17,6 +17,7 @@ use chrn_utils::{
 use crate::renderer::{
     output_helpers::{
         annotation_kind_str, level_str, project_absolute_span, resolve_region_source,
+        resolve_source,
     },
     yaml_renderer::{escape::push_yaml_str, yaml_config::YamlRenderConfig},
 };
@@ -30,12 +31,10 @@ const INDENT: &str = "  ";
 /// values as the JSON form (with the only differences being syntax and
 /// quoting rules).
 ///
-/// IDs are expanded the same way the JSON renderer expands them:
-/// - `SourceDiagnostic::src_id` is resolved to its source display label via the
-///   `SourceManager` and its associated interner, and emitted in the existing `path` field.
-/// - `SourceSpan::region_id` is resolved to its region's source display label when
-///   the `region_arena` is available, otherwise the field is emitted as
-///   `null`.
+/// Source metadata follows `SourceKind`: `source_name` is the optional stored
+/// in-memory name and `path` is the filesystem path. Unavailable values are `null`.
+/// Spans use `region_source_name` and `region_path` from their own source region;
+/// both are `null` when that region is unavailable.
 ///
 /// The output uses 2-space indentation, block style for mappings and
 /// sequences, and plain scalars wherever the string is unambiguous to a
@@ -118,7 +117,15 @@ fn write_diagnostics_list(
             if i > 0 {
                 out.push_str(", ");
             }
-            write_diagnostic(out, diag, region_arena_opt, src_manager, interner, 0, config);
+            write_diagnostic(
+                out,
+                diag,
+                region_arena_opt,
+                src_manager,
+                interner,
+                0,
+                config,
+            );
         }
         out.push(']');
     } else {
@@ -191,12 +198,20 @@ fn write_diagnostic(
         push_yaml_str(out, &diag.core_msg);
         out.push('\n');
 
-        let path = src_manager.display_source(diag.src_id, interner);
-        write_indent(out, key_level, config);
-        push_yaml_str(out, "path");
-        out.push_str(": ");
-        push_yaml_str(out, &path);
-        out.push('\n');
+        let source = resolve_source(src_manager, interner, diag.src_id);
+        for (key, value) in [
+            ("source_name", source.name),
+            ("path", source.path.as_deref()),
+        ] {
+            write_indent(out, key_level, config);
+            push_yaml_str(out, key);
+            out.push_str(": ");
+            match value {
+                Some(value) => push_yaml_str(out, value),
+                None => out.push_str("null"),
+            }
+            out.push('\n');
+        }
 
         // `annotations` is a sub-list whose items live at `key_level + 1`.
         write_indent(out, key_level, config);
@@ -261,12 +276,19 @@ fn write_diagnostic_fields_minify(
     push_yaml_str(out, &diag.core_msg);
     out.push_str(", ");
 
-    // path
-    let path = src_manager.display_source(diag.src_id, interner);
-    push_yaml_str(out, "path");
-    out.push_str(": ");
-    push_yaml_str(out, &path);
-    out.push_str(", ");
+    let source = resolve_source(src_manager, interner, diag.src_id);
+    for (key, value) in [
+        ("source_name", source.name),
+        ("path", source.path.as_deref()),
+    ] {
+        push_yaml_str(out, key);
+        out.push_str(": ");
+        match value {
+            Some(value) => push_yaml_str(out, value),
+            None => out.push_str("null"),
+        }
+        out.push_str(", ");
+    }
 
     // annotations: flow-style sequence of flow-style mappings
     push_yaml_str(out, "annotations");
@@ -429,9 +451,8 @@ fn write_annotation(
 /// Writes `span:` followed by the span value. The caller has already
 /// written the `span` key; this function emits the `:` separator and the
 /// value. In pretty mode the value is a block-style mapping
-/// (`\n    region_path: ...\n    start: ...\n    end: ...`); in minify
-/// mode it is a flow-style mapping (`{region_path: ..., start: ...,
-/// end: ...}`).
+/// with source name, optional path, and byte offsets; in minify mode it
+/// is a flow-style mapping with the same fields.
 fn write_span(
     out: &mut String,
     span: &SourceSpan,
@@ -453,14 +474,20 @@ fn write_span(
 
         let key_level = level + 1;
 
-        write_indent(out, key_level, config);
-        push_yaml_str(out, "region_path");
-        out.push_str(": ");
-        match resolve_region_source(region_arena_opt, src_manager, interner, span.region_id) {
-            Some(path) => push_yaml_str(out, &path),
-            None => out.push_str("null"),
+        let source = resolve_region_source(region_arena_opt, src_manager, interner, span.region_id);
+        for (key, value) in [
+            ("region_source_name", source.name),
+            ("region_path", source.path.as_deref()),
+        ] {
+            write_indent(out, key_level, config);
+            push_yaml_str(out, key);
+            out.push_str(": ");
+            match value {
+                Some(value) => push_yaml_str(out, value),
+                None => out.push_str("null"),
+            }
+            out.push('\n');
         }
-        out.push('\n');
 
         // The pipeline emits relative offsets into the owning region, so
         // the renderer projects them to absolute file positions using
@@ -493,13 +520,20 @@ fn write_span_inline(
     interner: &Intern,
 ) {
     out.push('{');
-    push_yaml_str(out, "region_path");
-    out.push_str(": ");
-    match resolve_region_source(region_arena_opt, src_manager, interner, span.region_id) {
-        Some(path) => push_yaml_str(out, &path),
-        None => out.push_str("null"),
+    let source = resolve_region_source(region_arena_opt, src_manager, interner, span.region_id);
+    for (key, value) in [
+        ("region_source_name", source.name),
+        ("region_path", source.path.as_deref()),
+    ] {
+        push_yaml_str(out, key);
+        out.push_str(": ");
+        match value {
+            Some(value) => push_yaml_str(out, value),
+            None => out.push_str("null"),
+        }
+        out.push_str(", ");
     }
-    out.push_str(", ");
+
     // The pipeline emits relative offsets into the owning region, so
     // the renderer projects them to absolute file positions using the
     // region's `script_start` before emitting them. External tooling
@@ -850,7 +884,10 @@ mod tests {
         // Annotations is a flow-style sequence of flow-style mappings.
         assert!(out.contains("annotations: [{kind: primary,"), "got: {out}");
         // Span is a flow-style mapping with `null` for the missing region.
-        assert!(out.contains("span: {region_path: null,"), "got: {out}");
+        assert!(
+            out.contains("span: {region_source_name: null, region_path: null,"),
+            "got: {out}"
+        );
         // help / notes are flow-style sequences of strings.
         assert!(out.contains("help: [try this]"), "got: {out}");
         assert!(out.contains("notes: [note one]"), "got: {out}");

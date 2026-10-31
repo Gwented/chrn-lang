@@ -368,6 +368,10 @@ impl BuiltinIdRepository {
             BuiltinTypeKind::BigInt => Some(self.bigint),
             BuiltinTypeKind::BigFloat => Some(self.bigfloat),
             BuiltinTypeKind::Runtime => Some(self.runtime),
+            // Data structures do not have a symbol id due to symbols that are a data structures
+            // already containing data inside. `typechecker.rs` checks types by their actual
+            // variant, doing the same thing as though it were checking a source of truth id like
+            // any other built-in type's symbol.
             BuiltinTypeKind::List
             | BuiltinTypeKind::Set
             | BuiltinTypeKind::Map

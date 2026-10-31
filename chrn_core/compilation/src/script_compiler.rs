@@ -13,7 +13,7 @@ use chrn_utils::{
     budget::mem_cost::MemoryCost,
     id_types::{
         ConfigRootId, DirectiveId, ExprId, ImplId, ImplMemberId, InternedIdUTF8, MemberId,
-        ModuleId, ScopeId, SymbolId, TypeId, ValueId, VariableId, id_tags::TaggedId,
+        ModuleId, ScopeId, SymbolId, TypeId, ValueInfoId, VariableId, id_tags::TaggedId,
     },
     intern,
     source_utils::source_span::SourceSpan,
@@ -73,7 +73,9 @@ pub struct ScriptCompiler {
     /// Contains every module's stored types
     pub types: Arena<TypeInfo, TypeId>,
     /// Held `ValueInfo`s
-    pub vals: Arena<ValueInfo, ValueId>,
+    pub val_infos: Arena<ValueInfo, ValueInfoId>,
+    //TODO:
+    // pub vals: Arena<Value, ValueId>,
     /// Held `Exprs`s
     pub exprs: Arena<ResolvedExpr, ExprId>,
     /// Held `Symbol`s
@@ -143,7 +145,7 @@ impl ScriptCompiler {
                     + core_helpers::CORE_FUNCS_DATASET.len()
                     + 1,
             ),
-            vals: Arena::with_capacity(ns_counts.variables),
+            val_infos: Arena::with_capacity(ns_counts.variables),
             exprs: Arena::with_capacity(ns_counts.variables),
             // Not sure if these should be put in their own separate constants comprised of their
             // own semantics or composed like this. Lets do nothing!
@@ -621,7 +623,7 @@ impl ScriptCompiler {
                 SymbolKind::Type(type_id) => *type_id,
                 SymbolKind::Variable(var_id) => match self.vars[*var_id].state {
                     VariableState::ReservedTypeSlot(type_id) => type_id,
-                    VariableState::Known(val_id) => self.vals[val_id].type_id,
+                    VariableState::Known(val_id) => self.val_infos[val_id].type_id,
                 },
                 SymbolKind::ExternType(_) | SymbolKind::Namespace => {
                     unreachable!()
@@ -638,7 +640,7 @@ impl ScriptCompiler {
                 SymbolKind::Type(type_id) => Some(*type_id),
                 SymbolKind::Variable(var_id) => match self.vars[*var_id].state {
                     VariableState::ReservedTypeSlot(type_id) => Some(type_id),
-                    VariableState::Known(val_id) => Some(self.vals[val_id].type_id),
+                    VariableState::Known(val_id) => Some(self.val_infos[val_id].type_id),
                 },
                 SymbolKind::ExternType(_) | SymbolKind::Namespace => None,
             },
@@ -1117,7 +1119,7 @@ impl ScriptCompiler {
         let type_id = self.register_instantiation_type(current_scope_id, base, &var.ty);
 
         let expr_id = self.exprs.make_id();
-        let val_id = self.vals.make_id();
+        let val_id = self.val_infos.make_id();
 
         let expr = ResolvedExpr::new(
             type_id,
@@ -1138,7 +1140,7 @@ impl ScriptCompiler {
 
         self.vars.push(var_def);
         self.exprs.push(expr);
-        self.vals.push(val_info);
+        self.val_infos.push(val_info);
     }
 
     // TEST:

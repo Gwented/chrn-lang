@@ -8,12 +8,14 @@
 //! is free to wrap the resulting strings in JSON, YAML, or anything else
 //! using its own escape module.
 
+use std::borrow::Cow;
+
 use chrn_utils::{
     arena::Arena,
     err_codes,
-    id_types::SourceRegionId,
+    id_types::{SourceId, SourceRegionId},
     intern::Intern,
-    source_utils::source_manager::SourceManager,
+    source_utils::source_manager::{SourceKind, SourceManager},
     source_utils::{
         source_diagnostic::{DiagnosticLevel, annotations::AnnotationKind},
         source_region::SourceRegion,
@@ -47,24 +49,42 @@ pub(super) fn annotation_kind_str(kind: AnnotationKind) -> &'static str {
     }
 }
 
-/// Resolves a `SourceRegionId` to its source label when both the region
-/// arena is available and the region is present in it.
-///
-/// Returns `None` for either "no arena" or "region not found", which lets
-/// callers collapse both cases into a single "emit `null`" branch.
-pub(super) fn resolve_region_source(
+/// Stored source metadata. Display fallbacks belong only in terminal output.
+#[derive(Default)]
+pub(super) struct SourceMetadata<'a> {
+    pub name: Option<&'a str>,
+    pub path: Option<Cow<'a, str>>,
+}
+
+pub(super) fn resolve_source<'a>(
+    src_manager: &'a SourceManager,
+    interner: &'a Intern,
+    src_id: SourceId,
+) -> SourceMetadata<'a> {
+    match src_manager.extract_source(src_id) {
+        SourceKind::Path(source) => SourceMetadata {
+            name: None,
+            path: Some(source.path.to_string_lossy()),
+        },
+        SourceKind::InMemory(source) => SourceMetadata {
+            name: source.name.map(|name| interner.extract_utf8_str(name)),
+            path: None,
+        },
+    }
+}
+
+/// Resolve metadata through the span's own region; missing regions have no metadata.
+pub(super) fn resolve_region_source<'a>(
     region_arena_opt: Option<&Arena<SourceRegion, SourceRegionId>>,
-    src_manager: &SourceManager,
-    interner: &Intern,
+    src_manager: &'a SourceManager,
+    interner: &'a Intern,
     region_id: SourceRegionId,
-) -> Option<String> {
-    let arena = region_arena_opt?;
-    let region = arena.get(region_id)?;
-    Some(
-        src_manager
-            .display_source(region.src_id, interner)
-            .into_owned(),
-    )
+) -> SourceMetadata<'a> {
+    region_arena_opt
+        .and_then(|arena| arena.get(region_id))
+        .map_or_else(SourceMetadata::default, |region| {
+            resolve_source(src_manager, interner, region.src_id)
+        })
 }
 
 /// Projects a span's `start`/`end` from region-relative offsets to

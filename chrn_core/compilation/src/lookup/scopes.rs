@@ -76,7 +76,7 @@ pub fn find_type_id(
                     SymbolKind::Variable(var_id) => {
                         let type_id = match compiler.vars[*var_id].state {
                             VariableState::ReservedTypeSlot(type_id) => type_id,
-                            VariableState::Known(val_id) => compiler.vals[val_id].type_id,
+                            VariableState::Known(val_id) => compiler.val_infos[val_id].type_id,
                         };
 
                         return Some(type_id);

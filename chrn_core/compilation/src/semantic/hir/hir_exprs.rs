@@ -1,5 +1,5 @@
 use chrn_utils::{
-    id_types::{AstId, ExprId, SymbolId, TypeId, ValueId},
+    id_types::{AstId, ExprId, SymbolId, TypeId, ValueInfoId},
     source_utils::source_span::SourceSpan,
 };
 
@@ -44,14 +44,14 @@ pub struct ResolvedExpr {
     // This is not an option type even though `Value` as an `Option<Value>` because symbols are
     // already represented as unknown from `SymbolKind` and `Value` types already have the metadata
     // of their type and if they have a const value inside.
-    pub val_id: ValueId,
+    pub val_id: ValueInfoId,
 }
 
 impl ResolvedExpr {
     pub fn new(
         type_id: TypeId,
         expr_hir: ExprHir,
-        val_id: ValueId,
+        val_id: ValueInfoId,
         meta: ResolvedExprMetadata,
         inputs: Vec<ExprId>,
     ) -> ResolvedExpr {
@@ -90,7 +90,7 @@ impl ResolvedExprMetadata {
 pub enum ExprHir {
     // I believe this is literal?
     /// Literal
-    LiteralVal(ValueId),
+    LiteralVal(ValueInfoId),
     Var(SymbolId),
     // Hi default
     Default(ExprId, ExprId),
@@ -116,6 +116,6 @@ pub enum ExprHir {
 pub(crate) enum PossibleMember {
     Type(TypeId),
     // Member(MemberId),
-    Var(ValueId),
+    Var(ValueInfoId),
     Nothing,
 }

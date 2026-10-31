@@ -146,7 +146,7 @@ impl<'a> ConstraintResolver<'a> {
             //What about a general value formatting kind where it may be a literal or variable? Tokens
             //know if they're a literal so.
             let expr = &self.compiler.exprs[args.inner[schema_arg_idx]];
-            let val_opt = &self.compiler.vals[expr.val_id].const_val;
+            let val_opt = &self.compiler.val_infos[expr.val_id].const_val;
 
             // Was already reported so we need to skip
             let Some(val) = &val_opt else {
@@ -419,7 +419,7 @@ impl<'a> ConstraintResolver<'a> {
         // This seems like something that should be an error earlier since an array with unfinished
         // values after full type resolution is just plainly broken as of right now. Need some layer
         // before this that can serve this as a guarantee
-        let const_array = self.compiler.vals[val_id]
+        let const_array = self.compiler.val_infos[val_id]
             .const_val
             .as_ref()
             .expect("NOT DONE YET");

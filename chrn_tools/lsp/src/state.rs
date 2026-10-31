@@ -2294,7 +2294,7 @@ impl RefCollector<'_> {
         let VariableState::Known(val_id) = self.compiler.vars[var_id].state else {
             return None;
         };
-        Some(self.compiler.vals[val_id].type_id)
+        Some(self.compiler.val_infos[val_id].type_id)
     }
 
     /// Walks a `complex->` config block and its nested members.

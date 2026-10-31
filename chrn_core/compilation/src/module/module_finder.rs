@@ -1,6 +1,5 @@
 //! Module graph building parser that understands just enough to get `Bind` and `Import`
-//FIXME: Brkoenj
-use chrn_utils::source_utils::source_manager::SourceManager;
+use chrn_utils::source_utils::source_manager::{SourceInMemory, SourceKind, SourceManager};
 use std::path::PathBuf;
 
 use chrn_utils::err_codes::ErrorCode;
@@ -35,6 +34,8 @@ pub struct ModuleFinder<'a> {
     cursor: BasicCursor<'a, u8>,
     cfg: &'a ChrnConfig,
     summary: SourceDiagnosticSummary,
+    /// Prevents `peek_behind_char` from potentially reading p"" strings which do not need to be UTF-8
+    last_end_quote_pos: Option<usize>,
     /// Path origin so that errors can accurately report the path where the import was declared
     current_region: &'a SourceRegion,
 }
@@ -48,11 +49,13 @@ impl ModuleFinder<'_> {
         ModuleFinder {
             cursor: BasicCursor::new(src_bytes),
             cfg,
+            last_end_quote_pos: Some(0),
             current_region,
             summary: SourceDiagnosticSummary::default(),
         }
     }
 
+    //FIXME: Several several bugs
     /// Returns a tuple with `Bind` and all imports found on `Ok`.
     /// Returns `ConfigLoadError` on `Err`
     pub fn collect_imports(
@@ -87,21 +90,15 @@ impl ModuleFinder<'_> {
                         self.cursor.skip(1);
                     }
                 }
-                // Should probably just work with &str directly at this point
                 c if c == b'i' || c == b'b' => {
-                    // The operation requires a full utf-8 check
-                    let prev_ch = self.peek_behind_char(1);
-                    // WARN: band-aid :(
-                    // The real fix to this is to make the parser more capable, which is not allowed. The
-                    // parser stays this way for a large set of unexplained reasons that may change.
-                    let can_check = prev_ch.is_whitespace()
-                        // Start should always be valid
-                        || self.cursor.pos() == 0
-                        // Same as checking for start of file
+                    let prev_ch = self.peek_behind_char();
+
+                    let at_file_start = self.cursor.pos() == 0
                         || (self.cursor.pos() == keywords::EMBEDDING_CLAUSE_SIZE
-                            // Is + 1 because we haven't actually advanced
-                        && &self.cursor.items[0..keywords::EMBEDDING_CLAUSE_SIZE]
-                            == b"@def");
+                            && &self.cursor.items[0..keywords::EMBEDDING_CLAUSE_SIZE] == b"@def");
+
+                    // These checks are needed for the parser to stay simple
+                    let can_check = prev_ch.is_whitespace() || at_file_start;
 
                     if can_check {
                         if c == b'i' && self.is_import() {
@@ -139,7 +136,7 @@ impl ModuleFinder<'_> {
         (bind, imports, summary)
     }
 
-    /// Assumes the starting point is at the start quote
+    /// Assumes the starting point is at the opening quote
     fn parse_import(
         &mut self,
         interner: &mut Intern,
@@ -182,7 +179,6 @@ impl ModuleFinder<'_> {
         // Solely for the intent of giving a more descriptive error
         if saw_backslash {
             let core_msg = "Only '/' can be used as path separators.".to_string();
-
             //NOTE: Maybe an error code?
             let src_diag = SourceDiagnostic::builder(
                 ErrorCode::ImportErr.into(),
@@ -196,6 +192,7 @@ impl ModuleFinder<'_> {
             return Err(src_diag);
         }
 
+        //TODO: Need to have a path for in memory
         let path_buf = self.create_pathbuf(&self.cursor.items[start_cursor..end_cursor])?;
 
         let import_path = match path_buf.canonicalize() {
@@ -203,7 +200,6 @@ impl ModuleFinder<'_> {
             Err(e) => {
                 let core_msg =
                     core_error::form_string_from_io_err(&e, &path_buf).unwrap_or(e.to_string());
-
                 let src_diag = SourceDiagnostic::builder(
                     ErrorCode::ImportErr.into(),
                     DiagnosticLevel::Error,
@@ -276,7 +272,6 @@ impl ModuleFinder<'_> {
     }
 
     //WARN: Will be placed in different module
-    //FIX: ugf3 8
     fn create_pathbuf(&self, slice: &[u8]) -> Result<PathBuf, SourceDiagnostic> {
         match files::pathbuf_from_bytes(slice) {
             Ok(p) => Ok(p),
@@ -405,36 +400,30 @@ impl ModuleFinder<'_> {
 
         interner.intern_str(&id_str)
     }
-    //FIX: Perf perf perf perf perfff
 
-    fn peek_behind_char(&self, dest: usize) -> char {
+    /// Returns previous character
+    fn peek_behind_char(&self) -> char {
+        let start = self.last_end_quote_pos.unwrap_or_default();
         // Inclusive since otherwise it would skip the current character and there would need to be
         // a saturating sub to make up for it
-        let chunk = &self.cursor.items[0..=self.cursor.pos()];
+        let chunk = &self.cursor.items[start..=self.cursor.pos()];
 
-        //TODO: Fix forced validation
-        // This is a bug. Call it a bug.
-        // BUG: <- Bug
         std::str::from_utf8(chunk)
             .ok()
-            .and_then(|c| c.chars().rev().skip(dest).next())
+            .and_then(|c| c.chars().rev().skip(1).next())
             .unwrap_or('\0')
-    }
-
-    fn peek_behind(&self, dest: usize) -> u8 {
-        assert!(dest <= self.cursor.pos(), "cursor position underflow");
-        self.cursor.peek_behind_owned_checked(dest).unwrap_or(b'\0')
     }
 
     fn skip_quotes(&mut self) {
         while self.cursor.pos() < self.cursor.len() {
             match self.peek() {
                 b'\\' => {
+                    // Is this needed?
                     self.cursor.skip(1);
-
                     self.read_escape();
                 }
                 b'"' => {
+                    self.last_end_quote_pos = Some(self.cursor.pos());
                     self.cursor.skip(1);
                     break;
                 }
@@ -566,7 +555,6 @@ impl ModuleFinder<'_> {
             return false;
         }
 
-        //FIX: Utf 98
         self.skip_whitespace();
 
         if module_concepts::STR_PREFIXES.contains(&self.peek()) {
@@ -613,14 +601,28 @@ impl ModuleFinder<'_> {
             return b as char;
         }
 
-        let chunk = &self.cursor.items[self.cursor.pos()..];
+        let closest_end = self.get_next_ascii_character(self.cursor.pos());
+        let chunk = &self.cursor.items[self.cursor.pos()..closest_end];
 
         // Should be a test for this this is suspicious
         // Lazy evaluation to avoid utf-8 checking entire self.bytes
+        let x = std::str::from_utf8(chunk);
         std::str::from_utf8(chunk)
             .ok()
             .and_then(|c| c.chars().next())
-            .unwrap_or('\0')
+            .unwrap_or('\0');
+        dbg!(x);
+        panic!();
+    }
+
+    /// From `start` returns position of next ascii character.
+    /// Returns `self.cursor.len()` if all found characters are non-ascii
+    fn get_next_ascii_character(&self, start: usize) -> usize {
+        let mut closest_end = start;
+        while !self.peek().is_ascii() && closest_end < self.cursor.len() {
+            closest_end += 1;
+        }
+        closest_end
     }
 
     fn advance_char(&mut self) -> char {

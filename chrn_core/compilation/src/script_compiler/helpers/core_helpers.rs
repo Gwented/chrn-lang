@@ -1,7 +1,7 @@
 //! Compiler generated compiler-specific helpers
 
-use chrn_utils::{id_types::InternedId, intern::UTF8Tag};
 use chrn_utils::intern;
+use chrn_utils::{id_types::InternedId, intern::UTF8Tag};
 use dashu_int::IBig;
 use lang::types::{boundaries::TypeBoundaryFlags, builtins::BuiltinType};
 
@@ -818,6 +818,7 @@ static NAMESPACE_CHAR: [InstantiationSymbolBase; 22] = [
         InstiationType::BuiltinType(BuiltinType::Char),
         InstiationValue::Char(char::MIN),
     )),
+    // Should chrn specific metadata be more so CHRN_BITS or is that odd?
     new_bits(32),
     new_bytes(4),
     new_char_const(intern::INTERNED_NUL, '\0'),

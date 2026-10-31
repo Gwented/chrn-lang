@@ -36,12 +36,29 @@ pub struct SourcePath {
     pub path: PathBuf,
 }
 
+impl SourcePath {
+    pub fn new(path: PathBuf) -> Self {
+        Self { path }
+    }
+}
+
+//TODO: Kind of want something lkie "''''efl'afl'aefae" "imp virtual" what if import was imp?
+// `import virtual "name"` where "name" is injected with a src. May still consider v"" but that
+// seems like it's coupling string prefixes with syntactic properties, already turning it into vp""
+// This could be implicit where if a "virtual" source exists, doing `import "thingy"` will search
+// virtual first, see it, then process as normal, but would like for this to be more explicit at
+// least for now.
 /// Metadata for an in-memory source.
 #[derive(Debug)]
 pub struct SourceInMemory {
-    /// Optional display label, interned in the associated string interner.
-    /// Labels do not determine source identity and need not be unique.
+    /// Optional display name
     pub name: Option<InternedIdUTF8>,
+}
+
+impl SourceInMemory {
+    pub fn new(name: Option<InternedIdUTF8>) -> Self {
+        Self { name }
+    }
 }
 
 impl SourceManager {
@@ -67,7 +84,7 @@ impl SourceManager {
         let id = SourceId::new(self.srcs.len() as u32).into_tagged::<PathTag>();
         let path = path.to_path_buf();
         self.srcs
-            .push(SourceKind::Path(SourcePath { path: path.clone() }));
+            .push(SourceKind::Path(SourcePath::new(path.clone())));
         self.path_to_src_id.insert(path, id);
         id
     }
@@ -79,7 +96,7 @@ impl SourceManager {
     ) -> TaggedId<SourceId, InMemoryTag> {
         let id = SourceId::new(self.srcs.len() as u32).into_tagged::<InMemoryTag>();
         self.srcs
-            .push(SourceKind::InMemory(SourceInMemory { name }));
+            .push(SourceKind::InMemory(SourceInMemory::new(name)));
         id
     }
 

@@ -581,7 +581,7 @@ impl<'res> TypeResolver<'res> {
         };
 
         let expr = &self.compiler.exprs[expr_id];
-        let val = &self.compiler.vals[expr.val_id];
+        let val = &self.compiler.val_infos[expr.val_id];
 
         let has_resolved_ty = !self.compiler.check_unknown(expr.type_id);
         let has_const_val = val.const_val.is_some();
@@ -936,7 +936,7 @@ impl<'res> TypeResolver<'res> {
 
             //TODO: SHOULD THIS BE A VARIABLE?
             let expr_id = self.compiler.exprs.make_id();
-            let val_id = self.compiler.vals.make_id();
+            let val_id = self.compiler.val_infos.make_id();
 
             let type_id = match resolution_helpers::resolve_type_expr_ret_preset(
                 self.compiler,
@@ -996,7 +996,7 @@ impl<'res> TypeResolver<'res> {
             self.compiler.syms.push(param_sym);
             self.compiler.vars.push(var);
             self.compiler.exprs.push(resolved_expr);
-            self.compiler.vals.push(val_info);
+            self.compiler.val_infos.push(val_info);
 
             let local_scope = &mut self.compiler.get_scope_mut(local_scope_id).scope;
             local_scope
@@ -2739,7 +2739,7 @@ impl<'res> TypeResolver<'res> {
                     };
 
                     if pending_sym.has_resolved_ty {
-                        let val_info = &pending_env.compiler.vals[val_id];
+                        let val_info = &pending_env.compiler.val_infos[val_id];
                         let other_type_id = val_info.type_id;
 
                         // Avoid creating a self-referential `Deferred` type when the pending
@@ -2752,7 +2752,7 @@ impl<'res> TypeResolver<'res> {
                                 Type::Deferred(other_type_id);
                         }
 
-                        let inner_val = &mut pending_env.compiler.vals[root_expr.val_id];
+                        let inner_val = &mut pending_env.compiler.val_infos[root_expr.val_id];
                         if inner_val.type_id != other_type_id {
                             pending_env.compiler.types[inner_val.type_id].ty =
                                 Type::Deferred(other_type_id);
@@ -2760,13 +2760,13 @@ impl<'res> TypeResolver<'res> {
                     }
 
                     if pending_sym.has_const_val {
-                        let val_info = &pending_env.compiler.vals[val_id];
+                        let val_info = &pending_env.compiler.val_infos[val_id];
                         // Clone could be circumvented by creating ANOTHER arena, which only
                         // contains `Value` types, which would mean the metadata of values is
                         // not directly tied to the const value, but not sure if that's worth it here.
                         let const_val_opt = val_info.const_val.clone();
 
-                        let inner_val = &mut pending_env.compiler.vals[root_expr.val_id];
+                        let inner_val = &mut pending_env.compiler.val_infos[root_expr.val_id];
                         inner_val.const_val = const_val_opt;
                     }
                 }
@@ -2950,7 +2950,7 @@ impl<'res> TypeResolver<'res> {
         current_expr_id: ExprId,
     ) -> Result<(bool, bool), PresetErr> {
         let expr = &pending_env.compiler.exprs[current_expr_id];
-        let val_info = &pending_env.compiler.vals[expr.val_id];
+        let val_info = &pending_env.compiler.val_infos[expr.val_id];
 
         let mut has_resolved_ty = !pending_env.compiler.check_unknown(expr.type_id);
         let mut has_const_val = val_info.const_val.is_some();
@@ -2973,7 +2973,7 @@ impl<'res> TypeResolver<'res> {
 
                 has_resolved_ty = true;
 
-                let operand_val_info = &pending_env.compiler.vals[operand_expr.val_id];
+                let operand_val_info = &pending_env.compiler.val_infos[operand_expr.val_id];
 
                 // Basic validation of expression to see if it's const or runtime
                 let const_val_opt = if let Some(const_val) = &operand_val_info.const_val {
@@ -3014,7 +3014,7 @@ impl<'res> TypeResolver<'res> {
                 pending_env.compiler.types[expr.type_id].ty = Type::Deferred(new_type_id);
 
                 // Mutating inner value so that the symbol using this value reflects the new
-                let inner_val = &mut pending_env.compiler.vals[expr.val_id];
+                let inner_val = &mut pending_env.compiler.val_infos[expr.val_id];
                 pending_env.compiler.types[inner_val.type_id].ty = Type::Deferred(new_type_id);
                 inner_val.const_val = const_val_opt;
             }
@@ -3042,10 +3042,10 @@ impl<'res> TypeResolver<'res> {
                 has_resolved_ty = true;
 
                 // Composing this so it can be matched cleanly for if const eval can be performed
-                let lhs_val_opt = pending_env.compiler.vals[lhs_expr.val_id]
+                let lhs_val_opt = pending_env.compiler.val_infos[lhs_expr.val_id]
                     .const_val
                     .as_ref();
-                let rhs_val_opt = pending_env.compiler.vals[rhs_expr.val_id]
+                let rhs_val_opt = pending_env.compiler.val_infos[rhs_expr.val_id]
                     .const_val
                     .as_ref();
 
@@ -3116,7 +3116,7 @@ impl<'res> TypeResolver<'res> {
                 // dbg!(expr.type_id, new_type_id);
                 // compiler.types[expr.type_id ].ty = panic!();
 
-                let inner_val = &mut pending_env.compiler.vals[expr.val_id];
+                let inner_val = &mut pending_env.compiler.val_infos[expr.val_id];
                 inner_val.type_id = new_type_id;
                 // compiler.types[inner_val.type_id ].ty = Type::Deferred(new_type_id);
                 inner_val.const_val = const_val_opt;
@@ -3167,7 +3167,7 @@ impl<'res> TypeResolver<'res> {
                         }
                     }
 
-                    let val_info = &pending_env.compiler.vals[expr.val_id];
+                    let val_info = &pending_env.compiler.val_infos[expr.val_id];
                     if val_info.const_val.is_some() {
                         found_const_vals += 1;
                     }
@@ -3183,7 +3183,7 @@ impl<'res> TypeResolver<'res> {
                         // This could be avoided by adding a separation between value
                         // info vector and the actual value, where value ids would purely contain
                         // the value and not ruin associated metadata.
-                        let val = pending_env.compiler.vals[*val_id]
+                        let val = pending_env.compiler.val_infos[*val_id]
                             .const_val
                             .as_ref()
                             .expect("Previous loop failed")
@@ -3193,7 +3193,7 @@ impl<'res> TypeResolver<'res> {
                     }
 
                     let array_expr = &mut pending_env.compiler.exprs[current_expr_id];
-                    let array_val = &mut pending_env.compiler.vals[array_expr.val_id];
+                    let array_val = &mut pending_env.compiler.val_infos[array_expr.val_id];
                     array_val.const_val = Some(Value::List(values));
                 }
 
@@ -3208,7 +3208,7 @@ impl<'res> TypeResolver<'res> {
                             //TODO: Maybe current module id but this doesn't really matter right now
                             pending_env.compiler.intrinsic_registry.core_mod_id,
                         );
-                        pending_env.compiler.vals[array.val_id].type_id = array.type_id;
+                        pending_env.compiler.val_infos[array.val_id].type_id = array.type_id;
                         has_resolved_ty = true;
                     }
                 }
@@ -3298,7 +3298,7 @@ impl<'res> TypeResolver<'res> {
                                     unreachable!("Not possible right now")
                                 };
 
-                                let type_id = self.compiler.vals[val_id].type_id;
+                                let type_id = self.compiler.val_infos[val_id].type_id;
 
                                 ResolvedExpr::new(
                                     type_id,
@@ -3353,9 +3353,9 @@ impl<'res> TypeResolver<'res> {
                             //function-like entity
                             match &ty_info.ty {
                                 Type::Func(_) | Type::Alias(_) => {
-                                    let val_id = self.compiler.vals.make_id();
+                                    let val_id = self.compiler.val_infos.make_id();
                                     let val_info = ValueInfo::new(type_id, expr_id, None);
-                                    self.compiler.vals.push(val_info);
+                                    self.compiler.val_infos.push(val_info);
 
                                     let expr_hir = ExprHir::Var(found_sym_id);
 
@@ -3401,7 +3401,7 @@ impl<'res> TypeResolver<'res> {
                             match var.state {
                                 // A type and possibly const val is attached to the variable found
                                 VariableState::Known(val_id) => {
-                                    let val_info = &self.compiler.vals[val_id];
+                                    let val_info = &self.compiler.val_infos[val_id];
 
                                     // The type or const value of the variable is unknown meaning it still needs
                                     // to await
@@ -3454,10 +3454,10 @@ impl<'res> TypeResolver<'res> {
 
                                     // Creates value id that has an unknown type, no constant value, and an
                                     // unresolved expression.
-                                    let val_id = self.compiler.vals.make_id();
+                                    let val_id = self.compiler.val_infos.make_id();
                                     let val_info = ValueInfo::new(reserved_ty_id, expr_id, None);
 
-                                    self.compiler.vals.push(val_info);
+                                    self.compiler.val_infos.push(val_info);
 
                                     ResolvedExpr::new(
                                         reserved_ty_id,
@@ -3536,7 +3536,7 @@ impl<'res> TypeResolver<'res> {
                 // Getting what it's spot would be when it's expression and value parts are
                 // pushed
                 let expr_id = self.compiler.exprs.make_id();
-                let val_id = self.compiler.vals.make_id();
+                let val_id = self.compiler.val_infos.make_id();
 
                 // Creating it's default type to the literal value of integer, as well as it's
                 // expression of just being a singular value type
@@ -3577,14 +3577,14 @@ impl<'res> TypeResolver<'res> {
 
                 let val_info = ValueInfo::new(type_id, expr_id, Some(val));
 
-                self.compiler.vals.push(val_info);
+                self.compiler.val_infos.push(val_info);
                 self.compiler.exprs.push(resolved_expr);
 
                 Ok(expr_id)
             }
             AstExpr::Float(name_id, _) => {
                 let expr_id = self.compiler.exprs.make_id();
-                let val_id = self.compiler.vals.make_id();
+                let val_id = self.compiler.val_infos.make_id();
 
                 let expr_hir = ExprHir::LiteralVal(val_id);
 
@@ -3620,7 +3620,7 @@ impl<'res> TypeResolver<'res> {
                 let val = Value::ArbitraryFloat(kind);
                 let val_info = ValueInfo::new(type_id, expr_id, Some(val));
 
-                self.compiler.vals.push(val_info);
+                self.compiler.val_infos.push(val_info);
                 self.compiler.exprs.push(expr);
 
                 Ok(expr_id)
@@ -3653,8 +3653,8 @@ impl<'res> TypeResolver<'res> {
                 // Can't look at the word "clean" the same again.
 
                 // Composing this so it can be matched cleanly for if const eval can be performed
-                let lhs_val_opt = self.compiler.vals[lhs_expr.val_id].const_val.as_ref();
-                let rhs_val_opt = self.compiler.vals[rhs_expr.val_id].const_val.as_ref();
+                let lhs_val_opt = self.compiler.val_infos[lhs_expr.val_id].const_val.as_ref();
+                let rhs_val_opt = self.compiler.val_infos[rhs_expr.val_id].const_val.as_ref();
 
                 // This just checks if both are const, not if they were comptaible in the first
                 // place. So, if it's not a comptaible binary, that could either mean 2 + "hi" or 2
@@ -3704,7 +3704,7 @@ impl<'res> TypeResolver<'res> {
                     _ => None,
                 };
 
-                let val_id = self.compiler.vals.make_id();
+                let val_id = self.compiler.val_infos.make_id();
                 let expr_id = self.compiler.exprs.make_id();
 
                 let expr_hir = ExprHir::BinaryExpr {
@@ -3763,18 +3763,18 @@ impl<'res> TypeResolver<'res> {
                 let val_info = ValueInfo::new(type_id, expr_id, const_val_opt);
 
                 self.compiler.exprs.push(resolved_expr);
-                self.compiler.vals.push(val_info);
+                self.compiler.val_infos.push(val_info);
 
                 Ok(expr_id)
             }
             AstExpr::Char(c) => {
                 let expr_id = self.compiler.exprs.make_id();
-                let val_id = self.compiler.vals.make_id();
+                let val_id = self.compiler.val_infos.make_id();
                 let type_id = TypeId::new(compiler_consts::CORE_CHAR);
 
                 let val = Value::Char(*c);
                 let val_info = ValueInfo::new(type_id, expr_id, Some(val));
-                self.compiler.vals.push(val_info);
+                self.compiler.val_infos.push(val_info);
 
                 let expr_hir = ExprHir::LiteralVal(val_id);
                 let resolved_expr = ResolvedExpr::new(
@@ -3790,7 +3790,7 @@ impl<'res> TypeResolver<'res> {
             }
             AstExpr::Default(ident_expr, spanned_expr) => {
                 let expr_id = self.compiler.exprs.make_id();
-                let val_id = self.compiler.vals.make_id();
+                let val_id = self.compiler.val_infos.make_id();
 
                 //WARN: SUSPICIOUS
                 let default_ident_expr_id = self.register_expr(
@@ -3840,13 +3840,13 @@ impl<'res> TypeResolver<'res> {
             }
             AstExpr::Str(name_id) => {
                 let expr_id = self.compiler.exprs.make_id();
-                let val_id = self.compiler.vals.make_id();
+                let val_id = self.compiler.val_infos.make_id();
 
                 let type_id = TypeId::new(compiler_consts::CORE_STR);
 
                 let val = Value::InternedStr(*name_id);
                 let val_info = ValueInfo::new(type_id, expr_id, Some(val));
-                self.compiler.vals.push(val_info);
+                self.compiler.val_infos.push(val_info);
 
                 let expr_hir = ExprHir::LiteralVal(val_id);
                 let resolved_expr = ResolvedExpr::new(
@@ -3874,7 +3874,7 @@ impl<'res> TypeResolver<'res> {
 
                 let is_unknown = self.compiler.check_unknown(operand_expr.type_id);
 
-                let operand_val_opt = &self.compiler.vals[operand_expr.val_id];
+                let operand_val_opt = &self.compiler.val_infos[operand_expr.val_id];
 
                 let const_val_opt = if let Some(const_val) = &operand_val_opt.const_val {
                     let operand_span = operand_expr.meta.expect_user();
@@ -3904,7 +3904,7 @@ impl<'res> TypeResolver<'res> {
                     None
                 };
 
-                let val_id = self.compiler.vals.make_id();
+                let val_id = self.compiler.val_infos.make_id();
                 let unary_expr_id = self.compiler.exprs.make_id();
 
                 let expr_hir = ExprHir::Unary {
@@ -3938,7 +3938,7 @@ impl<'res> TypeResolver<'res> {
                 self.compiler.exprs[operand_id].user = Some(unary_expr_id);
 
                 let val_info = ValueInfo::new(type_id, unary_expr_id, const_val_opt);
-                self.compiler.vals.push(val_info);
+                self.compiler.val_infos.push(val_info);
 
                 Ok(unary_expr_id)
             }
@@ -3948,7 +3948,7 @@ impl<'res> TypeResolver<'res> {
                 let type_id = TypeId::new(compiler_consts::CORE_BOOL);
 
                 let expr_id = self.compiler.exprs.make_id();
-                let val_id = self.compiler.vals.make_id();
+                let val_id = self.compiler.val_infos.make_id();
 
                 let val = Value::Bool(*boolean);
                 let val_info = ValueInfo::new(type_id, expr_id, Some(val));
@@ -3963,7 +3963,7 @@ impl<'res> TypeResolver<'res> {
                 );
 
                 self.compiler.exprs.push(resolved_expr);
-                self.compiler.vals.push(val_info);
+                self.compiler.val_infos.push(val_info);
 
                 Ok(expr_id)
             }
@@ -3995,7 +3995,7 @@ impl<'res> TypeResolver<'res> {
                 }
 
                 let expr_id = self.compiler.exprs.make_id();
-                let val_id = self.compiler.vals.make_id();
+                let val_id = self.compiler.val_infos.make_id();
 
                 let inputs = call_args.clone();
 
@@ -4011,7 +4011,7 @@ impl<'res> TypeResolver<'res> {
                 let val_info = ValueInfo::new(type_id, expr_id, None);
 
                 self.compiler.exprs.push(resolved_expr);
-                self.compiler.vals.push(val_info);
+                self.compiler.val_infos.push(val_info);
 
                 Ok(expr_id)
             }
@@ -4113,7 +4113,7 @@ impl<'res> TypeResolver<'res> {
                     )?;
 
                     let expr = &self.compiler.exprs[expr_id];
-                    let val_info = &self.compiler.vals[expr.val_id];
+                    let val_info = &self.compiler.val_infos[expr.val_id];
                     //TODO: Typechecker?
                     dbg!(&val_info, &self.compiler.types[val_info.type_id]);
 
@@ -4201,7 +4201,7 @@ impl<'res> TypeResolver<'res> {
 
                     for expr_id in &array {
                         let expr = &self.compiler.exprs[*expr_id];
-                        let val_info = &self.compiler.vals[expr.val_id];
+                        let val_info = &self.compiler.val_infos[expr.val_id];
                         //FIXME: If this is an array the clone is huge.
                         let val = val_info
                             .const_val
@@ -4233,7 +4233,7 @@ impl<'res> TypeResolver<'res> {
                 };
 
                 // Um?
-                let array_val_id = self.compiler.vals.make_id();
+                let array_val_id = self.compiler.val_infos.make_id();
                 let val_info = ValueInfo::new(array_type_id, array_expr_id, const_val_opt);
 
                 let array_expr_hir = ExprHir::Array(array);
@@ -4246,7 +4246,7 @@ impl<'res> TypeResolver<'res> {
                     inputs,
                 );
 
-                self.compiler.vals.push(val_info);
+                self.compiler.val_infos.push(val_info);
                 self.compiler.exprs.push(resolved_expr);
 
                 Ok(array_expr_id)

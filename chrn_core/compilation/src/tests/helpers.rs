@@ -271,7 +271,7 @@ pub(super) use chrn_utils::{
     arena::Arena,
     budget::mem_budget::{BudgetResult, MemoryBudgetUsize},
     core_error::ConfigLoadError,
-    id_types::{InternedIdUTF8, ModuleId, SourceRegionId, SymbolId, ValueId},
+    id_types::{InternedIdUTF8, ModuleId, SourceRegionId, SymbolId, ValueInfoId},
     intern::Intern,
     source_utils::{
         source_diagnostic::{DiagnosticLevel, SourceDiagnostic, SourceDiagnosticSummary},
@@ -633,7 +633,7 @@ pub(super) fn value_of(compiler: &ScriptCompiler, interner: &Intern, name: &str)
     let var_def = find_user_var(compiler, name_id);
 
     match &var_def.state {
-        VariableState::Known(value_id) => compiler.vals[*value_id]
+        VariableState::Known(value_id) => compiler.val_infos[*value_id]
             .const_val
             .clone()
             .unwrap_or_else(|| panic!("Variable '{}' has no constant value", name)),

@@ -66,18 +66,22 @@ fn source_names_render_without_regions_and_without_annotations() {
                     &interner,
                     &kind,
                 );
-                let field = if matches!(kind, RenderKind::Json(_)) {
-                    format!("\"path\":{space}\"{escaped_name}\"")
-                } else if id == named {
-                    format!("path: \"{escaped_name}\"")
+                let name_value = if id != named {
+                    "null".to_string()
                 } else {
-                    format!("path: {raw_name}")
+                    format!("\"{escaped_name}\"")
                 };
-                assert_eq!(
-                    rendered.matches(&field).count(),
-                    1,
-                    "{kind:?}, source {id:?}: {rendered}"
-                );
+                assert_field_count(&rendered, &kind, space, "source_name", &name_value, 1);
+                let path_value = if id == path {
+                    if matches!(kind, RenderKind::Json(_)) {
+                        "\"/fixture/main.chrn\""
+                    } else {
+                        "/fixture/main.chrn"
+                    }
+                } else {
+                    "null"
+                };
+                assert_field_count(&rendered, &kind, space, "path", path_value, 1);
             }
         }
     }
@@ -158,37 +162,147 @@ fn annotation_source_names_follow_their_own_regions() {
             &kind,
         );
         let json = matches!(kind, RenderKind::Json(_));
+        assert_field_count(&rendered, &kind, space, "region_path", "null", 2);
         for (key, json_value, yaml_value) in [
+            ("source_name", "null", "null"),
             ("path", "\"/fixture/main.chrn\"", "/fixture/main.chrn"),
             (
-                "region_path",
+                "region_source_name",
                 "\"編集中: \\\"source\"",
                 "\"編集中: \\\"source\"",
             ),
-            ("region_path", "\"source\"", "source"),
+            ("region_source_name", "null", "null"),
             ("start", "11", "11"),
             ("end", "14", "14"),
             ("start", "29", "29"),
             ("end", "32", "32"),
         ] {
             let value = if json { json_value } else { yaml_value };
-            let field = if json {
-                format!("\"{key}\":{space}{value}")
-            } else {
-                format!("{key}: {value}")
-            };
-            assert_eq!(
-                rendered.matches(&field).count(),
-                1,
-                "{kind:?}, {key}={value}: {rendered}"
-            );
-            let end = rendered.find(&field).unwrap() + field.len();
-            assert!(
-                matches!(rendered.as_bytes().get(end), Some(b',' | b'\n' | b'}')),
-                "{kind:?}, {key} must equal {value}, not a longer value: {rendered}"
-            );
+            assert_field_count(&rendered, &kind, space, key, value, 1);
+        }
+        let label_key = if json { "\"label\":" } else { "label:" };
+        let blocks: Vec<_> = rendered.split(label_key).skip(1).collect();
+        assert_eq!(blocks.len(), 2, "{kind:?}: {rendered}");
+        for (block, name, start, end) in [
+            (blocks[0], "\"編集中: \\\"source\"", "11", "14"),
+            (blocks[1], "null", "29", "32"),
+        ] {
+            assert_field_count(block, &kind, space, "region_source_name", name, 1);
+            assert_field_count(block, &kind, space, "region_path", "null", 1);
+            assert_field_count(block, &kind, space, "start", start, 1);
+            assert_field_count(block, &kind, space, "end", end, 1);
         }
     }
+}
+
+#[test]
+fn annotation_file_paths_and_unavailable_regions_keep_distinct_metadata() {
+    let interner = Intern::init();
+    let mut sources = SourceManager::new();
+    let diagnostic_source = sources.register_in_memory(None).inner();
+    let file_source = sources
+        .register_path(Path::new("/fixture/import.chrn"))
+        .inner();
+    let region_id = SourceRegionId::new(0);
+    let regions = Arena::from(vec![SourceRegion::new(
+        1,
+        0,
+        b"one".to_vec(),
+        region_id,
+        file_source,
+        17,
+        None,
+    )]);
+    let diagnostic = SourceDiagnostic::builder(
+        None,
+        DiagnosticLevel::Error,
+        "imported source",
+        diagnostic_source,
+    )
+    .add_annotation(
+        SourceSpan::new(region_id, 0, 3),
+        AnnotationKind::Primary,
+        None,
+    )
+    .add_annotation(
+        SourceSpan::new(SourceRegionId::new(99), 4, 9),
+        AnnotationKind::Secondary,
+        None,
+    )
+    .build();
+
+    for arena in [Some(&regions), None] {
+        for (kind, space) in structured_kinds() {
+            let rendered = renderer::render(
+                std::slice::from_ref(&diagnostic),
+                &[],
+                arena,
+                &sources,
+                &interner,
+                &kind,
+            );
+            let json = matches!(kind, RenderKind::Json(_));
+            assert_field_count(&rendered, &kind, space, "path", "null", 1);
+            assert_field_count(&rendered, &kind, space, "source_name", "null", 1);
+            for key in ["region_path", "region_source_name"] {
+                assert_field_count(
+                    &rendered,
+                    &kind,
+                    space,
+                    key,
+                    "null",
+                    if key == "region_path" && arena.is_some() {
+                        1
+                    } else {
+                        2
+                    },
+                );
+                if key == "region_path" && arena.is_some() {
+                    let value = if json {
+                        "\"/fixture/import.chrn\""
+                    } else {
+                        "/fixture/import.chrn"
+                    };
+                    assert_field_count(&rendered, &kind, space, key, value, 1);
+                }
+            }
+            for (key, value) in [
+                ("start", if arena.is_some() { "17" } else { "0" }),
+                ("end", if arena.is_some() { "20" } else { "3" }),
+                ("start", "4"),
+                ("end", "9"),
+            ] {
+                assert_field_count(&rendered, &kind, space, key, value, 1);
+            }
+        }
+    }
+}
+
+fn assert_field_count(
+    rendered: &str,
+    kind: &RenderKind,
+    space: &str,
+    key: &str,
+    value: &str,
+    expected: usize,
+) {
+    let field = if matches!(kind, RenderKind::Json(_)) {
+        format!("\"{key}\":{space}{value}")
+    } else {
+        format!("{key}: {value}")
+    };
+    let count = rendered
+        .match_indices(&field)
+        .filter(|(start, _)| {
+            let before = rendered[..*start].chars().next_back();
+            let after = rendered.as_bytes().get(start + field.len());
+            // Require complete keys and values, so `path` cannot match `region_path`
+            // and offset 1 cannot match 17.
+            !before.is_some_and(|c| c.is_alphanumeric() || c == '_')
+                && matches!(after, Some(b',' | b'\n' | b'}'))
+        })
+        .count();
+    assert_eq!(count, expected, "{kind:?}, {key}={value}: {rendered}");
 }
 
 fn structured_kinds() -> [(RenderKind, &'static str); 4] {

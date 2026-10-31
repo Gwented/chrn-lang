@@ -105,7 +105,9 @@ impl Lexer<'_> {
             self.handle_trivia();
 
             //TODO: What if the compiler just made things up?
-            if self.peek() == b'\0' || self.invalid_toks > MAX_INVALID_TOKS {
+            if (self.cursor.pos() >= self.cursor.len() && self.peek() == b'\0')
+                || self.invalid_toks > MAX_INVALID_TOKS
+            {
                 // Over-indexes if not subtracted
                 // Could be an empty file so needs saturation
                 //WARN: EXCLUSIVE SPANNING. NO LONGER DOES - 1 FOR eof_pos

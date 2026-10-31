@@ -1,7 +1,7 @@
 use chrn_utils::{
     id_types::{
         AstId, DirectiveId, ExprId, InternedIdUTF8, MemberId, ModuleId, ScopeId, SymbolId, TypeId,
-        ValueId, VariableId, id_tags::TaggedId,
+        ValueInfoId, VariableId, id_tags::TaggedId,
     },
     source_utils::source_span::SourceSpan,
     utils::containers::SpannedContainer,
@@ -213,7 +213,7 @@ impl VariableMetadata {
 #[derive(Debug)]
 pub enum VariableState {
     ReservedTypeSlot(TypeId),
-    Known(ValueId),
+    Known(ValueInfoId),
 }
 
 /// An enum that represents any sort of inner member that could exist within a given parent symbol.

@@ -58,7 +58,6 @@ pub fn is_same_ty(types: &Arena<TypeInfo, TypeId>, mut a_id: TypeId, mut b_id: T
                                 return false;
                             };
                         }
-                        // Is this right?
                         return true;
                     }
                     (BuiltinType::Map(a_key, a_val), BuiltinType::Map(b_key, b_val)) => {
@@ -144,8 +143,6 @@ where
     }
 }
 
-//What about just a general walk deferred function that prevents this same code from being written
-//everywhere
 /// Fields and variants encode the same type semantics so this is shared.
 ///
 /// Returns `true` if the type is a valid field or variant candidate, `false` if invalid

@@ -218,7 +218,7 @@ pub enum ImportKind {
     /// This means the import should NOT be touched in any resolution scenario, unless for
     /// reporting or storing metadata.
     ErrorSource(SpannedContainer<PathId>),
-    /// Core module originated importt
+    /// Core module originated import
     Core(ModuleId),
 }
 

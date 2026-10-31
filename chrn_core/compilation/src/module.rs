@@ -273,7 +273,8 @@ pub fn extract_modules(
             };
 
             //NOTE: If this were allowed, some odd behavior would exist, which should likely just
-            //be omitted entirely. This is the only location where anything "core" in identifier is stopped.
+            //be omitted entirely. This is the only domain where anything "reserved" in identifier
+            //is stopped.
             if let Err(mut builder) = ensure_not_reserved(imp.name_id, importer_path_id) {
                 builder = builder.add_annotation(sp_path_id.span, AnnotationKind::Primary, None);
                 summary.push_diag(builder.build());
