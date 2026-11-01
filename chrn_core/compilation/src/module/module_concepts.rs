@@ -6,8 +6,8 @@ use chrn_utils::{
     utils::containers::SpannedContainer,
 };
 
-//TODO: This is hard to find where should this go
-/// All known prefixes for strings such as p""
+// I document like an LLM
+/// All known prefixes for strings
 pub static STR_PREFIXES: [u8; 1] = [b'p'];
 
 //TODO:

@@ -254,7 +254,10 @@ fn cfg_incomplete_marker_preserves_unclosed_quote_diagnostic_test() {
             assert_eq!(region.src_bytes, input.as_bytes());
             assert_eq!(region.script_start, 0);
             assert_eq!(region.serial_start, None);
-            assert_eq!(diag.core_msg, "Unclosed quotes reached end of read limit");
+            assert_eq!(
+                diag.core_msg,
+                "Unclosed quotes"
+            );
             assert_eq!(diag.annotations.len(), 1);
             let primary = &diag.annotations[0];
             assert_eq!(primary.kind, AnnotationKind::Primary);

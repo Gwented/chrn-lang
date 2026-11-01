@@ -167,6 +167,7 @@ pub const INTERNED_UTF32_BYTES: u32 = 151;
 pub const INTERNED_UTF32_BITS: u32 = 152;
 pub const INTERNED_CHRN: u32 = 153;
 pub const INTERNED_MAX_NUMERIC_BITS: u32 = 154;
+pub const INTERNED_VIRTUAL: u32 = 155;
 
 // Collection,
 // CharacterMappable,
@@ -344,6 +345,7 @@ pub static PRELOADED_STRINGS: [(&str, u32); INTERNER_PRELOAD_SIZE] = [
     ("UTF32_BITS", INTERNED_UTF32_BITS),
     ("chrn", INTERNED_CHRN),
     ("max_numeric_bits", INTERNED_MAX_NUMERIC_BITS),
+    ("virtual", INTERNED_VIRTUAL),
 ];
 
 #[derive(Debug)]
@@ -366,7 +368,7 @@ pub struct Intern {
     stored_bytes: Vec<u8>,
 }
 
-pub const INTERNER_PRELOAD_SIZE: usize = (INTERNED_MAX_NUMERIC_BITS + 1) as usize;
+pub const INTERNER_PRELOAD_SIZE: usize = (INTERNED_VIRTUAL + 1) as usize;
 
 impl Intern {
     /// Creates interner that pre-loads itself with all defined interned string literals.

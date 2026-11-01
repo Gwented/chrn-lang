@@ -1,2 +1,2 @@
-let x = "/*"
-/* */import "../chrn_core/chrn_tests/other.chrn"
+/* *///import virtual "../chrn_core/chrn_tests/other.chrn"
+import virtual "../chrn_core/chrn_tests/other.chrn"

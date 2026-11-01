@@ -15,9 +15,9 @@ pub const END_CLAUSE_STR: &str = "@end";
 
 // To add a keyword, it must be added as a Keyword enum. The interner must intern it's identifier.
 /// All keywords for `chrn`
-pub static KEYWORDS_ARRAY: [&str; 15] = [
+pub static KEYWORDS_ARRAY: [&str; 16] = [
     "struct", "enum", "import", "export", "bind", "alias", "let", "change", "as", "in", "var",
-    "nest", "complex", "override", "for",
+    "nest", "complex", "override", "for", "virtual",
 ];
 
 // Keep a compact enum for code that prefers typed keyword identifiers.
@@ -39,6 +39,7 @@ pub enum Keyword {
     Override = 12,
     In = 13,
     For = 14,
+    Virtual = 15,
 }
 
 impl ChrnClassifiable for Keyword {
@@ -59,6 +60,7 @@ impl ChrnClassifiable for Keyword {
             Keyword::As => ChrnClassified::As,
             Keyword::In => ChrnClassified::In,
             Keyword::For => ChrnClassified::For,
+            Keyword::Virtual => ChrnClassified::Virtual,
         }
     }
 }
@@ -81,6 +83,7 @@ impl Keyword {
             Keyword::Override => intern::INTERNED_OVERRIDE,
             Keyword::In => intern::INTERNED_IN,
             Keyword::For => intern::INTERNED_FOR,
+            Keyword::Virtual => intern::INTERNED_VIRTUAL,
         };
         InternedId::new(id).into_tagged::<UTF8Tag>()
     }
@@ -92,7 +95,6 @@ impl Keyword {
         }
     }
 
-    // No. No this will not stay.
     /// Returns Some keyword that matches the given id or None
     pub fn try_from_interned_id(interned_id: InternedIdUTF8) -> Option<Keyword> {
         match interned_id.inner().id {
@@ -112,6 +114,7 @@ impl Keyword {
             intern::INTERNED_OVERRIDE => Some(Keyword::Override),
             intern::INTERNED_IN => Some(Keyword::In),
             intern::INTERNED_FOR => Some(Keyword::For),
+            intern::INTERNED_VIRTUAL => Some(Keyword::Virtual),
             _ => None,
         }
     }

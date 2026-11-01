@@ -2435,6 +2435,7 @@ impl LanguageServer for Backend {
             ("enum", CompletionItemKind::KEYWORD),
             ("change", CompletionItemKind::KEYWORD),
             ("for", CompletionItemKind::KEYWORD),
+            ("virtual", CompletionItemKind::KEYWORD),
             ("List", CompletionItemKind::STRUCT),
             ("Set", CompletionItemKind::STRUCT),
             ("Map", CompletionItemKind::STRUCT),

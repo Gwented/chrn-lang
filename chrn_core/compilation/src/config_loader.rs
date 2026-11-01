@@ -182,15 +182,21 @@ impl<R: Read> ConfigLoader<'_, R> {
                     };
 
                     if quote_type == b'"' {
+                        if double_quotes_seen == 0 {
+                            first_double_quote = Some(quote_start);
+                        }
                         double_quotes_seen += 1;
                     } else {
+                        if single_quotes_seen == 0 {
+                            first_single_quote = Some(quote_start)
+                        }
                         single_quotes_seen += 1;
                     }
 
                     match self.read_quotes(quote_type) {
                         QuoteResult::Success => (),
                         QuoteResult::Unclosed => {
-                            let core_msg = "Unclosed quotes reached end of read limit";
+                            let core_msg = "Unclosed quotes";
 
                             let rel_q_start = quote_start as u32;
                             let q_span = SourceSpan::new(
@@ -232,12 +238,6 @@ impl<R: Read> ConfigLoader<'_, R> {
                             let cfg_err = ConfigLoadError::IO(e);
                             return ConfigLoaderOutput::Broken(broken_region, cfg_err);
                         }
-                    }
-
-                    if quote_type == b'"' && double_quotes_seen == 1 {
-                        first_double_quote = Some(quote_start);
-                    } else if quote_type == b'\'' && single_quotes_seen == 1 {
-                        first_single_quote = Some(quote_start)
                     }
                 }
                 b'/' => {

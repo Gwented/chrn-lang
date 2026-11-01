@@ -6,7 +6,7 @@
 //!
 //! | Constant              | Indexed by                  | Length |
 //! |-----------------------|-----------------------------|--------|
-//! | [`KEYWORD_DOCS`]      | `Keyword as usize`          | 15     |
+//! | [`KEYWORD_DOCS`]      | `Keyword as usize`          | 16     |
 //! | [`BUILTIN_TYPE_DOCS`] | `BuiltinTypeKind as usize`  | 27     |
 //! | [`FUNC_DOCS`]         | `BuiltinFuncKind as usize`  | 7      |
 //! | [`DIRECTIVE_DOCS`]    | preloaded [`InternedIdUTF8`]     | 7      |
@@ -118,7 +118,7 @@ impl Document {
 /// Hover documentation for each Chern language keyword.
 ///
 /// Indexed by [`Keyword`] discriminant via [`Document::keyword_docs`].
-pub static KEYWORD_DOCS: [Document; 15] = [
+pub static KEYWORD_DOCS: [Document; 16] = [
     Document {
         key: "struct",
         description: "Declares a type with named fields in `nest->`",
@@ -565,6 +565,11 @@ for definitions::Item { idents = "Product" }
 ```
 The importing module's configuration takes priority over configuration for that type in the imported module. Relative imports use the server's working directory."#,
         ),
+    },
+    Document {
+        key: "virtual",
+        description: "Reserved keyword; not implemented",
+        example: None,
     },
 ];
 
@@ -1143,7 +1148,7 @@ mod tests {
     fn test_keyword_docs_len() {
         assert_eq!(
             KEYWORD_DOCS.len(),
-            15,
+            16,
             "KEYWORD_DOCS must have one entry per Keyword variant"
         );
     }

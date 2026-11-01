@@ -1,6 +1,6 @@
 //! Module graph building parser that understands just enough to get `Bind` and `Import`
 use algoc::bytes;
-use chrn_utils::source_utils::source_manager::{SourceInMemory, SourceKind, SourceManager};
+use chrn_utils::source_utils::source_manager::SourceManager;
 use std::path::PathBuf;
 
 use chrn_utils::err_codes::ErrorCode;
@@ -26,6 +26,52 @@ use crate::chrn_config::ChrnConfig;
 use crate::module::module_concepts::{self, Bind};
 use crate::module::{Import, ImportKind};
 
+const AS_BYTES: &[u8; 2] = b"as";
+const IMPORT_BYTES: &[u8; 6] = b"import";
+const BIND_BYTES: &[u8; 4] = b"bind";
+const VIRTUAL_BYTES: &[u8; 7] = b"virtual";
+
+enum QuoteError {
+    Diagnostic(SourceDiagnostic),
+    Unclosed,
+    Ignore,
+}
+
+impl From<SourceDiagnostic> for QuoteError {
+    fn from(d: SourceDiagnostic) -> Self {
+        QuoteError::Diagnostic(d)
+    }
+}
+
+#[derive(Clone, Copy)]
+/// Metadata associated with bytes that are assumed to be a path
+struct ReadPathMetadata {
+    flags: u8,
+}
+
+impl ReadPathMetadata {
+    /// Whether or not a backslash is present
+    const FLAG_HAS_BACKSLASH: u8 = 1;
+    /// Whether or not an end quote is present
+    const FLAG_HAS_END_Q: u8 = 2;
+    fn new(flags: u8) -> Self {
+        Self { flags }
+    }
+    fn has_end_q(self) -> bool {
+        (self.flags & Self::FLAG_HAS_END_Q) != 0
+    }
+    fn has_backslash(self) -> bool {
+        (self.flags & Self::FLAG_HAS_BACKSLASH) != 0
+    }
+}
+
+/// How to parse a path
+enum SourceParseKind {
+    // This isn't called virtual because virtual implies in memory, but in memory does not imply virtual
+    InMemory,
+    Filesystem,
+}
+
 /// Mini-parser that uses minimal syntax detection to collect `Import` and `Bind`
 pub struct ModuleFinder<'a> {
     /// Current module cursor
@@ -36,8 +82,6 @@ pub struct ModuleFinder<'a> {
     // Or loader coult generate this
     /// Prevents `peek_behind_char` from potentially reading p"" strings which do not need to be UTF-8
     last_end_quote_pos: Option<usize>,
-    //// Allows for excluding comments from checks
-    // last_comment_end: Option<usize>,
     /// Path origin so that errors can accurately report the path where the import was declared
     current_region: &'a SourceRegion,
 }
@@ -54,15 +98,10 @@ impl ModuleFinder<'_> {
             cursor: BasicCursor::new(src_bytes),
             cfg,
             last_end_quote_pos: None,
-            // last_comment_end: None,
             current_region,
             summary: SourceDiagnosticSummary::default(),
         }
     }
-
-    //TODO: Refine this system. Should probably not prefer methods like "is_as()" actually mutating
-    //and instead do manual assignment, or at least make 2 separate versions where it does the assignment.
-    //Or not idk.
 
     // Collect imports isn't the right name, but collect (em-dash) what?
     //FIXME: Several several bugs
@@ -85,27 +124,50 @@ impl ModuleFinder<'_> {
 
             let b = self.peek();
 
-            //TODO: Maybe redo all
             match b {
                 b'"' => {
                     self.cursor.skip(1);
                     self.skip_quotes()
                 }
-                c if c == b'i' || c == b'b' => {
+                b'i' | b'b' => {
                     let prev_ch = self.peek_behind_char();
 
                     let at_file_start = self.cursor.pos() == 0
                         || (self.cursor.pos() == keywords::EMBEDDING_CLAUSE_SIZE
                             && &self.cursor.items[0..keywords::EMBEDDING_CLAUSE_SIZE] == b"@def");
 
-                    // Catching "/* */import" so that it doesn't interpret '/' as an invalid keyword
+                    // Catching "/* */import" so that it doesn't interpret '/import' as an invalid keyword
 
                     // These checks are needed for the parser to stay simple
                     let can_check = !prev_ch.is_alphanumeric() || at_file_start;
 
                     if can_check {
-                        if c == b'i' && self.is_import() {
-                            let import = match self.parse_import(interner, src_manager) {
+                        //TODO: Both have the exact same flow, but encoding mutation is still a
+                        //possible issue. Maybe just share smaller parts?
+                        if b == b'i' {
+                            let maybe_imp_slice = self.slice_as_kw(IMPORT_BYTES.len());
+                            if maybe_imp_slice != IMPORT_BYTES {
+                                self.cursor.skip(1);
+                                continue;
+                            }
+                            self.cursor.skip(IMPORT_BYTES.len());
+
+                            self.skip_comments_and_whitespace();
+                            let parse_kind = self.parse_path_modifier();
+                            self.skip_comments_and_whitespace();
+
+                            //NOTE: Does nothing for now
+                            if module_concepts::STR_PREFIXES.contains(&self.peek()) {
+                                self.advance_char();
+                            }
+
+                            // May be of concern
+                            if self.peek() != b'"' {
+                                continue;
+                            }
+
+                            let import = match self.parse_import(interner, parse_kind, src_manager)
+                            {
                                 Ok(i) => i,
                                 Err(QuoteError::Diagnostic(d)) => {
                                     self.summary.push_diag(d);
@@ -116,8 +178,30 @@ impl ModuleFinder<'_> {
                             };
 
                             imports.push(import);
-                        } else if c == b'b' && self.is_bind() {
-                            bind = match self.parse_bind(src_manager, interner) {
+                        } else if b == b'b' {
+                            let maybe_bind_slice = self.slice_as_kw(BIND_BYTES.len());
+                            if maybe_bind_slice != BIND_BYTES {
+                                self.cursor.skip(1);
+                                continue;
+                            }
+                            self.cursor.skip(BIND_BYTES.len());
+
+                            self.skip_comments_and_whitespace();
+
+                            let parse_kind = self.parse_path_modifier();
+
+                            self.skip_comments_and_whitespace();
+
+                            if module_concepts::STR_PREFIXES.contains(&self.peek()) {
+                                self.advance_char();
+                            }
+
+                            // May be of concern
+                            if self.peek() != b'"' {
+                                continue;
+                            }
+
+                            bind = match self.parse_bind(src_manager, parse_kind, interner) {
                                 Ok(b) => Some(b),
                                 Err(QuoteError::Diagnostic(d)) => {
                                     self.summary.push_diag(d);
@@ -132,49 +216,45 @@ impl ModuleFinder<'_> {
                         self.cursor.skip(1);
                     }
                 }
-                _ => {
-                    self.cursor.skip(1);
-                }
+                _ => unreachable!(),
             }
         }
+        // assert_eq!(imports.len(), 1);
 
         let mut summary = SourceDiagnosticSummary::default();
         summary.append_summary(&mut self.summary);
         (bind, imports, summary)
     }
 
+    /// If there is a path modifier such as `virtual` at the cursor, returns it's corresponding
+    /// `SourceParseKind`
+    ///
+    /// Does no mutation if no modifier is present
+    fn parse_path_modifier(&mut self) -> SourceParseKind {
+        // Could just have len set to largest KW then end == VIRTUAL_BYTES.len()
+        let maybe_kind = self.slice_as_kw(VIRTUAL_BYTES.len());
+
+        if maybe_kind == VIRTUAL_BYTES {
+            self.cursor.skip(VIRTUAL_BYTES.len());
+            SourceParseKind::InMemory
+        } else {
+            SourceParseKind::Filesystem
+        }
+    }
+
     /// Assumes the starting point is at the opening quote
     fn parse_import(
         &mut self,
         interner: &mut Intern,
+        parse_kind: SourceParseKind,
         src_manager: &mut SourceManager,
     ) -> Result<Import, QuoteError> {
         self.cursor.skip(1);
         let start_cursor = self.cursor.pos();
-        // Boolean to track if a "\" was seen since only "/" can be used to separate
-        let mut saw_backslash = false;
-        let mut has_end_q = false;
 
-        self.skip_comments_and_whitespace();
-        while self.cursor.pos() < self.cursor.len() {
-            match self.peek() {
-                b'"' => {
-                    self.last_end_quote_pos = Some(self.cursor.pos());
-                    self.cursor.skip(1);
-                    has_end_q = true;
-                    break;
-                }
-                b'\\' => {
-                    saw_backslash = true;
-                    self.cursor.skip(1);
-                }
-                _ => {
-                    self.cursor.skip(1);
-                }
-            }
-        }
+        let read_path_meta = self.read_path();
 
-        if !has_end_q {
+        if !read_path_meta.has_end_q() {
             return Err(QuoteError::Unclosed);
         }
 
@@ -192,23 +272,23 @@ impl ModuleFinder<'_> {
         );
 
         // Solely for the intent of giving a more descriptive error
-        if saw_backslash {
-            let core_msg = "Only '/' can be used as path separators.".to_string();
-            //NOTE: Maybe an error code?
-            let src_diag = SourceDiagnostic::builder(
-                ErrorCode::ImportErr.into(),
-                DiagnosticLevel::Error,
-                core_msg,
-                self.current_region.src_id,
-            )
-            .add_annotation(path_span, AnnotationKind::Primary, None)
-            .build();
+        if read_path_meta.has_backslash() {
+            let diag = self.create_backslash_diag(path_span);
+            return Err(QuoteError::Diagnostic(diag));
+        }
 
-            return Err(QuoteError::Diagnostic(src_diag));
+        let slice = &self.cursor.items[start_cursor..end_cursor];
+
+        self.skip_comments_and_whitespace();
+
+        //TODO: Handlell
+        match parse_kind {
+            SourceParseKind::InMemory => todo!(),
+            SourceParseKind::Filesystem => (),
         }
 
         //TODO: Need to have a path for in memory
-        let path_buf = self.create_pathbuf(&self.cursor.items[start_cursor..end_cursor])?;
+        let path_buf = self.create_pathbuf(slice)?;
 
         let import_path = match path_buf.canonicalize() {
             Ok(p) => p,
@@ -229,15 +309,19 @@ impl ModuleFinder<'_> {
         };
 
         // We could check for an alias here too in case the file name is invalid and needs an alias
-        //TODO:
         let file_name_opt = import_path.file_prefix().map(|n| n.to_str()).flatten();
 
         let path_id = src_manager.register_path(&import_path);
 
         // import "main.chrn" as {ident}
         self.skip_comments_and_whitespace();
-        let alias_id: Option<SpannedContainer<InternedIdUTF8>> = if self.is_as() {
+
+        let slice = self.slice_as_kw(AS_BYTES.len());
+
+        let alias_id: Option<SpannedContainer<InternedIdUTF8>> = if slice == AS_BYTES {
+            self.cursor.skip(AS_BYTES.len());
             self.skip_comments_and_whitespace();
+
             let start = self.cursor.pos() as u32;
             let Some(id) = self.read_id(interner) else {
                 return Err(QuoteError::Ignore);
@@ -259,7 +343,6 @@ impl ModuleFinder<'_> {
         } else {
             let core_msg = format!("Path \"{}\" contains non-UTF-8", import_path.display());
 
-            //TODO: Aliasing
             let src_diag = SourceDiagnostic::builder(
                 ErrorCode::ImportErr.into(),
                 DiagnosticLevel::Error,
@@ -290,19 +373,21 @@ impl ModuleFinder<'_> {
         Ok(import)
     }
 
-    //WARN: Will be placed in different module
+    /// Wraps `pathbuf_from_bytes` to return a diagnostic
     fn create_pathbuf(&self, slice: &[u8]) -> Result<PathBuf, SourceDiagnostic> {
         match files::pathbuf_from_bytes(slice) {
             Ok(p) => Ok(p),
             Err(kind) => match kind {
                 PathConversionErrorKind::InvalidUTF8 => {
-                    let msg = "Invalid UTF-8 found within file".to_string();
+                    let msg = "Invalid UTF-8 found within path".to_string();
                     let src_diag = SourceDiagnostic::builder(
                         None,
                         DiagnosticLevel::Error,
                         msg,
                         self.current_region.src_id,
                     )
+                    //TODO:
+                    // .add_help("Use a p-string p\"...\" to use non-UTF-8 in path")
                     .build();
 
                     Err(src_diag)
@@ -311,29 +396,19 @@ impl ModuleFinder<'_> {
         }
     }
 
-    /// Assumes the starting point is at the opening quote
-    fn parse_bind(
-        &mut self,
-        src_manager: &mut SourceManager,
-        interner: &Intern,
-    ) -> Result<Bind, QuoteError> {
-        // skipping "
-        self.cursor.skip(1);
-        let start_cursor = self.cursor.pos();
-
-        let mut saw_backslash = false;
-        let mut has_end_q = false;
-
-        self.skip_comments_and_whitespace();
+    /// Assumes the starting point is one after the opening quote
+    fn read_path(&mut self) -> ReadPathMetadata {
+        let mut flags = 0;
         while self.cursor.pos() < self.cursor.len() {
             match self.peek() {
                 b'"' => {
+                    self.last_end_quote_pos = Some(self.cursor.pos());
                     self.cursor.skip(1);
-                    has_end_q = true;
+                    flags |= ReadPathMetadata::FLAG_HAS_END_Q;
                     break;
                 }
                 b'\\' => {
-                    saw_backslash = true;
+                    flags |= ReadPathMetadata::FLAG_HAS_BACKSLASH;
                     self.cursor.skip(1);
                 }
                 _ => {
@@ -341,8 +416,23 @@ impl ModuleFinder<'_> {
                 }
             }
         }
+        ReadPathMetadata::new(flags)
+    }
 
-        if !has_end_q {
+    /// Assumes the starting point is at the opening quote
+    fn parse_bind(
+        &mut self,
+        src_manager: &mut SourceManager,
+        parse_kind: SourceParseKind,
+        interner: &Intern,
+    ) -> Result<Bind, QuoteError> {
+        // skipping "
+        self.cursor.skip(1);
+        let start_cursor = self.cursor.pos();
+
+        let read_path_meta = self.read_path();
+
+        if !read_path_meta.has_end_q() {
             return Err(QuoteError::Unclosed);
         }
 
@@ -355,22 +445,17 @@ impl ModuleFinder<'_> {
         );
 
         // Solely for the intent of giving a more descriptive error
-        if saw_backslash {
-            let core_msg = "Only '/' can be used as path separators.".to_string();
-
-            let src_diag = SourceDiagnostic::builder(
-                None,
-                DiagnosticLevel::Error,
-                core_msg,
-                self.current_region.src_id,
-            )
-            .add_annotation(path_span, AnnotationKind::Primary, None)
-            .build();
-
-            return Err(QuoteError::Diagnostic(src_diag));
+        if read_path_meta.has_backslash() {
+            let diag = self.create_backslash_diag(path_span);
+            return Err(QuoteError::Diagnostic(diag));
         }
 
-        // WHY WAS THIS UNWRAP FOR SO LONG
+        //TODO:
+        match parse_kind {
+            SourceParseKind::InMemory => todo!(),
+            SourceParseKind::Filesystem => (),
+        }
+
         let path_buf = self.create_pathbuf(&self.cursor.items[start_cursor..end_cursor])?;
 
         let bind_path = match path_buf.canonicalize() {
@@ -378,7 +463,6 @@ impl ModuleFinder<'_> {
             Err(e) => {
                 let core_msg =
                     core_error::form_string_from_io_err(&e, &path_buf).unwrap_or(e.to_string());
-
                 let src_diag = SourceDiagnostic::builder(
                     None,
                     DiagnosticLevel::Error,
@@ -419,8 +503,7 @@ impl ModuleFinder<'_> {
         //TODO: Maybe encode this where alphanumeric || '_' being accepted iff the first character
         //is not alphanmueric is a valid identifier.
         while self.cursor.pos() < self.cursor.len()
-            && (self.peek_char().is_alphanumeric()
-                || self.cursor.pos() < self.cursor.len() && self.peek() == b'_')
+            && (self.peek_char().is_alphanumeric() || self.peek() == b'_')
         {
             self.advance_char();
         }
@@ -431,7 +514,7 @@ impl ModuleFinder<'_> {
         // hallucinating?
         // Yes, yes.
         let id_str = str::from_utf8(&self.cursor.items[start..end])
-            .expect("Cannot fail due to loop only accepting valid UTF-8 characters.");
+            .expect("Loop should only accept valid UTF-8 characters.");
 
         Some(interner.intern_str(&id_str))
     }
@@ -467,144 +550,26 @@ impl ModuleFinder<'_> {
         }
     }
 
-    fn read_escape(&mut self) -> Option<char> {
-        match self.peek() {
-            b'n' => {
-                self.cursor.skip(1);
-                Some('\n')
-            }
-            b'r' => {
-                self.cursor.skip(1);
-                Some('\r')
-            }
-            b't' => {
-                self.cursor.skip(1);
-                Some('\t')
-            }
-            b'\\' => {
-                self.cursor.skip(1);
-                Some('\\')
-            }
-            b'0' => {
-                self.cursor.skip(1);
-                Some('\0')
-            }
-            b'\'' => {
-                self.cursor.skip(1);
-                Some('\'')
-            }
-            b'"' => {
-                self.cursor.skip(1);
-                Some('"')
-            }
-            b'x' => {
-                self.cursor.skip(1);
-                let mut val: u8 = 0;
-                let mut count = 0;
-
-                while count < 2 {
-                    let c = self.peek();
-
-                    let digit = match c {
-                        b'0'..=b'9' => c - b'0',
-                        b'a'..=b'f' => c - b'a' + 10,
-                        b'A'..=b'F' => c - b'A' + 10,
-                        _ => break,
-                    };
-
-                    val = (val << 4) | digit;
-                    self.cursor.skip(1);
-                    count += 1;
-                }
-
-                if count == 2 {
-                    let next = self.peek();
-                    if matches!(next, b'0'..=b'9' | b'a'..=b'f' | b'A'..=b'F') {
-                        None
-                    } else {
-                        Some(val as char)
-                    }
-                } else {
-                    None
-                }
-            }
-            _ => None,
-        }
-    }
-
-    fn is_import(&mut self) -> bool {
+    //TODO: Should maybe be a general function
+    /// Slices using keyword rules
+    ///
+    /// Returns `false` if the slice would exceed the length or `bytes` was not matched
+    fn slice_as_kw(&self, kw_len: usize) -> &[u8] {
         let start = self.cursor.pos();
+        let mut end = self.cursor.pos();
+        let len = start + (kw_len);
 
-        while self.cursor.pos() < self.cursor.len() && self.peek().is_ascii_alphabetic() {
-            self.cursor.skip(1);
+        while end < self.cursor.len() && self.cursor.items[end].is_ascii_alphabetic() && end < len {
+            end += 1;
         }
 
-        let end = self.cursor.pos();
-
-        if &self.cursor.items[start..end] != b"import" {
-            return false;
-        }
-
-        self.skip_comments_and_whitespace();
-
-        //WARN: If ever exceeds just `u8` will need different check
-        let prev_byte = self.cursor.peek_behind_owned(1);
-        if module_concepts::STR_PREFIXES.contains(&prev_byte) {
-            self.advance_char();
-        }
-
-        if self.peek() != b'"' {
-            return false;
-        }
-
-        true
-    }
-
-    // WARN: Suspicipus
-    fn is_as(&mut self) -> bool {
-        if self.cursor.pos() + 2 < self.cursor.len()
-            && &self.cursor.items[self.cursor.pos()..self.cursor.pos() + 2] == b"as"
-        {
-            self.cursor.skip(2);
-            return true;
-        }
-
-        false
-    }
-
-    // Maybe route import and bind to same method
-    // Should you be able to "promise" binds? No.
-    fn is_bind(&mut self) -> bool {
-        let start = self.cursor.pos();
-
-        while self.cursor.pos() < self.cursor.len() && self.peek().is_ascii_alphabetic() {
-            self.cursor.skip(1);
-        }
-
-        let end = self.cursor.pos();
-
-        if &self.cursor.items[start..end] != b"bind" {
-            return false;
-        }
-
-        self.skip_comments_and_whitespace();
-
-        if module_concepts::STR_PREFIXES.contains(&self.peek()) {
-            self.advance_char();
-        }
-
-        if self.peek() != b'"' {
-            return false;
-        }
-
-        true
+        &self.cursor.items[start..end]
     }
 
     fn skip_single_comment(&mut self) {
         while self.cursor.pos() < self.cursor.len() && self.peek() != b'\n' {
             self.cursor.skip(1);
         }
-        // self.last_comment_end = Some(self.cursor.pos() - 1);
     }
 
     fn skip_multi_comment(&mut self) {
@@ -616,8 +581,6 @@ impl ModuleFinder<'_> {
                 depth += 1;
             } else if self.peek() == b'*' && self.peek_ahead(1) == b'/' {
                 self.cursor.skip(2);
-                // Ending at '/'
-                // self.last_comment_end = Some(self.cursor.pos() - 1);
                 depth -= 1;
             } else {
                 self.cursor.skip(1);
@@ -705,16 +668,17 @@ impl ModuleFinder<'_> {
             self.advance_char();
         }
     }
-}
 
-enum QuoteError {
-    Diagnostic(SourceDiagnostic),
-    Unclosed,
-    Ignore,
-}
-
-impl From<SourceDiagnostic> for QuoteError {
-    fn from(d: SourceDiagnostic) -> Self {
-        QuoteError::Diagnostic(d)
+    fn create_backslash_diag(&self, path_span: SourceSpan) -> SourceDiagnostic {
+        let core_msg = "Only '/' can be used as path separators.".to_string();
+        //NOTE: Maybe an error code?
+        SourceDiagnostic::builder(
+            ErrorCode::ImportErr.into(),
+            DiagnosticLevel::Error,
+            core_msg,
+            self.current_region.src_id,
+        )
+        .add_annotation(path_span, AnnotationKind::Primary, None)
+        .build()
     }
 }

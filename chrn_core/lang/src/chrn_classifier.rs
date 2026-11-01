@@ -130,8 +130,8 @@ pub enum ChrnClassified {
     Collection,
     ExclamationPoint,
     Cond,
-    // Hmm...
     Unknown,
+    Virtual,
 }
 
 // The casing with these names are a bit random
@@ -264,6 +264,7 @@ impl Display for ChrnClassified {
             ChrnClassified::Parameter => "parameter",
             ChrnClassified::ConfigOption => "option",
             ChrnClassified::For => "for",
+            ChrnClassified::Virtual => "virtual",
         };
         write!(f, "{out}")
     }

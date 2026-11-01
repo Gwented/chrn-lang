@@ -139,6 +139,13 @@ impl<'a, T> BasicCursor<'a, T> {
         self.pos = self.pos.checked_add(amt).expect("cursor position overflow");
     }
 
+    /// Returns `true` if full amount was skipped, `false` otherwise
+    pub fn skip_up_to(&mut self, amt: usize) -> bool {
+        let final_pos = self.pos + amt;
+        self.pos = final_pos.min(self.len());
+        final_pos <= self.len()
+    }
+
     /// Advances by amt. Returns false without moving if the destination exceeds len or overflows.
     pub const fn skip_checked(&mut self, amt: usize) -> bool {
         match self.pos.checked_add(amt) {

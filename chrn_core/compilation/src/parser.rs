@@ -537,8 +537,12 @@ fn parse_alias_stmt(
     Ok(alias)
 }
 
-/// Since `modules.rs` handles modules with it's own mini-parser, this is just a parser check.
+/// Since `module.rs` handles modules with it's own mini-parser, this is just a parser check.
 fn check_bind(ctx: &mut ParserContext, interner: &Intern) -> Result<(), Token> {
+    if ctx.peek_tok() == Token::Keyword(Keyword::Virtual) {
+        ctx.advance_tok();
+    }
+
     ctx.expect_id_verbose(
         TokenKind::Str,
         "Expected string literal path after `bind`, found ",
@@ -554,8 +558,12 @@ fn check_bind(ctx: &mut ParserContext, interner: &Intern) -> Result<(), Token> {
     Ok(())
 }
 
-/// Since `modules.rs` handles modules with it's own mini-parser, this is just a parser check.
+/// Since `module.rs` handles modules with it's own mini-parser, this is just a parser check.
 fn check_import(ctx: &mut ParserContext, interner: &Intern) -> Result<(), Token> {
+    if ctx.peek_tok() == Token::Keyword(Keyword::Virtual) {
+        ctx.advance_tok();
+    }
+
     ctx.expect_id_verbose(
         TokenKind::Str,
         "Expected string literal path, found ",

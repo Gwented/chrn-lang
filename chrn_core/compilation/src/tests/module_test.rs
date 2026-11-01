@@ -777,7 +777,7 @@ fn modfinder_unclosed_empty_path_reports_without_panicking() {
         diags
             .diags
             .iter()
-            .any(|diag| diag.core_msg == "Unclosed quotes reached end of read limit")
+            .any(|diag| diag.core_msg == "Unclosed quotes")
     );
 }
 

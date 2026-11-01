@@ -104,7 +104,10 @@ fn lex_loader_reported_unclosed_quotes_preserve_eof() {
     for src in ["bind \"α", "bind 'α", "bind p\"α"] {
         let region = match load_cfg(src) {
             ConfigLoaderOutput::Broken(region, ConfigLoadError::Diagnostic(diag)) => {
-                assert_eq!(diag.core_msg, "Unclosed quotes reached end of read limit");
+                assert_eq!(
+                    diag.core_msg,
+                    "Unclosed quotes"
+                );
                 assert_eq!(region.src_bytes, src.as_bytes());
                 region
             }
