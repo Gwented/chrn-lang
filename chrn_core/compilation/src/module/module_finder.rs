@@ -1,4 +1,5 @@
 //! Module graph building parser that understands just enough to get `Bind` and `Import`
+use algoc::bytes;
 use chrn_utils::source_utils::source_manager::{SourceInMemory, SourceKind, SourceManager};
 use std::path::PathBuf;
 
@@ -25,23 +26,26 @@ use crate::chrn_config::ChrnConfig;
 use crate::module::module_concepts::{self, Bind};
 use crate::module::{Import, ImportKind};
 
-/// Module graph start-up structure that finds imports and assigns them a `ModuleId` from `seen`.
-///
-/// This is not recursive in any way, it's just a mini parser which uses the most minimal syntax
-/// possible to search `src_bytes` and identifiy imports and bind usage where possible.
+/// Mini-parser that uses minimal syntax detection to collect `Import` and `Bind`
 pub struct ModuleFinder<'a> {
     /// Current module cursor
     cursor: BasicCursor<'a, u8>,
     cfg: &'a ChrnConfig,
     summary: SourceDiagnosticSummary,
+    // Maybe make this general information if anything later wants this info
+    // Or loader coult generate this
     /// Prevents `peek_behind_char` from potentially reading p"" strings which do not need to be UTF-8
     last_end_quote_pos: Option<usize>,
+    //// Allows for excluding comments from checks
+    // last_comment_end: Option<usize>,
     /// Path origin so that errors can accurately report the path where the import was declared
     current_region: &'a SourceRegion,
 }
 
 impl ModuleFinder<'_> {
     pub fn new<'a>(
+        // WARN: Could make it clearer that these source bytes SHOULD be curated where there are no
+        // unclosed quotes or comments since chrn does not create regions for those.
         src_bytes: &'a [u8],
         cfg: &'a ChrnConfig,
         current_region: &'a SourceRegion,
@@ -49,15 +53,21 @@ impl ModuleFinder<'_> {
         ModuleFinder {
             cursor: BasicCursor::new(src_bytes),
             cfg,
-            last_end_quote_pos: Some(0),
+            last_end_quote_pos: None,
+            // last_comment_end: None,
             current_region,
             summary: SourceDiagnosticSummary::default(),
         }
     }
 
+    //TODO: Refine this system. Should probably not prefer methods like "is_as()" actually mutating
+    //and instead do manual assignment, or at least make 2 separate versions where it does the assignment.
+    //Or not idk.
+
+    // Collect imports isn't the right name, but collect (em-dash) what?
     //FIXME: Several several bugs
-    /// Returns a tuple with `Bind` and all imports found on `Ok`.
-    /// Returns `ConfigLoadError` on `Err`
+    /// Collects `Import` and `Bind` where possible. Reports upon stage-specific errors related to
+    /// import/bind. Ignores others such as unclosed syntax.
     pub fn collect_imports(
         &mut self,
         interner: &mut Intern,
@@ -69,26 +79,17 @@ impl ModuleFinder<'_> {
         loop {
             self.skip_until_important();
 
-            if self.cursor.pos() >= self.cursor.len() && self.peek() == b'\0' {
+            if self.cursor.pos() >= self.cursor.len() {
                 break;
             }
 
-            let ch = self.peek();
+            let b = self.peek();
 
-            match ch {
+            //TODO: Maybe redo all
+            match b {
                 b'"' => {
-                    self.skip_quotes();
-                }
-                b'/' => {
-                    if self.peek_ahead(1) == b'/' {
-                        self.cursor.skip(2);
-                        self.handle_comment();
-                    } else if self.peek_ahead(1) == b'*' {
-                        self.cursor.skip(2);
-                        self.handle_multi_comment();
-                    } else {
-                        self.cursor.skip(1);
-                    }
+                    self.cursor.skip(1);
+                    self.skip_quotes()
                 }
                 c if c == b'i' || c == b'b' => {
                     let prev_ch = self.peek_behind_char();
@@ -97,27 +98,33 @@ impl ModuleFinder<'_> {
                         || (self.cursor.pos() == keywords::EMBEDDING_CLAUSE_SIZE
                             && &self.cursor.items[0..keywords::EMBEDDING_CLAUSE_SIZE] == b"@def");
 
+                    // Catching "/* */import" so that it doesn't interpret '/' as an invalid keyword
+
                     // These checks are needed for the parser to stay simple
-                    let can_check = prev_ch.is_whitespace() || at_file_start;
+                    let can_check = !prev_ch.is_alphanumeric() || at_file_start;
 
                     if can_check {
                         if c == b'i' && self.is_import() {
                             let import = match self.parse_import(interner, src_manager) {
                                 Ok(i) => i,
-                                Err(d) => {
+                                Err(QuoteError::Diagnostic(d)) => {
                                     self.summary.push_diag(d);
                                     continue;
                                 }
+                                Err(QuoteError::Unclosed) => break,
+                                Err(QuoteError::Ignore) => continue,
                             };
 
                             imports.push(import);
                         } else if c == b'b' && self.is_bind() {
                             bind = match self.parse_bind(src_manager, interner) {
                                 Ok(b) => Some(b),
-                                Err(d) => {
+                                Err(QuoteError::Diagnostic(d)) => {
                                     self.summary.push_diag(d);
                                     continue;
                                 }
+                                Err(QuoteError::Unclosed) => break,
+                                Err(QuoteError::Ignore) => continue,
                             };
                         }
                     } else {
@@ -141,16 +148,20 @@ impl ModuleFinder<'_> {
         &mut self,
         interner: &mut Intern,
         src_manager: &mut SourceManager,
-    ) -> Result<Import, SourceDiagnostic> {
+    ) -> Result<Import, QuoteError> {
         self.cursor.skip(1);
         let start_cursor = self.cursor.pos();
         // Boolean to track if a "\" was seen since only "/" can be used to separate
         let mut saw_backslash = false;
+        let mut has_end_q = false;
 
+        self.skip_comments_and_whitespace();
         while self.cursor.pos() < self.cursor.len() {
             match self.peek() {
                 b'"' => {
+                    self.last_end_quote_pos = Some(self.cursor.pos());
                     self.cursor.skip(1);
+                    has_end_q = true;
                     break;
                 }
                 b'\\' => {
@@ -161,6 +172,10 @@ impl ModuleFinder<'_> {
                     self.cursor.skip(1);
                 }
             }
+        }
+
+        if !has_end_q {
+            return Err(QuoteError::Unclosed);
         }
 
         // - 1 for same reason as in lexer. Before breaking the last quote is skipped, and since
@@ -189,7 +204,7 @@ impl ModuleFinder<'_> {
             .add_annotation(path_span, AnnotationKind::Primary, None)
             .build();
 
-            return Err(src_diag);
+            return Err(QuoteError::Diagnostic(src_diag));
         }
 
         //TODO: Need to have a path for in memory
@@ -209,7 +224,7 @@ impl ModuleFinder<'_> {
                 .add_annotation(path_span, AnnotationKind::Primary, None)
                 .build();
 
-                return Err(src_diag);
+                return Err(QuoteError::Diagnostic(src_diag));
             }
         };
 
@@ -219,10 +234,14 @@ impl ModuleFinder<'_> {
 
         let path_id = src_manager.register_path(&import_path);
 
+        // import "main.chrn" as {ident}
+        self.skip_comments_and_whitespace();
         let alias_id: Option<SpannedContainer<InternedIdUTF8>> = if self.is_as() {
-            self.skip_whitespace();
+            self.skip_comments_and_whitespace();
             let start = self.cursor.pos() as u32;
-            let id = self.read_id(interner);
+            let Some(id) = self.read_id(interner) else {
+                return Err(QuoteError::Ignore);
+            };
             SpannedContainer::new(
                 id,
                 SourceSpan::new(self.current_region.self_id, start, self.cursor.pos() as u32),
@@ -253,7 +272,7 @@ impl ModuleFinder<'_> {
             .add_note("Non-UTF-8 is accepted as a file path but requires an `as` alias so the module can still be referenced in-file")
             .build();
 
-            return Err(src_diag);
+            return Err(QuoteError::Diagnostic(src_diag));
         };
 
         let import_kind = ImportKind::UnresolvedSource(SpannedContainer::new(path_id, path_span));
@@ -292,21 +311,25 @@ impl ModuleFinder<'_> {
         }
     }
 
+    /// Assumes the starting point is at the opening quote
     fn parse_bind(
         &mut self,
         src_manager: &mut SourceManager,
         interner: &Intern,
-    ) -> Result<Bind, SourceDiagnostic> {
+    ) -> Result<Bind, QuoteError> {
         // skipping "
         self.cursor.skip(1);
         let start_cursor = self.cursor.pos();
 
         let mut saw_backslash = false;
+        let mut has_end_q = false;
 
+        self.skip_comments_and_whitespace();
         while self.cursor.pos() < self.cursor.len() {
             match self.peek() {
                 b'"' => {
                     self.cursor.skip(1);
+                    has_end_q = true;
                     break;
                 }
                 b'\\' => {
@@ -317,6 +340,10 @@ impl ModuleFinder<'_> {
                     self.cursor.skip(1);
                 }
             }
+        }
+
+        if !has_end_q {
+            return Err(QuoteError::Unclosed);
         }
 
         let end_cursor = self.cursor.pos() - 1;
@@ -340,7 +367,7 @@ impl ModuleFinder<'_> {
             .add_annotation(path_span, AnnotationKind::Primary, None)
             .build();
 
-            return Err(src_diag);
+            return Err(QuoteError::Diagnostic(src_diag));
         }
 
         // WHY WAS THIS UNWRAP FOR SO LONG
@@ -361,7 +388,7 @@ impl ModuleFinder<'_> {
                 .add_annotation(path_span, AnnotationKind::Primary, None)
                 .build();
 
-                return Err(src_diag);
+                return Err(QuoteError::Diagnostic(src_diag));
             }
         };
 
@@ -381,11 +408,19 @@ impl ModuleFinder<'_> {
         Ok(bind)
     }
 
-    fn read_id(&mut self, interner: &mut Intern) -> InternedIdUTF8 {
+    /// Starting from cursor reads identifier
+    fn read_id(&mut self, interner: &mut Intern) -> Option<InternedIdUTF8> {
         let start = self.cursor.pos();
 
-        while (self.cursor.pos() < self.cursor.len() && self.peek_char().is_alphanumeric())
-            || (self.cursor.pos() < self.cursor.len() && self.peek() == b'_')
+        if self.peek().is_ascii_digit() {
+            return None;
+        }
+
+        //TODO: Maybe encode this where alphanumeric || '_' being accepted iff the first character
+        //is not alphanmueric is a valid identifier.
+        while self.cursor.pos() < self.cursor.len()
+            && (self.peek_char().is_alphanumeric()
+                || self.cursor.pos() < self.cursor.len() && self.peek() == b'_')
         {
             self.advance_char();
         }
@@ -398,7 +433,7 @@ impl ModuleFinder<'_> {
         let id_str = str::from_utf8(&self.cursor.items[start..end])
             .expect("Cannot fail due to loop only accepting valid UTF-8 characters.");
 
-        interner.intern_str(&id_str)
+        Some(interner.intern_str(&id_str))
     }
 
     /// Returns previous character
@@ -414,14 +449,12 @@ impl ModuleFinder<'_> {
             .unwrap_or('\0')
     }
 
+    /// Expects to start 1 after the start quote.
     fn skip_quotes(&mut self) {
         while self.cursor.pos() < self.cursor.len() {
             match self.peek() {
-                b'\\' => {
-                    // Is this needed?
-                    self.cursor.skip(1);
-                    self.read_escape();
-                }
+                // Bare minimum is skipping \", otherwise this doesn't really matter
+                b'\\' => self.cursor.skip(2),
                 b'"' => {
                     self.last_end_quote_pos = Some(self.cursor.pos());
                     self.cursor.skip(1);
@@ -512,12 +545,11 @@ impl ModuleFinder<'_> {
             return false;
         }
 
-        //FIX: Utf 98
-        //FIX: Doesn't skip comments
-        self.skip_whitespace();
+        self.skip_comments_and_whitespace();
 
         //WARN: If ever exceeds just `u8` will need different check
-        if module_concepts::STR_PREFIXES.contains(&self.peek()) {
+        let prev_byte = self.cursor.peek_behind_owned(1);
+        if module_concepts::STR_PREFIXES.contains(&prev_byte) {
             self.advance_char();
         }
 
@@ -530,8 +562,6 @@ impl ModuleFinder<'_> {
 
     // WARN: Suspicipus
     fn is_as(&mut self) -> bool {
-        self.skip_whitespace();
-
         if self.cursor.pos() + 2 < self.cursor.len()
             && &self.cursor.items[self.cursor.pos()..self.cursor.pos() + 2] == b"as"
         {
@@ -542,6 +572,8 @@ impl ModuleFinder<'_> {
         false
     }
 
+    // Maybe route import and bind to same method
+    // Should you be able to "promise" binds? No.
     fn is_bind(&mut self) -> bool {
         let start = self.cursor.pos();
 
@@ -555,7 +587,7 @@ impl ModuleFinder<'_> {
             return false;
         }
 
-        self.skip_whitespace();
+        self.skip_comments_and_whitespace();
 
         if module_concepts::STR_PREFIXES.contains(&self.peek()) {
             self.advance_char();
@@ -568,21 +600,24 @@ impl ModuleFinder<'_> {
         true
     }
 
-    fn handle_comment(&mut self) {
+    fn skip_single_comment(&mut self) {
         while self.cursor.pos() < self.cursor.len() && self.peek() != b'\n' {
             self.cursor.skip(1);
         }
+        // self.last_comment_end = Some(self.cursor.pos() - 1);
     }
 
-    fn handle_multi_comment(&mut self) {
+    fn skip_multi_comment(&mut self) {
         let mut depth = 1;
 
         while self.cursor.pos() < self.cursor.len() && depth > 0 {
             if self.peek() == b'/' && self.peek_ahead(1) == b'*' {
-                self.cursor.skip(1);
+                self.cursor.skip(2);
                 depth += 1;
             } else if self.peek() == b'*' && self.peek_ahead(1) == b'/' {
                 self.cursor.skip(2);
+                // Ending at '/'
+                // self.last_comment_end = Some(self.cursor.pos() - 1);
                 depth -= 1;
             } else {
                 self.cursor.skip(1);
@@ -601,28 +636,42 @@ impl ModuleFinder<'_> {
             return b as char;
         }
 
-        let closest_end = self.get_next_ascii_character(self.cursor.pos());
+        let closest_end = bytes::get_next_ascii_character(self.cursor.items, self.cursor.pos());
         let chunk = &self.cursor.items[self.cursor.pos()..closest_end];
 
-        // Should be a test for this this is suspicious
         // Lazy evaluation to avoid utf-8 checking entire self.bytes
-        let x = std::str::from_utf8(chunk);
         std::str::from_utf8(chunk)
             .ok()
             .and_then(|c| c.chars().next())
-            .unwrap_or('\0');
-        dbg!(x);
-        panic!();
+            .unwrap_or('\0')
     }
 
-    /// From `start` returns position of next ascii character.
-    /// Returns `self.cursor.len()` if all found characters are non-ascii
-    fn get_next_ascii_character(&self, start: usize) -> usize {
-        let mut closest_end = start;
-        while !self.peek().is_ascii() && closest_end < self.cursor.len() {
-            closest_end += 1;
+    /// Does not skip quotes since quotes may contain needed information depending on context.
+    fn skip_comments_and_whitespace(&mut self) {
+        loop {
+            self.skip_whitespace();
+
+            let b = self.peek();
+
+            if self.cursor.pos() >= self.cursor.len() {
+                break;
+            }
+
+            match b {
+                b'/' => {
+                    if self.peek_ahead(1) == b'/' {
+                        self.cursor.skip(2);
+                        self.skip_single_comment();
+                    } else if self.peek_ahead(1) == b'*' {
+                        self.cursor.skip(2);
+                        self.skip_multi_comment();
+                    } else {
+                        self.cursor.skip(1);
+                    }
+                }
+                _ => break,
+            }
         }
-        closest_end
     }
 
     fn advance_char(&mut self) -> char {
@@ -631,18 +680,18 @@ impl ModuleFinder<'_> {
         ch
     }
 
-    fn peek_ahead(&self, dest: usize) -> u8 {
-        self.cursor.peek_ahead_owned_checked(dest).unwrap_or(b'\0')
+    fn peek_ahead(&self, amt: usize) -> u8 {
+        self.cursor.peek_ahead_owned_checked(amt).unwrap_or(b'\0')
     }
 
     fn skip_until_important(&mut self) {
-        // Stopping at parts that may cause wrongful import reads
-        while self.cursor.pos() <= self.cursor.len()
-            && self.peek() != b'i'
-            && self.peek() != b'b'
-            && self.peek() != b'"'
-            && self.peek() != b'/'
-        {
+        loop {
+            // Should there be skip_comments_whitespace_quotes?
+            self.skip_comments_and_whitespace();
+            let b = self.peek();
+            if self.cursor.pos() >= self.cursor.len() || b == b'i' || b == b'b' || b == b'"' {
+                break;
+            }
             self.cursor.skip(1);
         }
     }
@@ -655,5 +704,17 @@ impl ModuleFinder<'_> {
         while self.peek_char().is_whitespace() {
             self.advance_char();
         }
+    }
+}
+
+enum QuoteError {
+    Diagnostic(SourceDiagnostic),
+    Unclosed,
+    Ignore,
+}
+
+impl From<SourceDiagnostic> for QuoteError {
+    fn from(d: SourceDiagnostic) -> Self {
+        QuoteError::Diagnostic(d)
     }
 }

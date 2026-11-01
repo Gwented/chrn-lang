@@ -3,6 +3,8 @@ use chrn_utils::{id_types::InternedId, intern::UTF8Tag};
 use std::env;
 use std::fs;
 use std::io::Cursor;
+#[cfg(unix)]
+use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 
 use super::helpers::*;
@@ -14,9 +16,9 @@ use crate::module::module_finder::ModuleFinder;
 use crate::script_compiler::reporter::Reporter;
 use chrn_utils::{
     core_error::ConfigLoadError,
-    source_utils::source_manager::PathTag,
     id_types::{ModuleId, PathId, SourceRegionId},
     intern::Intern,
+    source_utils::source_manager::PathTag,
     source_utils::{
         source_diagnostic::{DiagnosticLevel, annotations::AnnotationKind},
         source_span::SourceSpan,
@@ -546,6 +548,237 @@ fn modfinder_import_inside_string_is_not_parsed() {
         "'import' inside a string must not be parsed as an import"
     );
     assert!(diags.diags.is_empty(), "no diagnostics expected");
+}
+
+/// Comment markers inside a string must not hide subsequent imports.
+#[test]
+fn modfinder_string_comment_marker_preserves_following_import() {
+    let dir = create_temp_dir("string_comment_marker_proof");
+    let sub = make_sub_script(&dir);
+    let main = create_chrn_file(
+        &dir,
+        "main.chrn",
+        &format!("let marker = \"/*\"\nimport \"{}\"\n", sub.display()),
+    );
+    let (module, graph, _, diags) = extract_main(
+        &main,
+        fs::File::open(&main).unwrap(),
+        &mut ChrnConfig::default(),
+    )
+    .expect("valid source must load");
+    fs::remove_dir_all(&dir).unwrap();
+
+    assert!(diags.diags.is_empty(), "unexpected diagnostics: {diags:?}");
+    assert_eq!(module.imports.len(), 1, "string content must stay opaque");
+    let ImportKind::UnresolvedSource(path) = &module.imports[0].kind else {
+        panic!("expected an unresolved source import");
+    };
+    assert_eq!(graph.src_manager.extract_path(path.inner).path, sub);
+}
+
+/// Comments are trivia between the tokens of import and bind statements.
+#[test]
+fn modfinder_comments_between_statement_tokens() {
+    let dir = create_temp_dir("statement_trivia_proof");
+    let sub = make_sub_script(&dir);
+    let target = create_chrn_file(&dir, "data.bin", "serialized data");
+    let main = create_chrn_file(
+        &dir,
+        "main.chrn",
+        &format!(
+            "import /* path */ \"{0}\" as first\n\
+             import \"{0}\" /* alias */ as second\n\
+             import \"{0}\" as /* name */ third\n\
+             bind /* path */ \"{1}\"\n",
+            sub.display(),
+            target.display(),
+        ),
+    );
+    let (module, graph, interner, diags) = extract_main(
+        &main,
+        fs::File::open(&main).unwrap(),
+        &mut ChrnConfig::default(),
+    )
+    .expect("valid source must load");
+    fs::remove_dir_all(&dir).unwrap();
+
+    assert!(diags.diags.is_empty(), "unexpected diagnostics: {diags:?}");
+    let aliases: Vec<_> = module
+        .imports
+        .iter()
+        .map(|import| {
+            let ImportKind::UnresolvedSource(path) = &import.kind else {
+                panic!("expected an unresolved source import");
+            };
+            assert_eq!(graph.src_manager.extract_path(path.inner).path, sub);
+            import
+                .sp_alias_id
+                .as_ref()
+                .map(|alias| interner.extract_utf8_str(alias.inner))
+        })
+        .collect();
+    assert_eq!(aliases, [Some("first"), Some("second"), Some("third")]);
+    let bind = module
+        .bind
+        .as_ref()
+        .expect("comment must not hide bind path");
+    assert_eq!(graph.src_manager.extract_path(bind.path_id).path, target);
+}
+
+/// A block comment itself separates tokens; no additional space is required.
+#[test]
+fn modfinder_statement_immediately_after_block_comment() {
+    let dir = create_temp_dir("comment_boundary_proof");
+    let sub = make_sub_script(&dir);
+    let target = create_chrn_file(&dir, "data.bin", "serialized data");
+    let main = create_chrn_file(
+        &dir,
+        "main.chrn",
+        &format!(
+            "/* leading */import \"{}\"\n/* leading */bind \"{}\"\n",
+            sub.display(),
+            target.display()
+        ),
+    );
+    let (module, graph, _, diags) = extract_main(
+        &main,
+        fs::File::open(&main).unwrap(),
+        &mut ChrnConfig::default(),
+    )
+    .expect("valid source must load");
+    fs::remove_dir_all(&dir).unwrap();
+
+    assert!(diags.diags.is_empty(), "unexpected diagnostics: {diags:?}");
+    assert_eq!(
+        module.imports.len(),
+        1,
+        "comment must separate import keyword"
+    );
+    let ImportKind::UnresolvedSource(path) = &module.imports[0].kind else {
+        panic!("expected an unresolved source import");
+    };
+    assert_eq!(graph.src_manager.extract_path(path.inner).path, sub);
+    let bind = module
+        .bind
+        .as_ref()
+        .expect("comment must separate bind keyword");
+    assert_eq!(graph.src_manager.extract_path(bind.path_id).path, target);
+}
+
+/// The final slash of a nested opener cannot also close that nested comment.
+#[test]
+fn modfinder_nested_comment_delimiters_do_not_overlap() {
+    let dir = create_temp_dir("nested_comment_overlap_proof");
+    let hidden = create_chrn_file(&dir, "hidden.chrn", "let x = 0\n");
+    let visible = create_chrn_file(&dir, "visible.chrn", "let x = 1\n");
+    let main = create_chrn_file(
+        &dir,
+        "main.chrn",
+        &format!(
+            "/* /*/ */\nimport \"{}\"\n*/\nimport \"{}\"\n",
+            hidden.display(),
+            visible.display()
+        ),
+    );
+    let (module, graph, _, diags) = extract_main(
+        &main,
+        fs::File::open(&main).unwrap(),
+        &mut ChrnConfig::default(),
+    )
+    .expect("balanced nested comment must load");
+    fs::remove_dir_all(&dir).unwrap();
+
+    assert!(diags.diags.is_empty(), "unexpected diagnostics: {diags:?}");
+    let paths: Vec<_> = module
+        .imports
+        .iter()
+        .map(|import| {
+            let ImportKind::UnresolvedSource(path) = &import.kind else {
+                panic!("expected an unresolved source import");
+            };
+            graph.src_manager.extract_path(path.inner).path.clone()
+        })
+        .collect();
+    assert_eq!(
+        paths,
+        [visible],
+        "the first import is inside the outer comment"
+    );
+}
+
+//TODO: After p"" implementation
+//// Raw path bytes must not affect discovery after the closing path quote.
+// #[cfg(unix)]
+// #[test]
+// fn modfinder_non_utf8_path_preserves_following_import() {
+//     let dir = create_temp_dir("non_utf8_following_import_proof");
+//     let raw = dir.join(std::ffi::OsStr::from_bytes(b"raw_\xff.chrn"));
+//     fs::write(&raw, "let x = 1\n").unwrap();
+//     let raw = raw.canonicalize().unwrap();
+//     let sub = make_sub_script(&dir);
+//     let mut src = b"import p\"".to_vec();
+//     src.extend_from_slice(raw.as_os_str().as_bytes());
+//     src.extend_from_slice(format!("\" as raw_module\nimport \"{}\"\n", sub.display()).as_bytes());
+//     let main = dir.join("main.chrn");
+//     fs::write(&main, src).unwrap();
+//     let (module, graph, interner, diags) = extract_main(
+//         &main,
+//         fs::File::open(&main).unwrap(),
+//         &mut ChrnConfig::default(),
+//     )
+//     .expect("raw paths with an alias must load");
+//     fs::remove_dir_all(&dir).unwrap();
+//
+//     assert!(diags.diags.is_empty(), "unexpected diagnostics: {diags:?}");
+//     let paths: Vec<_> = module
+//         .imports
+//         .iter()
+//         .map(|import| {
+//             let ImportKind::UnresolvedSource(path) = &import.kind else {
+//                 panic!("expected an unresolved source import");
+//             };
+//             graph.src_manager.extract_path(path.inner).path.clone()
+//         })
+//         .collect();
+//     assert_eq!(
+//         paths,
+//         [raw, sub],
+//         "raw bytes must remain confined to the path"
+//     );
+//     assert_eq!(
+//         interner.extract_utf8_str(module.imports[0].sp_alias_id.as_ref().unwrap().inner),
+//         "raw_module"
+//     );
+// }
+
+/// Incomplete paths are ordinary language errors, including an edit at EOF.
+#[test]
+fn modfinder_unclosed_empty_path_reports_without_panicking() {
+    let dir = create_temp_dir("unclosed_path_proof");
+    let main = create_chrn_file(&dir, "main.chrn", "import \"");
+    let result = std::panic::catch_unwind(|| {
+        extract_main(
+            &main,
+            fs::File::open(&main).unwrap(),
+            &mut ChrnConfig::default(),
+        )
+    });
+    fs::remove_dir_all(&dir).unwrap();
+
+    let (module, _, _, diags) = result
+        .expect("an unclosed import path must produce a diagnostic, not panic")
+        .expect("the loader retains a recoverable broken region");
+    assert!(matches!(module.state, ModuleState::BrokenRegion));
+    assert!(
+        module.imports.is_empty(),
+        "an unclosed path is not an import"
+    );
+    assert!(
+        diags
+            .diags
+            .iter()
+            .any(|diag| diag.core_msg == "Unclosed quotes reached end of read limit")
+    );
 }
 
 // ===========================================================================
@@ -2021,7 +2254,13 @@ fn reserved_core_alias_diagnostic_identifies_importer() {
             compiler.mods[ModuleId::new(0)].imports[usize::from(already_loaded)].kind,
             ImportKind::ErrorSource(_)
         ));
-        diagnostic_paths.push(store.src_manager.extract_path(diag.src_id.into_tagged::<PathTag>()).path.to_path_buf());
+        diagnostic_paths.push(
+            store
+                .src_manager
+                .extract_path(diag.src_id.into_tagged::<PathTag>())
+                .path
+                .to_path_buf(),
+        );
     }
     _ = fs::remove_dir_all(&dir);
     assert_eq!(
@@ -2072,7 +2311,13 @@ fn directory_import_diagnostic_identifies_importer() {
         compiler.mods[ModuleId::new(0)].imports[0].kind,
         ImportKind::ErrorSource(_)
     ));
-    assert_eq!(store.src_manager.extract_path(diag.src_id.into_tagged::<PathTag>()).path, main_path);
+    assert_eq!(
+        store
+            .src_manager
+            .extract_path(diag.src_id.into_tagged::<PathTag>())
+            .path,
+        main_path
+    );
 }
 
 /// A read error after opening an import must attribute its annotation to the
@@ -2119,7 +2364,10 @@ fn import_read_error_diagnostic_identifies_importer() {
         )
     );
     assert_eq!(
-        store.src_manager.extract_path(diag.src_id.into_tagged::<PathTag>()).path,
+        store
+            .src_manager
+            .extract_path(diag.src_id.into_tagged::<PathTag>())
+            .path,
         main_path,
         "the read-error diagnostic must identify the file containing its annotation"
     );
@@ -2182,7 +2430,13 @@ fn reserved_core_entry_is_rejected() {
     };
     assert_eq!(diag.level, DiagnosticLevel::Error);
     assert_eq!(diag.core_msg, "`core` is a reserved module identifier");
-    assert_eq!(init_err.src_manager.extract_path(diag.src_id.into_tagged::<PathTag>()).path, main_path);
+    assert_eq!(
+        init_err
+            .src_manager
+            .extract_path(diag.src_id.into_tagged::<PathTag>())
+            .path,
+        main_path
+    );
 }
 
 /// An import alias cannot bypass the prohibition on a source named `core`.
@@ -2219,7 +2473,10 @@ fn reserved_core_source_is_rejected_even_with_alias() {
             "reserved source rejection must hold when aliased={aliased}"
         );
         assert_eq!(
-            store.src_manager.extract_path(diags.diags[0].src_id.into_tagged::<PathTag>()).path,
+            store
+                .src_manager
+                .extract_path(diags.diags[0].src_id.into_tagged::<PathTag>())
+                .path,
             main_path
         );
         assert_eq!(get_user_mod_count(&compiler), 2);

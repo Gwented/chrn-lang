@@ -1,1 +1,2 @@
-let me = go
+let x = "/*"
+/* */import "../chrn_core/chrn_tests/other.chrn"

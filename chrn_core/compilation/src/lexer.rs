@@ -10,6 +10,7 @@ pub mod notations;
 pub mod token;
 pub mod trivia;
 
+use algoc::bytes;
 use chrn_utils::{
     id_types::{SourceId, SourceRegionId},
     intern::{self, Intern},
@@ -47,6 +48,7 @@ pub struct Lexer<'a> {
     cfg: &'a mut ChrnConfig,
     /// For threshold of invalid tokens before terminating lex
     invalid_toks: u8,
+    last_quote_pos: Option<usize>,
     trivia: Vec<Trivia>,
     trivia_start_idx: usize,
     trivia_end_idx: usize,
@@ -72,6 +74,7 @@ impl Lexer<'_> {
             current_src_id,
             cursor: BasicCursor::new(src),
             script_start,
+            last_quote_pos: None,
             trivia: Vec::with_capacity(speculated_trivia),
             cfg,
             invalid_toks: 0,
@@ -105,9 +108,7 @@ impl Lexer<'_> {
             self.handle_trivia();
 
             //TODO: What if the compiler just made things up?
-            if (self.cursor.pos() >= self.cursor.len() && self.peek() == b'\0')
-                || self.invalid_toks > MAX_INVALID_TOKS
-            {
+            if self.cursor.pos() >= self.cursor.len() || self.invalid_toks > MAX_INVALID_TOKS {
                 // Over-indexes if not subtracted
                 // Could be an empty file so needs saturation
                 //WARN: EXCLUSIVE SPANNING. NO LONGER DOES - 1 FOR eof_pos
@@ -143,7 +144,14 @@ impl Lexer<'_> {
                         StringForm::Default
                     };
                     self.cursor.skip(1);
-                    toks.push(self.read_quotes(form, interner));
+                    //WARN: See how to best handle unclosed since sending an invalid token even
+                    //though the unclosed quotes are reported by cfg loader is IJ4elakfn5$32 <-
+                    let sp_tok = match self.read_quotes(form, interner) {
+                        Ok(t) => t,
+                        // Allows for pushing <eof>, may change since this seems forced
+                        Err(QuoteError::Unclosed) => continue,
+                    };
+                    toks.push(sp_tok);
                 }
                 c if c.is_alphabetic() || c == '_' => {
                     toks.push(self.read_ident(interner));
@@ -440,7 +448,12 @@ impl Lexer<'_> {
                 }
                 '\'' => {
                     self.advance();
-                    toks.push(self.read_char(interner));
+                    let sp_tok = match self.read_char(interner) {
+                        Ok(t) => t,
+                        // Allows for pushing <eof>, may change since this seems forced
+                        Err(QuoteError::Unclosed) => continue,
+                    };
+                    toks.push(sp_tok);
                 }
                 '+' => {
                     let pos = self.cursor.pos() as u32;
@@ -899,12 +912,18 @@ impl Lexer<'_> {
     // No
     // Please
     /// Reads bytes until an end quote is reached. May return an invalid token.
-    fn read_quotes(&mut self, form: StringForm, interner: &mut Intern) -> SpannedToken {
+    fn read_quotes(
+        &mut self,
+        form: StringForm,
+        interner: &mut Intern,
+    ) -> Result<SpannedToken, QuoteError> {
         let start = match form {
             StringForm::Default => self.cursor.pos(),
             //WARN: Hi
             StringForm::MaybeUTF8 => self.cursor.pos() - 1,
         };
+
+        let mut has_end_q = false;
 
         while self.cursor.pos() < self.cursor.len() {
             match self.peek() {
@@ -912,19 +931,31 @@ impl Lexer<'_> {
                     let escape_start = self.cursor.pos();
                     self.advance();
 
+                    // If a backslash is at eof this will catch it instead of `Invalid`
+                    if self.cursor.pos() == self.cursor.len() {
+                        return Err(QuoteError::Unclosed);
+                    }
+
                     if let Some(_) = self.read_escape() {
                     } else {
-                        return self.recover_invalid(Some(escape_start), interner);
+                        return Ok(self.recover_invalid(Some(escape_start), interner));
                     }
                 }
                 b'"' => {
                     self.advance();
+                    has_end_q = true;
                     break;
                 }
                 _ => {
                     self.advance();
                 }
             }
+        }
+
+        // Do QuoteError
+        if !has_end_q {
+            // Config loader already reports this so we return
+            return Err(QuoteError::Unclosed);
         }
 
         //WARN: Is - 1 because the 'n' in input `"Hello"n` would be the current location, which
@@ -942,12 +973,12 @@ impl Lexer<'_> {
                 match quotes_res {
                     Ok(p) => {
                         let interned_id = interner.intern_str(p);
-                        SpannedToken {
+                        Ok(SpannedToken {
                             tok: Token::Str(TokenString::new(interned_id, form)),
                             span,
                             leading_trivia_indices: self.trivia_start_idx as u32
                                 ..self.trivia_end_idx as u32,
-                        }
+                        })
                     }
                     Err(_) => {
                         // Would need recover invaild to understand quote behavior to re-use it here
@@ -955,12 +986,12 @@ impl Lexer<'_> {
                         self.increment_invalid_tok();
                         let invalid_str = String::from_utf8_lossy(slice);
                         let msg_id = interner.intern_str(&invalid_str);
-                        SpannedToken {
+                        Ok(SpannedToken {
                             tok: Token::Invalid(msg_id),
                             span,
                             leading_trivia_indices: self.trivia_start_idx as u32
                                 ..self.trivia_end_idx as u32,
-                        }
+                        })
                     }
                 }
             }
@@ -978,13 +1009,13 @@ impl Lexer<'_> {
         }
     }
 
-    //TODO: Check if this still works if quotes are unclosed WITHOUT the loader
-    fn read_char(&mut self, interner: &mut Intern) -> SpannedToken {
+    fn read_char(&mut self, interner: &mut Intern) -> Result<SpannedToken, QuoteError> {
         // Starts 1 after single quote
         let start = self.cursor.pos();
 
         let mut result_char: Option<char> = None;
         let mut char_count: usize = 0;
+        let mut has_end_q = false;
 
         while self.cursor.pos() < self.cursor.len() {
             match self.peek() {
@@ -992,18 +1023,24 @@ impl Lexer<'_> {
                     let escape_start = self.cursor.pos() - 1;
                     self.advance();
 
+                    // If a backslash is at eof this will catch it instead of `Invalid`
+                    if self.cursor.pos() == self.cursor.len() {
+                        return Err(QuoteError::Unclosed);
+                    }
+
                     match self.read_escape() {
                         Some(ch) => {
                             result_char = Some(ch);
                             char_count += 1;
                         }
                         None => {
-                            return self.recover_invalid(Some(escape_start), interner);
+                            return Ok(self.recover_invalid(Some(escape_start), interner));
                         }
                     }
                 }
                 b'\'' => {
                     self.advance();
+                    has_end_q = true;
                     break;
                 }
                 _ => {
@@ -1017,9 +1054,13 @@ impl Lexer<'_> {
             }
         }
 
+        if !has_end_q {
+            return Err(QuoteError::Unclosed);
+        }
+
         if char_count > 1 {
             // To start at the actual single quote start
-            return self.recover_invalid(Some(start - 1), interner);
+            return Ok(self.recover_invalid(Some(start - 1), interner));
         }
 
         //WARN: REMOVED END - 1 SINCE ITS EXCLUSIVE AND + 1 IS INTENDED
@@ -1029,20 +1070,20 @@ impl Lexer<'_> {
         let span = SourceSpan::new(self.current_region_id, (start - 1) as u32, end as u32);
 
         match result_char {
-            Some(ch) => SpannedToken {
+            Some(ch) => Ok(SpannedToken {
                 tok: Token::Char(ch),
                 span,
                 leading_trivia_indices: self.trivia_start_idx as u32..self.trivia_end_idx as u32,
-            },
+            }),
             None => {
                 self.increment_invalid_tok();
                 let id = interner.intern_str("empty character literal");
-                SpannedToken {
+                Ok(SpannedToken {
                     tok: Token::Invalid(id),
                     span,
                     leading_trivia_indices: self.trivia_start_idx as u32
                         ..self.trivia_end_idx as u32,
-                }
+                })
             }
         }
     }
@@ -1217,7 +1258,8 @@ impl Lexer<'_> {
             return b as char;
         }
 
-        let chunk = &self.cursor.items[self.cursor.pos()..];
+        let closest_end = bytes::get_next_ascii_character(self.cursor.items, self.cursor.pos());
+        let chunk = &self.cursor.items[self.cursor.pos()..closest_end];
 
         //TODO: Handle this please!
         //Not that bad since most peek_char consumption is going to be ascii.
@@ -1374,4 +1416,8 @@ impl Lexer<'_> {
             self.advance_char();
         }
     }
+}
+
+enum QuoteError {
+    Unclosed,
 }

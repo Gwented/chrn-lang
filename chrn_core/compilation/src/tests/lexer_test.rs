@@ -8,6 +8,170 @@ use chrn_utils::{id_types::SourceId, source_utils::source_manager::PathTag};
 use super::helpers::*;
 
 #[test]
+fn lex_unclosed_quotes_preserve_prefix_and_eof() {
+    let cases = [
+        "\"",
+        "\"body",
+        "\"α\n@end ignored",
+        "\"escaped\\\"",
+        "\"\\n\\u{41}",
+        "'",
+        "'a",
+        "'α",
+        "'escaped\\'",
+        "'\\n",
+        "p\"",
+        "p\"body",
+    ];
+    let mut actual = Vec::new();
+    let mut expected = Vec::new();
+
+    for prefix in ["", "#tag \"ok\" 'z' "] {
+        for tail in cases {
+            let src = format!("{prefix}{tail}");
+            let mut interner = Intern::init();
+            let mut cfg = ChrnConfig::default();
+            let output = Lexer::new(
+                SourceRegionId::new(0),
+                SourceId::new(0),
+                src.as_bytes(),
+                0,
+                &mut cfg,
+            )
+            .tokenize(&mut interner);
+
+            if !prefix.is_empty() {
+                // Previously completed tokens retain their values and byte spans.
+                let prefix_tokens = &output.toks[..4];
+                assert_eq!(prefix_tokens[0].tok, Token::HashSymbol, "{src:?}");
+                assert_eq!(
+                    prefix_tokens[1].tok,
+                    Token::Id(interner.intern_str("tag")),
+                    "{src:?}"
+                );
+                let Token::Str(value) = prefix_tokens[2].tok else {
+                    panic!("expected completed string before {tail:?}");
+                };
+                assert_eq!(value.form, StringForm::Default);
+                assert_eq!(interner.get_utf8_str(value.interned_id), Some("ok"));
+                assert_eq!(prefix_tokens[3].tok, Token::Char('z'), "{src:?}");
+                assert_eq!(
+                    prefix_tokens
+                        .iter()
+                        .map(|tok| (tok.span.start, tok.span.end))
+                        .collect::<Vec<_>>(),
+                    [(0, 1), (1, 4), (5, 9), (10, 13)],
+                    "{src:?}",
+                );
+            }
+
+            let mut kinds = if prefix.is_empty() {
+                Vec::new()
+            } else {
+                vec![
+                    TokenKind::HashSymbol,
+                    TokenKind::Id,
+                    TokenKind::Str,
+                    TokenKind::Char,
+                ]
+            };
+            kinds.push(TokenKind::EOF);
+            let hashes = if prefix.is_empty() { vec![] } else { vec![0] };
+            actual.push((
+                src.clone(),
+                output
+                    .toks
+                    .iter()
+                    .map(|tok| tok.tok.kind())
+                    .collect::<Vec<_>>(),
+                output.found_invalid_toks,
+                output.hash_tok_indices,
+            ));
+            expected.push((src, kinds, 0, hashes));
+        }
+    }
+
+    assert_eq!(
+        actual, expected,
+        "unclosed quotes must be omitted without losing EOF or prefix tokens"
+    );
+}
+
+#[test]
+fn lex_loader_reported_unclosed_quotes_preserve_eof() {
+    let mut actual = Vec::new();
+    let mut expected = Vec::new();
+    for src in ["bind \"α", "bind 'α", "bind p\"α"] {
+        let region = match load_cfg(src) {
+            ConfigLoaderOutput::Broken(region, ConfigLoadError::Diagnostic(diag)) => {
+                assert_eq!(diag.core_msg, "Unclosed quotes reached end of read limit");
+                assert_eq!(region.src_bytes, src.as_bytes());
+                region
+            }
+            other => panic!("expected loader to report unclosed quotes for {src:?}, got {other:?}"),
+        };
+        let mut interner = Intern::init();
+        let mut cfg = ChrnConfig::default();
+        let output = Lexer::new(
+            region.self_id,
+            region.src_id,
+            &region.src_bytes,
+            region.script_start,
+            &mut cfg,
+        )
+        .tokenize(&mut interner);
+        assert_eq!(output.toks[0].tok, Token::Keyword(Keyword::Bind));
+        assert_eq!((output.toks[0].span.start, output.toks[0].span.end), (0, 4));
+        actual.push((
+            src,
+            output
+                .toks
+                .iter()
+                .map(|tok| tok.tok.kind())
+                .collect::<Vec<_>>(),
+            output.found_invalid_toks,
+        ));
+        expected.push((src, vec![TokenKind::Keyword, TokenKind::EOF], 0));
+    }
+    assert_eq!(
+        actual, expected,
+        "loader recovery must remain safe to tokenize"
+    );
+}
+
+#[test]
+fn lex_unclosed_quotes_with_trailing_escape_do_not_emit_invalid_tokens() {
+    let mut actual = Vec::new();
+    let mut expected = Vec::new();
+    for src in ["\"\\", "\"body\\", "'\\", "'a\\", "p\"\\", "p\"body\\"] {
+        let mut interner = Intern::init();
+        let mut cfg = ChrnConfig::default();
+        let output = Lexer::new(
+            SourceRegionId::new(0),
+            SourceId::new(0),
+            src.as_bytes(),
+            0,
+            &mut cfg,
+        )
+        .tokenize(&mut interner);
+        actual.push((
+            src,
+            output
+                .toks
+                .iter()
+                .map(|tok| tok.tok.kind())
+                .collect::<Vec<_>>(),
+            output.found_invalid_toks,
+        ));
+        expected.push((src, vec![TokenKind::EOF], 0));
+    }
+    assert_eq!(
+        actual, expected,
+        "an escape ending at EOF still leaves an unclosed quote"
+    );
+}
+
+#[test]
 fn lex_compound_tokens_with_exact_spans() {
     let src: &[u8] = b":= :: -> => == >= <= != && || ..=";
     let mut interner = Intern::init();

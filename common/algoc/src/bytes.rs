@@ -30,3 +30,18 @@ pub fn is_similar(a: &[u8], b: &[u8]) -> bool {
 
     false
 }
+
+// Maybe give ascii.rs
+/// From `start` returns position of next ascii character.
+/// Returns len if all found characters are non-ascii
+pub fn get_next_ascii_character(src: &[u8], start: usize) -> usize {
+    let mut closest_end = start;
+    if src.len() == closest_end {
+        return closest_end;
+    }
+
+    while closest_end < src.len() && !src[closest_end].is_ascii() {
+        closest_end += 1;
+    }
+    closest_end
+}
