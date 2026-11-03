@@ -119,18 +119,6 @@ pub fn run_all(
         compiler_store.asts.push(ast_info_opt);
     }
 
-    //TEST: Not sure what to do with the directives
-    // for info_opt in &compiler_store.asts {
-    //     let Some(info) = info_opt else {
-    //         continue;
-    //     };
-    //     panic!("Stop");
-    // would be done differently since linear
-    // for direct in &info.param_directives {
-    //     lexer_processor::produce_directives(toks, hash_idx, interner)
-    // }
-    // }
-
     // if reporter.diag_summary().has_err() {
     //     return Err(ScriptError::Parser);
     // }

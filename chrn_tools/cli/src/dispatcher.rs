@@ -45,7 +45,7 @@ fn exec_check(
     cli_cfg: &CliConfig,
 ) -> Result<String, Option<String>> {
     // Centralized cmd to config construction for all known cmds?
-    let mut builder = ChrnConfig::builder();
+    let mut builder = ChrnConfig::builder().add_max_numeric_bits(check_cmd.numeric_bits);
     if check_cmd.dbg_mode {
         builder = builder.add_logger();
     }
@@ -67,7 +67,6 @@ fn exec_check(
 
     let render_kind = RenderKind::from_check_cmd(check_cmd, glob_args, cli_cfg);
 
-    // Please please please
     let (mut compiler, mut compiler_store, mut compiler_cache) =
         match constructors::create_compiler_with_cache(
             &check_cmd.path,

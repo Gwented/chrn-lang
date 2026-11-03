@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use crate::{
     id_types::{InternedId, InternedIdUTF8},
     intern::{self, Intern, MaybeUTF8Tag, UTF8Tag},

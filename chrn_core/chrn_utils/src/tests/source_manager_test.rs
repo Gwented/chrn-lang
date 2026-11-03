@@ -9,16 +9,6 @@ use crate::{
 #[test]
 fn source_registration_preserves_identity_and_kind_through_growth() {
     let mut interner = Intern::init();
-    let named = interner.intern_str("編集中のソース");
-    let empty = interner.intern_str("");
-    let stock = interner.intern_str("source");
-    let names = [
-        (None, "source"),
-        (Some(named), "編集中のソース"),
-        (Some(named), "編集中のソース"),
-        (Some(empty), ""),
-        (Some(stock), "source"),
-    ];
     for mut manager in [
         SourceManager::new(),
         SourceManager::default(),
@@ -39,16 +29,35 @@ fn source_registration_preserves_identity_and_kind_through_growth() {
             assert!(seen_ids.insert(path_id.inner()), "duplicate path ID at {i}");
             assert_eq!(manager.register_path(path), path_id);
             assert_eq!(manager.get_source_id_from_path(path), Some(path_id));
-            let (name, display_name) = names[i % names.len()];
-            let memory_id = manager.register_in_memory(name, Vec::new());
+            let display_name = match i {
+                0 => "編集中のソース",
+                1 => "",
+                2 => "source",
+                _ => path.to_str().unwrap(),
+            };
+            let name = interner.intern_str(display_name);
+            let src = format!("original source {i}").into_bytes();
+            let memory_id = manager.register_in_memory(name, src.clone());
             assert!(
                 seen_ids.insert(memory_id.inner()),
                 "duplicate memory ID at {i}"
             );
-            registered.push((path.to_path_buf(), path_id, memory_id, name, display_name));
+            assert_eq!(
+                manager.register_in_memory(name, b"replacement".to_vec()),
+                memory_id,
+                "duplicate memory registration at {i}"
+            );
+            registered.push((
+                path.to_path_buf(),
+                path_id,
+                memory_id,
+                name,
+                display_name.to_owned(),
+                src,
+            ));
         }
 
-        for (path, path_id, memory_id, name, display_name) in registered {
+        for (path, path_id, memory_id, name, display_name, src) in registered {
             assert_eq!(
                 manager
                     .get_path(path_id)
@@ -79,8 +88,15 @@ fn source_registration_preserves_identity_and_kind_through_growth() {
                 other => panic!("memory extraction returned the wrong kind: {other:?}"),
             }
             assert_eq!(
-                manager.get_in_memory(memory_id).map(|source| source.name),
-                Some(name)
+                manager.register_in_memory(name, Vec::new()),
+                memory_id,
+                "duplicate registration after growth: {display_name:?}"
+            );
+            let stored = manager.get_in_memory(memory_id).unwrap();
+            assert_eq!(stored.name, name);
+            assert_eq!(
+                stored.src, src,
+                "original bytes must survive: {display_name:?}"
             );
             assert_eq!(
                 manager.display_source(memory_id.inner(), &interner),
@@ -109,7 +125,8 @@ fn source_registration_preserves_identity_and_kind_through_growth() {
 fn tagged_access_rejects_valid_ids_with_incorrect_kind_proof() {
     let mut manager = SourceManager::new();
     let path_id = manager.register_path(Path::new("source.chrn"));
-    let memory_id = manager.register_in_memory(None, Vec::new());
+    let mut interner = Intern::init();
+    let memory_id = manager.register_in_memory(interner.intern_str("source"), Vec::new());
     let false_path = memory_id.inner().into_tagged::<PathTag>();
     let false_memory = path_id.inner().into_tagged::<InMemoryTag>();
 

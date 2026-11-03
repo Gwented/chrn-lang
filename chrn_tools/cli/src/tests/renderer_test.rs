@@ -27,13 +27,15 @@ fn source_names_render_without_regions_and_without_annotations() {
     let path = sources
         .register_path(Path::new("/fixture/main.chrn"))
         .inner();
-    let named = sources.register_in_memory(Some(name), Vec::new()).inner();
-    let unnamed = sources.register_in_memory(None, Vec::new()).inner();
+    let named = sources.register_in_memory(name, Vec::new()).inner();
+    let default_named = sources
+        .register_in_memory(interner.intern_str("source"), Vec::new())
+        .inner();
 
     for (id, raw_name, escaped_name) in [
         (path, "/fixture/main.chrn", "/fixture/main.chrn"),
         (named, "編集中: \"source", "編集中: \\\"source"),
-        (unnamed, "source", "source"),
+        (default_named, "source", "source"),
     ] {
         let diagnostic =
             SourceDiagnostic::builder(None, DiagnosticLevel::Error, "bad type", id).build();
@@ -66,8 +68,10 @@ fn source_names_render_without_regions_and_without_annotations() {
                     &interner,
                     &kind,
                 );
-                let name_value = if id != named {
+                let name_value = if id == path {
                     "null".to_string()
+                } else if id == default_named && matches!(kind, RenderKind::Yaml(_)) {
+                    escaped_name.to_string()
                 } else {
                     format!("\"{escaped_name}\"")
                 };
@@ -95,10 +99,12 @@ fn annotation_source_names_follow_their_own_regions() {
     let path = sources
         .register_path(Path::new("/fixture/main.chrn"))
         .inner();
-    let named = sources.register_in_memory(Some(name), Vec::new()).inner();
-    let unnamed = sources.register_in_memory(None, Vec::new()).inner();
+    let named = sources.register_in_memory(name, Vec::new()).inner();
+    let default_named = sources
+        .register_in_memory(interner.intern_str("source"), Vec::new())
+        .inner();
     let mut regions = Arena::new();
-    for (i, (id, script_start)) in [(named, 11), (unnamed, 29)].into_iter().enumerate() {
+    for (i, (id, script_start)) in [(named, 11), (default_named, 29)].into_iter().enumerate() {
         let region_id = SourceRegionId::new(i as u32);
         assert_eq!(
             regions.push(SourceRegion::new(
@@ -126,7 +132,7 @@ fn annotation_source_names_follow_their_own_regions() {
         .add_annotation(
             SourceSpan::new(SourceRegionId::new(1), 0, 3),
             AnnotationKind::Secondary,
-            Some("unnamed source".to_string()),
+            Some("default source".to_string()),
         )
         .build();
 
@@ -145,12 +151,15 @@ fn annotation_source_names_follow_their_own_regions() {
     );
     assert!(terminal.contains("PATH => \"source\""), "{terminal}");
     assert!(!terminal.contains("/fixture/main.chrn"), "{terminal}");
-    let (named_block, unnamed_block) = terminal.split_once("PATH => \"source\"").unwrap();
+    let (named_block, default_named_block) = terminal.split_once("PATH => \"source\"").unwrap();
     assert!(named_block.contains("1 | one"), "{terminal}");
     assert!(named_block.contains("^^^ named source"), "{terminal}");
-    assert!(!named_block.contains("unnamed source"), "{terminal}");
-    assert!(unnamed_block.contains("1 | two"), "{terminal}");
-    assert!(unnamed_block.contains("--- unnamed source"), "{terminal}");
+    assert!(!named_block.contains("default source"), "{terminal}");
+    assert!(default_named_block.contains("1 | two"), "{terminal}");
+    assert!(
+        default_named_block.contains("--- default source"),
+        "{terminal}"
+    );
 
     for (kind, space) in structured_kinds() {
         let rendered = renderer::render(
@@ -171,7 +180,7 @@ fn annotation_source_names_follow_their_own_regions() {
                 "\"編集中: \\\"source\"",
                 "\"編集中: \\\"source\"",
             ),
-            ("region_source_name", "null", "null"),
+            ("region_source_name", "\"source\"", "source"),
             ("start", "11", "11"),
             ("end", "14", "14"),
             ("start", "29", "29"),
@@ -185,7 +194,12 @@ fn annotation_source_names_follow_their_own_regions() {
         assert_eq!(blocks.len(), 2, "{kind:?}: {rendered}");
         for (block, name, start, end) in [
             (blocks[0], "\"編集中: \\\"source\"", "11", "14"),
-            (blocks[1], "null", "29", "32"),
+            (
+                blocks[1],
+                if json { "\"source\"" } else { "source" },
+                "29",
+                "32",
+            ),
         ] {
             assert_field_count(block, &kind, space, "region_source_name", name, 1);
             assert_field_count(block, &kind, space, "region_path", "null", 1);
@@ -197,9 +211,11 @@ fn annotation_source_names_follow_their_own_regions() {
 
 #[test]
 fn annotation_file_paths_and_unavailable_regions_keep_distinct_metadata() {
-    let interner = Intern::init();
+    let mut interner = Intern::init();
     let mut sources = SourceManager::new();
-    let diagnostic_source = sources.register_in_memory(None, Vec::new()).inner();
+    let diagnostic_source = sources
+        .register_in_memory(interner.intern_str("source"), Vec::new())
+        .inner();
     let file_source = sources
         .register_path(Path::new("/fixture/import.chrn"))
         .inner();
@@ -243,7 +259,14 @@ fn annotation_file_paths_and_unavailable_regions_keep_distinct_metadata() {
             );
             let json = matches!(kind, RenderKind::Json(_));
             assert_field_count(&rendered, &kind, space, "path", "null", 1);
-            assert_field_count(&rendered, &kind, space, "source_name", "null", 1);
+            assert_field_count(
+                &rendered,
+                &kind,
+                space,
+                "source_name",
+                if json { "\"source\"" } else { "source" },
+                1,
+            );
             for key in ["region_path", "region_source_name"] {
                 assert_field_count(
                     &rendered,

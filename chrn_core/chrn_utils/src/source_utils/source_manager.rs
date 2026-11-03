@@ -1,7 +1,6 @@
 use std::{
     borrow::Cow,
     collections::HashMap,
-    ops::Index,
     path::{Path, PathBuf},
 };
 
@@ -26,6 +25,10 @@ tag_decl!(PathTag, InMemoryTag);
 pub struct SourceManager {
     srcs: Vec<SourceKind>,
     path_to_src_id: HashMap<PathBuf, TaggedId<SourceId, PathTag>>,
+    // Bytes? Also two hashmaps :(
+    // This uses `PathBuf` because path ids do not exist until the manager makes it. Interned ones
+    // do exist prior therefore this doesn't use str/bytes or anything
+    interned_id_to_src_id: HashMap<InternedIdUTF8, SourceId>,
 }
 
 /// Possible sources to store and index
@@ -47,22 +50,18 @@ impl SourcePath {
     }
 }
 
-//TODO: Kind of want something lkie "''''efl'afl'aefae" "imp virtual" what if import was imp?
-// `import virtual "name"` where "name" is injected with a src. May still consider v"" but that
-// seems like it's coupling string prefixes with syntactic properties, already turning it into vp""
-// This could be implicit where if a "virtual" source exists, doing `import "thingy"` will search
-// virtual first, see it, then process as normal, but would like for this to be more explicit at
-// least for now.
 /// Metadata for an in-memory source.
 #[derive(Debug)]
 pub struct SourceInMemory {
-    /// Optional display name
-    pub name: Option<InternedIdUTF8>,
+    // I document like an LLM.
+    /// Required name for in memory source
+    pub name: InternedIdUTF8,
+    /// Full source data
     pub src: Vec<u8>,
 }
 
 impl SourceInMemory {
-    pub fn new(name: Option<InternedIdUTF8>, src: Vec<u8>) -> Self {
+    pub fn new(name: InternedIdUTF8, src: Vec<u8>) -> Self {
         Self { name, src }
     }
 }
@@ -73,11 +72,12 @@ impl SourceManager {
         Self::default()
     }
 
-    /// Creates `SourceManager` with capacity for `srcs` and `path_to_src_id`
+    /// Creates `SourceManager` with capacity for sources and registration maps.
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
             srcs: Vec::with_capacity(capacity),
             path_to_src_id: HashMap::with_capacity(capacity),
+            interned_id_to_src_id: HashMap::with_capacity(capacity),
         }
     }
 
@@ -95,15 +95,21 @@ impl SourceManager {
         id
     }
 
-    /// Registers a distinct in-memory source with an optional display label.
+    /// Registers an in-memory source, reusing its ID if the name is already stored.
+    /// Re-registering a name preserves the original source data.
     pub fn register_in_memory(
         &mut self,
-        name: Option<InternedIdUTF8>,
+        name_id: InternedIdUTF8,
         src: Vec<u8>,
     ) -> TaggedId<SourceId, InMemoryTag> {
+        if let Some(id) = self.interned_id_to_src_id.get(&name_id) {
+            return id.into_tagged::<InMemoryTag>();
+        }
+
         let id = SourceId::new(self.srcs.len() as u32).into_tagged::<InMemoryTag>();
         self.srcs
-            .push(SourceKind::InMemory(SourceInMemory::new(name, src)));
+            .push(SourceKind::InMemory(SourceInMemory::new(name_id, src)));
+        self.interned_id_to_src_id.insert(name_id, id.inner());
         id
     }
 
@@ -120,12 +126,9 @@ impl SourceManager {
     /// Returns a displayable name for the found `SourceKind`
     pub fn display_source<'a>(&'a self, id: SourceId, interner: &'a Intern) -> Cow<'a, str> {
         match self.extract_source(id) {
-            SourceKind::Path(src) => src.path.to_string_lossy(),
-            SourceKind::InMemory(src) => {
-                let src_name = src
-                    .name
-                    .map_or("source", |name_id| interner.extract_utf8_str(name_id));
-                Cow::Borrowed(src_name)
+            SourceKind::Path(src_p) => src_p.path.to_string_lossy(),
+            SourceKind::InMemory(src_in_mem) => {
+                Cow::Borrowed(interner.extract_utf8_str(src_in_mem.name))
             }
         }
     }
@@ -157,5 +160,19 @@ impl SourceManager {
             SourceKind::InMemory(src) => Some(src),
             SourceKind::Path(_) => unreachable!("in-memory-tagged source must be in memory"),
         }
+    }
+
+    /// Returns in-memory metadata if the ID exists
+    pub fn get_in_memory_from_interned_id(&self, id: InternedIdUTF8) -> Option<&SourceInMemory> {
+        // Has to exist at this point
+        let src_id = self.get_source_id_from_interned_id(id)?;
+        match self.extract_source(src_id) {
+            SourceKind::InMemory(src) => Some(src),
+            SourceKind::Path(_) => None,
+        }
+    }
+
+    pub fn get_source_id_from_interned_id(&self, id: InternedIdUTF8) -> Option<SourceId> {
+        self.interned_id_to_src_id.get(&id).copied()
     }
 }

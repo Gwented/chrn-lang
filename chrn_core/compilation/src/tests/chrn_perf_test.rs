@@ -14,10 +14,14 @@ fn reports_preserve_source_identity_labels_and_stage_data() {
     let path = sources
         .register_path(Path::new("/fixture/main.chrn"))
         .inner();
-    let named = sources.register_in_memory(Some(name), Vec::new()).inner();
-    let same_name = sources.register_in_memory(Some(name), Vec::new()).inner();
-    let unnamed = sources.register_in_memory(None, Vec::new()).inner();
-    let ids = [path, named, same_name, unnamed];
+    let named = sources.register_in_memory(name, Vec::new()).inner();
+    let other_named = sources
+        .register_in_memory(interner.intern_str("別のソース"), Vec::new())
+        .inner();
+    let default_named = sources
+        .register_in_memory(interner.intern_str("source"), Vec::new())
+        .inner();
+    let ids = [path, named, other_named, default_named];
     let mut perf = ChrnPerf::new(true);
     for id in ids {
         perf.start(id);
@@ -34,7 +38,7 @@ fn reports_preserve_source_identity_labels_and_stage_data() {
         modules
             .iter()
             .zip(ids)
-            .zip(["/fixture/main.chrn", "編集中", "編集中", "source"])
+            .zip(["/fixture/main.chrn", "編集中", "別のソース", "source"])
     {
         assert_eq!(module.data.ident.src_id(), id);
         assert_eq!(module.src_name, label, "source {id:?}");

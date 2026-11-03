@@ -1,4 +1,4 @@
-use std::{collections::HashMap, ops::Range};
+use std::{collections::HashMap, ops::Range, time};
 
 use crate::{
     id_types::{
@@ -366,6 +366,7 @@ pub struct Intern {
     id_map: HashMap<Vec<u8>, TaggedId<InternedId, MaybeUTF8Tag>>,
     id_map_offset_data: Vec<InternedOffsetData>,
     stored_bytes: Vec<u8>,
+    // There has to be a better way.
 }
 
 pub const INTERNER_PRELOAD_SIZE: usize = (INTERNED_VIRTUAL + 1) as usize;
@@ -403,6 +404,39 @@ impl Intern {
     /// Interns arbitrary bytes without asserting UTF-8 validity.
     pub fn intern_bytes(&mut self, bytes: &[u8]) -> TaggedId<InternedId, MaybeUTF8Tag> {
         self.intern_bytes_with_utf8(bytes, false)
+    }
+
+    /// Generates and interns a UTF-8 name not already stored
+    pub fn intern_str_generated(&mut self) -> InternedIdUTF8 {
+        let name = self.generate_string();
+        self.intern_str(&name)
+    }
+
+    /// Generates a name not already stored in this interner and interns its bytes.
+    pub fn intern_bytes_generated(&mut self) -> TaggedId<InternedId, MaybeUTF8Tag> {
+        let name = self.generate_string();
+        self.intern_bytes(name.as_bytes())
+    }
+
+    // NOTE: Insert mixer if necessary
+    /// Locally generates random string not present in `Self`
+    fn generate_string(&mut self) -> String {
+        // Stored bytes varies the most so it's entrusted with this being random
+        let choice = self.stored_bytes.len() % 3;
+        let mut k = match choice {
+            0 => self.stored_bytes.len(),
+            1 => self.id_map_offset_data.len(),
+            // 2
+            _ => self.id_map.len(),
+        };
+
+        loop {
+            let name = format!("__chrngen{k:X}");
+            if !self.id_map.contains_key(name.as_bytes()) {
+                return name;
+            }
+            k = k.wrapping_add(3);
+        }
     }
 
     // Maybe should be pub so that intern_str isn't the only way to intern a utf8 validated str

@@ -1,5 +1,6 @@
 //! Module graph building parser that understands just enough to get `Bind` and `Import`
 use algoc::bytes;
+use chrn_utils::id_types::SourceId;
 use chrn_utils::source_utils::source_manager::SourceManager;
 use std::path::PathBuf;
 
@@ -31,6 +32,7 @@ const IMPORT_BYTES: &[u8; 6] = b"import";
 const BIND_BYTES: &[u8; 4] = b"bind";
 const VIRTUAL_BYTES: &[u8; 7] = b"virtual";
 
+// Not a good name. This error is general.
 enum QuoteError {
     Diagnostic(SourceDiagnostic),
     Unclosed,
@@ -230,6 +232,7 @@ impl ModuleFinder<'_> {
     /// `SourceParseKind`
     ///
     /// Does no mutation if no modifier is present
+    /// Expects that comments and whitespace were already already skipped.
     fn parse_path_modifier(&mut self) -> SourceParseKind {
         // Could just have len set to largest KW then end == VIRTUAL_BYTES.len()
         let maybe_kind = self.slice_as_kw(VIRTUAL_BYTES.len());
@@ -249,70 +252,9 @@ impl ModuleFinder<'_> {
         parse_kind: SourceParseKind,
         src_manager: &mut SourceManager,
     ) -> Result<Import, QuoteError> {
-        //TODO: -- All same start --
-        self.cursor.skip(1);
-        let start_cursor = self.cursor.pos();
-
-        let read_path_meta = self.read_path();
-
-        if !read_path_meta.has_end_q() {
-            return Err(QuoteError::Unclosed);
-        }
-
-        // - 1 for same reason as in lexer. Before breaking the last quote is skipped, and since
-        // span ends are exclusive, the end pos would be one after the end quote, so we need to go
-        // back 1 to properly sit at the end quote
-        let end_cursor = self.cursor.pos() - 1;
-
-        let path_span = SourceSpan::new(
-            self.current_region.self_id,
-            // To include start quote
-            start_cursor as u32,
-            // To include end quote
-            end_cursor as u32,
-        );
-
-        // Solely for the intent of giving a more descriptive error
-        if read_path_meta.has_backslash() {
-            let diag = self.create_backslash_diag(path_span);
-            return Err(QuoteError::Diagnostic(diag));
-        }
-
-        let slice = &self.cursor.items[start_cursor..end_cursor];
-
-        self.skip_comments_and_whitespace();
-
-        //TODO: Handlell
-        match parse_kind {
-            SourceParseKind::InMemory => todo!(),
-            SourceParseKind::Filesystem => (),
-        }
-
-        let path_buf = self.create_pathbuf(slice)?;
-
-        let import_path = match path_buf.canonicalize() {
-            Ok(p) => p,
-            Err(e) => {
-                let core_msg =
-                    core_error::form_string_from_io_err(&e, &path_buf).unwrap_or(e.to_string());
-                let src_diag = SourceDiagnostic::builder(
-                    ErrorCode::ImportErr.into(),
-                    DiagnosticLevel::Error,
-                    core_msg,
-                    self.current_region.src_id,
-                )
-                .add_annotation(path_span, AnnotationKind::Primary, None)
-                .build();
-
-                return Err(QuoteError::Diagnostic(src_diag));
-            }
-        };
-        //TODO: -- All same end --
-
         // Is `Option` so an alias can cover a non-UTF-8 file name
-        let file_name_opt = import_path.file_prefix().map(|n| n.to_str()).flatten();
-
-        let path_id = src_manager.register_path(&import_path);
+        let (initial_name_id_opt, src_id, src_span) =
+            self.handle_path(interner, parse_kind, src_manager)?;
 
         // import "main.chrn" as {ident}
         self.skip_comments_and_whitespace();
@@ -336,13 +278,19 @@ impl ModuleFinder<'_> {
             None
         };
 
+        // NOTE: This could be virtual OR a path. May want to route different msgs instead of conernging
+        // to generirccc
+
         // Allows for aliases to be used if import's path is not UTF-8
-        let name_id = if let Some(name) = file_name_opt {
-            interner.intern_str(name)
+        let name_id = if let Some(id) = initial_name_id_opt {
+            id
         } else if let Some(SpannedContainer { inner, .. }) = alias_id {
             inner
         } else {
-            let core_msg = format!("Path \"{}\" contains non-UTF-8", import_path.display());
+            let core_msg = format!(
+                "Identifier \"{}\" contains non-UTF-8",
+                src_manager.display_source(src_id, interner)
+            );
 
             let src_diag = SourceDiagnostic::builder(
                 ErrorCode::ImportErr.into(),
@@ -350,17 +298,16 @@ impl ModuleFinder<'_> {
                 core_msg,
                 self.current_region.src_id,
             )
-            .add_annotation(path_span, AnnotationKind::Primary, None)
+            .add_annotation(src_span, AnnotationKind::Primary, None)
             //TODO: This is more of a warn than error because the compiler still functions
             // fine without the identifier.
-            .add_note("Non-UTF-8 is accepted as a file path but requires an `as` alias so the module can still be referenced in-file")
+            .add_note("Non-UTF-8 is accepted as a path but requires an `as` alias so the module can still be referenced in-file")
             .build();
 
             return Err(QuoteError::Diagnostic(src_diag));
         };
 
-        let import_kind =
-            ImportKind::UnresolvedSource(SpannedContainer::new(path_id.inner(), path_span));
+        let import_kind = ImportKind::UnresolvedSource(SpannedContainer::new(src_id, src_span));
         let import = Import::new(name_id, import_kind, alias_id);
 
         self.cfg.logger().log_dbg(|| {
@@ -399,7 +346,10 @@ impl ModuleFinder<'_> {
     }
 
     /// Assumes the starting point is one after the opening quote
-    fn read_path(&mut self) -> ReadPathMetadata {
+    /// Returns (end_cursor, `ReadPathMetadata`)
+    ///
+    /// Ends one byte after quote end if `FLAG_HAS_END_Q` is `true`
+    fn read_path(&mut self) -> (usize, ReadPathMetadata) {
         let mut flags = 0;
         while self.cursor.pos() < self.cursor.len() {
             match self.peek() {
@@ -418,7 +368,9 @@ impl ModuleFinder<'_> {
                 }
             }
         }
-        ReadPathMetadata::new(flags)
+
+        let end_cursor = self.cursor.pos();
+        (end_cursor, ReadPathMetadata::new(flags))
     }
 
     /// Assumes the starting point is at the opening quote
@@ -426,72 +378,159 @@ impl ModuleFinder<'_> {
         &mut self,
         src_manager: &mut SourceManager,
         parse_kind: SourceParseKind,
-        interner: &Intern,
+        interner: &mut Intern,
     ) -> Result<Bind, QuoteError> {
-        // skipping "
-        self.cursor.skip(1);
-        let start_cursor = self.cursor.pos();
+        // Doesn't need ident since binds are not referenced
+        let (_, src_id, src_span) = self.handle_path(interner, parse_kind, src_manager)?;
+        let bind = Bind::new(src_id, src_span);
 
-        let read_path_meta = self.read_path();
+        self.cfg.logger().log_dbg(|| {
+            let bind_display = &src_manager.display_source(src_id, interner);
+            let region_path = src_manager.display_source(self.current_region.src_id, interner);
+            format!(
+                "Created bind which points to `{}` for region \"{}\"",
+                bind_display, region_path
+            )
+        });
+
+        Ok(bind)
+    }
+
+    /// Utility for `Import` and `Bind` to share handling of their source processing
+    /// Expects that comments and whitespace were already already skipped.
+    fn handle_path(
+        &mut self,
+        interner: &mut Intern,
+        parse_kind: SourceParseKind,
+        src_manager: &mut SourceManager,
+        // This is only `Option` because files can exchange their module ident with their alias, but
+        // something like virtual MUST have a valid identifier.
+    ) -> Result<(Option<InternedIdUTF8>, SourceId, SourceSpan), QuoteError> {
+        let start_cursor = self.cursor.pos();
+        self.cursor.skip(1);
+
+        let (end_cursor, read_path_meta) = self.read_path();
 
         if !read_path_meta.has_end_q() {
             return Err(QuoteError::Unclosed);
         }
 
-        let end_cursor = self.cursor.pos() - 1;
-
         let path_span = SourceSpan::new(
             self.current_region.self_id,
-            start_cursor as u32,
-            end_cursor as u32,
+            // To exclude start quote
+            (start_cursor + 1) as u32,
+            // To exclude end quote
+            (end_cursor - 1) as u32,
         );
 
         // Solely for the intent of giving a more descriptive error
         if read_path_meta.has_backslash() {
-            let diag = self.create_backslash_diag(path_span);
-            return Err(QuoteError::Diagnostic(diag));
+            let core_msg = "Only '/' can be used as path separators.".to_string();
+            let builder = SourceDiagnostic::builder(
+                ErrorCode::ImportErr.into(),
+                DiagnosticLevel::Error,
+                core_msg,
+                self.current_region.src_id,
+            )
+            .add_annotation(path_span, AnnotationKind::Primary, None);
+            return Err(QuoteError::Diagnostic(builder.build()));
         }
 
-        //TODO:
-        match parse_kind {
-            SourceParseKind::InMemory => todo!(),
-            SourceParseKind::Filesystem => (),
-        }
+        // To exclude start quote
+        // To exclude end quote
+        let slice = &self.cursor.items[start_cursor + 1..end_cursor - 1];
 
-        let path_buf = self.create_pathbuf(&self.cursor.items[start_cursor..end_cursor])?;
+        self.skip_comments_and_whitespace();
 
-        let bind_path = match path_buf.canonicalize() {
-            Ok(p) => p,
-            Err(e) => {
-                let core_msg =
-                    core_error::form_string_from_io_err(&e, &path_buf).unwrap_or(e.to_string());
-                let src_diag = SourceDiagnostic::builder(
-                    None,
-                    DiagnosticLevel::Error,
-                    core_msg,
-                    self.current_region.src_id,
-                )
-                .add_annotation(path_span, AnnotationKind::Primary, None)
-                .build();
+        let (name_id_opt, src_id) = match parse_kind {
+            SourceParseKind::InMemory => {
+                let ident = match str::from_utf8(slice) {
+                    Ok(s) => s,
+                    Err(_) => {
+                        // Will route to different strings if ever needed
+                        let core_msg = "Virtual source must be valid UTF-8";
+                        //TODO: ErrorCode
+                        let builder = SourceDiagnostic::builder(
+                            None,
+                            DiagnosticLevel::Error,
+                            core_msg,
+                            self.current_region.src_id,
+                        )
+                        .add_annotation(path_span, AnnotationKind::Primary, None)
+                        .add_note("Unlike file paths, in-memory sources must be valid UTF-8");
+                        return Err(QuoteError::Diagnostic(builder.build()));
+                    }
+                };
+                let interned_id = match interner.get_interned_id_from_str(&ident) {
+                    Some(id) => id,
+                    None => {
+                        let core_msg = format!("Could not find module `{ident}` in memory");
+                        //TODO: ErrorCode
+                        let builder = SourceDiagnostic::builder(
+                            None,
+                            DiagnosticLevel::Error,
+                            core_msg,
+                            self.current_region.src_id,
+                        )
+                        .add_annotation(
+                            path_span,
+                            AnnotationKind::Primary,
+                            None,
+                        );
+                        return Err(QuoteError::Diagnostic(builder.build()));
+                    }
+                };
+                let src_id = match src_manager.get_source_id_from_interned_id(interned_id) {
+                    Some(id) => id,
+                    None => {
+                        let core_msg = format!("Could not find module `{ident}` in memory");
+                        //TODO: ErrorCode
+                        let builder = SourceDiagnostic::builder(
+                            None,
+                            DiagnosticLevel::Error,
+                            core_msg,
+                            self.current_region.src_id,
+                        )
+                        .add_annotation(
+                            path_span,
+                            AnnotationKind::Primary,
+                            None,
+                        );
+                        return Err(QuoteError::Diagnostic(builder.build()));
+                    }
+                };
+                (Some(interned_id), src_id)
+            }
+            SourceParseKind::Filesystem => {
+                let path_buf = self.create_pathbuf(slice)?;
+                let import_path = match path_buf.canonicalize() {
+                    Ok(p) => p,
+                    Err(e) => {
+                        let core_msg = core_error::form_string_from_io_err(&e, &path_buf)
+                            .unwrap_or(e.to_string());
+                        let src_diag = SourceDiagnostic::builder(
+                            ErrorCode::ImportErr.into(),
+                            DiagnosticLevel::Error,
+                            core_msg,
+                            self.current_region.src_id,
+                        )
+                        .add_annotation(path_span, AnnotationKind::Primary, None)
+                        .build();
 
-                return Err(QuoteError::Diagnostic(src_diag));
+                        return Err(QuoteError::Diagnostic(src_diag));
+                    }
+                };
+                // If an alias is given the file is a valid source
+                let name_id_opt = match import_path.file_prefix().map(|n| n.to_str()).flatten() {
+                    Some(s) => Some(interner.intern_str(s)),
+                    None => None,
+                };
+                let src_id = src_manager.register_path(&import_path).inner();
+                (name_id_opt, src_id)
             }
         };
-
-        let bind_path_id = src_manager.register_path(&bind_path);
-        let bind = Bind::new(bind_path_id.inner(), path_span);
-
-        self.cfg.logger().log_dbg(|| {
-            let bind_path = &src_manager.extract_path(bind_path_id).path;
-            let region_path = src_manager.display_source(self.current_region.src_id, interner);
-            format!(
-                "Created bind which points to `{}` for region \"{}\"",
-                bind_path.display(),
-                region_path
-            )
-        });
-
-        Ok(bind)
+        Ok((name_id_opt, src_id, path_span))
+        //TODO: -- All same end --
     }
 
     /// Starting from cursor reads identifier
@@ -669,18 +708,5 @@ impl ModuleFinder<'_> {
         while self.peek_char().is_whitespace() {
             self.advance_char();
         }
-    }
-
-    fn create_backslash_diag(&self, path_span: SourceSpan) -> SourceDiagnostic {
-        let core_msg = "Only '/' can be used as path separators.".to_string();
-        //NOTE: Maybe an error code?
-        SourceDiagnostic::builder(
-            ErrorCode::ImportErr.into(),
-            DiagnosticLevel::Error,
-            core_msg,
-            self.current_region.src_id,
-        )
-        .add_annotation(path_span, AnnotationKind::Primary, None)
-        .build()
     }
 }

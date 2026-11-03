@@ -107,6 +107,7 @@ pub fn extract_main<R: Read>(
     // Or at least warn it's inaccurate, or just, separate stages.
     cfg.perf_tracker_mut().start(main_path_id.inner());
 
+    //TODO: -- SHARE --
     let mut region_arena: Arena<SourceRegion, SourceRegionId> = Arena::with_capacity(1);
     let main_region_id = SourceRegionId::new(0);
 
@@ -120,7 +121,6 @@ pub fn extract_main<R: Read>(
             }
             // This could be pretty bad to leave here because
             ConfigLoaderOutput::Broken(broken_region, cfg_err) => {
-                // Odd handling..
                 let diag = match cfg_err {
                     ConfigLoadError::Diagnostic(diag) => diag,
                     ConfigLoadError::IO(io_err) => {
@@ -144,6 +144,7 @@ pub fn extract_main<R: Read>(
                 return Err(ModuleInitError::new(None, src_manager, interner, cfg_err));
             }
         };
+    //TODO: -- SHARE --
 
     // NOTE: Aliasing maybe.
     let file_name = match main_path.file_prefix().map(|n| n.to_str()).flatten() {
@@ -535,14 +536,7 @@ pub fn extract_modules(
     (compiler, comp_store, summary)
 }
 
-/// Takes an import and attempts to turn it into a module
-/// import: The import being turned into a module
-/// official_ident: The identifier of the import that's being resolved into a module. This is passed
-/// in because the identifier of an import must be either the generated file name, or given alias,
-/// not both.
-/// graph: State management system for processing modules.
-///
-/// Import collection registers paths in the graph's source manager and names in the interner.
+/// Takes an import and attempts to turn it into a module using the current graph progress
 fn resolve_module(
     // The import to turn into a module
     imp: Import,
@@ -618,7 +612,6 @@ fn resolve_module(
             (region, ModuleState::Loaded)
         }
         //FIX: Works but code liability
-        //Ok this really needs to be collapsed
         ConfigLoaderOutput::Broken(broken_region, cfg_err) => {
             match cfg_err {
                 ConfigLoadError::Diagnostic(diag) => {
