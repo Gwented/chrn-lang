@@ -1,5 +1,12 @@
-use chrn_utils::{id_types::SourceId, source_utils::source_manager::SourceManager};
-use std::{collections::VecDeque, io::Read, path::Path};
+use chrn_utils::{
+    id_types::SourceId,
+    source_utils::source_manager::{SourceKind, SourceManager},
+};
+use std::{
+    collections::VecDeque,
+    io::{Cursor, Read},
+    path::Path,
+};
 
 pub mod module_concepts;
 pub mod module_finder;
@@ -15,7 +22,7 @@ use chrn_utils::{
     core_error::{self, ConfigLoadError, ModuleInitError},
     err_codes::ErrorCode,
     files::file_ops,
-    id_types::{InternedIdUTF8, ModuleId, PathId, SourceRegionId},
+    id_types::{InternedIdUTF8, ModuleId, SourceRegionId},
     intern::{self, Intern},
     source_utils::{
         source_diagnostic::{
@@ -177,7 +184,7 @@ pub fn extract_main<R: Read>(
     // unknown imports based off of reserved len(). This works during the recursive process because
     // it MUST look at all imports before ever recursing further, and it reserves it's spot as
     // `None`.
-    let registered_mod_ids: Vec<(PathId, ModuleId)> = vec![(main_path_id, main_mod_id)];
+    let registered_mod_ids: Vec<(SourceId, ModuleId)> = vec![(main_path_id.inner(), main_mod_id)];
 
     // Maybe don't inherently declare here since it's a little odd to use a returned variable as
     // the main variable to then collect future diagnostics?
@@ -208,7 +215,7 @@ pub fn extract_main<R: Read>(
         Some(main_region_id),
     );
 
-    let seen: Vec<PathId> = vec![main_path_id];
+    let seen: Vec<SourceId> = vec![main_path_id.inner()];
     let graph = ModuleGraph::new(region_arena, registered_mod_ids, seen, src_manager);
 
     Ok((main_mod, graph, interner, summary))
@@ -268,7 +275,7 @@ pub fn extract_modules(
             let imp = importer_mod.imports[imp_idx].clone();
 
             // We haven't made the compiler yet so no other types of imports should exist
-            let ImportKind::UnresolvedSource(ref sp_path_id) = imp.kind else {
+            let ImportKind::UnresolvedSource(ref sp_src_id) = imp.kind else {
                 unreachable!();
             };
 
@@ -276,9 +283,9 @@ pub fn extract_modules(
             //be omitted entirely. This is the only domain where anything "reserved" in identifier
             //is stopped.
             if let Err(mut builder) = ensure_not_reserved(imp.name_id, importer_path_id) {
-                builder = builder.add_annotation(sp_path_id.span, AnnotationKind::Primary, None);
+                builder = builder.add_annotation(sp_src_id.span, AnnotationKind::Primary, None);
                 summary.push_diag(builder.build());
-                importer_mod.imports[imp_idx].kind = ImportKind::ErrorSource(sp_path_id.clone());
+                importer_mod.imports[imp_idx].kind = ImportKind::ErrorSource(sp_src_id.clone());
                 continue;
             }
 
@@ -287,8 +294,7 @@ pub fn extract_modules(
                     builder =
                         builder.add_annotation(sp_alias_id.span, AnnotationKind::Primary, None);
                     summary.push_diag(builder.build());
-                    importer_mod.imports[imp_idx].kind =
-                        ImportKind::ErrorSource(sp_path_id.clone());
+                    importer_mod.imports[imp_idx].kind = ImportKind::ErrorSource(sp_src_id.clone());
                     continue;
                 }
             }
@@ -296,8 +302,7 @@ pub fn extract_modules(
             // If is_importer, that means it shouldn't count as a duplicate identifier. So, if `main`
             // imports `main` and both mains are the same, no error is emitted because that would be
             // the wrong behavior. This is solely aa self import guard.
-            let is_importer =
-                sp_path_id.inner.inner() == importer_path_id && imp.sp_alias_id.is_none();
+            let is_importer = sp_src_id.inner == importer_path_id && imp.sp_alias_id.is_none();
 
             // The identifier of an import is mutually exclusive. If it has an alias, it can't use
             // the generated identifier, if it only has an identifier it only uses the identifier.
@@ -305,7 +310,7 @@ pub fn extract_modules(
             {
                 (sp_alias_id.inner, sp_alias_id.span)
             } else {
-                (imp.name_id, sp_path_id.span)
+                (imp.name_id, sp_src_id.span)
             };
 
             let mod_ident = ModuleIdent::new(
@@ -334,36 +339,35 @@ pub fn extract_modules(
             }
 
             // If the path from a given import was seen already then it skips
-            if graph.seen.contains(&sp_path_id.inner) {
+            if graph.seen.contains(&sp_src_id.inner) {
                 // Checking if there is a module id associated with it's path before skipping so
                 // that the import can be updated if possible.
                 let mod_id_opt = graph
                     .registered_mod_ids
                     .iter()
-                    .find(|(p_id, _)| *p_id == sp_path_id.inner)
+                    .find(|(s_id, _)| *s_id == sp_src_id.inner)
                     .map(|(_, m_id)| *m_id);
 
                 // Valid import
                 if let Some(mod_id) = mod_id_opt {
                     importer_mod.imports[imp_idx].kind =
-                        ImportKind::Source(sp_path_id.clone(), mod_id);
+                        ImportKind::Source(sp_src_id.clone(), mod_id);
                 } else {
                     // Meaning the import was an error source because resolve_module did register a
                     // module id for this import, and it was already seen
-                    importer_mod.imports[imp_idx].kind =
-                        ImportKind::ErrorSource(sp_path_id.clone());
+                    importer_mod.imports[imp_idx].kind = ImportKind::ErrorSource(sp_src_id.clone());
                 }
                 continue;
             }
 
             // It will now continue on the next iteration this import that has already been
             // registered is seen.
-            graph.seen.push(sp_path_id.inner);
+            graph.seen.push(sp_src_id.inner);
 
             // The module produced by this import (Happy birthday)
             let new_mod = match resolve_module(
                 imp.clone(),
-                official_ident,
+                // official_ident,
                 // &importer_mod,
                 &mut graph,
                 &mut summary,
@@ -373,14 +377,13 @@ pub fn extract_modules(
                 Ok(m) => {
                     // Need to set the current import to a resolved source or it stays unresolved
                     importer_mod.imports[imp_idx].kind =
-                        ImportKind::Source(sp_path_id.clone(), m.self_id);
+                        ImportKind::Source(sp_src_id.clone(), m.self_id);
                     m
                 }
                 // Need to transition state from unresolved source to error so future users of this
                 // state machine know
                 Err(_) => {
-                    importer_mod.imports[imp_idx].kind =
-                        ImportKind::ErrorSource(sp_path_id.clone());
+                    importer_mod.imports[imp_idx].kind = ImportKind::ErrorSource(sp_src_id.clone());
                     continue;
                 }
             };
@@ -411,7 +414,7 @@ pub fn extract_modules(
                     ErrorCode::CompilerInternals.into(),
                     DiagnosticLevel::Error,
                     core_msg,
-                    sp_path_id.inner.inner(),
+                    sp_src_id.inner,
                 )
                 .add_note(format!("Last processed module was `{last_processed_name}`"));
 
@@ -543,7 +546,7 @@ pub fn extract_modules(
 fn resolve_module(
     // The import to turn into a module
     imp: Import,
-    official_ident: InternedIdUTF8,
+    // official_ident: InternedIdUTF8,
     // Module that imported this module, which triggered this module's processing,
     // importer_mod: &Module,
     graph: &mut ModuleGraph,
@@ -554,11 +557,11 @@ fn resolve_module(
     //WARN: If there is ever an instance where reserved_mod_ids reserves a module id that is valid,
     //but fails with "Err(())" below, it has broken module id alignment
 
-    let ImportKind::UnresolvedSource(sp_path_id) = imp.kind.clone() else {
+    let ImportKind::UnresolvedSource(sp_src_id) = imp.kind.clone() else {
         unreachable!();
     };
 
-    let importer_path_id = graph.region_arena[sp_path_id.span.region_id].src_id;
+    let importer_src_id = graph.region_arena[sp_src_id.span.region_id].src_id;
 
     // Tracks the id of the current module by tracking however many imports were seen, which
     // all represent one module
@@ -567,88 +570,115 @@ fn resolve_module(
     // We are iterating through said imports. Meaning for this iteration to happen module_finder
     // would have to register the path first.
 
-    //WARN: This can't fail, if the mod finder found it that means it normalized it, which means
-    //it's a real path, which could be a dir I guess
-    let path = &graph.src_manager.extract_path(sp_path_id.inner).path;
-    let src = match file_ops::fopen(path) {
-        Ok(f) => f,
-        Err((_, err_msg)) => {
-            let src_diag = SourceDiagnostic::builder(
-                ErrorCode::ImportErr.into(),
-                DiagnosticLevel::Error,
-                err_msg,
-                importer_path_id,
-            )
-            .add_annotation(
-                sp_path_id.span,
-                AnnotationKind::Primary,
-                "Caused by this import".to_string().into(),
-            )
-            .build();
+    //TEST: Maybe supply src first
 
-            summary.push_diag(src_diag);
+    // Using region id before pushing
+    let sub_region_id = graph.region_arena.make_id();
+
+    // May use enum for static
+    let loader_out: ConfigLoaderOutput = match graph.src_manager.extract_source(sp_src_id.inner) {
+        SourceKind::Path(src_path) => {
+            //WARN: This can't fail, if the mod finder found it that means it normalized it, which means
+            //it's a real path, which could be a dir I guess
+            let f = match file_ops::fopen(&src_path.path) {
+                Ok(f) => f,
+                Err((_, err_msg)) => {
+                    let src_diag = SourceDiagnostic::builder(
+                        ErrorCode::ImportErr.into(),
+                        DiagnosticLevel::Error,
+                        err_msg,
+                        importer_src_id,
+                    )
+                    .add_annotation(
+                        sp_src_id.span,
+                        AnnotationKind::Primary,
+                        "Caused by this import".to_string().into(),
+                    )
+                    .build();
+
+                    summary.push_diag(src_diag);
+                    return Err(());
+                }
+            };
+            // Calling loader inline to avoid Box<dyn Read> just for composition
+            ConfigLoader::new(sub_region_id, f, sp_src_id.inner, cfg).load_config()
+        }
+        SourceKind::InMemory(in_mem) => ConfigLoader::new(
+            sub_region_id,
+            Cursor::new(&in_mem.src),
+            sp_src_id.inner,
+            cfg,
+        )
+        .load_config(),
+    };
+
+    let (sub_region, sub_state) = match loader_out {
+        ConfigLoaderOutput::Success(region, new_summary) => {
+            summary.merge(new_summary);
+            (region, ModuleState::Loaded)
+        }
+        //FIX: Works but code liability
+        //Ok this really needs to be collapsed
+        ConfigLoaderOutput::Broken(broken_region, cfg_err) => {
+            match cfg_err {
+                ConfigLoadError::Diagnostic(diag) => {
+                    summary.push_diag(diag);
+                }
+                ConfigLoadError::IO(e) => {
+                    // This is matched even though file IO is the only current means in the case of
+                    // a different source which is also IO, which would make this a comptime error
+                    // if not updated.
+                    let core_msg = match &graph.src_manager.extract_source(sp_src_id.inner) {
+                        SourceKind::Path(src_path) => {
+                            core_error::form_string_from_io_err(&e, &src_path.path)
+                                .unwrap_or(e.to_string())
+                        }
+                        SourceKind::InMemory(_) => unreachable!(),
+                    };
+
+                    let src_diag = SourceDiagnostic::builder(
+                        None,
+                        DiagnosticLevel::Error,
+                        core_msg,
+                        importer_src_id,
+                    )
+                    .add_annotation(sp_src_id.span, AnnotationKind::Primary, None)
+                    .build();
+
+                    summary.push_diag(src_diag);
+                }
+            }
+            (broken_region, ModuleState::BrokenRegion)
+        }
+        ConfigLoaderOutput::UnrecoverableErr(cfg_err) => {
+            match cfg_err {
+                ConfigLoadError::Diagnostic(diag) => {
+                    summary.push_diag(diag);
+                }
+                ConfigLoadError::IO(e) => {
+                    let core_msg = match &graph.src_manager.extract_source(sp_src_id.inner) {
+                        SourceKind::Path(src_path) => {
+                            core_error::form_string_from_io_err(&e, &src_path.path)
+                                .unwrap_or(e.to_string())
+                        }
+                        SourceKind::InMemory(_) => unreachable!(),
+                    };
+
+                    let src_diag = SourceDiagnostic::builder(
+                        None,
+                        DiagnosticLevel::Error,
+                        core_msg,
+                        importer_src_id,
+                    )
+                    .add_annotation(sp_src_id.span, AnnotationKind::Primary, None)
+                    .build();
+
+                    summary.push_diag(src_diag);
+                }
+            }
             return Err(());
         }
     };
-
-    // Creating region id for the current module on this level in the recursive stacke
-    let sub_region_id = graph.region_arena.make_id();
-
-    // Using region id before pushing
-    let (sub_region, sub_state) =
-        match ConfigLoader::new(sub_region_id, src, sp_path_id.inner.inner(), cfg).load_config() {
-            ConfigLoaderOutput::Success(region, new_summary) => {
-                summary.merge(new_summary);
-                (region, ModuleState::Loaded)
-            }
-            //FIX: Works but code liability
-            ConfigLoaderOutput::Broken(broken_region, cfg_err) => {
-                match cfg_err {
-                    ConfigLoadError::Diagnostic(diag) => {
-                        summary.push_diag(diag);
-                    }
-                    ConfigLoadError::IO(e) => {
-                        let path = &graph.src_manager.extract_path(sp_path_id.inner).path;
-                        let core_msg =
-                            core_error::form_string_from_io_err(&e, path).unwrap_or(e.to_string());
-                        let src_diag = SourceDiagnostic::builder(
-                            None,
-                            DiagnosticLevel::Error,
-                            core_msg,
-                            importer_path_id,
-                        )
-                        .add_annotation(sp_path_id.span, AnnotationKind::Primary, None)
-                        .build();
-
-                        summary.push_diag(src_diag);
-                    }
-                }
-                (broken_region, ModuleState::BrokenRegion)
-            }
-            ConfigLoaderOutput::UnrecoverableErr(cfg_err) => {
-                match cfg_err {
-                    ConfigLoadError::Diagnostic(diag) => {
-                        summary.push_diag(diag);
-                    }
-                    ConfigLoadError::IO(e) => {
-                        let path = &graph.src_manager.extract_path(sp_path_id.inner).path;
-                        let core_msg =
-                            core_error::form_string_from_io_err(&e, path).unwrap_or(e.to_string());
-                        let src_diag = SourceDiagnostic::builder(
-                            None,
-                            DiagnosticLevel::Error,
-                            core_msg,
-                            importer_path_id,
-                        )
-                        .add_annotation(sp_path_id.span, AnnotationKind::Primary, None)
-                        .build();
-
-                        summary.push_diag(src_diag);
-                    }
-                }
-                return Err(());
-            }
-        };
 
     // The check in the main loop MUST have ensured the module id created here is going to be new
     let current_mod_id = ModuleId::new(graph.registered_mod_ids.len() as u32);
@@ -661,7 +691,7 @@ fn resolve_module(
 
     graph
         .registered_mod_ids
-        .push((sp_path_id.inner, current_mod_id));
+        .push((sp_src_id.inner, current_mod_id));
 
     let (bind, sub_imports, finder_summary) =
         ModuleFinder::new(&sub_region.src_bytes, cfg, &sub_region)

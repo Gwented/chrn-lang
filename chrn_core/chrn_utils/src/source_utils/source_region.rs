@@ -12,10 +12,9 @@ pub struct SourceRegion {
     pub self_id: SourceRegionId,
     /// Bytes associated with this region, which specifically point to the script portion
     ///
-    /// This is relative depending on if `@def` was used
+    /// This may be relative depending on if `@def` was used
     pub src_bytes: Vec<u8>,
-    //TODO: Support loading in-memory sources through the module extraction entry points.
-    /// Source containing this region
+    /// `SourceId` of this region
     pub src_id: SourceId,
     // / Amount of \n within config file so binary search can be done by error reporter
     // pub new_lines: Vec<usize>,

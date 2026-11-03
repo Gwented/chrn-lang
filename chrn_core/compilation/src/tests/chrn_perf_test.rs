@@ -14,9 +14,9 @@ fn reports_preserve_source_identity_labels_and_stage_data() {
     let path = sources
         .register_path(Path::new("/fixture/main.chrn"))
         .inner();
-    let named = sources.register_in_memory(Some(name)).inner();
-    let same_name = sources.register_in_memory(Some(name)).inner();
-    let unnamed = sources.register_in_memory(None).inner();
+    let named = sources.register_in_memory(Some(name), Vec::new()).inner();
+    let same_name = sources.register_in_memory(Some(name), Vec::new()).inner();
+    let unnamed = sources.register_in_memory(None, Vec::new()).inner();
     let ids = [path, named, same_name, unnamed];
     let mut perf = ChrnPerf::new(true);
     for id in ids {

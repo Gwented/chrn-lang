@@ -101,7 +101,7 @@ pub(super) fn mock_import(
 ) -> Import {
     let kind = ImportKind::Source(
         SpannedContainer::new(
-            src_manager.register_path(&Path::new(path_name)),
+            src_manager.register_path(&Path::new(path_name)).inner(),
             SourceSpan::default(),
         ),
         mod_id,

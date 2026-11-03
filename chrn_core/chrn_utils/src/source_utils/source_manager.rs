@@ -1,6 +1,7 @@
 use std::{
     borrow::Cow,
     collections::HashMap,
+    ops::Index,
     path::{Path, PathBuf},
 };
 
@@ -16,7 +17,11 @@ use crate::{
 
 tag_decl!(PathTag, InMemoryTag);
 
-/// Append-only source mapper.
+// Arena?
+/// Append-only source manager.
+///
+/// Sources valid in this arena are ones that act as access points.
+/// It must be what would be considered the source of truth location to get the source.
 #[derive(Debug, Default)]
 pub struct SourceManager {
     srcs: Vec<SourceKind>,
@@ -53,11 +58,12 @@ impl SourcePath {
 pub struct SourceInMemory {
     /// Optional display name
     pub name: Option<InternedIdUTF8>,
+    pub src: Vec<u8>,
 }
 
 impl SourceInMemory {
-    pub fn new(name: Option<InternedIdUTF8>) -> Self {
-        Self { name }
+    pub fn new(name: Option<InternedIdUTF8>, src: Vec<u8>) -> Self {
+        Self { name, src }
     }
 }
 
@@ -93,10 +99,11 @@ impl SourceManager {
     pub fn register_in_memory(
         &mut self,
         name: Option<InternedIdUTF8>,
+        src: Vec<u8>,
     ) -> TaggedId<SourceId, InMemoryTag> {
         let id = SourceId::new(self.srcs.len() as u32).into_tagged::<InMemoryTag>();
         self.srcs
-            .push(SourceKind::InMemory(SourceInMemory::new(name)));
+            .push(SourceKind::InMemory(SourceInMemory::new(name, src)));
         id
     }
 

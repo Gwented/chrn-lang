@@ -40,7 +40,7 @@ fn source_registration_preserves_identity_and_kind_through_growth() {
             assert_eq!(manager.register_path(path), path_id);
             assert_eq!(manager.get_source_id_from_path(path), Some(path_id));
             let (name, display_name) = names[i % names.len()];
-            let memory_id = manager.register_in_memory(name);
+            let memory_id = manager.register_in_memory(name, Vec::new());
             assert!(
                 seen_ids.insert(memory_id.inner()),
                 "duplicate memory ID at {i}"
@@ -109,7 +109,7 @@ fn source_registration_preserves_identity_and_kind_through_growth() {
 fn tagged_access_rejects_valid_ids_with_incorrect_kind_proof() {
     let mut manager = SourceManager::new();
     let path_id = manager.register_path(Path::new("source.chrn"));
-    let memory_id = manager.register_in_memory(None);
+    let memory_id = manager.register_in_memory(None, Vec::new());
     let false_path = memory_id.inner().into_tagged::<PathTag>();
     let false_memory = path_id.inner().into_tagged::<InMemoryTag>();
 

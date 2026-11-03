@@ -249,6 +249,7 @@ impl ModuleFinder<'_> {
         parse_kind: SourceParseKind,
         src_manager: &mut SourceManager,
     ) -> Result<Import, QuoteError> {
+        //TODO: -- All same start --
         self.cursor.skip(1);
         let start_cursor = self.cursor.pos();
 
@@ -287,7 +288,6 @@ impl ModuleFinder<'_> {
             SourceParseKind::Filesystem => (),
         }
 
-        //TODO: Need to have a path for in memory
         let path_buf = self.create_pathbuf(slice)?;
 
         let import_path = match path_buf.canonicalize() {
@@ -307,8 +307,9 @@ impl ModuleFinder<'_> {
                 return Err(QuoteError::Diagnostic(src_diag));
             }
         };
+        //TODO: -- All same end --
 
-        // We could check for an alias here too in case the file name is invalid and needs an alias
+        // Is `Option` so an alias can cover a non-UTF-8 file name
         let file_name_opt = import_path.file_prefix().map(|n| n.to_str()).flatten();
 
         let path_id = src_manager.register_path(&import_path);
@@ -358,7 +359,8 @@ impl ModuleFinder<'_> {
             return Err(QuoteError::Diagnostic(src_diag));
         };
 
-        let import_kind = ImportKind::UnresolvedSource(SpannedContainer::new(path_id, path_span));
+        let import_kind =
+            ImportKind::UnresolvedSource(SpannedContainer::new(path_id.inner(), path_span));
         let import = Import::new(name_id, import_kind, alias_id);
 
         self.cfg.logger().log_dbg(|| {
@@ -477,7 +479,7 @@ impl ModuleFinder<'_> {
         };
 
         let bind_path_id = src_manager.register_path(&bind_path);
-        let bind = Bind::new(bind_path_id, path_span);
+        let bind = Bind::new(bind_path_id.inner(), path_span);
 
         self.cfg.logger().log_dbg(|| {
             let bind_path = &src_manager.extract_path(bind_path_id).path;

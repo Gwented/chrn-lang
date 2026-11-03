@@ -27,8 +27,8 @@ fn source_names_render_without_regions_and_without_annotations() {
     let path = sources
         .register_path(Path::new("/fixture/main.chrn"))
         .inner();
-    let named = sources.register_in_memory(Some(name)).inner();
-    let unnamed = sources.register_in_memory(None).inner();
+    let named = sources.register_in_memory(Some(name), Vec::new()).inner();
+    let unnamed = sources.register_in_memory(None, Vec::new()).inner();
 
     for (id, raw_name, escaped_name) in [
         (path, "/fixture/main.chrn", "/fixture/main.chrn"),
@@ -95,8 +95,8 @@ fn annotation_source_names_follow_their_own_regions() {
     let path = sources
         .register_path(Path::new("/fixture/main.chrn"))
         .inner();
-    let named = sources.register_in_memory(Some(name)).inner();
-    let unnamed = sources.register_in_memory(None).inner();
+    let named = sources.register_in_memory(Some(name), Vec::new()).inner();
+    let unnamed = sources.register_in_memory(None, Vec::new()).inner();
     let mut regions = Arena::new();
     for (i, (id, script_start)) in [(named, 11), (unnamed, 29)].into_iter().enumerate() {
         let region_id = SourceRegionId::new(i as u32);
@@ -199,7 +199,7 @@ fn annotation_source_names_follow_their_own_regions() {
 fn annotation_file_paths_and_unavailable_regions_keep_distinct_metadata() {
     let interner = Intern::init();
     let mut sources = SourceManager::new();
-    let diagnostic_source = sources.register_in_memory(None).inner();
+    let diagnostic_source = sources.register_in_memory(None, Vec::new()).inner();
     let file_source = sources
         .register_path(Path::new("/fixture/import.chrn"))
         .inner();

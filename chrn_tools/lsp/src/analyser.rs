@@ -38,7 +38,7 @@
 
 use chrn_utils::source_utils::source_diagnostic::DiagnosticLevel;
 use chrn_utils::source_utils::source_diagnostic::annotations::AnnotationKind;
-use chrn_utils::source_utils::source_manager::SourceManager;
+use chrn_utils::source_utils::source_manager::{PathTag, SourceManager};
 use compilation::config_loader::{ConfigLoader, ConfigLoaderOutput};
 use compilation::lexer::Lexer;
 use compilation::module::{
@@ -1122,7 +1122,8 @@ pub(crate) fn resolve_modules_lsp(
             let ImportKind::UnresolvedSource(sp_path_id) = &import.kind else {
                 continue;
             };
-            let path_id = sp_path_id.inner;
+            // ModuleFinder registers file imports as path sources.
+            let path_id = sp_path_id.inner.into_tagged::<PathTag>();
             let path_span = sp_path_id.span;
 
             // A no-alias import of the file itself is a self-import: it resolves to

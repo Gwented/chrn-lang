@@ -1,3 +1,4 @@
+use chrn_utils::id_types::SourceId;
 use chrn_utils::source_utils::source_manager::SourceManager;
 use chrn_utils::{
     arena::Arena,
@@ -99,16 +100,16 @@ pub struct ModuleGraph {
     /// unknown imports based off of reserved len(). This works during the recursive process because
     /// it MUST look at all imports before ever recursing further, and it reserves it's spot as
     /// `None`.
-    pub registered_mod_ids: Vec<(PathId, ModuleId)>,
+    pub registered_mod_ids: Vec<(SourceId, ModuleId)>,
     /// All paths seen
-    pub seen: Vec<PathId>,
+    pub seen: Vec<SourceId>,
 }
 
 impl ModuleGraph {
     pub const fn new(
         region_arena: Arena<SourceRegion, SourceRegionId>,
-        registered_mod_ids: Vec<(PathId, ModuleId)>,
-        seen: Vec<PathId>,
+        registered_mod_ids: Vec<(SourceId, ModuleId)>,
+        seen: Vec<SourceId>,
         src_manager: SourceManager,
     ) -> ModuleGraph {
         ModuleGraph {
@@ -124,7 +125,7 @@ impl ModuleGraph {
         &self.region_arena
     }
 
-    pub const fn registered_mod_ids(&self) -> &Vec<(PathId, ModuleId)> {
+    pub const fn registered_mod_ids(&self) -> &Vec<(SourceId, ModuleId)> {
         &self.registered_mod_ids
     }
 
@@ -132,7 +133,7 @@ impl ModuleGraph {
     //     &self.other_mods
     // }
 
-    pub const fn seen(&self) -> &Vec<PathId> {
+    pub const fn seen(&self) -> &Vec<SourceId> {
         &self.seen
     }
 }
@@ -211,25 +212,25 @@ impl Import {
 pub enum ImportKind {
     /// Import that is from a source file and fully resolved.
     /// Contains it's spanned path and module id
-    Source(SpannedContainer<PathId>, ModuleId),
+    Source(SpannedContainer<SourceId>, ModuleId),
     /// Import from a source file that has a path attached to it, but no module id yet
-    UnresolvedSource(SpannedContainer<PathId>),
+    UnresolvedSource(SpannedContainer<SourceId>),
     /// Import from source that had an unrecoverable error occur.
     /// This means the import should NOT be touched in any resolution scenario, unless for
     /// reporting or storing metadata.
-    ErrorSource(SpannedContainer<PathId>),
+    ErrorSource(SpannedContainer<SourceId>),
     /// Core module originated import
     Core(ModuleId),
 }
 
 #[derive(Debug, Default, Clone)]
 pub struct Bind {
-    pub path_id: PathId,
+    pub path_id: SourceId,
     pub path_span: SourceSpan,
 }
 
 impl Bind {
-    pub const fn new(path_id: PathId, path_span: SourceSpan) -> Bind {
+    pub const fn new(path_id: SourceId, path_span: SourceSpan) -> Bind {
         Bind { path_id, path_span }
     }
 }

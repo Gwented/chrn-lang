@@ -16,7 +16,7 @@ use crate::module::module_finder::ModuleFinder;
 use crate::script_compiler::reporter::Reporter;
 use chrn_utils::{
     core_error::ConfigLoadError,
-    id_types::{ModuleId, PathId, SourceRegionId},
+    id_types::{ModuleId, SourceId, SourceRegionId},
     intern::Intern,
     source_utils::source_manager::PathTag,
     source_utils::{
@@ -110,10 +110,10 @@ fn make_bind_script(dir: &Path, bind_target: &Path) -> PathBuf {
     create_chrn_file(dir, "with_bind.chrn", &format!("{}let x = 5\n", bind_stmt))
 }
 
-fn mod_id_for_path(reserved: &[(PathId, ModuleId)], path_id: PathId) -> Option<ModuleId> {
+fn mod_id_for_source(reserved: &[(SourceId, ModuleId)], source_id: SourceId) -> Option<ModuleId> {
     reserved
         .iter()
-        .find(|(p, _)| *p == path_id)
+        .find(|(source, _)| *source == source_id)
         .map(|(_, m)| *m)
 }
 
@@ -206,7 +206,8 @@ fn modfinder_single_import() {
     let import_span = match &import.kind {
         ImportKind::UnresolvedSource(sp_path_id) => {
             assert_eq!(
-                sp_path_id.inner, sub_path_id,
+                sp_path_id.inner,
+                sub_path_id.inner(),
                 "import must carry the correct sub path id"
             );
             let expected_start = 8;
@@ -358,7 +359,7 @@ fn modfinder_bind() {
     assert!(bind.is_some(), "bind should be present");
     assert_eq!(
         bind.as_ref().unwrap().path_id,
-        src_manager.register_path(&bind_target),
+        src_manager.register_path(&bind_target).inner(),
         "bind path must match target"
     );
 
@@ -489,7 +490,7 @@ fn modfinder_duplicate_import_path_reuses_mod_id() {
     // the same path_id since they reference the same path.
     for imp in &imports {
         assert!(
-            matches!(imp.kind, ImportKind::UnresolvedSource(ref sp) if sp.inner == sub_path_id),
+            matches!(imp.kind, ImportKind::UnresolvedSource(ref sp) if sp.inner == sub_path_id.inner()),
             "import must reference the sub path"
         );
     }
@@ -573,7 +574,13 @@ fn modfinder_string_comment_marker_preserves_following_import() {
     let ImportKind::UnresolvedSource(path) = &module.imports[0].kind else {
         panic!("expected an unresolved source import");
     };
-    assert_eq!(graph.src_manager.extract_path(path.inner).path, sub);
+    assert_eq!(
+        graph
+            .src_manager
+            .extract_path(path.inner.into_tagged::<PathTag>())
+            .path,
+        sub
+    );
 }
 
 /// Comments are trivia between the tokens of import and bind statements.
@@ -610,7 +617,13 @@ fn modfinder_comments_between_statement_tokens() {
             let ImportKind::UnresolvedSource(path) = &import.kind else {
                 panic!("expected an unresolved source import");
             };
-            assert_eq!(graph.src_manager.extract_path(path.inner).path, sub);
+            assert_eq!(
+                graph
+                    .src_manager
+                    .extract_path(path.inner.into_tagged::<PathTag>())
+                    .path,
+                sub
+            );
             import
                 .sp_alias_id
                 .as_ref()
@@ -622,7 +635,13 @@ fn modfinder_comments_between_statement_tokens() {
         .bind
         .as_ref()
         .expect("comment must not hide bind path");
-    assert_eq!(graph.src_manager.extract_path(bind.path_id).path, target);
+    assert_eq!(
+        graph
+            .src_manager
+            .extract_path(bind.path_id.into_tagged::<PathTag>())
+            .path,
+        target
+    );
 }
 
 /// A block comment itself separates tokens; no additional space is required.
@@ -657,12 +676,24 @@ fn modfinder_statement_immediately_after_block_comment() {
     let ImportKind::UnresolvedSource(path) = &module.imports[0].kind else {
         panic!("expected an unresolved source import");
     };
-    assert_eq!(graph.src_manager.extract_path(path.inner).path, sub);
+    assert_eq!(
+        graph
+            .src_manager
+            .extract_path(path.inner.into_tagged::<PathTag>())
+            .path,
+        sub
+    );
     let bind = module
         .bind
         .as_ref()
         .expect("comment must separate bind keyword");
-    assert_eq!(graph.src_manager.extract_path(bind.path_id).path, target);
+    assert_eq!(
+        graph
+            .src_manager
+            .extract_path(bind.path_id.into_tagged::<PathTag>())
+            .path,
+        target
+    );
 }
 
 /// The final slash of a nested opener cannot also close that nested comment.
@@ -696,7 +727,11 @@ fn modfinder_nested_comment_delimiters_do_not_overlap() {
             let ImportKind::UnresolvedSource(path) = &import.kind else {
                 panic!("expected an unresolved source import");
             };
-            graph.src_manager.extract_path(path.inner).path.clone()
+            graph
+                .src_manager
+                .extract_path(path.inner.into_tagged::<PathTag>())
+                .path
+                .clone()
         })
         .collect();
     assert_eq!(
@@ -829,12 +864,12 @@ fn extract_main_simple_script() {
         .src_manager
         .get_source_id_from_path(&main_path)
         .unwrap();
-    let main_entry = mod_id_for_path(graph.registered_mod_ids(), main_path_id);
+    let main_entry = mod_id_for_source(graph.registered_mod_ids(), main_path_id.inner());
     assert_eq!(main_entry, Some(ModuleId::new(0)));
     assert_eq!(graph.registered_mod_ids().len(), 1, "only main in reserved");
     // `seen` must contain main's path id
     assert_eq!(graph.seen().len(), 1, "only main in seen");
-    assert!(graph.seen().contains(&main_path_id));
+    assert!(graph.seen().contains(&main_path_id.inner()));
     // `other_mods` starts empty
     // assert!(graph.other_mods().is_empty(), "other_mods should be empty");
     // region_arena must have one entry
@@ -882,7 +917,8 @@ fn extract_main_with_import() {
     let import_span = match &import.kind {
         ImportKind::UnresolvedSource(sp_path_id) => {
             assert_eq!(
-                sp_path_id.inner, sub_path_id,
+                sp_path_id.inner,
+                sub_path_id.inner(),
                 "import must carry the correct sub path id"
             );
             let expected_start = 8;
@@ -925,12 +961,12 @@ fn extract_main_with_import() {
         graph
             .registered_mod_ids()
             .iter()
-            .any(|(p, _)| *p == main_path_id),
+            .any(|(source, _)| *source == main_path_id.inner()),
         "main path must be in reserved"
     );
 
     // `seen` must contain main
-    assert!(graph.seen().contains(&main_path_id));
+    assert!(graph.seen().contains(&main_path_id.inner()));
     assert_eq!(
         graph.seen().len(),
         1,
@@ -1016,7 +1052,8 @@ fn extract_main_with_bind() {
         .get_source_id_from_path(&bind_target)
         .unwrap();
     assert_eq!(
-        bind.path_id, expected_path_id,
+        bind.path_id,
+        expected_path_id.inner(),
         "bind path must match the target file"
     );
 
@@ -1444,7 +1481,7 @@ fn module_graph_initial_state() {
     );
     assert_eq!(
         graph.registered_mod_ids()[0],
-        (main_path_id, ModuleId::new(0)),
+        (main_path_id.inner(), ModuleId::new(0)),
         "reserved_mod_ids[0] must be (main_path, mod_id 0)"
     );
     // assert!(
@@ -1453,7 +1490,7 @@ fn module_graph_initial_state() {
     // );
     assert_eq!(graph.seen().len(), 1, "seen must have 1 entry");
     assert!(
-        graph.seen().contains(&main_path_id),
+        graph.seen().contains(&main_path_id.inner()),
         "seen must contain main"
     );
     assert!(diags.diags.is_empty());

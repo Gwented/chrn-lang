@@ -116,6 +116,8 @@ impl<R: Read> ConfigLoader<'_, R> {
     /// Uses `PathId` for error location reporting purposes
     pub fn with_capacity<'a>(
         current_region_id: SourceRegionId,
+        //FIX: This forces clones depending on the reader since reader may or may not have src
+        //stored elsewhere.
         handle: R,
         current_src_id: SourceId,
         buf_cap: usize,
