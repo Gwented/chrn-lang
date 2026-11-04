@@ -8,7 +8,7 @@ pub(super) use crate::{
     script_compiler::{ScriptCompiler, reporter::Reporter},
     semantic::hir::hir_symbols::{VarDef, VariableMetadata, VariableState},
 };
-use chrn_utils::source_utils::source_manager::SourceManager;
+use chrn_utils::source_utils::source_manager::{SourceInMemory, SourceKind, SourceManager};
 use chrn_utils::{id_types::SourceId, source_utils::source_manager::PathTag};
 // -- Helpers --
 /// Creates fake strings for the amounts given
@@ -683,4 +683,52 @@ pub(super) fn make_diagnostics(amt: usize) -> Vec<SourceDiagnostic> {
         ));
     }
     diags
+}
+
+/// Registers named sources without touching the filesystem. Each fixture owns the
+/// interner used for registration and module extraction.
+pub(super) struct InMemorySources {
+    interner: Intern,
+    manager: SourceManager,
+}
+
+impl InMemorySources {
+    pub(super) fn new() -> Self {
+        Self {
+            interner: Intern::init(),
+            manager: SourceManager::new(),
+        }
+    }
+
+    pub(super) fn add(&mut self, name: &str, content: impl AsRef<[u8]>) -> String {
+        let name_id = self.interner.intern_str(name);
+        assert!(
+            self.manager
+                .get_source_id_from_interned_id(name_id)
+                .is_none(),
+            "fixture source {name:?} was registered twice"
+        );
+        self.manager
+            .register_in_memory(name_id, content.as_ref().to_vec());
+        name.to_owned()
+    }
+
+    pub(super) fn into_input(self, name: &str) -> (SourceKind, Intern, SourceManager) {
+        let name_id = self
+            .interner
+            .get_interned_id_from_str(name)
+            .expect("registered source name");
+        let source = self
+            .manager
+            .get_in_memory_from_interned_id(name_id)
+            .expect("registered source bytes");
+        let input = SourceKind::InMemory(SourceInMemory::new(name_id, source.src.clone()));
+        (input, self.interner, self.manager)
+    }
+}
+
+pub(super) fn memory_source_id(manager: &SourceManager, interner: &Intern, name: &str) -> SourceId {
+    manager
+        .get_source_id_from_interned_id(interner.get_interned_id_from_str(name).unwrap())
+        .unwrap()
 }

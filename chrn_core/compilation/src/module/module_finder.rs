@@ -242,87 +242,6 @@ impl ModuleFinder<'_> {
         (bind, imports, summary)
     }
 
-    // fn read_escape(&mut self) -> Option<char> {
-    //     match self.peek() {
-    //         b'n' => {
-    //             self.cursor.skip(1);
-    //             Some('\n')
-    //         }
-    //         b'r' => {
-    //             self.cursor.skip(1);
-    //             Some('\r')
-    //         }
-    //         b't' => {
-    //             self.cursor.skip(1);
-    //             Some('\t')
-    //         }
-    //         b'\\' => {
-    //             self.cursor.skip(1);
-    //             Some('\\')
-    //         }
-    //         b'0' => {
-    //             self.advance_char();
-    //             Some('\0')
-    //         }
-    //         b'\'' => {
-    //             self.cursor.skip(1);
-    //             Some('\'')
-    //         }
-    //         b'"' => {
-    //             self.advance();
-    //             Some('"')
-    //         }
-    //         b'x' => {
-    //             self.advance();
-    //             let mut val: u8 = 0;
-    //             let mut count = 0;
-    //
-    //             while count < 2 {
-    //                 let digit = Self::hex_val(self.peek())?;
-    //                 val = (val << 4) | digit;
-    //                 self.advance();
-    //                 count += 1;
-    //             }
-    //
-    //             if Self::hex_val(self.peek()).is_some() {
-    //                 None
-    //             } else {
-    //                 Some(val as char)
-    //             }
-    //         }
-    //         b'u' => {
-    //             if self.peek_ahead(1) != b'{' {
-    //                 return None;
-    //             }
-    //             self.cursor.skip(2);
-    //
-    //             let mut val: u32 = 0;
-    //             let mut count: usize = 0;
-    //
-    //             loop {
-    //                 let c = self.peek();
-    //
-    //                 if c == b'}' && count > 0 {
-    //                     self.advance();
-    //                     break;
-    //                 }
-    //
-    //                 let digit = Self::hex_val(c)? as u32;
-    //                 val = (val << 4) | digit;
-    //                 self.advance();
-    //                 count += 1;
-    //
-    //                 if count > 6 {
-    //                     return None;
-    //                 }
-    //             }
-    //
-    //             char::from_u32(val)
-    //         }
-    //         _ => None,
-    //     }
-    // }
-
     /// Assumes the starting point is at the opening quote
     fn parse_import(
         &mut self,
@@ -515,10 +434,10 @@ impl ModuleFinder<'_> {
 
         let path_span = SourceSpan::new(
             self.current_region.self_id,
-            // To exclude start quote
-            (start_cursor + 1) as u32,
-            // To exclude end quote
-            (end_cursor - 1) as u32,
+            // Includes start quote
+            start_cursor as u32,
+            // Includes end quote
+            end_cursor as u32,
         );
 
         // Solely for the intent of giving a more descriptive error
@@ -628,7 +547,6 @@ impl ModuleFinder<'_> {
             }
         };
         Ok((name_id_opt, src_id, path_span))
-        //TODO: -- All same end --
     }
 
     /// Starting from cursor reads identifier

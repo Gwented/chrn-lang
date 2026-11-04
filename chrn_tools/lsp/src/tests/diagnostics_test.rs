@@ -1,7 +1,9 @@
 use crate::analyser::{config_load_error_to_diagnostics, push_diagnostic, version_is_current};
+use crate::tests::helpers::resolve_memory_sources;
 use crate::tests::session::{Session, TempWorkspace, position_of};
 use chrn_utils::arena::Arena;
 use chrn_utils::core_error::ConfigLoadError;
+use chrn_utils::id_types::ModuleId;
 use chrn_utils::id_types::SourceRegionId;
 use chrn_utils::source_utils::source_diagnostic::DiagnosticLevel;
 use chrn_utils::source_utils::source_diagnostic::SourceDiagnostic;
@@ -10,6 +12,7 @@ use chrn_utils::source_utils::source_diagnostic::annotations::AnnotationKind;
 use chrn_utils::source_utils::source_region::SourceRegion;
 use chrn_utils::source_utils::source_span::SourceSpan;
 use chrn_utils::{id_types::SourceId, source_utils::source_manager::PathTag};
+use compilation::module::module_concepts::{ImportKind, ModuleState};
 use tower_lsp::lsp_types::{DiagnosticSeverity, Position, Range};
 
 #[test]
@@ -295,7 +298,7 @@ fn test_push_diagnostic_no_matching_region_uses_fallback() {
 async fn test_session_publishes_parse_diagnostics_in_absolute_positions() {
     let workspace = TempWorkspace::new("absolute_parse_diagnostics");
     let text = "// data header\n@def\nlet = 3\n@end\ntrailing: data\n";
-    let uri = workspace.write("embedded.chrn", text);
+    let uri = workspace.uri("embedded.chrn");
 
     let mut session = Session::new().await;
     let diagnostics = session.open(&uri, &text).await;
@@ -333,7 +336,7 @@ async fn test_session_reports_constraint_error_beside_nested_override() {
     let workspace = TempWorkspace::new("constraint_beside_nested_override");
     let invalid = "nest->\nstruct Structure { field1: i32 }\ncomplex->\nfor Structure {\n    field1 {\n        idents = 2\n        override JAVA=>types{change = java::char}\n    }\n}\n";
     let valid = invalid.replace("idents = 2", "idents = \"field1\"");
-    let uri = workspace.write("main.chrn", invalid);
+    let uri = workspace.uri("main.chrn");
 
     let mut session = Session::new().await;
     let diagnostics = session.open(&uri, invalid).await;
@@ -372,7 +375,7 @@ async fn test_session_reports_constraint_error_beside_nested_override() {
 async fn test_session_republishes_after_an_edit_clears_the_error() {
     let workspace = TempWorkspace::new("republish_after_fix");
     let broken = "let = 3\n";
-    let uri = workspace.write("main.chrn", broken);
+    let uri = workspace.uri("main.chrn");
 
     let mut session = Session::new().await;
     let diagnostics = session.open(&uri, broken).await;
@@ -400,7 +403,7 @@ async fn test_session_republishes_after_an_edit_clears_the_error() {
 async fn test_session_suppresses_a_republish_when_diagnostics_are_unchanged() {
     let workspace = TempWorkspace::new("suppressed_republish");
     let text = "let value = 3\n";
-    let uri = workspace.write("main.chrn", text);
+    let uri = workspace.uri("main.chrn");
 
     let mut session = Session::new().await;
     session.open(&uri, &text).await;
@@ -450,7 +453,7 @@ async fn test_session_suppresses_a_republish_when_diagnostics_are_unchanged() {
 async fn test_session_broken_region_is_not_reparsed() {
     let workspace = TempWorkspace::new("broken_region_not_reparsed");
     let text = "@def\nlet = 3\n";
-    let uri = workspace.write("broken.chrn", text);
+    let uri = workspace.uri("broken.chrn");
 
     let mut session = Session::new().await;
     let diagnostics = session.open(&uri, &text).await;
@@ -479,7 +482,7 @@ async fn test_session_reports_parse_errors_from_imported_modules() {
     // Import paths canonicalize against the process cwd, so fixtures import by
     // absolute path (see `create_pathbuf` in `module_finder`).
     let text = format!("import \"{}\"\nlet value = 2\n", sub_uri.path());
-    let uri = workspace.write("main.chrn", &text);
+    let uri = workspace.uri("main.chrn");
 
     let mut session = Session::new().await;
     let diagnostics = session.open(&uri, &text).await;
@@ -508,7 +511,7 @@ async fn test_session_reports_duplicate_import_identifiers() {
         alpha_uri.path(),
         beta_uri.path()
     );
-    let uri = workspace.write("main.chrn", &text);
+    let uri = workspace.uri("main.chrn");
 
     let mut session = Session::new().await;
     let diagnostics = session.open(&uri, &text).await;
@@ -534,7 +537,7 @@ async fn test_session_rejects_import_of_reserved_core_module() {
     // Import paths canonicalize against the process cwd, so fixtures import by
     // absolute path (see `create_pathbuf` in `module_finder`).
     let text = format!("import \"{}\"\nlet x = 2\n", core_uri.path());
-    let uri = workspace.write("main.chrn", &text);
+    let uri = workspace.uri("main.chrn");
 
     let mut session = Session::new().await;
     let diagnostics = session.open(&uri, &text).await;
@@ -544,6 +547,33 @@ async fn test_session_rejects_import_of_reserved_core_module() {
             .iter()
             .any(|d| d.message.contains("`core` is a reserved module identifier")),
         "importing a file named core.chrn must be rejected, got {diagnostics:?}"
+    );
+
+    // An entry document must obey the same reserved-name rule as its imports.
+    let entry_text = "let retained = 3\n";
+    let entry_diagnostics = session.open(&core_uri, entry_text).await;
+    assert_eq!(entry_diagnostics.len(), 1, "{entry_diagnostics:?}");
+    assert_eq!(
+        entry_diagnostics[0].message,
+        "`core` is a reserved module identifier"
+    );
+    assert_eq!(
+        entry_diagnostics[0].severity,
+        Some(DiagnosticSeverity::ERROR)
+    );
+    assert_eq!(entry_diagnostics[0].source.as_deref(), Some("chrn-config"));
+    assert!(
+        session
+            .hover(&core_uri, position_of(entry_text, "retained", 0))
+            .await
+            .is_some(),
+        "a reserved entry name must preserve partial editor analysis"
+    );
+
+    let ordinary_uri = workspace.uri("ordinary.chrn");
+    assert!(
+        session.open(&ordinary_uri, entry_text).await.is_empty(),
+        "ordinary entry names remain valid"
     );
 }
 
@@ -565,7 +595,7 @@ async fn test_session_rejected_import_does_not_shift_later_module_ids() {
         core_uri.path(),
         good_uri.path()
     );
-    let uri = workspace.write("main.chrn", &text);
+    let uri = workspace.uri("main.chrn");
 
     let mut session = Session::new().await;
     let diagnostics = session.open(&uri, &text).await;
@@ -618,7 +648,7 @@ fn test_uri_to_path_decodes_percent_encoding() {
 async fn test_session_main_module_binds_the_file_prefix() {
     let workspace = TempWorkspace::new("dotted_main_module_name");
     let text = "let x = 1\nlet y = dotted::x\n";
-    let uri = workspace.write("dotted.name.chrn", text);
+    let uri = workspace.uri("dotted.name.chrn");
 
     let mut session = Session::new().await;
     let diagnostics = session.open(&uri, text).await;
@@ -645,7 +675,7 @@ async fn test_session_anchors_transitively_imported_diagnostics_on_the_import() 
     let mid = format!("import \"{}\"\nlet m = 1\n", deep_uri.path());
     let mid_uri = workspace.write("mid.chrn", &mid);
     let text = format!("import \"{}\"\nlet value = 2\n", mid_uri.path());
-    let uri = workspace.write("main.chrn", &text);
+    let uri = workspace.uri("main.chrn");
 
     let mut session = Session::new().await;
     let diagnostics = session.open(&uri, &text).await;
@@ -718,4 +748,168 @@ fn test_get_lsp_diagnostics_budgets_the_published_set() {
         "the notice reports how many were suppressed, got {:?}",
         notice.message
     );
+}
+
+/// Rejected virtual imports preserve dense IDs, valid siblings, and source attribution.
+#[test]
+fn test_virtual_import_recovery_attributes_reserved_names_and_broken_regions() {
+    for previously_loaded in [false, true] {
+        let first = if previously_loaded {
+            "import virtual \"good\" as first\n"
+        } else {
+            ""
+        };
+        let last = if previously_loaded {
+            ""
+        } else {
+            "import virtual \"good\" as first\n"
+        };
+        let main = format!(
+            "{first}import virtual \"good\" as core\nimport virtual \"core\" as renamed\nimport virtual \"broken\" as bad\n{last}let retained = first::ITEM\n"
+        );
+        let mut prepared = resolve_memory_sources(
+            "entry",
+            &[
+                ("broken", "@def let bad = 1"),
+                ("core", "export let prohibited = 1\n"),
+                ("good", "export let ITEM = 3\n"),
+                ("entry", &main),
+            ],
+        );
+        assert!(prepared.dependency_snapshots.is_empty());
+        assert!(prepared.resolution.imported_uris.is_empty());
+        prepared.state.ensure_analyzed(prepared.resolution);
+        let state = prepared.state;
+        let compiler = state.compiler.as_ref().unwrap();
+        assert_eq!(
+            compiler.mods.len(),
+            4,
+            "only entry, good, broken, and synthesized core"
+        );
+        let good_id = ModuleId::new(if previously_loaded { 1 } else { 2 });
+        let broken_id = ModuleId::new(if previously_loaded { 2 } else { 1 });
+        assert_eq!(
+            state
+                .interner
+                .extract_utf8_str(compiler.mods[good_id].name_id),
+            "good"
+        );
+        assert_eq!(compiler.mods[good_id].state, ModuleState::Loaded);
+        assert_eq!(compiler.mods[broken_id].state, ModuleState::BrokenRegion);
+        let imports = &compiler.mods[ModuleId::new(0)].imports;
+        let rejected_start = usize::from(previously_loaded);
+        assert!(matches!(
+            imports[rejected_start].kind,
+            ImportKind::ErrorSource(_)
+        ));
+        assert!(matches!(
+            imports[rejected_start + 1].kind,
+            ImportKind::ErrorSource(_)
+        ));
+        let good_index = if previously_loaded { 0 } else { 3 };
+        assert!(matches!(imports[good_index].kind, ImportKind::Source(_, id) if id == good_id));
+        assert_eq!(
+            state.config_errors.diags.len(),
+            3,
+            "{:?}",
+            state.config_errors
+        );
+        let entry_src = state.region_arena[SourceRegionId::new(0)].src_id;
+        for (diag, expected_name) in state.config_errors.diags[..2]
+            .iter()
+            .zip([b"core".as_slice(), b"\"core\"".as_slice()])
+        {
+            assert_eq!(diag.core_msg, "`core` is a reserved module identifier");
+            assert_eq!(diag.level, DiagnosticLevel::Error);
+            assert_eq!(diag.src_id, entry_src);
+            let annotation = &diag.annotations[0];
+            assert_eq!(annotation.kind, AnnotationKind::Primary);
+            assert_eq!(
+                &main.as_bytes()[annotation.span.range_exclusive_usize()],
+                expected_name
+            );
+        }
+        let broken_diag = &state.config_errors.diags[2];
+        assert_eq!(broken_diag.core_msg, "Could not find `@end` after `@def`");
+        let broken_region = &state.region_arena[compiler.mods[broken_id].region_id.unwrap()];
+        assert_eq!(broken_diag.src_id, broken_region.src_id);
+        assert_ne!(broken_diag.src_id, entry_src);
+        for summary in [
+            &state.parse_errors,
+            &state.ns_errors,
+            &state.member_errors,
+            &state.ty_errors,
+            &state.cn_errors,
+        ] {
+            assert!(
+                summary.diags.is_empty(),
+                "valid sibling remains usable: {summary:?}"
+            );
+        }
+        let diagnostics = state.get_lsp_diagnostics();
+        let broken = diagnostics
+            .iter()
+            .find(|diag| diag.message.contains("Could not find `@end`"))
+            .unwrap();
+        assert!(broken.message.contains("broken"), "{:?}", broken.message);
+        assert_eq!(broken.severity, Some(DiagnosticSeverity::ERROR));
+        let source_start = position_of(&main, "\"broken\"", 0);
+        assert_eq!(
+            broken.range,
+            Range::new(
+                source_start,
+                Position::new(source_start.line, source_start.character + 8)
+            )
+        );
+    }
+
+    for entry_name in ["ordinary", "core"] {
+        let text = "let retained = 3\n";
+        let mut prepared = resolve_memory_sources(
+            entry_name,
+            &[("unused", "let ignored = 1\n"), (entry_name, text)],
+        );
+        let entry_src = prepared.resolution.main_region.src_id;
+        assert_ne!(
+            entry_src,
+            SourceId::new(0),
+            "the main source ID is not its module ID"
+        );
+        prepared.state.ensure_analyzed(prepared.resolution);
+        let state = prepared.state;
+        let expected_errors = usize::from(entry_name == "core");
+        assert_eq!(
+            state.config_errors.diags.len(),
+            expected_errors,
+            "entry {entry_name}"
+        );
+        let diagnostics = state.get_lsp_diagnostics();
+        assert_eq!(
+            diagnostics.len(),
+            expected_errors,
+            "entry {entry_name}: {diagnostics:?}"
+        );
+        if entry_name == "core" {
+            let diagnostic = &state.config_errors.diags[0];
+            assert_eq!(
+                diagnostic.core_msg,
+                "`core` is a reserved module identifier"
+            );
+            assert_eq!(diagnostic.level, DiagnosticLevel::Error);
+            assert_eq!(diagnostic.src_id, entry_src);
+            assert_eq!(diagnostics[0].message, diagnostic.core_msg);
+            assert_eq!(diagnostics[0].severity, Some(DiagnosticSeverity::ERROR));
+            assert_eq!(diagnostics[0].source.as_deref(), Some("chrn-config"));
+        }
+        assert!(
+            state.compiler.is_some(),
+            "entry {entry_name} retains analysis"
+        );
+        assert!(
+            state
+                .get_entity_at_offset(text.find("retained").unwrap())
+                .is_some(),
+            "entry {entry_name} retains semantic navigation"
+        );
+    }
 }

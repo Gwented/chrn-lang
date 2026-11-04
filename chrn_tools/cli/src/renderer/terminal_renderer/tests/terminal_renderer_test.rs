@@ -195,7 +195,7 @@ fn diagnostics_without_a_region_arena_render_header_only() {
     assert_eq!(
         rendered,
         vec![format!(
-            "PATH => \"{TEST_PATH}\"\nerror: could not read file"
+            "SRC => \"{TEST_PATH}\"\nerror: could not read file"
         )]
     );
 }

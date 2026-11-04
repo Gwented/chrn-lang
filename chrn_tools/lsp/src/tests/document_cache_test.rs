@@ -314,7 +314,7 @@ fn test_evicting_an_import_target_preserves_its_live_dependents() {
 async fn test_did_change_replaces_cached_text_and_bumps_the_version() {
     let workspace = TempWorkspace::new("did_change_recaches");
     let text = "let flag = 3\n";
-    let uri = workspace.write("main.chrn", text);
+    let uri = workspace.uri("main.chrn");
 
     let mut session = Session::new().await;
     session.open(&uri, text).await;
@@ -379,7 +379,7 @@ async fn test_feature_reanalysis_registers_an_empty_dependency_set() {
         "import \"{}\" as dep\nlet value = dep::ITEM\n",
         dependency_path.display()
     );
-    let uri = workspace.write("main.chrn", &imported_text);
+    let uri = workspace.uri("main.chrn");
     let mut session = Session::new().await;
     session.open(&uri, &imported_text).await;
     assert_eq!(session.backend().doc_cache.dependency_graph_sizes(), (1, 1));
@@ -420,7 +420,7 @@ async fn test_feature_reanalysis_registers_an_empty_dependency_set() {
 async fn test_did_close_clears_every_backend_entry() {
     let workspace = TempWorkspace::new("did_close_clears");
     let text = "let value = 3\n";
-    let uri = workspace.write("main.chrn", text);
+    let uri = workspace.uri("main.chrn");
 
     let mut session = Session::new().await;
     session.open(&uri, text).await;
@@ -476,7 +476,7 @@ async fn test_did_close_clears_every_backend_entry() {
 async fn test_open_save_and_change_replace_the_tracked_analysis_task() {
     let workspace = TempWorkspace::new("analysis_task_replacement");
     let text = "let value = 1\n";
-    let uri = workspace.write("main.chrn", text);
+    let uri = workspace.uri("main.chrn");
 
     let mut session = Session::new().await;
     let superseded_by_open = install_never_completing_task(&session, uri.as_ref());
@@ -532,7 +532,7 @@ async fn test_open_save_and_change_replace_the_tracked_analysis_task() {
 async fn test_hover_times_out_on_state_lock_contention_and_server_recovers() {
     let workspace = TempWorkspace::new("hover_lock_contention");
     let text = "let value = 3\n";
-    let uri = workspace.write("main.chrn", text);
+    let uri = workspace.uri("main.chrn");
     let mut session = Session::new().await;
     session.open(&uri, text).await;
 

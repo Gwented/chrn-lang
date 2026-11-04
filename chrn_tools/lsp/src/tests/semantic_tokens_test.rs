@@ -53,7 +53,7 @@ fn test_semantic_token_type_indices_are_unique() {
 async fn test_semantic_tokens_are_emitted_in_absolute_positions() {
     let workspace = TempWorkspace::new("absolute_semantic_tokens");
     let text = "// data header\n@def\nlet value = 3\n@end\ntrailing: data\n";
-    let uri = workspace.write("embedded.chrn", text);
+    let uri = workspace.uri("embedded.chrn");
 
     let mut session = Session::new().await;
     session.open(&uri, text).await;
@@ -105,7 +105,7 @@ async fn test_semantic_tokens_are_emitted_in_absolute_positions() {
 async fn intrinsic_namespace_symbols_use_the_class_semantic_token() {
     let workspace = TempWorkspace::new("namespace_semantic_tokens");
     let text = "complex->\noverride JAVA {\n    types { change i32 = java::int }\n}\n";
-    let uri = workspace.write("main.chrn", text);
+    let uri = workspace.uri("main.chrn");
 
     let mut session = Session::new().await;
     session.open(&uri, text).await;

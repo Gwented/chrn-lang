@@ -278,8 +278,23 @@ Syntax for accessing through a module symbol uses [`::`](#pathing) with "module:
 ### Innate module behavior
 Modules in their most basic form are an implicitly found graph with no need for anything but an import call. So, if A imports B, if B imports A, A technically knows C, and so on. This is how `chrn` is intended to be used.
 
+### In-memory modules
+
+The keyword `virtual` can be used to import modules that are in-memory.
+These are in no form different from importing from a file path. They only differ in source of data.
+
+```chrn
+import virtual "virtual_chrn" // An in-memory file supplied at compilation
+import "filesystem_chrn.chrn" // Filesystem originating
+
+// No difference exists between how the two behave except how chrn gets it.
+let combination = filesystem_chrn::NUMBER_ONE + virtual_chrn::NUMBER_TWO
+```
+
+In-memory files MUST have a valid UTF-8 name.
+
 ### Workspace :) (NON-EXISTENTENT) Maybe we shouldn't hallucinate this into reality. Maybe.
-N/A
+
 
 `e#`: Name bypass for treating a keyword as an identifier.
 

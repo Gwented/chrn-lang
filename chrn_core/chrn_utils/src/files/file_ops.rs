@@ -17,7 +17,7 @@ pub fn fopen(path: &Path) -> Result<File, (io::Error, String)> {
             let msg = format!("The path \"{}\" is a directory", path.display());
             let err = io::Error::new(
                 io::ErrorKind::IsADirectory,
-                "The path \"{}\" is a directory",
+                msg.clone(),
             );
             Err((err, msg))
         }

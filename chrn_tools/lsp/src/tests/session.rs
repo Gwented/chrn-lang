@@ -31,6 +31,7 @@
 //! part of the behaviour under test.
 #![allow(dead_code)]
 
+use std::cell::Cell;
 use std::collections::HashMap;
 use std::future::poll_fn;
 use std::path::PathBuf;
@@ -436,12 +437,13 @@ pub fn hover_text(hover: &Hover) -> String {
     }
 }
 
-/// A throwaway directory of real `.chrn` files.
+/// Unique document URIs with optional disk-backed dependencies.
 ///
-/// Import resolution reads dependencies from disk, so any multi-module test needs its
-/// modules to actually exist. The directory is removed on drop.
+/// `uri` creates no files: the session supplies document text through `didOpen`.
+/// `write` materializes files needed by filesystem imports or unopened navigation.
 pub struct TempWorkspace {
     root: PathBuf,
+    has_files: Cell<bool>,
 }
 
 impl TempWorkspace {
@@ -453,9 +455,15 @@ impl TempWorkspace {
             "chrn_lsp_session_{name}_{}_{unique}",
             std::process::id()
         ));
-        std::fs::create_dir_all(&root).expect("temp workspace is creatable");
+        TempWorkspace {
+            root,
+            has_files: Cell::new(false),
+        }
+    }
 
-        TempWorkspace { root }
+    /// Creates a document URI without accessing the filesystem.
+    pub fn uri(&self, relative_path: &str) -> Url {
+        Url::from_file_path(self.root.join(relative_path)).expect("temp path is absolute")
     }
 
     /// Writes `text` to `relative_path` and returns the file's URI.
@@ -464,6 +472,7 @@ impl TempWorkspace {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).expect("parent directory is creatable");
         }
+        self.has_files.set(true);
         std::fs::write(&path, text).expect("temp file is writable");
 
         Url::from_file_path(&path).expect("temp path is absolute")
@@ -472,6 +481,8 @@ impl TempWorkspace {
 
 impl Drop for TempWorkspace {
     fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.root);
+        if self.has_files.get() {
+            let _ = std::fs::remove_dir_all(&self.root);
+        }
     }
 }

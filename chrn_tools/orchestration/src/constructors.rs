@@ -1,6 +1,8 @@
-use std::{io::Read, path::Path};
-
-use chrn_utils::{core_error::ModuleInitError, intern::Intern};
+use chrn_utils::{
+    core_error::ModuleInitError,
+    intern::Intern,
+    source_utils::source_manager::{SourceKind, SourceManager},
+};
 use compilation::{
     chrn_config::ChrnConfig,
     module,
@@ -13,15 +15,18 @@ use crate::script_compiler_cache::ScriptCompilerCache;
 
 /// Performs the minimum operates to create a `ScriptCompiler` and `ScriptCompilerStore`.
 ///
+/// Supply an interner initialized with `Intern::init()` that owns all in-memory names
+/// in the source manager. Previously registered sources remain available for imports.
 /// If the loading stage fails critically, returns `Err(ModuleInitError)`
-pub fn create_compiler<R: Read>(
-    path: &Path,
-    // path's bytes
-    src: R,
+pub fn create_compiler(
+    src_kind: SourceKind,
+    interner: Intern,
+    src_manager: SourceManager,
     reporter: &mut Reporter,
     cfg: ChrnConfig,
 ) -> Result<(ScriptCompiler, ScriptCompilerStore), ModuleInitError> {
-    let (compiler, store, new_summary) = module::extract_all_modules(path, src, cfg, reporter)?;
+    let (compiler, store, new_summary) =
+        module::extract_all_modules(src_kind, interner, src_manager, cfg, reporter)?;
     reporter.merge_summary_safe(new_summary);
     Ok((compiler, store))
 }
@@ -30,16 +35,18 @@ pub fn create_compiler<R: Read>(
 /// Performs the minimum operates to create a `ScriptCompiler` and `ScriptCompilerStore`, then
 /// creates `ScriptCompilerCache` alongside it.
 ///
+/// Supply an interner initialized with `Intern::init()` that owns all in-memory names
+/// in the source manager. Previously registered sources remain available for imports.
 /// If the loading stage fails critically, returns `Err(ModuleInitError)`
-pub fn create_compiler_with_cache<R: Read>(
-    path: &Path,
-    // path's bytes
-    src: R,
+pub fn create_compiler_with_cache(
+    src_kind: SourceKind,
+    interner: Intern,
+    src_manager: SourceManager,
     reporter: &mut Reporter,
     cfg: ChrnConfig,
 ) -> Result<(ScriptCompiler, ScriptCompilerStore, ScriptCompilerCache), ModuleInitError> {
     let (compiler, compiler_store, new_summary) =
-        module::extract_all_modules(path, src, cfg, reporter)?;
+        module::extract_all_modules(src_kind, interner, src_manager, cfg, reporter)?;
     reporter.merge_summary_safe(new_summary);
 
     let cache = ScriptCompilerCache {

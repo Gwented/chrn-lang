@@ -2,9 +2,12 @@ use std::borrow::Cow;
 
 use chrn_utils::{
     core_error::{ConfigLoadError, ScriptError},
-    files::file_ops,
     id_types::SourceRegionId,
-    source_utils::source_region::SourceRegion,
+    intern::Intern,
+    source_utils::{
+        source_manager::{SourceKind, SourceManager, SourcePath},
+        source_region::SourceRegion,
+    },
 };
 use compilation::{
     chrn_config::{ChrnConfig, chrn_perf::chrn_perf_concepts::ChrnPerfReportOptions},
@@ -57,20 +60,14 @@ fn exec_check(
     let chrn_cfg = builder.build();
 
     let mut reporter = Reporter::new(crate::MAX_DIAGNOSTICS);
-    let src = match file_ops::fopen(&check_cmd.path) {
-        Ok(f) => f,
-        Err((_, err_msg)) => {
-            let msg = format!("Process exited unsuccessfully.\nReason: {err_msg}");
-            return Err(msg.into());
-        }
-    };
 
     let render_kind = RenderKind::from_check_cmd(check_cmd, glob_args, cli_cfg);
 
     let (mut compiler, mut compiler_store, mut compiler_cache) =
         match constructors::create_compiler_with_cache(
-            &check_cmd.path,
-            src,
+            SourceKind::Path(SourcePath::new(check_cmd.path.clone())),
+            Intern::init(),
+            SourceManager::new(),
             &mut reporter,
             chrn_cfg,
         ) {
@@ -167,21 +164,15 @@ fn exec_query(
     let chrn_cfg = ChrnConfig::default();
 
     let mut reporter = Reporter::new(crate::MAX_DIAGNOSTICS);
-    let src = match file_ops::fopen(&query_cmd.path) {
-        Ok(f) => f,
-        Err((_, err_msg)) => {
-            let msg = format!("Process exited unsuccessfully.\nReason: {err_msg}");
-            return Err(msg.into());
-        }
-    };
 
     //TODO: Fix this just make the msg dynamic
 
     // Please please please
     let (mut compiler, mut compiler_store, mut compiler_cache) =
         match constructors::create_compiler_with_cache(
-            &query_cmd.path,
-            src,
+            SourceKind::Path(SourcePath::new(query_cmd.path.clone())),
+            Intern::init(),
+            SourceManager::new(),
             &mut reporter,
             chrn_cfg,
         ) {
@@ -296,14 +287,6 @@ fn exec_embed(
         cli_cfg.terminal_color_type,
     ));
 
-    let src = match file_ops::fopen(&embed_cmd.src_path) {
-        Ok(f) => f,
-        Err((_, err_msg)) => {
-            let msg = format!("Process exited unsuccessfully.\nReason: {err_msg}");
-            return Err(msg.into());
-        }
-    };
-
     let (src_path, dest_path) = (&embed_cmd.src_path, &embed_cmd.dest_path);
 
     // Maybe allow the different ouputs for checking
@@ -314,8 +297,13 @@ fn exec_embed(
 
     let region: SourceRegion = if embed_cmd.check {
         let (mut compiler, mut compiler_store, mut compiler_cache) =
-            match constructors::create_compiler_with_cache(&src_path, src, &mut reporter, chrn_cfg)
-            {
+            match constructors::create_compiler_with_cache(
+                SourceKind::Path(SourcePath::new(src_path.clone())),
+                Intern::init(),
+                SourceManager::new(),
+                &mut reporter,
+                chrn_cfg,
+            ) {
                 Ok(data) => data,
                 Err(init_err) => {
                     let msg_opt = match init_err.cfg_err {
@@ -380,7 +368,12 @@ fn exec_embed(
             .region_arena
             .swap_remove(SourceRegionId::new(0))
     } else {
-        match module::extract_main(&src_path, src, &mut chrn_cfg) {
+        match module::extract_main(
+            SourceKind::Path(SourcePath::new(src_path.clone())),
+            Intern::init(),
+            SourceManager::new(),
+            &mut chrn_cfg,
+        ) {
             Ok((main_mod, graph, interner, mut summary)) => {
                 reporter.append_safe(&mut summary.diags);
 

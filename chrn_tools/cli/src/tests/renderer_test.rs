@@ -52,7 +52,7 @@ fn source_names_render_without_regions_and_without_annotations() {
                 &RenderKind::Terminal(TerminalRenderConfig::new(false, TerminalColorType::Ansi4)),
             );
             assert_eq!(
-                terminal.matches(&format!("PATH => \"{raw_name}\"")).count(),
+                terminal.matches(&format!("SRC => \"{raw_name}\"")).count(),
                 1,
                 "source {id:?}, arena present {}: {terminal}",
                 regions.is_some()
@@ -144,14 +144,14 @@ fn annotation_source_names_follow_their_own_regions() {
         &interner,
         &RenderKind::Terminal(TerminalRenderConfig::new(false, TerminalColorType::Ansi4)),
     );
-    assert_eq!(terminal.matches("PATH => ").count(), 2, "{terminal}");
+    assert_eq!(terminal.matches("SRC => ").count(), 2, "{terminal}");
     assert!(
-        terminal.contains("PATH => \"編集中: \"source\""),
+        terminal.contains("SRC => \"編集中: \"source\""),
         "{terminal}"
     );
-    assert!(terminal.contains("PATH => \"source\""), "{terminal}");
+    assert!(terminal.contains("SRC => \"source\""), "{terminal}");
     assert!(!terminal.contains("/fixture/main.chrn"), "{terminal}");
-    let (named_block, default_named_block) = terminal.split_once("PATH => \"source\"").unwrap();
+    let (named_block, default_named_block) = terminal.split_once("SRC => \"source\"").unwrap();
     assert!(named_block.contains("1 | one"), "{terminal}");
     assert!(named_block.contains("^^^ named source"), "{terminal}");
     assert!(!named_block.contains("default source"), "{terminal}");

@@ -1,7 +1,12 @@
 use crate::state::{DocumentCache, DocumentState, SemanticEntity};
+use crate::tests::helpers::resolve_memory_sources;
 use crate::tests::session::{Session, TempWorkspace, hover_text, position_of};
-use chrn_utils::id_types::{SourceRegionId, SymbolId};
+use chrn_utils::id_types::{ModuleId, SourceRegionId, SymbolId};
 use chrn_utils::source_utils::source_span::SourceSpan;
+use compilation::{
+    module::module_concepts::{ImportKind, ModuleState},
+    semantic::{arbitraries::ArbitraryIntKind, hir::hir_symbols::VariableState, values::Value},
+};
 use std::sync::Arc;
 use tower_lsp::lsp_types::{
     DocumentHighlight, DocumentHighlightKind, GotoDefinitionResponse, OneOf, Position, Range,
@@ -30,7 +35,7 @@ fn expected_highlights(text: &str, name: &str, occurrences: &[usize]) -> Vec<Doc
 async fn test_preprocess_directive_hover_uses_context_and_absolute_utf16_range() {
     let workspace = TempWorkspace::new("preprocess_hover");
     let text = "// header 😀\n@def\n/* 😀 */ # /* max_numeric_bits */ max_numeric_bits(8)\nlet max_numeric_bits = 7\nlet value = max_numeric_bits\n@end\nmax_numeric_bits: serialized data\n";
-    let uri = workspace.write("main.chrn", text);
+    let uri = workspace.uri("main.chrn");
     let mut session = Session::new().await;
     let diagnostics = session.open(&uri, text).await;
     assert!(diagnostics.is_empty(), "{diagnostics:?}");
@@ -77,7 +82,7 @@ async fn test_entry_preprocess_directive_controls_imports_and_resets_after_edits
         dependency_uri.to_file_path().unwrap().display(),
     );
     let text = format!("#max_numeric_bits(8)\n{body}");
-    let uri = workspace.write("main.chrn", &text);
+    let uri = workspace.uri("main.chrn");
     let mut session = Session::new().await;
     session.open(&uri, &text).await;
 
@@ -152,7 +157,7 @@ async fn test_entry_preprocess_directive_controls_imports_and_resets_after_edits
 async fn test_document_highlight_tracks_semantic_occurrences_in_embedded_text() {
     let workspace = TempWorkspace::new("highlight_embedded");
     let text = "header: 😀\n@def\nlet x = 3\nlet first = x + x\nlet second = /* 😀 */ x + 1\nlet label = \"x\" // x\n@end\nx: serialized data\n";
-    let uri = workspace.write("main.chrn", text);
+    let uri = workspace.uri("main.chrn");
     let mut session = Session::new().await;
     assert_eq!(
         session
@@ -203,7 +208,7 @@ async fn test_document_highlight_tracks_semantic_occurrences_in_embedded_text() 
 async fn test_document_highlight_distinguishes_field_owners_and_config_members() {
     let workspace = TempWorkspace::new("highlight_field_owners");
     let text = "var->\nModel: First\nnest->\nstruct First { field: i32 }\nstruct Second { field: i32 }\ncomplex->\nfor Model { field {} }\nfor Second { field {} }\n";
-    let uri = workspace.write("main.chrn", text);
+    let uri = workspace.uri("main.chrn");
     let mut session = Session::new().await;
     let diagnostics = session.open(&uri, text).await;
     assert!(diagnostics.is_empty(), "{diagnostics:?}");
@@ -227,7 +232,7 @@ async fn test_document_highlight_keeps_imported_symbol_ranges_in_current_file() 
         "import \"{}\" as deps\nlet first = deps::READ\nlet second = deps:: /* READ */ READ\n",
         dependency_uri.to_file_path().unwrap().display(),
     );
-    let uri = workspace.write("main.chrn", &text);
+    let uri = workspace.uri("main.chrn");
     let mut session = Session::new().await;
     let diagnostics = session.open(&dependency_uri, dependency).await;
     assert!(diagnostics.is_empty(), "{diagnostics:?}");
@@ -264,7 +269,7 @@ async fn test_import_resolution_uses_unsaved_open_dependency_text_during_debounc
         "import \"{}\" as dep\nlet value = dep::ITEM\n",
         dependency_uri.to_file_path().unwrap().display()
     );
-    let main_uri = workspace.write("main.chrn", &main_text);
+    let main_uri = workspace.uri("main.chrn");
 
     let mut session = Session::new().await;
     session.open(&dependency_uri, old_dependency).await;
@@ -485,7 +490,7 @@ fn test_find_matching_entities_propagates_script_start() {
 async fn test_hover_reports_the_inferred_type_of_a_binding() {
     let workspace = TempWorkspace::new("hover_binding");
     let text = "// data header\n@def\nlet value = 3\nlet other = value + 1\n@end\ntrailing: data\n";
-    let uri = workspace.write("embedded.chrn", text);
+    let uri = workspace.uri("embedded.chrn");
 
     let mut session = Session::new().await;
     session.open(&uri, text).await;
@@ -506,7 +511,7 @@ async fn test_hover_reports_the_inferred_type_of_a_binding() {
 async fn test_hover_reports_array_type_and_limits_displayed_elements() {
     let workspace = TempWorkspace::new("hover_array_binding");
     let text = "let short = [2, 3, 4, 7,]\nlet five = [1, 2, 3, 4, 5]\nlet long = [1, 2, 3, 4, 5, 6]\nlet empty = []\nlet scalar = 9\nlet use_short = short\nlet use_five = five\nlet use_long = long\nlet use_empty = empty\nlet use_scalar = scalar\n";
-    let uri = workspace.write("main.chrn", text);
+    let uri = workspace.uri("main.chrn");
 
     let mut session = Session::new().await;
     session.open(&uri, text).await;
@@ -535,7 +540,7 @@ async fn test_hover_reports_array_type_and_limits_displayed_elements() {
 async fn test_hover_after_comment_marker_in_string_on_same_line() {
     let workspace = TempWorkspace::new("hover_after_string_slashes");
     let text = "let suffix = \"there\"\nlet value = \"https://x\" + suffix // suffix\n";
-    let uri = workspace.write("main.chrn", text);
+    let uri = workspace.uri("main.chrn");
 
     let mut session = Session::new().await;
     session.open(&uri, text).await;
@@ -564,7 +569,7 @@ async fn test_hover_after_comment_marker_in_string_on_same_line() {
 async fn test_hover_resolves_builtin_namespace_members() {
     let workspace = TempWorkspace::new("hover_builtin_member");
     let text = "@def\nlet limit = i32::MAX\n@end\n";
-    let uri = workspace.write("builtin_member.chrn", text);
+    let uri = workspace.uri("builtin_member.chrn");
 
     let mut session = Session::new().await;
     session.open(&uri, text).await;
@@ -589,7 +594,7 @@ async fn test_hover_resolves_builtin_namespace_members() {
 async fn test_hover_resolves_intrinsic_namespaces_and_extern_type_metadata() {
     let workspace = TempWorkspace::new("hover_override_symbols");
     let text = "complex->\n    override JAVA {\n        types {\n            change i8 = java::int\n            change i16 = java::double\n            change i32 = java::boolean\n            change i64 = java::char\n            change i128 = java::String\n        }\n    }\n    override RUST {\n        types {\n            change u8 = rust::u8\n            change u16 = rust::usize\n            change u32 = rust::char\n            change u64 = rust::str\n        }\n    }\n";
-    let uri = workspace.write("override_symbols.chrn", text);
+    let uri = workspace.uri("override_symbols.chrn");
 
     let mut session = Session::new().await;
     session.open(&uri, text).await;
@@ -676,7 +681,7 @@ async fn test_hover_resolves_intrinsic_namespaces_and_extern_type_metadata() {
 async fn test_definition_resolves_to_the_declaration_in_absolute_positions() {
     let workspace = TempWorkspace::new("definition_absolute");
     let text = "// data header\n@def\nlet value = 3\nlet other = value + 1\n@end\ntrailing: data\n";
-    let uri = workspace.write("embedded.chrn", text);
+    let uri = workspace.uri("embedded.chrn");
 
     let mut session = Session::new().await;
     session.open(&uri, text).await;
@@ -728,7 +733,7 @@ async fn test_cross_module_lookups_reach_an_unopened_exporting_file() {
         "import \"{}\" as deps\n\nlet flag = deps::READ\n",
         dependency_path.display()
     );
-    let uri = workspace.write("main.chrn", &text);
+    let uri = workspace.uri("main.chrn");
 
     let mut session = Session::new().await;
     let diagnostics = session.open(&uri, &text).await;
@@ -800,7 +805,7 @@ async fn test_static_access_uses_identifier_span_after_comment() {
         "// header\n@def\nimport \"{}\" as deps\nlet flag = deps:: /* READ */ READ\n@end\n",
         dep_uri.to_file_path().unwrap().display()
     );
-    let uri = workspace.write("main.chrn", &text);
+    let uri = workspace.uri("main.chrn");
     let mut session = Session::new().await;
     session.open(&uri, &text).await;
     let start = position_of(&text, "READ", 1);
@@ -865,7 +870,7 @@ async fn test_aliased_import_does_not_expose_file_name_as_module() {
         "import \"{}\" as deps\nlet valid = deps::READ\nlet invalid = dep::READ\n",
         dep_uri.to_file_path().unwrap().display()
     );
-    let uri = workspace.write("main.chrn", &text);
+    let uri = workspace.uri("main.chrn");
     let mut session = Session::new().await;
     session.open(&uri, &text).await;
     assert!(
@@ -902,7 +907,7 @@ async fn test_aliased_import_does_not_expose_file_name_as_module() {
 async fn test_config_member_semantics_follow_a_typedef() {
     let workspace = TempWorkspace::new("typedef_config_member_semantics");
     let text = "var->\nModel: Record\nnest->\nstruct Record { field: i32 }\ncomplex->\nfor Model { field {} }\n";
-    let uri = workspace.write("main.chrn", text);
+    let uri = workspace.uri("main.chrn");
 
     let mut session = Session::new().await;
     let diagnostics = session.open(&uri, text).await;
@@ -964,7 +969,7 @@ async fn test_config_member_semantics_follow_a_typedef() {
 async fn test_hover_expands_declarations_but_keeps_nested_types_compact() {
     let workspace = TempWorkspace::new("nested_hover");
     let text = "nest->\nstruct Inner { value: i32 }\nstruct Outer { items: List<Inner> }\n";
-    let uri = workspace.write("main.chrn", text);
+    let uri = workspace.uri("main.chrn");
     let mut session = Session::new().await;
     let diagnostics = session.open(&uri, text).await;
     assert!(diagnostics.is_empty(), "{diagnostics:?}");
@@ -982,4 +987,101 @@ async fn test_hover_expands_declarations_but_keeps_nested_types_compact() {
         .await
         .unwrap();
     assert_eq!(hover_text(&hover), "items: List<Inner>");
+}
+
+/// Virtual sources retain names and source IDs across aliases, cycles, and a diamond.
+#[test]
+fn test_registered_virtual_graph_resolves_values_without_files() {
+    let main = "import virtual \"left\" as shared\nimport virtual \"right\"\nimport virtual \"shared\" as leaf\nlet total = shared::LEFT + right::RIGHT + leaf::VALUE\n";
+    let mut prepared = resolve_memory_sources(
+        "entry",
+        &[
+            (
+                "shared",
+                "import virtual \"entry\" as root\nexport let VALUE = 7\n",
+            ),
+            (
+                "right",
+                "import virtual \"shared\" as x\nexport let RIGHT = x::VALUE + 1\n",
+            ),
+            ("entry", main),
+            (
+                "left",
+                "import virtual \"shared\"\nexport let LEFT = shared::VALUE + 1\n",
+            ),
+        ],
+    );
+    assert!(prepared.dependency_snapshots.is_empty());
+    assert!(prepared.resolution.imported_uris.is_empty());
+    assert_eq!(
+        prepared.state.ensure_analyzed(prepared.resolution),
+        Some(Vec::new())
+    );
+    let state = prepared.state;
+    for summary in [
+        &state.config_errors,
+        &state.parse_errors,
+        &state.ns_errors,
+        &state.member_errors,
+        &state.ty_errors,
+        &state.cn_errors,
+    ] {
+        assert!(
+            summary.diags.is_empty(),
+            "unexpected diagnostics: {summary:?}"
+        );
+    }
+    let compiler = state.compiler.as_ref().unwrap();
+    assert_eq!(compiler.mods.len(), 5);
+    for (index, name) in ["entry", "left", "right", "shared", "core"]
+        .into_iter()
+        .enumerate()
+    {
+        let module = &compiler.mods[ModuleId::new(index as u32)];
+        assert_eq!(module.self_id, ModuleId::new(index as u32));
+        assert_eq!(state.interner.extract_utf8_str(module.name_id), name);
+        assert_eq!(module.state, ModuleState::Loaded);
+        if index < 4 {
+            let region = &state.region_arena[module.region_id.unwrap()];
+            assert_eq!(
+                state
+                    .src_manager
+                    .get_source_id_from_interned_id(module.name_id),
+                Some(region.src_id)
+            );
+        }
+    }
+    for (owner, import_index, target) in [
+        (0, 0, 1),
+        (0, 1, 2),
+        (0, 2, 3),
+        (1, 0, 3),
+        (2, 0, 3),
+        (3, 0, 0),
+    ] {
+        assert!(
+            matches!(compiler.mods[ModuleId::new(owner)].imports[import_index].kind,
+            ImportKind::Source(_, id) if id == ModuleId::new(target)),
+            "wrong edge from module {owner}, import {import_index}"
+        );
+    }
+    let total_name = state.interner.get_interned_id_from_str("total").unwrap();
+    let total = compiler
+        .vars
+        .iter()
+        .find(|var| var.name_id == total_name)
+        .unwrap();
+    let VariableState::Known(value_id) = total.state else {
+        panic!("total must be evaluated");
+    };
+    assert!(matches!(
+        compiler.val_infos[value_id].const_val,
+        Some(Value::ArbitraryInt(ArbitraryIntKind::I64(23)))
+    ));
+    let total_offset = main.rfind("total").unwrap();
+    assert!(matches!(
+        state.get_entity_at_offset(total_offset),
+        Some(SemanticEntity::Symbol(_))
+    ));
+    assert!(state.get_lsp_diagnostics().is_empty());
 }

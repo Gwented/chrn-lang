@@ -1,3 +1,4 @@
+mod helpers;
 mod session;
 
 mod completion_test;

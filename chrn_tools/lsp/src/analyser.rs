@@ -38,7 +38,7 @@
 
 use chrn_utils::source_utils::source_diagnostic::DiagnosticLevel;
 use chrn_utils::source_utils::source_diagnostic::annotations::AnnotationKind;
-use chrn_utils::source_utils::source_manager::{PathTag, SourceManager};
+use chrn_utils::source_utils::source_manager::SourceManager;
 use compilation::config_loader::{ConfigLoader, ConfigLoaderOutput};
 use compilation::lexer::Lexer;
 use compilation::module::{
@@ -56,10 +56,10 @@ use tower_lsp::lsp_types;
 use chrn_utils::arena::Arena;
 use chrn_utils::core_error::{self, ConfigLoadError};
 use chrn_utils::err_codes::ErrorCode;
-use chrn_utils::id_types::{InternedIdUTF8, ModuleId, PathId, SourceId, SourceRegionId};
+use chrn_utils::id_types::{InternedIdUTF8, ModuleId, SourceId, SourceRegionId};
 use chrn_utils::intern::{self, Intern};
 use chrn_utils::source_utils::source_diagnostic::SourceDiagnostic;
-use chrn_utils::source_utils::source_diagnostic::SourceDiagnosticSummary;
+use chrn_utils::source_utils::source_diagnostic::{SourceDiagnosticSink, SourceDiagnosticSummary};
 use chrn_utils::source_utils::source_manager::SourceKind;
 use chrn_utils::source_utils::source_region::SourceRegion;
 use chrn_utils::source_utils::source_span::SourceSpan;
@@ -317,7 +317,7 @@ pub(crate) fn dependency_snapshots_are_current(
 /// not duplicated by parser cascades over the malformed region bytes.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn resolve_document_modules(
-    uri: &Url,
+    _uri: &Url,
     text: Arc<String>,
     main_region: SourceRegion,
     main_state: ModuleState,
@@ -328,8 +328,7 @@ pub(crate) fn resolve_document_modules(
     mut interner: Intern,
     mut src_manager: SourceManager,
 ) -> PreparedDocument {
-    let path_buf = uri_to_path(uri);
-    let path_id = src_manager.register_path(&path_buf);
+    let main_src_id = main_region.src_id;
 
     // The lexer is given the *relative* `src_bytes` (the script section only) and
     // the *absolute* `script_start` (the byte position in the file where the
@@ -339,7 +338,7 @@ pub(crate) fn resolve_document_modules(
     // needs to surface them as LSP `Position`s.
     let lex_output = Lexer::new(
         SourceRegionId::new(0),
-        path_id.inner(),
+        main_src_id,
         &main_region.src_bytes,
         main_region.script_start,
         chrn_cfg,
@@ -348,24 +347,37 @@ pub(crate) fn resolve_document_modules(
     let tokens = lex_output.toks;
     let trivia = lex_output.trivia;
 
-    // `file_prefix`, not `file_stem`: `extract_main` names the main module after the
-    // prefix, so `my.config.chrn` binds `my` in the compiler. `file_stem` would bind
-    // `my.config` here — an identifier no source line can spell, which made every
-    // `my::X` unresolvable in the editor and fine on the CLI.
-    let name = path_buf
-        .file_prefix()
-        .and_then(|s| s.to_str())
-        .unwrap_or("<unnamed>")
-        .to_string();
-    let name_id = interner.intern_str(&name);
+    let name_id = match src_manager.extract_source(main_src_id) {
+        SourceKind::Path(source) => {
+            // Match core extraction: dotted file names bind their first prefix.
+            let name = source
+                .path
+                .file_prefix()
+                .and_then(|s| s.to_str())
+                .unwrap_or("<unnamed>");
+            interner.intern_str(name)
+        }
+        SourceKind::InMemory(source) => source.name,
+    };
 
-    let mut reserved_mod_ids: Vec<(PathId, ModuleId)> = vec![(path_id, ModuleId::new(0))];
+    let mut reserved_mod_ids: Vec<(SourceId, ModuleId)> = vec![(main_src_id, ModuleId::new(0))];
 
     let (bind, main_imports, mut finder_summary) =
         ModuleFinder::new(&main_region.src_bytes, chrn_cfg, &main_region)
             .collect_imports(&mut interner, &mut src_manager);
 
     let mut config_errors = SourceDiagnosticSummary::default();
+    if name_id.inner().id == intern::INTERNED_CORE {
+        config_errors.push_diag(
+            SourceDiagnostic::builder(
+                ErrorCode::CompilerInternals.into(),
+                DiagnosticLevel::Error,
+                "`core` is a reserved module identifier",
+                main_src_id,
+            )
+            .build(),
+        );
+    }
     if !finder_summary.diags.is_empty() {
         config_errors.append_summary(&mut finder_summary);
     }
@@ -379,7 +391,7 @@ pub(crate) fn resolve_document_modules(
         Some(SourceRegionId::new(0)),
     );
 
-    let mut seen: Vec<PathId> = vec![path_id];
+    let mut seen: Vec<SourceId> = vec![main_src_id];
     let mut sub_mods = Vec::with_capacity(main_mod.imports.len());
     let mut sub_regions: Vec<SourceRegion> = Vec::new();
     let mut sub_diags = Vec::new();
@@ -398,7 +410,7 @@ pub(crate) fn resolve_document_modules(
         open_docs,
         &mut dependency_snapshots,
         &mut sub_diags,
-        path_id,
+        main_src_id,
     );
 
     if !sub_diags.is_empty() {
@@ -1044,19 +1056,20 @@ pub(crate) fn push_diagnostic_inner(
 }
 
 /// Resolves all imported modules using a worklist (non-recursive) approach,
-/// mirroring the compiler's `extract_modules` in `chrn_core/compilation/src/modules.rs`.
+/// mirroring the compiler's `extract_modules` in `chrn_core/compilation/src/module.rs`.
 ///
 /// The worklist replaces the previous recursive strategy, avoiding potential stack
 /// overflow on deeply nested import trees and matching the compiler's traversal order.
 ///
-/// Each import is resolved by first checking the open-document cache, then falling
-/// back to disk.  Imported modules are stored in `modules` (indexed by `ModuleId - 1`)
-/// and their source regions are appended to `sub_regions`.
+/// Virtual imports use registered source bytes. File imports first check the
+/// open-document cache, then fall back to disk. Imported modules are stored in
+/// `modules` (indexed by `ModuleId - 1`), and their source regions are appended to
+/// `sub_regions`.
 ///
 /// # Parameters
-/// * `reserved_mod_ids` — Global registry mapping file paths to pre-assigned module
+/// * `reserved_mod_ids` — Global registry mapping source IDs to pre-assigned module
 ///   IDs.  Updated as new imports are discovered during traversal.
-/// * `seen`             — Guard set of already-visited path IDs to break import cycles.
+/// * `seen`             — Guard set of already-visited source IDs to break import cycles.
 /// * `modules`          — Output array indexed by `ModuleId - 1`. A module id is
 ///   reserved only once the module exists, so this stays dense.
 /// * `sub_regions`      — Output vector of imported module source regions.  Region
@@ -1069,7 +1082,7 @@ pub(crate) fn push_diagnostic_inner(
 ///   back to disk I/O.
 /// * `diags`            — Accumulator for any import-related diagnostics (path errors,
 ///   IO errors, parse errors in imported files).
-/// * `main_path_id`     — The [`PathId`] of the main document, used as the initial
+/// * `main_src_id`      — The [`SourceId`] of the main document, used as the initial
 ///   context for error attribution.
 ///
 /// # Errors
@@ -1077,8 +1090,8 @@ pub(crate) fn push_diagnostic_inner(
 /// attempts to continue resolving remaining siblings after an error.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn resolve_modules_lsp(
-    reserved_mod_ids: &mut Vec<(PathId, ModuleId)>,
-    seen: &mut Vec<PathId>,
+    reserved_mod_ids: &mut Vec<(SourceId, ModuleId)>,
+    seen: &mut Vec<SourceId>,
     modules: &mut Vec<Module>,
     sub_regions: &mut Vec<SourceRegion>,
     main_mod: &mut Module,
@@ -1089,27 +1102,27 @@ pub(crate) fn resolve_modules_lsp(
     open_docs: &RwLock<HashMap<String, Arc<String>>>,
     dependency_snapshots: &mut Vec<(String, Option<Arc<String>>)>,
     diags: &mut Vec<SourceDiagnostic>,
-    main_path_id: PathId,
+    main_src_id: SourceId,
 ) {
     //-- WORKLIST APPROACH (mirrors compiler's extract_modules) --
     //
-    // Each entry is (importer_module, importer_path_id) where:
+    // Each entry is (importer_module, importer_src_id) where:
     //   - importer_module  — The module whose imports we need to resolve.
-    //   - importer_path_id — The path_id of the file containing the imports,
+    //   - importer_src_id — The src_id of the source containing the imports,
     //                        used for error attribution on failed imports.
-    let mut worklist: VecDeque<(Module, PathId)> = VecDeque::new();
-    worklist.push_back((main_mod.clone(), main_path_id));
+    let mut worklist: VecDeque<(Module, SourceId)> = VecDeque::new();
+    worklist.push_back((main_mod.clone(), main_src_id));
 
     // Set when the MAX_MODULES safety limit is hit; aborts the whole traversal so
     // module registration cannot grow without bound (the compiler breaks its outer
     // loop the same way).
     let mut limit_exceeded = false;
 
-    'worklist: while let Some((mut importer_mod, current_path_id)) = worklist.pop_front() {
+    'worklist: while let Some((mut importer_mod, current_src_id)) = worklist.pop_front() {
         // Per-importer duplicate tracking, mirroring the compiler's
         // `DuplicateTracker<ModuleIdent>`: a module binds its own name (no span),
         // and every import binds exactly one identifier — its alias when present,
-        // otherwise the file stem.  Only the identifier is compared; the first
+        // otherwise the source name.  Only the identifier is compared; the first
         // occurrence is kept as the original for reporting.
         let mut bound_idents: HashMap<u32, (bool, Option<SourceSpan>)> =
             HashMap::with_capacity(importer_mod.imports.len() + 1);
@@ -1119,20 +1132,43 @@ pub(crate) fn resolve_modules_lsp(
 
         for i in 0..importer_mod.imports.len() {
             let import = importer_mod.imports[i].clone();
-            let ImportKind::UnresolvedSource(sp_path_id) = &import.kind else {
+            let ImportKind::UnresolvedSource(sp_src_id) = &import.kind else {
                 continue;
             };
-            // ModuleFinder registers file imports as path sources.
-            let path_id = sp_path_id.inner.into_tagged::<PathTag>();
-            let path_span = sp_path_id.span;
+            let src_id = sp_src_id.inner;
+            let path_span = sp_src_id.span;
+
+            let reserved_span = if import.name_id.inner().id == intern::INTERNED_CORE {
+                Some(path_span)
+            } else {
+                import
+                    .sp_alias_id
+                    .as_ref()
+                    .filter(|alias| alias.inner.inner().id == intern::INTERNED_CORE)
+                    .map(|alias| alias.span)
+            };
+            if let Some(span) = reserved_span {
+                diags.push(
+                    SourceDiagnostic::builder(
+                        None,
+                        DiagnosticLevel::Error,
+                        "`core` is a reserved module identifier",
+                        current_src_id,
+                    )
+                    .add_annotation(span, AnnotationKind::Primary, None)
+                    .build(),
+                );
+                importer_mod.imports[i].kind = ImportKind::ErrorSource(sp_src_id.clone());
+                continue;
+            }
 
             // A no-alias import of the file itself is a self-import: it resolves to
             // the importer's own module id and only earns a warning, never a
             // duplicate-identifier error (mirrors the compiler's `is_importer`).
-            let is_importer = path_id == current_path_id && import.sp_alias_id.is_none();
+            let is_importer = src_id == current_src_id && import.sp_alias_id.is_none();
 
             // The identifier of an import is mutually exclusive: an alias replaces
-            // the generated file-stem name.
+            // the source name.
             let (official_ident, official_span) = if let Some(sp_alias_id) = &import.sp_alias_id {
                 (sp_alias_id.inner, sp_alias_id.span)
             } else {
@@ -1160,7 +1196,7 @@ pub(crate) fn resolve_modules_lsp(
                     None,
                     DiagnosticLevel::Warn,
                     core_msg,
-                    current_path_id.inner(),
+                    current_src_id,
                 )
                 .add_annotation(
                     official_span,
@@ -1170,15 +1206,15 @@ pub(crate) fn resolve_modules_lsp(
                 diags.push(builder.build());
             }
 
-            // If this path was already seen (by any module), resolve from
+            // If this source was already seen (by any module), resolve from
             // registered IDs and move on (mirrors the compiler's behaviour).
-            if seen.contains(&path_id) {
-                match reserved_mod_ids.iter().find(|(p, _)| *p == path_id) {
+            if seen.contains(&src_id) {
+                match reserved_mod_ids.iter().find(|(p, _)| *p == src_id) {
                     Some(&(_, m_id)) => {
-                        importer_mod.imports[i].kind = ImportKind::Source(sp_path_id.clone(), m_id);
+                        importer_mod.imports[i].kind = ImportKind::Source(sp_src_id.clone(), m_id);
                     }
                     None => {
-                        importer_mod.imports[i].kind = ImportKind::ErrorSource(sp_path_id.clone());
+                        importer_mod.imports[i].kind = ImportKind::ErrorSource(sp_src_id.clone());
                     }
                 }
                 continue;
@@ -1194,167 +1230,55 @@ pub(crate) fn resolve_modules_lsp(
                     ErrorCode::CompilerInternals.into(),
                     DiagnosticLevel::Error,
                     core_msg,
-                    path_id.inner(),
+                    src_id,
                 )
                 .build();
                 diags.push(src_diag);
-                importer_mod.imports[i].kind = ImportKind::ErrorSource(sp_path_id.clone());
+                importer_mod.imports[i].kind = ImportKind::ErrorSource(sp_src_id.clone());
                 limit_exceeded = true;
                 break 'worklist;
             }
 
-            // A path is marked seen before it is loaded so a failed import is not
+            // A source is marked seen before it is loaded so a failed import is not
             // retried by a later importer; it is registered in `reserved_mod_ids`
             // only once its module exists (see below), so the two intentionally
             // disagree for failed imports — the `seen` branch above turns those
             // into `ErrorSource`. This mirrors `extract_modules`/`resolve_module`.
-            seen.push(path_id);
+            seen.push(src_id);
 
-            let path_owned = src_manager.extract_path(path_id).path.to_path_buf();
-            let path = path_owned.as_path();
-
-            // Try to get from doc_cache first
-            let uri = Url::from_file_path(path).unwrap();
-            // Keep the cached `Arc<String>` alive in a local so the reader can borrow
-            // from it directly.  Previously the bytes were copied into a fresh
-            // `Vec<u8>` (`text.as_bytes().to_vec()`) on *every* analysis of *every*
-            // importing document, just to satisfy the boxed-reader type.  The box now
-            // borrows from `cached_text`, which outlives the `ConfigLoader` below.
-            let open_text = open_docs.read().get(uri.as_ref()).map(Arc::clone);
-            dependency_snapshots.push((uri.to_string(), open_text.clone()));
-            let cached_text = open_text.or_else(|| doc_cache.get_text(uri.as_ref()));
-            let source_res: Result<Box<dyn std::io::Read + '_>, ConfigLoadError> =
-                match &cached_text {
-                    Some(text) => Ok(Box::new(Cursor::new(text.as_bytes()))),
-                    None => {
-                        // Fallback to disk
-                        match std::fs::File::open(path) {
-                            Ok(_) if path.is_dir() => {
-                                let core_msg =
-                                    format!("The path \"{}\" is a directory", path.display());
-                                let src_diag = SourceDiagnostic::builder(
-                                    None,
-                                    DiagnosticLevel::Error,
-                                    core_msg,
-                                    current_path_id.inner(),
-                                )
-                                .add_annotation(
-                                    path_span,
-                                    AnnotationKind::Primary,
-                                    "Caused by this import".to_string().into(),
-                                )
-                                .build();
-                                Err(ConfigLoadError::Diagnostic(src_diag))
-                            }
-                            Ok(f) => Ok(Box::new(f) as Box<dyn std::io::Read + '_>),
-                            Err(e) => {
-                                let core_msg = core_error::form_string_from_io_err(&e, path)
-                                    .unwrap_or(e.to_string());
-                                let src_diag = SourceDiagnostic::builder(
-                                    None,
-                                    DiagnosticLevel::Error,
-                                    core_msg,
-                                    current_path_id.inner(),
-                                )
-                                .add_annotation(
-                                    path_span,
-                                    AnnotationKind::Primary,
-                                    "Caused by this import".to_string().into(),
-                                )
-                                .build();
-                                Err(ConfigLoadError::Diagnostic(src_diag))
-                            }
-                        }
-                    }
-                };
-
-            let src = match source_res {
-                Ok(s) => s,
-                Err(ConfigLoadError::Diagnostic(diag)) => {
-                    importer_mod.imports[i].kind = ImportKind::ErrorSource(sp_path_id.clone());
-                    diags.push(diag);
-                    continue;
-                }
-                Err(ConfigLoadError::IO(e)) => {
-                    importer_mod.imports[i].kind = ImportKind::ErrorSource(sp_path_id.clone());
-                    let core_msg = format!("IO error: {}", e);
-                    let src_diag = SourceDiagnostic::builder(
-                        None,
-                        DiagnosticLevel::Error,
-                        core_msg,
-                        current_path_id.inner(),
-                    )
-                    .add_annotation(path_span, AnnotationKind::Primary, None)
-                    .build();
-                    diags.push(src_diag);
-                    continue;
-                }
-            };
-
-            // `ConfigLoader::new` requires the region's id up front.  Sub-regions are
-            // stored in `sub_regions` with ids `1 + index` because id 0 is the main
-            // document region.
-            // The module name is derived from the path alone (alias when present,
-            // file stem otherwise), so it is computed before any I/O-heavy work.
-            // Mirrors `extract_main`/`resolve_module`, where a usable name is a
-            // precondition for creating a module at all.
-            let official_name_id = match import.sp_alias_id.as_ref().map(|sp| sp.inner) {
-                Some(alias_id) => alias_id,
-                None => match path.file_prefix().and_then(|n| n.to_str()) {
-                    Some(p) => interner.intern_str(p),
-                    _ => {
-                        importer_mod.imports[i].kind = ImportKind::ErrorSource(sp_path_id.clone());
-                        let core_msg = format!(
-                            "The path \"{}\" does not have a valid UTF-8 file name usable within the program.",
-                            path.display()
-                        );
-                        let src_diag = SourceDiagnostic::builder(
-                            None,
-                            DiagnosticLevel::Error,
-                            core_msg,
-                            current_path_id.inner(),
-                        )
-                        .add_annotation(
-                            path_span,
-                            AnnotationKind::Primary,
-                            "Caused by this import".to_string().into(),
-                        )
-                        .build();
-                        diags.push(src_diag);
-                        continue;
-                    }
-                },
-            };
-
-            // Mirrors `resolve_module`: `core` is the compiler-synthesized module,
-            // so a user module may never bind that identifier.
-            if official_name_id.inner().id == intern::INTERNED_CORE {
-                let core_msg = "`core` is a reserved module identifier";
-                let src_diag = SourceDiagnostic::builder(
-                    None,
-                    DiagnosticLevel::Error,
-                    core_msg,
-                    path_id.inner(),
-                )
-                .build();
-                diags.push(src_diag);
-                importer_mod.imports[i].kind = ImportKind::ErrorSource(sp_path_id.clone());
-                continue;
-            }
-
-            // `ConfigLoader::new` requires the region's id up front.  Sub-regions are
-            // stored in `sub_regions` with ids `1 + index` because id 0 is the main
-            // document region.
+            // File sources use the latest editor overlay before falling back to disk.
+            // Virtual sources retain their registered bytes and never acquire a path tag.
             let sub_region_id = SourceRegionId::new((sub_regions.len() + 1) as u32);
+            let source = src_manager.extract_source(src_id);
+            let loader_output = match source {
+                SourceKind::Path(path_source) => {
+                    let uri = Url::from_file_path(&path_source.path)
+                        .expect("registered import paths are canonical absolute paths");
+                    let open_text = open_docs.read().get(uri.as_ref()).map(Arc::clone);
+                    dependency_snapshots.push((uri.to_string(), open_text.clone()));
+                    let cached_text = open_text.or_else(|| doc_cache.get_text(uri.as_ref()));
+                    match cached_text {
+                        Some(text) => ConfigLoader::new(
+                            sub_region_id,
+                            Cursor::new(text.as_bytes()),
+                            src_id,
+                            settings,
+                        )
+                        .load_config(),
+                        None => compilation::module::load_source(
+                            source,
+                            src_id,
+                            sub_region_id,
+                            settings,
+                        ),
+                    }
+                }
+                SourceKind::InMemory(_) => {
+                    compilation::module::load_source(source, src_id, sub_region_id, settings)
+                }
+            };
 
-            let (sub_region, sub_state) = match ConfigLoader::new(
-                sub_region_id,
-                src,
-                path_id.inner(),
-                settings,
-            )
-            .load_config()
-            {
+            let (sub_region, sub_state) = match loader_output {
                 ConfigLoaderOutput::Success(region, summary) => {
                     diags.extend(summary.diags);
                     (region, ModuleState::Loaded)
@@ -1365,14 +1289,18 @@ pub(crate) fn resolve_modules_lsp(
                             diags.push(diag);
                         }
                         ConfigLoadError::IO(e) => {
-                            let path = &src_manager.extract_path(path_id).path;
+                            let SourceKind::Path(source) = src_manager.extract_source(src_id)
+                            else {
+                                unreachable!("in-memory source readers cannot produce I/O errors");
+                            };
+                            let path = &source.path;
                             let core_msg = core_error::form_string_from_io_err(&e, path)
                                 .unwrap_or(e.to_string());
                             let src_diag = SourceDiagnostic::builder(
                                 None,
                                 DiagnosticLevel::Error,
                                 core_msg,
-                                current_path_id.inner(),
+                                current_src_id,
                             )
                             .add_annotation(path_span, AnnotationKind::Primary, None)
                             .build();
@@ -1386,20 +1314,24 @@ pub(crate) fn resolve_modules_lsp(
                     (broken_region, ModuleState::BrokenRegion)
                 }
                 ConfigLoaderOutput::UnrecoverableErr(cfg_err) => {
-                    importer_mod.imports[i].kind = ImportKind::ErrorSource(sp_path_id.clone());
+                    importer_mod.imports[i].kind = ImportKind::ErrorSource(sp_src_id.clone());
                     match cfg_err {
                         ConfigLoadError::Diagnostic(diag) => {
                             diags.push(diag);
                         }
                         ConfigLoadError::IO(e) => {
-                            let path = &src_manager.extract_path(path_id).path;
+                            let SourceKind::Path(source) = src_manager.extract_source(src_id)
+                            else {
+                                unreachable!("in-memory source readers cannot produce I/O errors");
+                            };
+                            let path = &source.path;
                             let core_msg = core_error::form_string_from_io_err(&e, path)
                                 .unwrap_or(e.to_string());
                             let src_diag = SourceDiagnostic::builder(
                                 None,
                                 DiagnosticLevel::Error,
                                 core_msg,
-                                current_path_id.inner(),
+                                current_src_id,
                             )
                             .add_annotation(path_span, AnnotationKind::Primary, None)
                             .build();
@@ -1411,15 +1343,15 @@ pub(crate) fn resolve_modules_lsp(
             };
 
             // The module is now certain to exist, so it takes the next id. Reserving
-            // earlier — before the open, the `core` rejection, the file-prefix check
-            // or the config load — let a failed import consume an id it never used,
+            // earlier — before the source loaded successfully — let a failed import
+            // consume an id it never used,
             // which left a hole in `modules` and pushed every later module's id past
             // its arena slot. `ScriptCompiler::init` derives the synthesized core
             // module's id from `mods.len()`, so a shifted id collides with core and
             // the import resolves into core's namespace instead of the file's.
             // `resolve_module` registers at this same point for the same reason.
             let current_mod_id = ModuleId::new(reserved_mod_ids.len() as u32);
-            reserved_mod_ids.push((path_id, current_mod_id));
+            reserved_mod_ids.push((src_id, current_mod_id));
 
             let (bind, sub_imports, mut finder_summary) =
                 ModuleFinder::new(&sub_region.src_bytes, settings, &sub_region)
@@ -1430,7 +1362,7 @@ pub(crate) fn resolve_modules_lsp(
             // Resolve the import in the importer module (mirrors the compiler's
             // extract_modules behaviour exactly: imports are only set to Source
             // when the target module is successfully created).
-            importer_mod.imports[i].kind = ImportKind::Source(sp_path_id.clone(), current_mod_id);
+            importer_mod.imports[i].kind = ImportKind::Source(sp_src_id.clone(), current_mod_id);
 
             sub_regions.push(sub_region);
             debug_assert_eq!(
@@ -1440,7 +1372,7 @@ pub(crate) fn resolve_modules_lsp(
             );
 
             let sub_mod = Module::new(
-                official_name_id,
+                import.name_id,
                 sub_state,
                 current_mod_id,
                 bind.clone(),
@@ -1450,7 +1382,7 @@ pub(crate) fn resolve_modules_lsp(
 
             // Push the new module onto the worklist so its own imports will be
             // processed in a future iteration (breadth-first / queue order).
-            worklist.push_back((sub_mod.clone(), path_id));
+            worklist.push_back((sub_mod.clone(), src_id));
 
             // Ids are dense, so appending puts the module at `mod_id - 1`.
             debug_assert_eq!(
@@ -1482,7 +1414,7 @@ pub(crate) fn resolve_modules_lsp(
                 ErrorCode::ImportErr.into(),
                 DiagnosticLevel::Error,
                 core_msg,
-                current_path_id.inner(),
+                current_src_id,
             )
             .add_annotation(dup_span, AnnotationKind::Primary, None);
 
@@ -1526,14 +1458,14 @@ pub(crate) fn resolve_modules_lsp(
     // `ScriptCompiler::create_module_symbols` hits its `unreachable!()`.
     if limit_exceeded {
         for imp in main_mod.imports.iter_mut() {
-            if let ImportKind::UnresolvedSource(sp_path_id) = &imp.kind {
-                imp.kind = ImportKind::ErrorSource(sp_path_id.clone());
+            if let ImportKind::UnresolvedSource(sp_src_id) = &imp.kind {
+                imp.kind = ImportKind::ErrorSource(sp_src_id.clone());
             }
         }
         for stored in modules.iter_mut() {
             for imp in stored.imports.iter_mut() {
-                if let ImportKind::UnresolvedSource(sp_path_id) = &imp.kind {
-                    imp.kind = ImportKind::ErrorSource(sp_path_id.clone());
+                if let ImportKind::UnresolvedSource(sp_src_id) = &imp.kind {
+                    imp.kind = ImportKind::ErrorSource(sp_src_id.clone());
                 }
             }
         }

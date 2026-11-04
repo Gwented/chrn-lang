@@ -568,8 +568,58 @@ The importing module's configuration takes priority over configuration for that 
     },
     Document {
         key: "virtual",
-        description: "Reserved keyword; not implemented",
-        example: None,
+        description: "Selects a named in-memory source for an import or bind",
+        example: Some(
+            r#"Place `virtual` between `import` or `bind` and the quoted source name. The application running chrn must supply that source in memory before analysis. Names must be valid UTF-8 and match exactly; they are not resolved as file paths. A virtual source and a file with the same name remain separate sources.
+
+**Direct import:**
+The application supplies a source named `definitions` containing:
+```chrn
+export let LIMIT = 10
+```
+Import it from the entry configuration:
+```chrn
+import virtual "definitions"
+let limit = definitions::LIMIT
+```
+Without `as`, the registered name is the local module name. Use `::` to access its exported declarations.
+
+**Aliased import:**
+Given the same registered `definitions` source:
+```chrn
+import virtual "definitions" as defs
+let limit = defs::LIMIT
+```
+Use an alias when the registered name cannot be written as a chrn identifier.
+
+**Mixing in-memory and file imports:**
+The application supplies `definitions` as above, and `settings.chrn` on disk contains:
+```chrn
+export let EXTRA = 2
+```
+The entry configuration can import both:
+```chrn
+import virtual "definitions" as defs
+import "settings.chrn" as settings
+let total = defs::LIMIT + settings::EXTRA
+```
+Here `total` is 12. The file path is resolved from the working directory.
+
+**Binding in-memory serialized data:**
+The application supplies a source named `payload` containing `{"name": "Ada"}`. Select it in the neutral section, before any section keyword:
+```chrn
+bind virtual "payload"
+var->
+    name: str
+```
+This records the serialized-data source; it does not perform serialization or validation by itself.
+
+**Invalid: unregistered source:**
+```chrn
+import virtual "missing"
+```
+If `missing` was not supplied in memory, chrn reports that it could not find the module in memory, even if a file with that name exists."#,
+        ),
     },
 ];
 

@@ -122,10 +122,10 @@ pub(super) fn standardize_note(msg: &str, can_color: bool, terminal: TerminalCol
     format!("{cyan}note{nc}: {msg}")
 }
 
-/// Creates a source-label header using the existing PATH display format.
+/// Creates a source-label header using the SRC display format.
 pub(super) fn create_source_header(source: &str, settings: &TerminalRenderConfig) -> String {
     let (bold, nc) = color_type::get_bold(settings.can_color);
-    format!("{bold}PATH{nc} => \"{}\"", source)
+    format!("{bold}SRC{nc} => \"{}\"", source)
 }
 
 /// Creates a template header with the diagnostic level and msg given

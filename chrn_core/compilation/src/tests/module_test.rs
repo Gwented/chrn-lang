@@ -1,16 +1,22 @@
-use chrn_utils::source_utils::source_manager::SourceManager;
+use chrn_utils::source_utils::source_manager::{
+    SourceInMemory, SourceKind, SourceManager, SourcePath,
+};
 use chrn_utils::{id_types::InternedId, intern::UTF8Tag};
 use std::env;
+#[cfg(unix)]
+use std::ffi::OsStr;
 use std::fs;
 use std::io::Cursor;
 #[cfg(unix)]
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use super::helpers::*;
 use crate::config_loader::ConfigLoader;
 use crate::module::extract_all_modules;
 use crate::module::extract_main;
+use crate::module::load_source;
 use crate::module::module_concepts::{ImportKind, Module, ModuleState};
 use crate::module::module_finder::ModuleFinder;
 use crate::script_compiler::reporter::Reporter;
@@ -32,8 +38,12 @@ use chrn_utils::{
 /// Creates a unique temporary directory for a test. The caller should clean up
 /// with `remove_dir_all` when done.
 fn create_temp_dir(label: &str) -> PathBuf {
-    let dir = env::temp_dir().join(format!("chrn_modules_test_{}", label));
-    _ = fs::remove_dir_all(&dir);
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let unique = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let dir = env::temp_dir().join(format!(
+        "chrn_modules_test_{label}_{}_{unique}",
+        std::process::id()
+    ));
     fs::create_dir_all(&dir).expect("failed to create temp dir");
     dir
 }
@@ -76,38 +86,9 @@ fn find_module_by_name<'a>(
     None
 }
 
-/// Creates a simple script file with no imports.  Returns its canonical path.
-fn make_simple_script(dir: &Path) -> PathBuf {
-    create_chrn_file(dir, "main.chrn", "let x = 5\nlet y = 10\n")
-}
-
-/// Creates a script file that imports a sub-module. `sub_path` must be the
-/// *canonical* absolute path to the sub file (import statements use absolute
-/// paths so the working directory is irrelevant).
-fn make_importing_script(dir: &Path, sub_canonical: &Path) -> PathBuf {
-    let import_stmt = format!("import \"{}\"\n", sub_canonical.display());
-    create_chrn_file(dir, "main.chrn", &format!("{}let x = 5\n", import_stmt))
-}
-
 /// Creates a sub-module script with simple content.
 fn make_sub_script(dir: &Path) -> PathBuf {
     create_chrn_file(dir, "sub.chrn", "let y = 42\n")
-}
-
-/// Creates a file with `@def` / `@end` boundaries.
-fn make_def_script(dir: &Path) -> PathBuf {
-    create_chrn_file(dir, "def_test.chrn", "serial_data\n@def\nlet x = 1\n@end\n")
-}
-
-/// Creates a file with a broken `@def` (no matching `@end`).
-fn make_broken_script(dir: &Path) -> PathBuf {
-    create_chrn_file(dir, "broken.chrn", "@def\nlet x = 1\n")
-}
-
-/// Creates a file with a `bind` statement pointing to a real file.
-fn make_bind_script(dir: &Path, bind_target: &Path) -> PathBuf {
-    let bind_stmt = format!("bind \"{}\"\n", bind_target.display());
-    create_chrn_file(dir, "with_bind.chrn", &format!("{}let x = 5\n", bind_stmt))
 }
 
 fn mod_id_for_source(reserved: &[(SourceId, ModuleId)], source_id: SourceId) -> Option<ModuleId> {
@@ -125,6 +106,383 @@ fn import_mod_id(import: &Import) -> Option<ModuleId> {
         ImportKind::Core(mod_id) => Some(*mod_id),
         _ => None,
     }
+}
+
+// ===========================================================================
+// Source loading tests
+// ===========================================================================
+
+#[test]
+fn load_source_preserves_regions_and_diagnostics_for_both_source_kinds() {
+    let dir = create_temp_dir("load_source_regions");
+    let mut interner = Intern::init();
+    let mut src_manager = SourceManager::new();
+    src_manager.register_path(Path::new("unused.chrn"));
+    let cfg = ChrnConfig::default();
+    let region_id = SourceRegionId::new(7);
+
+    for (name, input, expected_bytes, serial_start) in [
+        (
+            "complete",
+            "prefix@def xyz@end payload",
+            b"@def xyz@end".as_slice(),
+            Some(18),
+        ),
+        ("broken", "prefix@def xyz", b"@def xyz".as_slice(), None),
+    ] {
+        let path = create_chrn_file(&dir, &format!("{name}.chrn"), input);
+        let path_id = src_manager.register_path(&path).inner();
+        let memory_id = src_manager
+            .register_in_memory(interner.intern_str(name), input.as_bytes().to_vec())
+            .inner();
+
+        for src_id in [path_id, memory_id] {
+            let output = load_source(src_manager.extract_source(src_id), src_id, region_id, &cfg);
+            let region = match output {
+                ConfigLoaderOutput::Success(region, summary) if serial_start.is_some() => {
+                    assert!(summary.diags.is_empty(), "{name}: {summary:?}");
+                    region
+                }
+                ConfigLoaderOutput::Broken(region, ConfigLoadError::Diagnostic(diag))
+                    if serial_start.is_none() =>
+                {
+                    assert_eq!(diag.src_id, src_id);
+                    assert_eq!(diag.core_msg, "Could not find `@end` after `@def`");
+                    assert!(diag.annotations.iter().any(|annotation| {
+                        annotation.kind == AnnotationKind::Primary
+                            && annotation.span == SourceSpan::new(region_id, 7, 8)
+                    }));
+                    region
+                }
+                other => panic!("{name}, {src_id:?}: unexpected loader output: {other:?}"),
+            };
+            assert_eq!(region.self_id, region_id);
+            assert_eq!(region.src_id, src_id);
+            assert_eq!(region.src_bytes, expected_bytes);
+            assert_eq!(region.script_start, 6);
+            assert_eq!(region.serial_start, serial_start);
+        }
+    }
+    fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn load_source_returns_file_open_errors_to_the_caller() {
+    let dir = create_temp_dir("load_source_open_errors");
+    let mut src_manager = SourceManager::new();
+    let cfg = ChrnConfig::default();
+    for (path, expected_kind) in [
+        (dir.join("missing.chrn"), std::io::ErrorKind::NotFound),
+        #[cfg(unix)]
+        (dir.clone(), std::io::ErrorKind::IsADirectory),
+    ] {
+        let src_id = src_manager.register_path(&path).inner();
+        match load_source(
+            src_manager.extract_source(src_id),
+            src_id,
+            SourceRegionId::new(3),
+            &cfg,
+        ) {
+            ConfigLoaderOutput::UnrecoverableErr(ConfigLoadError::IO(error)) => {
+                assert_eq!(error.kind(), expected_kind, "{}", path.display());
+                if expected_kind == std::io::ErrorKind::IsADirectory {
+                    assert_eq!(
+                        error.to_string(),
+                        format!("The path \"{}\" is a directory", path.display())
+                    );
+                }
+            }
+            other => panic!(
+                "{}: expected unrecoverable I/O error, got {other:?}",
+                path.display()
+            ),
+        }
+    }
+    fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn extract_main_in_memory_preserves_names_regions_and_failures() {
+    // This label is deliberately a nonexistent, non-path name with multiple suffixes.
+    let name = "memory entry/別の.source.chrn";
+    for (input, expected_state, expected_errors) in [
+        ("@def let value = 1 @end payload", ModuleState::Loaded, 0),
+        ("@def let value = 1", ModuleState::BrokenRegion, 1),
+    ] {
+        let mut interner = Intern::init();
+        let retained = interner.intern_str("preexisting caller string");
+        let name_id = interner.intern_str(name);
+        let mut src_manager = SourceManager::new();
+        let retained_src = src_manager
+            .register_in_memory(retained, b"let retained = 2".to_vec())
+            .inner();
+        let src_kind =
+            SourceKind::InMemory(SourceInMemory::new(name_id, input.as_bytes().to_vec()));
+        let (module, graph, interner, summary) =
+            extract_main(src_kind, interner, src_manager, &mut ChrnConfig::default()).unwrap();
+        assert_eq!(module.name_id, name_id);
+        assert_eq!(interner.extract_utf8_str(name_id), name);
+        assert_eq!(
+            interner.extract_utf8_str(retained),
+            "preexisting caller string"
+        );
+        assert_eq!(module.self_id, ModuleId::new(0));
+        assert_eq!(module.state, expected_state);
+        let region = get_module_region(&graph.region_arena, &module);
+        assert_eq!(region.self_id, SourceRegionId::new(0));
+        assert_eq!(region.src_id, SourceId::new(1));
+        assert_eq!(region.script_start, 0);
+        assert_eq!(
+            graph.src_manager.get_source_id_from_interned_id(retained),
+            Some(retained_src)
+        );
+        let SourceKind::InMemory(retained) = graph.src_manager.extract_source(retained_src) else {
+            panic!("caller source must retain its source kind");
+        };
+        assert_eq!(retained.src, b"let retained = 2");
+        assert_eq!(
+            graph.registered_mod_ids(),
+            &vec![(region.src_id, module.self_id)]
+        );
+        assert_eq!(graph.seen(), &vec![region.src_id]);
+        assert_eq!(
+            graph.src_manager.display_source(region.src_id, &interner),
+            name
+        );
+        let SourceKind::InMemory(stored) = graph.src_manager.extract_source(region.src_id) else {
+            panic!("in-memory entry must retain its source kind");
+        };
+        assert_eq!(stored.src, input.as_bytes());
+        assert_eq!(summary.err_count(), expected_errors);
+        for diag in &summary.diags {
+            assert_eq!(diag.src_id, region.src_id);
+        }
+    }
+
+    let mut interner = Intern::init();
+    let core_name = interner.intern_str("core");
+    let retained_name = interner.intern_str("retained");
+    let mut src_manager = SourceManager::new();
+    let retained_src = src_manager
+        .register_in_memory(retained_name, b"let retained = 2".to_vec())
+        .inner();
+    let src_kind = SourceKind::InMemory(SourceInMemory::new(core_name, b"let x = 1".to_vec()));
+    let error = match extract_main(src_kind, interner, src_manager, &mut ChrnConfig::default()) {
+        Err(error) => error,
+        Ok(_) => panic!("reserved entry name must fail before graph extraction"),
+    };
+    let ConfigLoadError::Diagnostic(diag) = &error.cfg_err else {
+        panic!("reserved entry name must produce a diagnostic");
+    };
+    assert_eq!(diag.core_msg, "`core` is a reserved module identifier");
+    assert_eq!(diag.src_id, SourceId::new(1));
+    assert_eq!(
+        error
+            .src_manager
+            .get_source_id_from_interned_id(retained_name),
+        Some(retained_src)
+    );
+    assert_eq!(
+        error
+            .src_manager
+            .display_source(retained_src, &error.interner),
+        "retained"
+    );
+    let SourceKind::InMemory(retained) = error.src_manager.extract_source(retained_src) else {
+        panic!("initialization failure must retain caller sources");
+    };
+    assert_eq!(retained.src, b"let retained = 2");
+    assert_eq!(
+        error
+            .src_manager
+            .display_source(diag.src_id, &error.interner),
+        "core"
+    );
+    assert_eq!(error.region.as_ref().unwrap().len(), 1);
+}
+
+#[test]
+fn extract_all_modules_in_memory_resolves_registered_imports_and_injects_core() {
+    let mut interner = Intern::init();
+    interner.intern_str("caller entry");
+    let name_id = interner.intern_str("memory_entry");
+    let dependency_name = interner.intern_str("dependency");
+    let dependency_bytes = b"import virtual \"memory_entry\"\nexport let value = 2";
+    let mut src_manager = SourceManager::new();
+    let dependency_src = src_manager
+        .register_in_memory(dependency_name, dependency_bytes.to_vec())
+        .inner();
+    let src_kind = SourceKind::InMemory(SourceInMemory::new(
+        name_id,
+        b"import virtual \"memory_entry\"\nimport virtual \"dependency\"\nlet value = 1".to_vec(),
+    ));
+    let mut reporter = Reporter::new(100);
+    let (compiler, store, summary) = extract_all_modules(
+        src_kind,
+        interner,
+        src_manager,
+        ChrnConfig::default(),
+        &mut reporter,
+    )
+    .unwrap();
+    assert_eq!(compiler.mods.len(), 3);
+    let main = &compiler.mods[ModuleId::new(0)];
+    assert_eq!(main.name_id, name_id);
+    assert_eq!(main.state, ModuleState::Loaded);
+    assert_eq!(main.imports.len(), 3);
+    let ImportKind::Source(src, module_id) = &main.imports[0].kind else {
+        panic!("self import must resolve to the registered entry");
+    };
+    assert_eq!(*module_id, ModuleId::new(0));
+    assert_eq!(src.inner, SourceId::new(1));
+    let ImportKind::Source(imported_src, imported_module) = &main.imports[1].kind else {
+        panic!("pre-registered dependency must resolve");
+    };
+    assert_eq!(imported_src.inner, dependency_src);
+    assert_eq!(*imported_module, ModuleId::new(1));
+    assert!(matches!(main.imports[2].kind, ImportKind::Core(id) if id == ModuleId::new(2)));
+    let dependency = &compiler.mods[*imported_module];
+    assert_eq!(dependency.name_id, dependency_name);
+    assert_eq!(dependency.state, ModuleState::Loaded);
+    assert_eq!(dependency.imports.len(), 2);
+    let ImportKind::Source(return_src, return_module) = &dependency.imports[0].kind else {
+        panic!("dependency must resolve its import of the entry");
+    };
+    assert_eq!(return_src.inner, src.inner);
+    assert_eq!(*return_module, main.self_id);
+    assert!(matches!(dependency.imports[1].kind, ImportKind::Core(id) if id == ModuleId::new(2)));
+    assert_eq!(
+        get_module_region(&store.region_arena, dependency).src_bytes,
+        dependency_bytes
+    );
+    assert_eq!(
+        get_module_region(&store.region_arena, dependency).src_id,
+        dependency_src
+    );
+    assert_eq!(
+        store
+            .interner
+            .extract_utf8_str(compiler.mods[ModuleId::new(2)].name_id),
+        "core"
+    );
+    assert_eq!(store.region_arena.len(), 2);
+    let main_region = get_module_region(&store.region_arena, main);
+    assert_eq!(main_region.self_id, SourceRegionId::new(0));
+    assert_eq!(main_region.src_id, src.inner);
+    assert_eq!(
+        store.src_manager.display_source(src.inner, &store.interner),
+        "memory_entry"
+    );
+    assert_eq!(summary.diags.len(), 1);
+    assert_eq!(summary.diags[0].core_msg, "Self imports have no effect");
+    assert_eq!(summary.diags[0].level, DiagnosticLevel::Warn);
+    assert_eq!(summary.diags[0].src_id, src.inner);
+}
+
+#[test]
+fn extract_all_modules_keeps_file_and_virtual_sources_distinct_in_a_mixed_cycle() {
+    let dir = create_temp_dir("mixed_source_cycle");
+    let dependency_path = create_chrn_file(&dir, "dependency.chrn", "");
+    // The same text denotes two independent sources, selected by `virtual`.
+    let shared_name = dependency_path.to_str().unwrap();
+    let file_text = format!("import virtual \"{shared_name}\" as memory\nexport let value = 11\n");
+    let memory_text = format!("import \"{shared_name}\" as file\nexport let value = 29\n");
+    write_file(&dependency_path, &file_text);
+    let entry_text = format!(
+        "import \"{shared_name}\" as file\nimport virtual \"{shared_name}\" as memory\nlet value = 0\n"
+    );
+    let entry_path = create_chrn_file(&dir, "entry.chrn", &entry_text);
+
+    for memory_entry in [false, true] {
+        let mut interner = Intern::init();
+        let memory_name = interner.intern_str(shared_name);
+        let mut src_manager = SourceManager::new();
+        let memory_src = src_manager
+            .register_in_memory(memory_name, memory_text.as_bytes().to_vec())
+            .inner();
+        let entry = if memory_entry {
+            SourceKind::InMemory(SourceInMemory::new(
+                interner.intern_str("entry"),
+                entry_text.as_bytes().to_vec(),
+            ))
+        } else {
+            SourceKind::Path(SourcePath::new(entry_path.clone()))
+        };
+        let (compiler, store, summary) = extract_all_modules(
+            entry,
+            interner,
+            src_manager,
+            ChrnConfig::default(),
+            &mut Reporter::new(100),
+        )
+        .unwrap();
+        assert!(
+            summary.diags.is_empty(),
+            "memory entry {memory_entry}: {summary:?}"
+        );
+        assert_eq!(compiler.mods.len(), 4, "the cycle must reuse both sources");
+        assert_eq!(store.region_arena.len(), 3);
+        let file_src = store
+            .src_manager
+            .get_source_id_from_path(&dependency_path)
+            .unwrap()
+            .inner();
+        assert_ne!(file_src, memory_src);
+        assert_eq!(
+            store
+                .src_manager
+                .get_source_id_from_interned_id(memory_name),
+            Some(memory_src)
+        );
+        assert!(matches!(
+            store.src_manager.extract_source(file_src),
+            SourceKind::Path(_)
+        ));
+        assert!(matches!(
+            store.src_manager.extract_source(memory_src),
+            SourceKind::InMemory(_)
+        ));
+
+        for (index, text, src_id) in [
+            (0, entry_text.as_bytes(), None),
+            (1, file_text.as_bytes(), Some(file_src)),
+            (2, memory_text.as_bytes(), Some(memory_src)),
+        ] {
+            let module = &compiler.mods[ModuleId::new(index)];
+            assert_eq!(module.state, ModuleState::Loaded);
+            let region = get_module_region(&store.region_arena, module);
+            assert_eq!(region.src_bytes, text);
+            if let Some(src_id) = src_id {
+                assert_eq!(region.src_id, src_id);
+            } else {
+                assert_eq!(
+                    matches!(
+                        store.src_manager.extract_source(region.src_id),
+                        SourceKind::InMemory(_)
+                    ),
+                    memory_entry
+                );
+            }
+            assert_eq!(module.imports.len(), if index == 0 { 3 } else { 2 });
+            assert!(
+                matches!(module.imports.last().unwrap().kind, ImportKind::Core(id) if id == ModuleId::new(3))
+            );
+        }
+        for (owner, import_index, target, src_id) in [
+            (0, 0, 1, file_src),
+            (0, 1, 2, memory_src),
+            (1, 0, 2, memory_src),
+            (2, 0, 1, file_src),
+        ] {
+            let import = &compiler.mods[ModuleId::new(owner)].imports[import_index];
+            let ImportKind::Source(source, module_id) = &import.kind else {
+                panic!("module {owner}, import {import_index} must resolve");
+            };
+            assert_eq!(*module_id, ModuleId::new(target));
+            assert_eq!(source.inner, src_id);
+        }
+    }
+    fs::remove_dir_all(dir).unwrap();
 }
 
 // ===========================================================================
@@ -169,17 +527,19 @@ fn modfinder_no_imports_or_bind() {
 /// `ModuleFinder` should find a single import with a valid path.
 #[test]
 fn modfinder_single_import() {
-    let dir = create_temp_dir("modfinder_single_import");
-    let sub_path = make_sub_script(&dir);
-    let sub_canonical = sub_path.to_string_lossy();
+    let sub_path = "sub";
+    let sub_canonical = sub_path;
 
     let mut interner = Intern::init();
     let mut src_manager = SourceManager::new();
+    src_manager.register_in_memory(interner.intern_str("sub"), b"let y = 42\n".to_vec());
+
     let cfg = ChrnConfig::default();
-    let path_id = src_manager.register_path(Path::new("main.chrn"));
     let region_id = SourceRegionId::new(0);
 
-    let src = format!("import \"{}\"\nlet x = 5\n", sub_canonical);
+    let src = format!("import virtual \"{}\"\nlet x = 5\n", sub_canonical);
+    let path_id =
+        src_manager.register_in_memory(interner.intern_str("main"), src.as_bytes().to_vec());
     let region = ConfigLoader::new(region_id, src.as_bytes(), path_id.inner(), &cfg)
         .load_config()
         .expect_success();
@@ -196,13 +556,12 @@ fn modfinder_single_import() {
     assert_eq!(imports.len(), 1, "exactly one import expected");
 
     let import = &imports[0];
-    let sub_path_id = src_manager.register_path(&sub_path);
+    let sub_path_id = src_manager.register_in_memory(interner.intern_str(sub_path), Vec::new());
     // ModuleFinder returns UnresolvedSource imports (module id is assigned
     // during module resolution). Verify the import kind carries the correct path
     // id and span.
-    // Source is `import "PATH"\nlet x = 5\n`; module finder's `parse_import` starts
-    // at the opening `"` (byte 7), advances past it, so the span covers the path
-    // without quotes:  start = 8,  end = 8 + path.len().
+    // Source is `import virtual "NAME"\nlet x = 5\n`; the opening quote is
+    // at byte 15, so the quoted name spans 15..17 + name.len().
     let import_span = match &import.kind {
         ImportKind::UnresolvedSource(sp_path_id) => {
             assert_eq!(
@@ -210,17 +569,17 @@ fn modfinder_single_import() {
                 sub_path_id.inner(),
                 "import must carry the correct sub path id"
             );
-            let expected_start = 8;
-            let expected_end = expected_start + sub_canonical.len() as u32;
+            let expected_start = 15;
+            let expected_end = expected_start + sub_canonical.len() as u32 + 2;
             assert_eq!(
                 sp_path_id.span.start, expected_start,
-                "import span must start at byte 8 (right after opening \"), got {}",
+                "import span must start at byte 15 (at the opening quote), got {}",
                 sp_path_id.span.start
             );
             assert_eq!(
                 sp_path_id.span.end,
                 expected_end,
-                "import span must end at byte {} (right after path of length {}), got {}",
+                "import span must end at byte {} (after closing quote for source name of length {}), got {}",
                 expected_end,
                 sub_canonical.len(),
                 sp_path_id.span.end
@@ -232,40 +591,41 @@ fn modfinder_single_import() {
             import.kind
         ),
     };
-    // Verify the span slices out the exact path from src bytes
+    // Verify the span slices out the quoted source name from src bytes
     let span_bytes = &region.src_bytes[import_span.start as usize..import_span.end as usize];
     let span_str = String::from_utf8_lossy(span_bytes);
     assert_eq!(
-        span_str, sub_canonical,
-        "import span must extract the exact path string from src bytes"
+        span_str, format!("\"{sub_canonical}\""),
+        "import span must extract the quoted source name from src bytes"
     );
 
     // ModuleFinder records unresolved import paths; module ids and graph state belong to
     // module resolution.
-
-    _ = fs::remove_dir_all(&dir);
 }
 
 /// `ModuleFinder` should find two distinct imports.
 #[test]
 fn modfinder_multiple_imports() {
-    let dir = create_temp_dir("modfinder_multi_import");
-    let sub1_path = make_sub_script(&dir);
-    let sub2_path = create_chrn_file(&dir, "another.chrn", "let z = 99\n");
+    let sub1_path = "sub";
+    let sub2_path = "another";
 
-    let sub1_str = sub1_path.to_string_lossy();
-    let sub2_str = sub2_path.to_string_lossy();
+    let sub1_str = sub1_path;
+    let sub2_str = sub2_path;
 
     let mut interner = Intern::init();
     let mut src_manager = SourceManager::new();
+    src_manager.register_in_memory(interner.intern_str("sub"), b"let y = 42\n".to_vec());
+    src_manager.register_in_memory(interner.intern_str("another"), b"let z = 99\n".to_vec());
+
     let cfg = ChrnConfig::default();
-    let path_id = src_manager.register_path(Path::new("main.chrn"));
     let region_id = SourceRegionId::new(0);
 
     let src = format!(
-        "import \"{}\"\nimport \"{}\"\nlet x = 5\n",
+        "import virtual \"{}\"\nimport virtual \"{}\"\nlet x = 5\n",
         sub1_str, sub2_str
     );
+    let path_id =
+        src_manager.register_in_memory(interner.intern_str("main"), src.as_bytes().to_vec());
     let region = ConfigLoader::new(region_id, src.as_bytes(), path_id.inner(), &cfg)
         .load_config()
         .expect_success();
@@ -291,24 +651,27 @@ fn modfinder_multiple_imports() {
             imp.kind
         );
     }
-
-    _ = fs::remove_dir_all(&dir);
 }
 
 /// `ModuleFinder` should capture the `as` alias when present.
 #[test]
 fn modfinder_import_with_alias() {
-    let dir = create_temp_dir("modfinder_alias");
-    let sub_path = make_sub_script(&dir);
-    let sub_canonical = sub_path.to_string_lossy();
+    let sub_path = "sub";
+    let sub_canonical = sub_path;
 
     let mut interner = Intern::init();
     let mut src_manager = SourceManager::new();
+    src_manager.register_in_memory(interner.intern_str("sub"), b"let y = 42\n".to_vec());
+
     let cfg = ChrnConfig::default();
-    let path_id = src_manager.register_path(Path::new("main.chrn"));
     let region_id = SourceRegionId::new(0);
 
-    let src = format!("import \"{}\" as my_mod\nlet x = 5\n", sub_canonical);
+    let src = format!(
+        "import virtual \"{}\" as my_mod\nlet x = 5\n",
+        sub_canonical
+    );
+    let path_id =
+        src_manager.register_in_memory(interner.intern_str("main"), src.as_bytes().to_vec());
     let region = ConfigLoader::new(region_id, src.as_bytes(), path_id.inner(), &cfg)
         .load_config()
         .expect_success();
@@ -329,24 +692,21 @@ fn modfinder_import_with_alias() {
     );
     let alias_name = interner.extract_utf8_str(import.sp_alias_id.as_ref().unwrap().inner);
     assert_eq!(alias_name, "my_mod", "alias should be 'my_mod'");
-
-    _ = fs::remove_dir_all(&dir);
 }
 
 /// Escaped keyword aliases use the identifier value while retaining the full source span.
 #[test]
 fn modfinder_escaped_keyword_alias() {
-    let dir = create_temp_dir("escaped_keyword_alias_proof");
-    let sub = make_sub_script(&dir);
-    let source = format!("import \"{}\" as e#import\n", sub.display());
-    let main = create_chrn_file(&dir, "main.chrn", &source);
-    let (module, graph, interner, diags) = extract_main(
-        &main,
-        fs::File::open(&main).unwrap(),
-        &mut ChrnConfig::default(),
-    )
-    .expect("an escaped keyword is a valid import alias");
-    fs::remove_dir_all(&dir).unwrap();
+    //NOTE: This isn't a bad idea to have as an exposed API for easier creation. Or maybe this is
+    //just exposing that they should both probably be one struct
+    let mut sources = InMemorySources::new();
+    let sub = sources.add("sub", "let y = 42\n");
+    let source = format!("import virtual \"{}\" as e#import\n", sub);
+    let main = sources.add("main", &source);
+    let (input, interner, src_manager) = sources.into_input(&main);
+    let (module, graph, interner, diags) =
+        extract_main(input, interner, src_manager, &mut ChrnConfig::default())
+            .expect("an escaped keyword is a valid import alias");
 
     assert!(diags.diags.is_empty(), "unexpected diagnostics: {diags:?}");
     assert_eq!(module.imports.len(), 1);
@@ -357,8 +717,8 @@ fn modfinder_escaped_keyword_alias() {
     assert_eq!(
         graph
             .src_manager
-            .extract_path(path.inner.into_tagged::<PathTag>())
-            .path,
+            .display_source(path.inner, &interner)
+            .into_owned(),
         sub
     );
     let alias = import.sp_alias_id.as_ref().expect("alias must be retained");
@@ -373,22 +733,18 @@ fn modfinder_escaped_keyword_alias() {
 /// Identifier operands must not become imports before expression type checking.
 #[test]
 fn modfinder_escaped_identifier_division_does_not_import_operand() {
-    let dir = create_temp_dir("escaped_identifier_operand_proof");
-    let operand = create_chrn_file(&dir, "operand.chrn", "let hidden = 1\n");
-    let visible = make_sub_script(&dir);
+    let mut sources = InMemorySources::new();
+    let operand = sources.add("operand", "let hidden = 1\n");
+    let visible = sources.add("sub", "let y = 42\n");
     let source = format!(
-        "let e#import = 8\nlet ratio = e#import / \"{}\"\nimport \"{}\"\n",
-        operand.display(),
-        visible.display(),
+        "let e#import = 8\nlet ratio = e#import / \"{}\"\nimport virtual \"{}\"\n",
+        operand, visible,
     );
-    let main = create_chrn_file(&dir, "main.chrn", &source);
-    let (module, graph, mut interner, diags) = extract_main(
-        &main,
-        fs::File::open(&main).unwrap(),
-        &mut ChrnConfig::default(),
-    )
-    .expect("the source region must load before expression type checking");
-    fs::remove_dir_all(&dir).unwrap();
+    let main = sources.add("main", &source);
+    let (input, interner, src_manager) = sources.into_input(&main);
+    let (module, graph, mut interner, diags) =
+        extract_main(input, interner, src_manager, &mut ChrnConfig::default())
+            .expect("the source region must load before expression type checking");
 
     // The division is a later type error, not an import declaration. Confirm
     // that the real lexer treats its left operand as an escaped identifier.
@@ -416,9 +772,8 @@ fn modfinder_escaped_identifier_division_does_not_import_operand() {
             };
             graph
                 .src_manager
-                .extract_path(path.inner.into_tagged::<PathTag>())
-                .path
-                .clone()
+                .display_source(path.inner, &interner)
+                .into_owned()
         })
         .collect();
     assert_eq!(
@@ -431,23 +786,18 @@ fn modfinder_escaped_identifier_division_does_not_import_operand() {
 /// An underscore is part of an identifier, including before import/bind text.
 #[test]
 fn modfinder_underscore_identifiers_do_not_create_module_edges() {
-    let dir = create_temp_dir("underscore_module_edges_proof");
-    let operand = create_chrn_file(&dir, "operand.chrn", "let hidden = 1\n");
-    let visible = make_sub_script(&dir);
+    let mut sources = InMemorySources::new();
+    let operand = sources.add("operand", "let hidden = 1\n");
+    let visible = sources.add("sub", "let y = 42\n");
     let source = format!(
-        "let _import = 8\nlet _bind = 8\nlet first = _import / \"{}\"\nlet second = _bind / \"{}\"\nimport \"{}\"\n",
-        operand.display(),
-        operand.display(),
-        visible.display(),
+        "let _import = 8\nlet _bind = 8\nlet first = _import / \"{}\"\nlet second = _bind / \"{}\"\nimport virtual \"{}\"\n",
+        operand, operand, visible,
     );
-    let main = create_chrn_file(&dir, "main.chrn", &source);
-    let (module, graph, mut interner, diags) = extract_main(
-        &main,
-        fs::File::open(&main).unwrap(),
-        &mut ChrnConfig::default(),
-    )
-    .expect("identifier expressions must remain available for later type checking");
-    fs::remove_dir_all(&dir).unwrap();
+    let main = sources.add("main", &source);
+    let (input, interner, src_manager) = sources.into_input(&main);
+    let (module, graph, mut interner, diags) =
+        extract_main(input, interner, src_manager, &mut ChrnConfig::default())
+            .expect("identifier expressions must remain available for later type checking");
 
     let mut cfg = ChrnConfig::default();
     let region = get_module_region(&graph.region_arena, &module);
@@ -480,17 +830,15 @@ fn modfinder_underscore_identifiers_do_not_create_module_edges() {
             };
             graph
                 .src_manager
-                .extract_path(path.inner.into_tagged::<PathTag>())
-                .path
-                .clone()
+                .display_source(path.inner, &interner)
+                .into_owned()
         })
         .collect();
     let bind_path = module.bind.as_ref().map(|bind| {
         graph
             .src_manager
-            .extract_path(bind.path_id.into_tagged::<PathTag>())
-            .path
-            .clone()
+            .display_source(bind.path_id, &interner)
+            .into_owned()
     });
     assert_eq!(
         (paths, bind_path),
@@ -502,29 +850,27 @@ fn modfinder_underscore_identifiers_do_not_create_module_edges() {
 /// Non-UTF-8 comment bytes must not turn identifier operands into module declarations.
 #[test]
 fn modfinder_non_utf8_comments_preserve_identifier_boundaries() {
-    let dir = create_temp_dir("non_utf8_comment_boundaries_proof");
-    let operand = create_chrn_file(&dir, "operand.chrn", "let hidden = 1\n");
-    let visible = make_sub_script(&dir);
+    let operand = "operand";
+    let visible = "sub".to_owned();
     let mut actual = Vec::new();
     for (comment, name) in [
         (b"// \xff\n".as_slice(), "_import"),
         (b"/* \xff */\n".as_slice(), "_bind"),
     ] {
         let suffix = format!(
-            "let {name} = 8\nlet ratio = {name} / \"{}\"\nimport \"{}\"\n",
-            operand.display(),
-            visible.display(),
+            "let {name} = 8\nlet ratio = {name} / \"{}\"\nimport virtual \"{}\"\n",
+            operand, visible,
         );
         let mut source = comment.to_vec();
         source.extend_from_slice(suffix.as_bytes());
-        let main = dir.join("main.chrn");
-        fs::write(&main, &source).unwrap();
-        let (module, graph, mut interner, diags) = extract_main(
-            &main,
-            fs::File::open(&main).unwrap(),
-            &mut ChrnConfig::default(),
-        )
-        .expect("comment bytes must leave a loadable source region");
+        let mut sources = InMemorySources::new();
+        sources.add(operand, "let hidden = 1\n");
+        sources.add(&visible, "let y = 42\n");
+        let main = sources.add("main", &source);
+        let (input, interner, src_manager) = sources.into_input(&main);
+        let (module, graph, mut interner, diags) =
+            extract_main(input, interner, src_manager, &mut ChrnConfig::default())
+                .expect("comment bytes must leave a loadable source region");
 
         let mut cfg = ChrnConfig::default();
         let region = get_module_region(&graph.region_arena, &module);
@@ -559,21 +905,18 @@ fn modfinder_non_utf8_comments_preserve_identifier_boundaries() {
                 };
                 graph
                     .src_manager
-                    .extract_path(path.inner.into_tagged::<PathTag>())
-                    .path
-                    .clone()
+                    .display_source(path.inner, &interner)
+                    .into_owned()
             })
             .collect();
         let bind_path = module.bind.as_ref().map(|bind| {
             graph
                 .src_manager
-                .extract_path(bind.path_id.into_tagged::<PathTag>())
-                .path
-                .clone()
+                .display_source(bind.path_id, &interner)
+                .into_owned()
         });
         actual.push((name, paths, bind_path));
     }
-    fs::remove_dir_all(&dir).unwrap();
     assert_eq!(
         actual,
         vec![
@@ -587,16 +930,13 @@ fn modfinder_non_utf8_comments_preserve_identifier_boundaries() {
 /// Keyword prefixes inside identifiers cannot select the virtual path modifier.
 #[test]
 fn modfinder_keyword_prefix_identifier_does_not_resolve_virtual_source() {
-    let dir = create_temp_dir("keyword_prefix_virtual_proof");
+    let mut sources = InMemorySources::new();
     let source = "let importvirtual = 8\nlet ratio = importvirtual / \"missing_operand\"\n";
-    let main = create_chrn_file(&dir, "main.chrn", source);
-    let (module, graph, mut interner, diags) = extract_main(
-        &main,
-        fs::File::open(&main).unwrap(),
-        &mut ChrnConfig::default(),
-    )
-    .expect("identifier expressions must remain available for later type checking");
-    fs::remove_dir_all(&dir).unwrap();
+    let main = sources.add("main", source);
+    let (input, interner, src_manager) = sources.into_input(&main);
+    let (module, graph, mut interner, diags) =
+        extract_main(input, interner, src_manager, &mut ChrnConfig::default())
+            .expect("identifier expressions must remain available for later type checking");
 
     let mut cfg = ChrnConfig::default();
     let region = get_module_region(&graph.region_arena, &module);
@@ -631,25 +971,20 @@ fn modfinder_keyword_prefix_identifier_does_not_resolve_virtual_source() {
 /// An unfinished alias must not manufacture an empty module identifier.
 #[test]
 fn modfinder_missing_alias_does_not_create_empty_identifier() {
-    let dir = create_temp_dir("missing_alias_identifier_proof");
-    let sub = make_sub_script(&dir);
-    let visible = create_chrn_file(&dir, "visible.chrn", "let value = 1\n");
-    let main = create_chrn_file(
-        &dir,
-        "main.chrn",
+    let mut sources = InMemorySources::new();
+    let sub = sources.add("sub", "let y = 42\n");
+    let visible = sources.add("visible", "let value = 1\n");
+    let main = sources.add(
+        "main",
         &format!(
-            "import \"{}\"\nimport \"{}\" as",
-            visible.display(),
-            sub.display()
+            "import virtual \"{}\"\nimport virtual \"{}\" as",
+            visible, sub
         ),
     );
-    let (module, graph, interner, _) = extract_main(
-        &main,
-        fs::File::open(&main).unwrap(),
-        &mut ChrnConfig::default(),
-    )
-    .expect("an unfinished alias must leave a recoverable source region");
-    fs::remove_dir_all(&dir).unwrap();
+    let (input, interner, src_manager) = sources.into_input(&main);
+    let (module, graph, interner, _) =
+        extract_main(input, interner, src_manager, &mut ChrnConfig::default())
+            .expect("an unfinished alias must leave a recoverable source region");
 
     let ImportKind::UnresolvedSource(path) = &module.imports[0].kind else {
         panic!("the unrelated valid import must be retained");
@@ -657,8 +992,8 @@ fn modfinder_missing_alias_does_not_create_empty_identifier() {
     assert_eq!(
         graph
             .src_manager
-            .extract_path(path.inner.into_tagged::<PathTag>())
-            .path,
+            .display_source(path.inner, &interner)
+            .into_owned(),
         visible
     );
     let empty_aliases: Vec<_> = module
@@ -678,17 +1013,22 @@ fn modfinder_missing_alias_does_not_create_empty_identifier() {
 /// `ModuleFinder` should find a `bind` statement.
 #[test]
 fn modfinder_bind() {
-    let dir = create_temp_dir("modfinder_bind");
-    let bind_target = create_chrn_file(&dir, "target.bin", "not actually a binary\n");
-    let bind_canonical = bind_target.to_string_lossy();
+    let bind_target = "target";
+    let bind_canonical = bind_target;
 
     let mut interner = Intern::init();
     let mut src_manager = SourceManager::new();
+    src_manager.register_in_memory(
+        interner.intern_str("target"),
+        b"not actually a binary\n".to_vec(),
+    );
+
     let cfg = ChrnConfig::default();
-    let path_id = src_manager.register_path(Path::new("main.chrn"));
     let region_id = SourceRegionId::new(0);
 
-    let src = format!("bind \"{}\"\nlet x = 5\n", bind_canonical);
+    let src = format!("bind virtual \"{}\"\nlet x = 5\n", bind_canonical);
+    let path_id =
+        src_manager.register_in_memory(interner.intern_str("main"), src.as_bytes().to_vec());
     let region = ConfigLoader::new(region_id, src.as_bytes(), path_id.inner(), &cfg)
         .load_config()
         .expect_success();
@@ -701,26 +1041,24 @@ fn modfinder_bind() {
     assert!(bind.is_some(), "bind should be present");
     assert_eq!(
         bind.as_ref().unwrap().path_id,
-        src_manager.register_path(&bind_target).inner(),
+        src_manager
+            .register_in_memory(interner.intern_str(bind_target), Vec::new())
+            .inner(),
         "bind path must match target"
     );
-
-    _ = fs::remove_dir_all(&dir);
 }
 
 /// A backslash in an import path must produce an error diagnostic (only '/' is
 /// allowed as a path separator).
 #[test]
 fn modfinder_backslash_error() {
-    let dir = create_temp_dir("modfinder_backslash");
     let mut interner = Intern::init();
     let mut src_manager = SourceManager::new();
     let cfg = ChrnConfig::default();
     let path_id = src_manager.register_path(Path::new("main.chrn"));
     let region_id = SourceRegionId::new(0);
 
-    // Use a backslash in the import path — even though the real file exists,
-    // the backslash triggers the error *before* canonicalization is attempted.
+    // A backslash is rejected before filesystem canonicalization.
     let src = r#"import "bad\path" "#;
     let region = ConfigLoader::new(region_id, src.as_bytes(), path_id.inner(), &cfg)
         .load_config()
@@ -742,8 +1080,6 @@ fn modfinder_backslash_error() {
         has_backslash_msg,
         "diagnostic should mention that only '/' is allowed"
     );
-
-    _ = fs::remove_dir_all(&dir);
 }
 
 /// An import written inside a line comment must be ignored.
@@ -798,26 +1134,28 @@ fn modfinder_import_inside_block_comment() {
 /// `seen` vector.
 #[test]
 fn modfinder_duplicate_import_path_reuses_mod_id() {
-    let dir = create_temp_dir("modfinder_dup");
-    let sub_path = make_sub_script(&dir);
-    let sub_canonical = sub_path.to_string_lossy();
+    let sub_path = "sub";
+    let sub_canonical = sub_path;
 
     let mut interner = Intern::init();
     let mut src_manager = SourceManager::new();
+    src_manager.register_in_memory(interner.intern_str("sub"), b"let y = 42\n".to_vec());
+
     let cfg = ChrnConfig::default();
-    let path_id = src_manager.register_path(Path::new("main.chrn"));
     let region_id = SourceRegionId::new(0);
 
     // Two imports to the same path
     let src = format!(
-        "import \"{}\"\nimport \"{}\"\nlet x = 5\n",
+        "import virtual \"{}\"\nimport virtual \"{}\"\nlet x = 5\n",
         sub_canonical, sub_canonical
     );
+    let path_id =
+        src_manager.register_in_memory(interner.intern_str("main"), src.as_bytes().to_vec());
     let region = ConfigLoader::new(region_id, src.as_bytes(), path_id.inner(), &cfg)
         .load_config()
         .expect_success();
 
-    let sub_path_id = src_manager.register_path(&sub_path);
+    let sub_path_id = src_manager.register_in_memory(interner.intern_str(sub_path), Vec::new());
     let (_bind, imports, diags) = ModuleFinder::new(&region.src_bytes, &cfg, &region)
         .collect_imports(&mut interner, &mut src_manager);
 
@@ -836,8 +1174,6 @@ fn modfinder_duplicate_import_path_reuses_mod_id() {
             "import must reference the sub path"
         );
     }
-
-    _ = fs::remove_dir_all(&dir);
 }
 
 /// Non-existent paths in an import statement must produce a diagnostic and the
@@ -896,32 +1232,32 @@ fn modfinder_import_inside_string_is_not_parsed() {
 /// A double quote inside a character literal must not hide subsequent imports.
 #[test]
 fn modfinder_character_quote_preserves_following_import() {
-    let dir = create_temp_dir("character_quote_import_proof");
-    let sub = make_sub_script(&dir);
-    let main = create_chrn_file(
-        &dir,
-        "main.chrn",
-        &format!("let quote = '\"'\nimport \"{}\"\n", sub.display()),
+    let mut sources = InMemorySources::new();
+    let sub = sources.add("sub", "let y = 42\n");
+    let main = sources.add(
+        "main",
+        &format!("let quote = '\"'\nimport virtual \"{}\"\n", sub),
     );
-    let (module, graph, _, diags) = extract_main(
-        &main,
-        fs::File::open(&main).unwrap(),
-        &mut ChrnConfig::default(),
-    )
-    .expect("a double quote is valid character content");
-    fs::remove_dir_all(&dir).unwrap();
+    let (input, interner, src_manager) = sources.into_input(&main);
+    let (module, graph, interner, diags) =
+        extract_main(input, interner, src_manager, &mut ChrnConfig::default())
+            .expect("a double quote is valid character content");
 
     assert!(diags.diags.is_empty(), "unexpected diagnostics: {diags:?}");
     assert_eq!(module.state, ModuleState::Loaded);
-    assert_eq!(module.imports.len(), 1, "character content must stay opaque");
+    assert_eq!(
+        module.imports.len(),
+        1,
+        "character content must stay opaque"
+    );
     let ImportKind::UnresolvedSource(path) = &module.imports[0].kind else {
         panic!("expected an unresolved source import");
     };
     assert_eq!(
         graph
             .src_manager
-            .extract_path(path.inner.into_tagged::<PathTag>())
-            .path,
+            .display_source(path.inner, &interner)
+            .into_owned(),
         sub
     );
 }
@@ -929,20 +1265,16 @@ fn modfinder_character_quote_preserves_following_import() {
 /// Comment markers inside a string must not hide subsequent imports.
 #[test]
 fn modfinder_string_comment_marker_preserves_following_import() {
-    let dir = create_temp_dir("string_comment_marker_proof");
-    let sub = make_sub_script(&dir);
-    let main = create_chrn_file(
-        &dir,
-        "main.chrn",
-        &format!("let marker = \"/*\"\nimport \"{}\"\n", sub.display()),
+    let mut sources = InMemorySources::new();
+    let sub = sources.add("sub", "let y = 42\n");
+    let main = sources.add(
+        "main",
+        &format!("let marker = \"/*\"\nimport virtual \"{}\"\n", sub),
     );
-    let (module, graph, _, diags) = extract_main(
-        &main,
-        fs::File::open(&main).unwrap(),
-        &mut ChrnConfig::default(),
-    )
-    .expect("valid source must load");
-    fs::remove_dir_all(&dir).unwrap();
+    let (input, interner, src_manager) = sources.into_input(&main);
+    let (module, graph, interner, diags) =
+        extract_main(input, interner, src_manager, &mut ChrnConfig::default())
+            .expect("valid source must load");
 
     assert!(diags.diags.is_empty(), "unexpected diagnostics: {diags:?}");
     assert_eq!(module.imports.len(), 1, "string content must stay opaque");
@@ -952,8 +1284,8 @@ fn modfinder_string_comment_marker_preserves_following_import() {
     assert_eq!(
         graph
             .src_manager
-            .extract_path(path.inner.into_tagged::<PathTag>())
-            .path,
+            .display_source(path.inner, &interner)
+            .into_owned(),
         sub
     );
 }
@@ -961,28 +1293,23 @@ fn modfinder_string_comment_marker_preserves_following_import() {
 /// Comments are trivia between the tokens of import and bind statements.
 #[test]
 fn modfinder_comments_between_statement_tokens() {
-    let dir = create_temp_dir("statement_trivia_proof");
-    let sub = make_sub_script(&dir);
-    let target = create_chrn_file(&dir, "data.bin", "serialized data");
-    let main = create_chrn_file(
-        &dir,
-        "main.chrn",
+    let mut sources = InMemorySources::new();
+    let sub = sources.add("sub", "let y = 42\n");
+    let target = sources.add("data", "serialized data");
+    let main = sources.add(
+        "main",
         &format!(
-            "import /* path */ \"{0}\" as first\n\
-             import \"{0}\" /* alias */ as second\n\
-             import \"{0}\" as /* name */ third\n\
-             bind /* path */ \"{1}\"\n",
-            sub.display(),
-            target.display(),
+            "import /* path */ virtual /* source */ \"{0}\" as first\n\
+             import virtual \"{0}\" /* alias */ as second\n\
+             import virtual \"{0}\" as /* name */ third\n\
+             bind /* path */ virtual /* source */ \"{1}\"\n",
+            sub, target,
         ),
     );
-    let (module, graph, interner, diags) = extract_main(
-        &main,
-        fs::File::open(&main).unwrap(),
-        &mut ChrnConfig::default(),
-    )
-    .expect("valid source must load");
-    fs::remove_dir_all(&dir).unwrap();
+    let (input, interner, src_manager) = sources.into_input(&main);
+    let (module, graph, interner, diags) =
+        extract_main(input, interner, src_manager, &mut ChrnConfig::default())
+            .expect("valid source must load");
 
     assert!(diags.diags.is_empty(), "unexpected diagnostics: {diags:?}");
     let aliases: Vec<_> = module
@@ -995,8 +1322,8 @@ fn modfinder_comments_between_statement_tokens() {
             assert_eq!(
                 graph
                     .src_manager
-                    .extract_path(path.inner.into_tagged::<PathTag>())
-                    .path,
+                    .display_source(path.inner, &interner)
+                    .into_owned(),
                 sub
             );
             import
@@ -1013,8 +1340,8 @@ fn modfinder_comments_between_statement_tokens() {
     assert_eq!(
         graph
             .src_manager
-            .extract_path(bind.path_id.into_tagged::<PathTag>())
-            .path,
+            .display_source(bind.path_id, &interner)
+            .into_owned(),
         target
     );
 }
@@ -1032,13 +1359,12 @@ fn modfinder_compact_statement_token_boundaries() {
             sub.display(),
             target.display(),
         );
-        let main = create_chrn_file(&dir, "main.chrn", &source);
-        let (module, graph, mut interner, diags) = extract_main(
-            &main,
-            fs::File::open(&main).unwrap(),
-            &mut ChrnConfig::default(),
-        )
-        .expect("compact statements must load");
+        let mut sources = InMemorySources::new();
+        let main = sources.add("main", &source);
+        let (input, interner, src_manager) = sources.into_input(&main);
+        let (module, graph, mut interner, diags) =
+            extract_main(input, interner, src_manager, &mut ChrnConfig::default())
+                .expect("compact statements must load");
         let mut cfg = ChrnConfig::default();
         let region = get_module_region(&graph.region_arena, &module);
         let tokens = Lexer::new(
@@ -1051,7 +1377,10 @@ fn modfinder_compact_statement_token_boundaries() {
         .tokenize(&mut interner);
         assert_eq!(tokens.found_invalid_toks, 0, "{separator:?}");
         let (_, parse_diags) = parser::parse(&mut cfg, region, &tokens.toks, &interner);
-        assert!(parse_diags.diags.is_empty(), "{separator:?}: {parse_diags:?}");
+        assert!(
+            parse_diags.diags.is_empty(),
+            "{separator:?}: {parse_diags:?}"
+        );
         assert!(diags.diags.is_empty(), "{separator:?}: {diags:?}");
         let paths: Vec<_> = module
             .imports
@@ -1087,25 +1416,20 @@ fn modfinder_compact_statement_token_boundaries() {
 /// A block comment itself separates tokens; no additional space is required.
 #[test]
 fn modfinder_statement_immediately_after_block_comment() {
-    let dir = create_temp_dir("comment_boundary_proof");
-    let sub = make_sub_script(&dir);
-    let target = create_chrn_file(&dir, "data.bin", "serialized data");
-    let main = create_chrn_file(
-        &dir,
-        "main.chrn",
+    let mut sources = InMemorySources::new();
+    let sub = sources.add("sub", "let y = 42\n");
+    let target = sources.add("data", "serialized data");
+    let main = sources.add(
+        "main",
         &format!(
-            "/* leading */import \"{}\"\n/* leading */bind \"{}\"\n",
-            sub.display(),
-            target.display()
+            "/* leading */import virtual \"{}\"\n/* leading */bind virtual \"{}\"\n",
+            sub, target
         ),
     );
-    let (module, graph, _, diags) = extract_main(
-        &main,
-        fs::File::open(&main).unwrap(),
-        &mut ChrnConfig::default(),
-    )
-    .expect("valid source must load");
-    fs::remove_dir_all(&dir).unwrap();
+    let (input, interner, src_manager) = sources.into_input(&main);
+    let (module, graph, interner, diags) =
+        extract_main(input, interner, src_manager, &mut ChrnConfig::default())
+            .expect("valid source must load");
 
     assert!(diags.diags.is_empty(), "unexpected diagnostics: {diags:?}");
     assert_eq!(
@@ -1119,8 +1443,8 @@ fn modfinder_statement_immediately_after_block_comment() {
     assert_eq!(
         graph
             .src_manager
-            .extract_path(path.inner.into_tagged::<PathTag>())
-            .path,
+            .display_source(path.inner, &interner)
+            .into_owned(),
         sub
     );
     let bind = module
@@ -1130,8 +1454,8 @@ fn modfinder_statement_immediately_after_block_comment() {
     assert_eq!(
         graph
             .src_manager
-            .extract_path(bind.path_id.into_tagged::<PathTag>())
-            .path,
+            .display_source(bind.path_id, &interner)
+            .into_owned(),
         target
     );
 }
@@ -1139,25 +1463,20 @@ fn modfinder_statement_immediately_after_block_comment() {
 /// The final slash of a nested opener cannot also close that nested comment.
 #[test]
 fn modfinder_nested_comment_delimiters_do_not_overlap() {
-    let dir = create_temp_dir("nested_comment_overlap_proof");
-    let hidden = create_chrn_file(&dir, "hidden.chrn", "let x = 0\n");
-    let visible = create_chrn_file(&dir, "visible.chrn", "let x = 1\n");
-    let main = create_chrn_file(
-        &dir,
-        "main.chrn",
+    let mut sources = InMemorySources::new();
+    let hidden = sources.add("hidden", "let x = 0\n");
+    let visible = sources.add("visible", "let x = 1\n");
+    let main = sources.add(
+        "main",
         &format!(
-            "/* /*/ */\nimport \"{}\"\n*/\nimport \"{}\"\n",
-            hidden.display(),
-            visible.display()
+            "/* /*/ */\nimport virtual \"{}\"\n*/\nimport virtual \"{}\"\n",
+            hidden, visible
         ),
     );
-    let (module, graph, _, diags) = extract_main(
-        &main,
-        fs::File::open(&main).unwrap(),
-        &mut ChrnConfig::default(),
-    )
-    .expect("balanced nested comment must load");
-    fs::remove_dir_all(&dir).unwrap();
+    let (input, interner, src_manager) = sources.into_input(&main);
+    let (module, graph, interner, diags) =
+        extract_main(input, interner, src_manager, &mut ChrnConfig::default())
+            .expect("balanced nested comment must load");
 
     assert!(diags.diags.is_empty(), "unexpected diagnostics: {diags:?}");
     let paths: Vec<_> = module
@@ -1169,9 +1488,8 @@ fn modfinder_nested_comment_delimiters_do_not_overlap() {
             };
             graph
                 .src_manager
-                .extract_path(path.inner.into_tagged::<PathTag>())
-                .path
-                .clone()
+                .display_source(path.inner, &interner)
+                .into_owned()
         })
         .collect();
     assert_eq!(
@@ -1229,16 +1547,12 @@ fn modfinder_nested_comment_delimiters_do_not_overlap() {
 /// Incomplete paths are ordinary language errors, including an edit at EOF.
 #[test]
 fn modfinder_unclosed_empty_path_reports_without_panicking() {
-    let dir = create_temp_dir("unclosed_path_proof");
-    let main = create_chrn_file(&dir, "main.chrn", "import \"");
+    let mut sources = InMemorySources::new();
+    let main = sources.add("main", "import virtual \"");
+    let (input, interner, src_manager) = sources.into_input(&main);
     let result = std::panic::catch_unwind(|| {
-        extract_main(
-            &main,
-            fs::File::open(&main).unwrap(),
-            &mut ChrnConfig::default(),
-        )
+        extract_main(input, interner, src_manager, &mut ChrnConfig::default())
     });
-    fs::remove_dir_all(&dir).unwrap();
 
     let (module, _, _, diags) = result
         .expect("an unclosed import path must produce a diagnostic, not panic")
@@ -1260,21 +1574,18 @@ fn modfinder_unclosed_empty_path_reports_without_panicking() {
 // extract_main tests
 // ===========================================================================
 
-/// `extract_main` on a simple script file with no imports must return a
+/// `extract_main` on an in-memory script with no imports must return a
 /// `Module` with `Loaded` state, no imports, no bind, and a correctly
 /// initialised `ModuleGraph`.
 #[test]
 fn extract_main_simple_script() {
-    let dir = create_temp_dir("extract_main_simple");
-    let main_path = make_simple_script(&dir);
+    let mut sources = InMemorySources::new();
+    let main_path = sources.add("main", "let x = 5\nlet y = 10\n");
     let mut cfg = ChrnConfig::default();
 
-    let (main_mod, graph, interner, diags) = extract_main(
-        &main_path,
-        std::fs::File::open(&main_path).unwrap(),
-        &mut cfg,
-    )
-    .expect("extract_main must succeed");
+    let (input, interner, src_manager) = sources.into_input(&main_path);
+    let (main_mod, graph, interner, diags) =
+        extract_main(input, interner, src_manager, &mut cfg).expect("extract_main must succeed");
 
     // ---- Module assertions ----
     assert_eq!(
@@ -1286,7 +1597,7 @@ fn extract_main_simple_script() {
     let main_name = interner.extract_utf8_str(main_mod.name_id);
     assert_eq!(
         main_name, "main",
-        "module name should be 'main' (file stem)"
+        "module name should be 'main' (registered source name)"
     );
     assert!(
         main_mod.imports.is_empty(),
@@ -1300,16 +1611,13 @@ fn extract_main_simple_script() {
 
     // ---- Graph assertions ----
     // reserved_mod_ids must contain main's path -> mod_id 0
-    let main_path_id = graph
-        .src_manager
-        .get_source_id_from_path(&main_path)
-        .unwrap();
-    let main_entry = mod_id_for_source(graph.registered_mod_ids(), main_path_id.inner());
+    let main_path_id = memory_source_id(&graph.src_manager, &interner, &main_path);
+    let main_entry = mod_id_for_source(graph.registered_mod_ids(), main_path_id);
     assert_eq!(main_entry, Some(ModuleId::new(0)));
     assert_eq!(graph.registered_mod_ids().len(), 1, "only main in reserved");
     // `seen` must contain main's path id
     assert_eq!(graph.seen().len(), 1, "only main in seen");
-    assert!(graph.seen().contains(&main_path_id.inner()));
+    assert!(graph.seen().contains(&main_path_id));
     // `other_mods` starts empty
     // assert!(graph.other_mods().is_empty(), "other_mods should be empty");
     // region_arena must have one entry
@@ -1317,26 +1625,24 @@ fn extract_main_simple_script() {
     assert_eq!(graph.region_arena().capacity(), 1);
 
     assert!(diags.diags.is_empty(), "no diagnostics expected");
-
-    _ = fs::remove_dir_all(&dir);
 }
 
-/// `extract_main` on a file with a valid import should attach the import to
+/// `extract_main` on an in-memory source with a valid import should attach the import to
 /// the main module.  Module ids are not yet assigned (that happens later in
 /// `extract_modules`), so imports remain `UnresolvedSource`.
 #[test]
 fn extract_main_with_import() {
-    let dir = create_temp_dir("extract_main_import");
-    let sub_path = make_sub_script(&dir);
-    let main_path = make_importing_script(&dir, &sub_path);
+    let mut sources = InMemorySources::new();
+    let sub_path = sources.add("sub", "let y = 42\n");
+    let main_path = sources.add(
+        "main",
+        format!("import virtual \"{}\"\nlet x = 5\n", sub_path),
+    );
     let mut cfg = ChrnConfig::default();
 
-    let (main_mod, graph, _interner, diags) = extract_main(
-        &main_path,
-        std::fs::File::open(&main_path).unwrap(),
-        &mut cfg,
-    )
-    .expect("extract_main must succeed");
+    let (input, interner, src_manager) = sources.into_input(&main_path);
+    let (main_mod, graph, interner, diags) =
+        extract_main(input, interner, src_manager, &mut cfg).expect("extract_main must succeed");
 
     assert_eq!(main_mod.state, ModuleState::Loaded);
     // Wait for import - there should be one import found
@@ -1349,29 +1655,25 @@ fn extract_main_with_import() {
     // Imports returned by extract_main are UnresolvedSource; no module id
     // is assigned yet.
     let import = &main_mod.imports[0];
-    let sub_path_id = graph
-        .src_manager
-        .get_source_id_from_path(&sub_path)
-        .unwrap();
-    let sub_path_str = sub_path.to_string_lossy();
+    let sub_path_id = memory_source_id(&graph.src_manager, &interner, &sub_path);
+    let sub_path_str = sub_path.as_str();
     let import_span = match &import.kind {
         ImportKind::UnresolvedSource(sp_path_id) => {
             assert_eq!(
-                sp_path_id.inner,
-                sub_path_id.inner(),
+                sp_path_id.inner, sub_path_id,
                 "import must carry the correct sub path id"
             );
-            let expected_start = 8;
-            let expected_end = expected_start + sub_path_str.len() as u32;
+            let expected_start = 15;
+            let expected_end = expected_start + sub_path_str.len() as u32 + 2;
             assert_eq!(
                 sp_path_id.span.start, expected_start,
-                "import span must start at byte 8 (right after opening \"), got {}",
+                "import span must start at byte 15 (at the opening quote), got {}",
                 sp_path_id.span.start
             );
             assert_eq!(
                 sp_path_id.span.end,
                 expected_end,
-                "import span must end at byte {} (after path of length {}), got {}",
+                "import span must end at byte {} (after closing quote for source name of length {}), got {}",
                 expected_end,
                 sub_path_str.len(),
                 sp_path_id.span.end
@@ -1381,32 +1683,29 @@ fn extract_main_with_import() {
         ImportKind::Core(_) => panic!("expected UnresolvedSource, got Core"),
         _ => panic!("expected UnresolvedSource, got {:?}", import.kind),
     };
-    // Verify the span slices out the exact path from src bytes
+    // Verify the span slices out the quoted source name from src bytes
     let region = &graph.region_arena()[main_mod.region_id.expect("main mod has region_id")];
     let span_bytes = &region.src_bytes[import_span.start as usize..import_span.end as usize];
     let span_str = String::from_utf8_lossy(span_bytes);
     assert_eq!(
-        span_str, sub_path_str,
-        "import span must extract the exact path string from src bytes"
+        span_str, format!("\"{sub_path_str}\""),
+        "import span must extract the quoted source name from src bytes"
     );
 
     // reserved_mod_ids only contains main (sub is registered later in
     // extract_modules by resolve_module).
-    let main_path_id = graph
-        .src_manager
-        .get_source_id_from_path(&main_path)
-        .unwrap();
+    let main_path_id = memory_source_id(&graph.src_manager, &interner, &main_path);
     assert_eq!(graph.registered_mod_ids().len(), 1, "only main in reserved");
     assert!(
         graph
             .registered_mod_ids()
             .iter()
-            .any(|(source, _)| *source == main_path_id.inner()),
+            .any(|(source, _)| *source == main_path_id),
         "main path must be in reserved"
     );
 
     // `seen` must contain main
-    assert!(graph.seen().contains(&main_path_id.inner()));
+    assert!(graph.seen().contains(&main_path_id));
     assert_eq!(
         graph.seen().len(),
         1,
@@ -1418,24 +1717,19 @@ fn extract_main_with_import() {
         "no diagnostics expected, got {:?}",
         diags
     );
-
-    _ = fs::remove_dir_all(&dir);
 }
 
-/// `extract_main` on a file with a broken `@def` (no `@end`) must produce a
+/// `extract_main` on an in-memory source with a broken `@def` (no `@end`) must produce a
 /// module with `ModuleState::BrokenRegion` and a diagnostic.
 #[test]
 fn extract_main_broken_config() {
-    let dir = create_temp_dir("extract_main_broken");
-    let main_path = make_broken_script(&dir);
+    let mut sources = InMemorySources::new();
+    let main_path = sources.add("broken", "@def\nlet x = 1\n");
     let mut cfg = ChrnConfig::default();
 
-    let (main_mod, graph, _interner, diags) = extract_main(
-        &main_path,
-        std::fs::File::open(&main_path).unwrap(),
-        &mut cfg,
-    )
-    .expect("extract_main should still return Ok with BrokenRegion");
+    let (input, interner, src_manager) = sources.into_input(&main_path);
+    let (main_mod, graph, _interner, diags) = extract_main(input, interner, src_manager, &mut cfg)
+        .expect("extract_main should still return Ok with BrokenRegion");
 
     assert_eq!(
         main_mod.state,
@@ -1461,25 +1755,23 @@ fn extract_main_broken_config() {
     );
     let has_missing_end = diags.diags.iter().any(|d| d.core_msg.contains("@end"));
     assert!(has_missing_end, "diagnostic should mention missing @end");
-
-    _ = fs::remove_dir_all(&dir);
 }
 
-/// `extract_main` on a file with a `bind` statement must capture the bind in
+/// `extract_main` on an in-memory source with a `bind` statement must capture the bind in
 /// the returned module.
 #[test]
 fn extract_main_with_bind() {
-    let dir = create_temp_dir("extract_main_bind");
-    let bind_target = create_chrn_file(&dir, "bind_target.bin", "content\n");
-    let main_path = make_bind_script(&dir, &bind_target);
+    let mut sources = InMemorySources::new();
+    let bind_target = sources.add("bind_target", "content\n");
+    let main_path = sources.add(
+        "with_bind",
+        format!("bind virtual \"{}\"\nlet x = 5\n", bind_target),
+    );
     let mut cfg = ChrnConfig::default();
 
-    let (main_mod, graph, _interner, diags) = extract_main(
-        &main_path,
-        std::fs::File::open(&main_path).unwrap(),
-        &mut cfg,
-    )
-    .expect("extract_main must succeed");
+    let (input, interner, src_manager) = sources.into_input(&main_path);
+    let (main_mod, graph, interner, diags) =
+        extract_main(input, interner, src_manager, &mut cfg).expect("extract_main must succeed");
 
     assert_eq!(main_mod.state, ModuleState::Loaded);
     assert!(
@@ -1487,13 +1779,9 @@ fn extract_main_with_bind() {
         "bind should be present in the module"
     );
     let bind = main_mod.bind.as_ref().unwrap();
-    let expected_path_id = graph
-        .src_manager
-        .get_source_id_from_path(&bind_target)
-        .unwrap();
+    let expected_path_id = memory_source_id(&graph.src_manager, &interner, &bind_target);
     assert_eq!(
-        bind.path_id,
-        expected_path_id.inner(),
+        bind.path_id, expected_path_id,
         "bind path must match the target file"
     );
 
@@ -1504,29 +1792,24 @@ fn extract_main_with_bind() {
         main_mod.imports.is_empty(),
         "no imports expected in bind-only script"
     );
-
-    _ = fs::remove_dir_all(&dir);
 }
 
-/// `extract_main` on a file with an `@def`/`@end` block must set the region's
+/// `extract_main` on an in-memory source with an `@def`/`@end` block must set the region's
 /// script_start and serial_start correctly.
 #[test]
 fn extract_main_with_at_def_block() {
-    let dir = create_temp_dir("extract_main_def");
-    let main_path = make_def_script(&dir);
+    let mut sources = InMemorySources::new();
+    let main_path = sources.add("def_test", "serial_data\n@def\nlet x = 1\n@end\n");
     let mut cfg = ChrnConfig::default();
 
-    let (main_mod, graph, _interner, diags) = extract_main(
-        &main_path,
-        std::fs::File::open(&main_path).unwrap(),
-        &mut cfg,
-    )
-    .expect("extract_main must succeed");
+    let (input, interner, src_manager) = sources.into_input(&main_path);
+    let (main_mod, graph, _interner, diags) =
+        extract_main(input, interner, src_manager, &mut cfg).expect("extract_main must succeed");
 
     assert_eq!(main_mod.state, ModuleState::Loaded);
 
     // The region for main should have the correct script and serial offsets.
-    // File content from `make_def_script`:  "serial_data\n@def\nlet x = 1\n@end\n"
+    // Source content:  "serial_data\n@def\nlet x = 1\n@end\n"
     //   bytes 0-11  = "serial_data\n"  (12 bytes of serial data)
     //   bytes 12-16 = "@def\n"         (5 bytes)
     //   bytes 17-26 = "let x = 1\n"    (10 bytes of script)
@@ -1551,8 +1834,6 @@ fn extract_main_with_at_def_block() {
     let src_str = String::from_utf8_lossy(&region.src_bytes);
     assert!(src_str.contains("@def"), "region bytes must contain @def");
     assert!(src_str.contains("@end"), "region bytes must contain @end");
-
-    _ = fs::remove_dir_all(&dir);
 }
 
 // ===========================================================================
@@ -1563,18 +1844,15 @@ fn extract_main_with_at_def_block() {
 /// `ScriptCompiler` containing exactly one user module plus the core module.
 #[test]
 fn extract_all_modules_single() {
-    let dir = create_temp_dir("extract_all_single");
-    let main_path = make_simple_script(&dir);
+    let mut sources = InMemorySources::new();
+    let main_path = sources.add("main", "let x = 5\nlet y = 10\n");
     let cfg = ChrnConfig::default();
     let mut reporter = Reporter::new(100);
 
-    let (compiler, store, diags) = extract_all_modules(
-        &main_path,
-        std::fs::File::open(&main_path).unwrap(),
-        cfg,
-        &mut reporter,
-    )
-    .expect("extract_all_modules must succeed");
+    let (input, interner, src_manager) = sources.into_input(&main_path);
+    let (compiler, store, diags) =
+        extract_all_modules(input, interner, src_manager, cfg, &mut reporter)
+            .expect("extract_all_modules must succeed");
 
     // Number of user modules = total mods - 1 (core module is injected last)
     let user_count = get_user_mod_count(&compiler);
@@ -1608,27 +1886,25 @@ fn extract_all_modules_single() {
         "no diagnostics expected, got {:?}",
         diags
     );
-
-    _ = fs::remove_dir_all(&dir);
 }
 
 /// `extract_all_modules` with an importing main module must resolve the sub
 /// module and include it in the compiler.
 #[test]
 fn extract_all_modules_with_sub_module() {
-    let dir = create_temp_dir("extract_all_sub");
-    let sub_path = make_sub_script(&dir);
-    let main_path = make_importing_script(&dir, &sub_path);
+    let mut sources = InMemorySources::new();
+    let sub_path = sources.add("sub", "let y = 42\n");
+    let main_path = sources.add(
+        "main",
+        format!("import virtual \"{}\"\nlet x = 5\n", sub_path),
+    );
     let cfg = ChrnConfig::default();
     let mut reporter = Reporter::new(100);
 
-    let (compiler, store, diags) = extract_all_modules(
-        &main_path,
-        std::fs::File::open(&main_path).unwrap(),
-        cfg,
-        &mut reporter,
-    )
-    .expect("extract_all_modules must succeed");
+    let (input, interner, src_manager) = sources.into_input(&main_path);
+    let (compiler, store, diags) =
+        extract_all_modules(input, interner, src_manager, cfg, &mut reporter)
+            .expect("extract_all_modules must succeed");
 
     let user_count = get_user_mod_count(&compiler);
     assert_eq!(user_count, 2, "expected 2 user modules (main + sub)");
@@ -1654,8 +1930,6 @@ fn extract_all_modules_with_sub_module() {
         "no diagnostics expected, got {:?}",
         diags
     );
-
-    _ = fs::remove_dir_all(&dir);
 }
 
 /// When a sub-module has a broken config, the pipeline must still complete but
@@ -1663,19 +1937,19 @@ fn extract_all_modules_with_sub_module() {
 /// emitted.
 #[test]
 fn extract_all_modules_submodule_broken() {
-    let dir = create_temp_dir("extract_all_broken_sub");
-    let sub_path = make_broken_script(&dir);
-    let main_path = make_importing_script(&dir, &sub_path);
+    let mut sources = InMemorySources::new();
+    let sub_path = sources.add("broken", "@def\nlet x = 1\n");
+    let main_path = sources.add(
+        "main",
+        format!("import virtual \"{}\"\nlet x = 5\n", sub_path),
+    );
     let cfg = ChrnConfig::default();
     let mut reporter = Reporter::new(100);
 
-    let (compiler, store, diags) = extract_all_modules(
-        &main_path,
-        std::fs::File::open(&main_path).unwrap(),
-        cfg,
-        &mut reporter,
-    )
-    .expect("extract_all_modules must succeed");
+    let (input, interner, src_manager) = sources.into_input(&main_path);
+    let (compiler, store, diags) =
+        extract_all_modules(input, interner, src_manager, cfg, &mut reporter)
+            .expect("extract_all_modules must succeed");
 
     let interner = &store.interner;
 
@@ -1710,31 +1984,22 @@ fn extract_all_modules_submodule_broken() {
         has_end_diag,
         "at least one diagnostic should mention @end or 'broken'"
     );
-
-    _ = fs::remove_dir_all(&dir);
 }
 
-/// When the main module imports a file that does not exist, the import should
+/// When the main module imports an unregistered virtual source, the import should
 /// be dropped and a diagnostic emitted, but `extract_all_modules` should still
 /// return Ok with the main module.
 #[test]
 fn extract_all_modules_import_to_nonexistent() {
-    let dir = create_temp_dir("extract_all_nonexistent_import");
-    let main_path = create_chrn_file(
-        &dir,
-        "main.chrn",
-        "import \"/definitely/does/not/exist.chrn\"\nlet x = 5\n",
-    );
+    let mut sources = InMemorySources::new();
+    let main_path = sources.add("main", "import virtual \"missing\"\nlet x = 5\n");
     let cfg = ChrnConfig::default();
     let mut reporter = Reporter::new(100);
 
-    let (compiler, store, diags) = extract_all_modules(
-        &main_path,
-        std::fs::File::open(&main_path).unwrap(),
-        cfg,
-        &mut reporter,
-    )
-    .expect("extract_all_modules must succeed even with bad import");
+    let (input, interner, src_manager) = sources.into_input(&main_path);
+    let (compiler, store, diags) =
+        extract_all_modules(input, interner, src_manager, cfg, &mut reporter)
+            .expect("extract_all_modules must succeed even with bad import");
 
     // Main module should still be present
     let interner = &store.interner;
@@ -1760,8 +2025,6 @@ fn extract_all_modules_import_to_nonexistent() {
         !diags.diags.is_empty(),
         "non-existent import must produce diagnostics"
     );
-
-    _ = fs::remove_dir_all(&dir);
 }
 
 /// When two imports point to the same sub-module path, `extract_all_modules`
@@ -1769,25 +2032,22 @@ fn extract_all_modules_import_to_nonexistent() {
 /// `reserved_mod_ids` registration mechanism).
 #[test]
 fn extract_all_modules_duplicate_import() {
-    let dir = create_temp_dir("extract_all_dup");
-    let sub_path = make_sub_script(&dir);
-    let sub_canonical = sub_path.to_string_lossy();
+    let mut sources = InMemorySources::new();
+    let sub_path = sources.add("sub", "let y = 42\n");
+    let sub_canonical = sub_path.as_str();
 
     let main_content = format!(
-        "import \"{}\"\nimport \"{}\"\nlet x = 5\n",
+        "import virtual \"{}\"\nimport virtual \"{}\"\nlet x = 5\n",
         sub_canonical, sub_canonical
     );
-    let main_path = create_chrn_file(&dir, "main.chrn", &main_content);
+    let main_path = sources.add("main", &main_content);
     let cfg = ChrnConfig::default();
     let mut reporter = Reporter::new(100);
 
-    let (compiler, store, diags) = extract_all_modules(
-        &main_path,
-        std::fs::File::open(&main_path).unwrap(),
-        cfg,
-        &mut reporter,
-    )
-    .expect("extract_all_modules must succeed");
+    let (input, interner, src_manager) = sources.into_input(&main_path);
+    let (compiler, store, diags) =
+        extract_all_modules(input, interner, src_manager, cfg, &mut reporter)
+            .expect("extract_all_modules must succeed");
 
     let interner = &store.interner;
 
@@ -1816,8 +2076,6 @@ fn extract_all_modules_duplicate_import() {
             .any(|diag| diag.core_msg.contains("generated")),
         "expected a generated-identifier diagnostic"
     );
-
-    _ = fs::remove_dir_all(&dir);
 }
 
 // ===========================================================================
@@ -1828,19 +2086,19 @@ fn extract_all_modules_duplicate_import() {
 /// through the pipeline.
 #[test]
 fn import_kind_span_preserved() {
-    let dir = create_temp_dir("import_span");
-    let sub_path = make_sub_script(&dir);
-    let main_path = make_importing_script(&dir, &sub_path);
+    let mut sources = InMemorySources::new();
+    let sub_path = sources.add("sub", "let y = 42\n");
+    let main_path = sources.add(
+        "main",
+        format!("import virtual \"{}\"\nlet x = 5\n", sub_path),
+    );
     let mut cfg = ChrnConfig::default();
 
-    let sub_path_str = sub_path.to_string_lossy();
+    let sub_path_str = sub_path.as_str();
 
-    let (main_mod, graph, _interner, diags) = extract_main(
-        &main_path,
-        std::fs::File::open(&main_path).unwrap(),
-        &mut cfg,
-    )
-    .expect("extract_main must succeed");
+    let (input, interner, src_manager) = sources.into_input(&main_path);
+    let (main_mod, graph, _interner, diags) =
+        extract_main(input, interner, src_manager, &mut cfg).expect("extract_main must succeed");
 
     assert!(!main_mod.imports.is_empty(), "at least one import expected");
     let import = &main_mod.imports[0];
@@ -1851,35 +2109,33 @@ fn import_kind_span_preserved() {
         ImportKind::Core(_) => panic!("expected UnresolvedSource import kind, got Core"),
         _ => panic!("expected UnresolvedSource, got {:?}", import.kind),
     };
-    // The span should cover the import path without quotes.
-    // Source is `import "PATH"\nlet x = 5\n`; span starts at byte 8, ends at 8 + path.len().
-    let expected_start = 8;
-    let expected_end = expected_start + sub_path_str.len() as u32;
+    // The span should cover the import source name including quotes.
+    // Source is `import virtual "NAME"\nlet x = 5\n`; the opening quote is at byte 15.
+    let expected_start = 15;
+    let expected_end = expected_start + sub_path_str.len() as u32 + 2;
     assert_eq!(
         span.start, expected_start,
-        "import span must start at byte 8 (right after opening \"), got {}",
+        "import span must start at byte 15 (at the opening quote), got {}",
         span.start
     );
     assert_eq!(
         span.end,
         expected_end,
-        "import span must end at byte {} (after path of length {}), got {}",
+        "import span must end at byte {} (after closing quote for source name of length {}), got {}",
         expected_end,
         sub_path_str.len(),
         span.end
     );
-    // Verify the span slices out the exact path from src bytes
+    // Verify the span slices out the quoted source name from src bytes
     let region = &graph.region_arena()[main_mod.region_id.expect("main mod has region_id")];
     let span_bytes = &region.src_bytes[span.start as usize..span.end as usize];
     let span_str = String::from_utf8_lossy(span_bytes);
     assert_eq!(
-        span_str, sub_path_str,
-        "import span must extract the exact path string from src bytes, got '{}'",
+        span_str, format!("\"{sub_path_str}\""),
+        "import span must extract the quoted source name from src bytes, got '{}'",
         span_str
     );
     assert!(diags.diags.is_empty(), "no diagnostics expected");
-
-    _ = fs::remove_dir_all(&dir);
 }
 
 // ===========================================================================
@@ -1893,21 +2149,15 @@ fn import_kind_span_preserved() {
 /// - `seen` containing only the main path id
 #[test]
 fn module_graph_initial_state() {
-    let dir = create_temp_dir("mod_graph_init");
-    let main_path = make_simple_script(&dir);
+    let mut sources = InMemorySources::new();
+    let main_path = sources.add("main", "let x = 5\nlet y = 10\n");
     let mut cfg = ChrnConfig::default();
 
-    let (_main_mod, graph, _interner, diags) = extract_main(
-        &main_path,
-        std::fs::File::open(&main_path).unwrap(),
-        &mut cfg,
-    )
-    .expect("extract_main must succeed");
+    let (input, interner, src_manager) = sources.into_input(&main_path);
+    let (_main_mod, graph, interner, diags) =
+        extract_main(input, interner, src_manager, &mut cfg).expect("extract_main must succeed");
 
-    let main_path_id = graph
-        .src_manager
-        .get_source_id_from_path(&main_path)
-        .unwrap();
+    let main_path_id = memory_source_id(&graph.src_manager, &interner, &main_path);
 
     assert_eq!(
         graph.region_arena().len(),
@@ -1921,7 +2171,7 @@ fn module_graph_initial_state() {
     );
     assert_eq!(
         graph.registered_mod_ids()[0],
-        (main_path_id.inner(), ModuleId::new(0)),
+        (main_path_id, ModuleId::new(0)),
         "reserved_mod_ids[0] must be (main_path, mod_id 0)"
     );
     // assert!(
@@ -1930,31 +2180,26 @@ fn module_graph_initial_state() {
     // );
     assert_eq!(graph.seen().len(), 1, "seen must have 1 entry");
     assert!(
-        graph.seen().contains(&main_path_id.inner()),
+        graph.seen().contains(&main_path_id),
         "seen must contain main"
     );
     assert!(diags.diags.is_empty());
-
-    _ = fs::remove_dir_all(&dir);
 }
 
 // ===========================================================================
 // Edge cases
 // ===========================================================================
 
-/// An empty file must produce a Loaded module with no imports and no bind.
+/// An empty source must produce a Loaded module with no imports and no bind.
 #[test]
 fn extract_main_empty_file() {
-    let dir = create_temp_dir("extract_main_empty");
-    let main_path = create_chrn_file(&dir, "empty.chrn", "");
+    let mut sources = InMemorySources::new();
+    let main_path = sources.add("empty", "");
     let mut cfg = ChrnConfig::default();
 
-    let (main_mod, _graph, _interner, diags) = extract_main(
-        &main_path,
-        std::fs::File::open(&main_path).unwrap(),
-        &mut cfg,
-    )
-    .expect("extract_main must succeed on empty file");
+    let (input, interner, src_manager) = sources.into_input(&main_path);
+    let (main_mod, _graph, _interner, diags) = extract_main(input, interner, src_manager, &mut cfg)
+        .expect("extract_main must succeed on empty file");
 
     assert_eq!(
         main_mod.state,
@@ -1964,8 +2209,6 @@ fn extract_main_empty_file() {
     assert!(main_mod.imports.is_empty(), "empty file has no imports");
     assert!(main_mod.bind.is_none(), "empty file has no bind");
     assert!(diags.diags.is_empty(), "empty file produces no diagnostics");
-
-    _ = fs::remove_dir_all(&dir);
 }
 
 /// A file whose name is not valid UTF-8 should produce a terminal error. This
@@ -1976,16 +2219,15 @@ fn extract_main_invalid_utf8_filename() {
     // Create a file with a name that is not valid UTF-8 on unix
     #[cfg(unix)]
     {
-        use std::ffi::OsStr;
-        use std::os::unix::ffi::OsStrExt;
         let invalid_name = OsStr::from_bytes(&[0xFF, 0xFE]);
         let file_path = dir.join(invalid_name);
         fs::write(&file_path, "let x = 5\n").expect("failed to write invalid UTF-8 file");
         let mut cfg = ChrnConfig::default();
 
         let result = extract_main(
-            &file_path,
-            std::fs::File::open(&file_path).unwrap(),
+            SourceKind::Path(SourcePath::new(file_path.to_path_buf())),
+            Intern::init(),
+            SourceManager::new(),
             &mut cfg,
         );
         assert!(
@@ -2013,29 +2255,26 @@ fn extract_main_invalid_utf8_filename() {
 ///   b.imports    = [Core(3)]
 #[test]
 fn mod_ids_sequential_chain() {
-    let dir = create_temp_dir("mod_ids_chain");
+    let mut sources = InMemorySources::new();
 
     // b.chrn (leaf)
-    let b_path = create_chrn_file(&dir, "b.chrn", "let z = 1\n");
+    let b_path = sources.add("b", "let z = 1\n");
     // a.chrn imports b
-    let b_canonical = b_path.to_string_lossy();
-    let a_content = format!("import \"{}\"\nlet y = b::z\n", b_canonical);
-    let a_path = create_chrn_file(&dir, "a.chrn", &a_content);
+    let b_canonical = b_path.as_str();
+    let a_content = format!("import virtual \"{}\"\nlet y = b::z\n", b_canonical);
+    let a_path = sources.add("a", &a_content);
     // main.chrn imports a
-    let a_canonical = a_path.to_string_lossy();
-    let main_content = format!("import \"{}\"\nlet x = a::y\n", a_canonical);
-    let main_path = create_chrn_file(&dir, "main.chrn", &main_content);
+    let a_canonical = a_path.as_str();
+    let main_content = format!("import virtual \"{}\"\nlet x = a::y\n", a_canonical);
+    let main_path = sources.add("main", &main_content);
 
     let cfg = ChrnConfig::default();
     let mut reporter = Reporter::new(100);
 
-    let (compiler, store, diags) = extract_all_modules(
-        &main_path,
-        std::fs::File::open(&main_path).unwrap(),
-        cfg,
-        &mut reporter,
-    )
-    .expect("extract_all_modules must succeed");
+    let (input, interner, src_manager) = sources.into_input(&main_path);
+    let (compiler, store, diags) =
+        extract_all_modules(input, interner, src_manager, cfg, &mut reporter)
+            .expect("extract_all_modules must succeed");
 
     assert!(
         diags.diags.is_empty(),
@@ -2101,8 +2340,6 @@ fn mod_ids_sequential_chain() {
         "b.imports[0] must be Core(3), got {:?}",
         b_mod.imports[0].kind
     );
-
-    _ = fs::remove_dir_all(&dir);
 }
 
 /// Diamond dependency: main imports a and b, both a and b import shared.
@@ -2119,39 +2356,42 @@ fn mod_ids_sequential_chain() {
 ///   shared.imports = [Core(4)]
 #[test]
 fn mod_ids_diamond_dedup() {
-    let dir = create_temp_dir("mod_ids_diamond");
+    let mut sources = InMemorySources::new();
 
     // shared.chrn (leaf)
-    let shared_path = create_chrn_file(&dir, "shared.chrn", "let val = 42\n");
-    let shared_canonical = shared_path.to_string_lossy();
+    let shared_path = sources.add("shared", "let val = 42\n");
+    let shared_canonical = shared_path.as_str();
 
     // a.chrn imports shared
-    let a_content = format!("import \"{}\"\nlet a_val = shared::val\n", shared_canonical);
-    let a_path = create_chrn_file(&dir, "a.chrn", &a_content);
+    let a_content = format!(
+        "import virtual \"{}\"\nlet a_val = shared::val\n",
+        shared_canonical
+    );
+    let a_path = sources.add("a", &a_content);
 
     // b.chrn imports shared
-    let b_content = format!("import \"{}\"\nlet b_val = shared::val\n", shared_canonical);
-    let b_path = create_chrn_file(&dir, "b.chrn", &b_content);
+    let b_content = format!(
+        "import virtual \"{}\"\nlet b_val = shared::val\n",
+        shared_canonical
+    );
+    let b_path = sources.add("b", &b_content);
 
     // main.chrn imports a and b
-    let a_canonical = a_path.to_string_lossy();
-    let b_canonical = b_path.to_string_lossy();
+    let a_canonical = a_path.as_str();
+    let b_canonical = b_path.as_str();
     let main_content = format!(
-        "import \"{}\"\nimport \"{}\"\nlet x = a::a_val + b::b_val\n",
+        "import virtual \"{}\"\nimport virtual \"{}\"\nlet x = a::a_val + b::b_val\n",
         a_canonical, b_canonical
     );
-    let main_path = create_chrn_file(&dir, "main.chrn", &main_content);
+    let main_path = sources.add("main", &main_content);
 
     let cfg = ChrnConfig::default();
     let mut reporter = Reporter::new(100);
 
-    let (compiler, store, diags) = extract_all_modules(
-        &main_path,
-        std::fs::File::open(&main_path).unwrap(),
-        cfg,
-        &mut reporter,
-    )
-    .expect("extract_all_modules must succeed");
+    let (input, interner, src_manager) = sources.into_input(&main_path);
+    let (compiler, store, diags) =
+        extract_all_modules(input, interner, src_manager, cfg, &mut reporter)
+            .expect("extract_all_modules must succeed");
 
     assert!(
         diags.diags.is_empty(),
@@ -2258,11 +2498,9 @@ fn mod_ids_diamond_dedup() {
         import_mod_id(&b_mod.imports[0]),
         "a and b carry the same shared mod_id"
     );
-
-    _ = fs::remove_dir_all(&dir);
 }
 
-/// When an import points to a non-existent file, the import is dropped
+/// When an import names an unregistered virtual source, the import is dropped
 /// at ModuleFinder level (no `Import` record is created) and no module id
 /// is consumed.  The next valid import gets the next sequential id.
 ///
@@ -2271,29 +2509,26 @@ fn mod_ids_diamond_dedup() {
 ///   sub.imports  = [Core(2)]
 #[test]
 fn mod_ids_nonexistent_import_does_not_consume_id() {
-    let dir = create_temp_dir("mod_ids_missing");
+    let mut sources = InMemorySources::new();
 
     // sub.chrn exists
-    let sub_path = make_sub_script(&dir);
-    let sub_canonical = sub_path.to_string_lossy();
+    let sub_path = sources.add("sub", "let y = 42\n");
+    let sub_canonical = sub_path.as_str();
 
     // main.chrn imports a missing file then the valid sub
     let main_content = format!(
-        "import \"/definitely/does/not/exist.chrn\"\nimport \"{}\"\nlet x = 5\n",
+        "import virtual \"missing\"\nimport virtual \"{}\"\nlet x = 5\n",
         sub_canonical
     );
-    let main_path = create_chrn_file(&dir, "main.chrn", &main_content);
+    let main_path = sources.add("main", &main_content);
 
     let cfg = ChrnConfig::default();
     let mut reporter = Reporter::new(100);
 
-    let (compiler, store, diags) = extract_all_modules(
-        &main_path,
-        std::fs::File::open(&main_path).unwrap(),
-        cfg,
-        &mut reporter,
-    )
-    .expect("extract_all_modules must succeed");
+    let (input, interner, src_manager) = sources.into_input(&main_path);
+    let (compiler, store, diags) =
+        extract_all_modules(input, interner, src_manager, cfg, &mut reporter)
+            .expect("extract_all_modules must succeed");
 
     let interner = &store.interner;
 
@@ -2362,8 +2597,6 @@ fn mod_ids_nonexistent_import_does_not_consume_id() {
         !diags.diags.is_empty(),
         "non-existent import must produce diagnostics"
     );
-
-    _ = fs::remove_dir_all(&dir);
 }
 
 /// Verifies that the main module always gets mod_id 0 in the final compiler
@@ -2373,18 +2606,15 @@ fn mod_ids_nonexistent_import_does_not_consume_id() {
 ///   main.imports = [Core(1)]
 #[test]
 fn mod_ids_main_module_id_is_zero() {
-    let dir = create_temp_dir("mod_ids_main_zero");
-    let main_path = make_simple_script(&dir);
+    let mut sources = InMemorySources::new();
+    let main_path = sources.add("main", "let x = 5\nlet y = 10\n");
     let cfg = ChrnConfig::default();
     let mut reporter = Reporter::new(100);
 
-    let (compiler, _store, _diags) = extract_all_modules(
-        &main_path,
-        std::fs::File::open(&main_path).unwrap(),
-        cfg,
-        &mut reporter,
-    )
-    .expect("extract_all_modules must succeed");
+    let (input, interner, src_manager) = sources.into_input(&main_path);
+    let (compiler, _store, _diags) =
+        extract_all_modules(input, interner, src_manager, cfg, &mut reporter)
+            .expect("extract_all_modules must succeed");
 
     let user_count = 1;
     assert_eq!(get_user_mod_count(&compiler), user_count);
@@ -2403,8 +2633,6 @@ fn mod_ids_main_module_id_is_zero() {
         "main.imports[0] must be Core(1), got {:?}",
         main_mod.imports[0].kind
     );
-
-    _ = fs::remove_dir_all(&dir);
 }
 
 // ===========================================================================
@@ -2416,27 +2644,15 @@ fn mod_ids_main_module_id_is_zero() {
 fn extract_msgs(main_path: &Path) -> Vec<String> {
     let mut reporter = Reporter::new(100);
     let (_, _, diags) = extract_all_modules(
-        main_path,
-        fs::File::open(main_path).unwrap(),
+        SourceKind::Path(SourcePath::new(main_path.to_path_buf())),
+        Intern::init(),
+        SourceManager::new(),
         ChrnConfig::default(),
         &mut reporter,
     )
     .expect("extract_all_modules must succeed");
 
     diags.diags.iter().map(|d| d.core_msg.clone()).collect()
-}
-
-fn extract_has_errors(main_path: &Path) -> bool {
-    let mut reporter = Reporter::new(100);
-    let (_, _, diags) = extract_all_modules(
-        main_path,
-        fs::File::open(main_path).unwrap(),
-        ChrnConfig::default(),
-        &mut reporter,
-    )
-    .expect("extract_all_modules must succeed");
-
-    diags.has_err()
 }
 
 /// Writes `main.chrn` in `dir` whose body is `imports` followed by one `let`.
@@ -2464,6 +2680,34 @@ fn assert_has_diagnostic_containing(main_path: &Path, expected_count: usize, tex
     assert!(
         messages.iter().any(|message| message.contains(text)),
         "expected a diagnostic containing `{text}`, got {messages:?}"
+    );
+}
+
+fn assert_memory_diagnostic_containing(
+    sources: InMemorySources,
+    main_name: &str,
+    expected_count: usize,
+    text: &str,
+) {
+    let (input, interner, manager) = sources.into_input(main_name);
+    let mut reporter = Reporter::new(100);
+    let (_, _, diags) = extract_all_modules(
+        input,
+        interner,
+        manager,
+        ChrnConfig::default(),
+        &mut reporter,
+    )
+    .expect("virtual module extraction must recover");
+    let messages: Vec<_> = diags
+        .diags
+        .iter()
+        .map(|diag| diag.core_msg.as_str())
+        .collect();
+    assert_eq!(messages.len(), expected_count);
+    assert!(
+        messages.iter().any(|message| message.contains(text)),
+        "expected {text:?}, got {messages:?}"
     );
 }
 
@@ -2498,22 +2742,27 @@ fn dup_import_matches_importer_name() {
 /// A module importing itself is not a duplicate identifier.
 #[test]
 fn self_import_is_not_duplicate() {
-    let dir = create_temp_dir("self_import");
-    let main_path = dir.join("main.chrn");
-    // Written twice: the import needs the canonical path of the file it lives in.
-    write_file(&main_path, "let x = 5\n");
-    let canonical = fs::canonicalize(&main_path).expect("canonicalize");
-    write_file(
-        &main_path,
-        &format!("{}\nlet x = 5\n", import_stmt(&canonical)),
-    );
-
+    let mut sources = InMemorySources::new();
+    let main = sources.add("main", "import virtual \"main\"\nlet x = 5\n");
+    let (input, interner, src_manager) = sources.into_input(&main);
+    let mut reporter = Reporter::new(100);
+    let (compiler, _, diags) = extract_all_modules(
+        input,
+        interner,
+        src_manager,
+        ChrnConfig::default(),
+        &mut reporter,
+    )
+    .expect("virtual self-import must resolve");
     assert!(
-        !extract_has_errors(&canonical),
-        "self import must not be reported as a duplicate identifier",
+        !diags.has_err(),
+        "self import must not be reported as a duplicate identifier: {diags:?}"
     );
-
-    _ = fs::remove_dir_all(&dir);
+    assert_eq!(get_user_mod_count(&compiler), 1);
+    assert_eq!(
+        import_mod_id(&compiler.mods[ModuleId::new(0)].imports[0]),
+        Some(ModuleId::new(0))
+    );
 }
 
 /// Distinct aliases keep two same-named imports apart.
@@ -2533,45 +2782,48 @@ fn import_same_name_distinct_aliases_is_not_duplicate() {
     _ = fs::remove_dir_all(&dir);
 }
 
-/// An alias that matches another import's file name collides with it.
+/// An alias that matches another import's source name collides with it.
 #[test]
 fn dup_import_alias_matches_other_import_name() {
-    let dir = create_temp_dir("alias_vs_name");
-    let a = create_chrn_file(&dir, "a.chrn", "let y = 1\n");
-    let sub = make_sub_script(&dir);
+    let mut sources = InMemorySources::new();
+    let a = sources.add("a", "let y = 1\n");
+    let sub = sources.add("sub", "let y = 42\n");
 
-    let main_path = make_main_with(&dir, &[import_stmt_as(&a, "sub"), import_stmt(&sub)]);
+    let main_path = sources.add(
+        "main",
+        format!("import virtual \"{a}\" as sub\nimport virtual \"{sub}\"\nlet x = 5\n"),
+    );
 
-    assert_has_diagnostic_containing(&main_path, 1, "generated");
-
-    _ = fs::remove_dir_all(&dir);
+    assert_memory_diagnostic_containing(sources, &main_path, 1, "generated");
 }
 
 /// Two differently named imports sharing one alias collide on that alias.
 #[test]
 fn dup_import_aliases_collide_across_names() {
-    let dir = create_temp_dir("alias_vs_alias");
-    let a = create_chrn_file(&dir, "a.chrn", "let y = 1\n");
-    let b = create_chrn_file(&dir, "b.chrn", "let z = 2\n");
+    let mut sources = InMemorySources::new();
+    let a = sources.add("a", "let y = 1\n");
+    let b = sources.add("b", "let z = 2\n");
 
-    let main_path = make_main_with(&dir, &[import_stmt_as(&a, "x"), import_stmt_as(&b, "x")]);
+    let main_path = sources.add(
+        "main",
+        format!("import virtual \"{a}\" as x\nimport virtual \"{b}\" as x\nlet x = 5\n"),
+    );
 
-    assert_has_diagnostic_containing(&main_path, 1, "alias");
-
-    _ = fs::remove_dir_all(&dir);
+    assert_memory_diagnostic_containing(sources, &main_path, 1, "alias");
 }
 
 /// An alias that matches the importing module's own name collides with it.
 #[test]
 fn dup_import_alias_matches_importer_name() {
-    let dir = create_temp_dir("alias_vs_importer");
-    let sub = make_sub_script(&dir);
+    let mut sources = InMemorySources::new();
+    let sub = sources.add("sub", "let y = 42\n");
 
-    let main_path = make_main_with(&dir, &[import_stmt_as(&sub, "main")]);
+    let main_path = sources.add(
+        "main",
+        format!("import virtual \"{sub}\" as main\nlet x = 5\n"),
+    );
 
-    assert_has_diagnostic_containing(&main_path, 1, "alias");
-
-    _ = fs::remove_dir_all(&dir);
+    assert_memory_diagnostic_containing(sources, &main_path, 1, "alias");
 }
 
 /// Duplicate detection is scoped per module: two modules may each import a
@@ -2612,8 +2864,9 @@ fn bind_path_interning_preserves_module_deduplication() {
     );
     let mut reporter = Reporter::new(100);
     let (compiler, store, diags) = extract_all_modules(
-        &main_path,
-        fs::File::open(&main_path).unwrap(),
+        SourceKind::Path(SourcePath::new(main_path.to_path_buf())),
+        Intern::init(),
+        SourceManager::new(),
         ChrnConfig::default(),
         &mut reporter,
     )
@@ -2636,19 +2889,20 @@ fn bind_path_interning_preserves_module_deduplication() {
 /// otherwise distinct import inside the aliased module.
 #[test]
 fn parent_import_alias_does_not_rename_child_module() {
-    let dir = create_temp_dir("parent_alias_scope");
-    let x = create_chrn_file(&dir, "x.chrn", "let value = 1\n");
-    let a = create_chrn_file(&dir, "a.chrn", &format!("{}\n", import_stmt(&x)));
-    let main_path = make_main_with(&dir, &[import_stmt_as(&a, "x")]);
+    let mut sources = InMemorySources::new();
+    let x = sources.add("x", "let value = 1\n");
+    let a = sources.add("a", &format!("{}\n", format!("import virtual \"{x}\"")));
+    let main_path = sources.add("main", format!("import virtual \"{a}\" as x\nlet x = 5\n"));
     let mut reporter = Reporter::new(100);
+    let (input, interner, src_manager) = sources.into_input(&main_path);
     let (compiler, store, diags) = extract_all_modules(
-        &main_path,
-        fs::File::open(&main_path).unwrap(),
+        input,
+        interner,
+        src_manager,
         ChrnConfig::default(),
         &mut reporter,
     )
     .expect("module extraction must succeed");
-    _ = fs::remove_dir_all(&dir);
 
     assert!(
         diags.diags.is_empty(),
@@ -2671,18 +2925,22 @@ fn parent_import_alias_does_not_rename_child_module() {
 /// compiler-owned `core` identifier.
 #[test]
 fn reserved_core_alias_is_rejected_for_already_loaded_path() {
-    let dir = create_temp_dir("core_alias_seen_path");
-    let sub = make_sub_script(&dir);
-    let main_path = make_main_with(&dir, &[import_stmt(&sub), import_stmt_as(&sub, "core")]);
+    let mut sources = InMemorySources::new();
+    let sub = sources.add("sub", "let y = 42\n");
+    let main_path = sources.add(
+        "main",
+        format!("import virtual \"{sub}\"\nimport virtual \"{sub}\" as core\nlet x = 5\n"),
+    );
     let mut reporter = Reporter::new(100);
+    let (input, interner, src_manager) = sources.into_input(&main_path);
     let (compiler, _, diags) = extract_all_modules(
-        &main_path,
-        fs::File::open(&main_path).unwrap(),
+        input,
+        interner,
+        src_manager,
         ChrnConfig::default(),
         &mut reporter,
     )
     .expect("module extraction must recover from the reserved alias");
-    _ = fs::remove_dir_all(&dir);
 
     let messages: Vec<_> = diags
         .diags
@@ -2717,8 +2975,9 @@ fn reserved_core_alias_diagnostic_identifies_importer() {
         let main_path = make_main_with(&dir, &imports);
         let mut reporter = Reporter::new(100);
         let (compiler, store, diags) = extract_all_modules(
-            &main_path,
-            fs::File::open(&main_path).unwrap(),
+            SourceKind::Path(SourcePath::new(main_path.to_path_buf())),
+            Intern::init(),
+            SourceManager::new(),
             ChrnConfig::default(),
             &mut reporter,
         )
@@ -2758,8 +3017,9 @@ fn directory_import_diagnostic_identifies_importer() {
     let main_path = make_main_with(&dir, &[import_stmt(&target)]);
     let mut reporter = Reporter::new(100);
     let (compiler, store, diags) = extract_all_modules(
-        &main_path,
-        fs::File::open(&main_path).unwrap(),
+        SourceKind::Path(SourcePath::new(main_path.to_path_buf())),
+        Intern::init(),
+        SourceManager::new(),
         ChrnConfig::default(),
         &mut reporter,
     )
@@ -2780,8 +3040,8 @@ fn directory_import_diagnostic_identifies_importer() {
         diag.annotations[0].span,
         SourceSpan::new(
             SourceRegionId::new(0),
-            8,
-            8 + target.as_os_str().len() as u32
+            7,
+            9 + target.as_os_str().len() as u32
         )
     );
     assert!(matches!(
@@ -2808,8 +3068,9 @@ fn import_read_error_diagnostic_identifies_importer() {
     let main_path = make_main_with(&dir, &[import_stmt(&target)]);
     let mut reporter = Reporter::new(100);
     let (compiler, store, diags) = extract_all_modules(
-        &main_path,
-        fs::File::open(&main_path).unwrap(),
+        SourceKind::Path(SourcePath::new(main_path.to_path_buf())),
+        Intern::init(),
+        SourceManager::new(),
         ChrnConfig::default(),
         &mut reporter,
     )
@@ -2836,8 +3097,8 @@ fn import_read_error_diagnostic_identifies_importer() {
         diag.annotations[0].span,
         SourceSpan::new(
             SourceRegionId::new(0),
-            8,
-            8 + target.as_os_str().len() as u32
+            7,
+            9 + target.as_os_str().len() as u32
         )
     );
     assert_eq!(
@@ -2864,8 +3125,9 @@ fn noncanonical_entry_path_preserves_self_import_identity() {
     let entry_path = dir.join("nested/../main.chrn");
     let mut reporter = Reporter::new(100);
     let (compiler, _, diags) = extract_all_modules(
-        &entry_path,
-        fs::File::open(&entry_path).unwrap(),
+        SourceKind::Path(SourcePath::new(entry_path.to_path_buf())),
+        Intern::init(),
+        SourceManager::new(),
         ChrnConfig::default(),
         &mut reporter,
     )
@@ -2892,8 +3154,9 @@ fn reserved_core_entry_is_rejected() {
     let dir = create_temp_dir("reserved_core_entry");
     let main_path = create_chrn_file(&dir, "core.chrn", "let value = 1\n");
     let result = extract_main(
-        &main_path,
-        fs::File::open(&main_path).unwrap(),
+        SourceKind::Path(SourcePath::new(main_path.to_path_buf())),
+        Intern::init(),
+        SourceManager::new(),
         &mut ChrnConfig::default(),
     );
     _ = fs::remove_dir_all(&dir);
@@ -2930,8 +3193,9 @@ fn reserved_core_source_is_rejected_even_with_alias() {
         let main_path = make_main_with(&dir, &[core_import, import_stmt(&valid_source)]);
         let mut reporter = Reporter::new(100);
         let (compiler, store, diags) = extract_all_modules(
-            &main_path,
-            fs::File::open(&main_path).unwrap(),
+            SourceKind::Path(SourcePath::new(main_path.to_path_buf())),
+            Intern::init(),
+            SourceManager::new(),
             ChrnConfig::default(),
             &mut reporter,
         )

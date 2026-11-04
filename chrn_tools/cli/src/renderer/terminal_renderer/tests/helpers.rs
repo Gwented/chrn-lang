@@ -140,16 +140,16 @@ pub(super) fn line_at(view: &LineView, pos: u32) -> &Line {
         .unwrap_or_else(|| panic!("no mapped line holds byte {pos}"))
 }
 
-/// Strips the header and path lines so a test can assert only the annotated source block.
+/// Strips the header and source-label lines so a test can assert only the annotated source block.
 ///
-/// The renderer emits `error: <msg> \n<PATH ...>\n<body>`, so this drops the first two lines and
+/// The renderer emits `error: <msg> \n<SRC ...>\n<body>`, so this drops the first two lines and
 /// the trailing separator.
 pub(super) fn body(rendered: &str) -> String {
     let lines: Vec<&str> = rendered.lines().collect();
     let start = lines
         .iter()
-        .position(|ln| ln.starts_with("PATH =>"))
-        .expect("every rendering with a region emits a path header")
+        .position(|ln| ln.starts_with("SRC =>"))
+        .expect("every rendering with a region emits a source header")
         + 1;
     let end = lines
         .iter()

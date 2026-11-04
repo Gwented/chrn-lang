@@ -58,7 +58,7 @@ fn nested_config_without_a_member_type_still_offers_member_options() {
 async fn completion_in_the_script_section_offers_keywords() {
     let workspace = TempWorkspace::new("script_completion");
     let text = "let flag = 3\n";
-    let uri = workspace.write("main.chrn", text);
+    let uri = workspace.uri("main.chrn");
 
     let mut session = Session::new().await;
     session.open(&uri, text).await;
@@ -97,7 +97,7 @@ async fn completion_in_the_script_section_offers_keywords() {
 async fn completion_at_line_comment_end_is_suppressed() {
     let workspace = TempWorkspace::new("line_comment_completion");
     let text = "let url = \"https://x\" + value // note\nlet after = 1\n";
-    let uri = workspace.write("main.chrn", text);
+    let uri = workspace.uri("main.chrn");
 
     let mut session = Session::new().await;
     session.open(&uri, text).await;
@@ -136,7 +136,7 @@ fn max_numeric_bits_completion_preserves_the_marker_and_respects_client_snippet_
     runtime.block_on(async {
     let workspace = TempWorkspace::new("numeric_bits_directive_completion");
     let text = "// header 😀\n@def\n#\n#max_\n#max_numeric_bits\n#max_no\n// #max_\n/* #max_ */\nlet text = \"#max_\"\n@end\nserialized: #max_\n";
-    let uri = workspace.write("main.chrn", text);
+    let uri = workspace.uri("main.chrn");
     let expected_documentation =
         Document::directive_docs(InternedId::new(INTERNED_MAX_NUMERIC_BITS).into_tagged::<UTF8Tag>())
             .expect("the numeric bit limit has directive documentation")
@@ -307,7 +307,7 @@ fn max_numeric_bits_completion_works_at_eof_and_preserves_existing_arguments() {
         ] {
             let position = position_of(marked, "~", 0);
             let text = marked.replace('~', "");
-            let uri = workspace.write(&format!("{name}.chrn"), &text);
+            let uri = workspace.uri(&format!("{name}.chrn"));
             session.open(&uri, &text).await;
             let Some(CompletionResponse::Array(items)) =
                 session.completion(&uri, position, None).await
@@ -350,7 +350,7 @@ fn max_numeric_bits_completion_works_at_eof_and_preserves_existing_arguments() {
 async fn static_access_on_a_builtin_type_offers_its_namespace_members() {
     let workspace = TempWorkspace::new("builtin_static_completion");
     let text = "let flag = 3\ni32::M\n";
-    let uri = workspace.write("main.chrn", text);
+    let uri = workspace.uri("main.chrn");
 
     let mut session = Session::new().await;
     session.open(&uri, text).await;
@@ -385,7 +385,7 @@ async fn static_access_on_a_builtin_type_offers_its_namespace_members() {
 async fn current_module_completion_keeps_local_types_and_hides_injected_core_types() {
     let workspace = TempWorkspace::new("module_scope_completion");
     let text = "nest->\nstruct item { value: i32 }\nmain::i\n";
-    let uri = workspace.write("main.chrn", text);
+    let uri = workspace.uri("main.chrn");
 
     let mut session = Session::new().await;
     session.open(&uri, text).await;
@@ -433,7 +433,7 @@ async fn general_completion_exposes_only_the_import_alias_as_a_module() {
         "import \"{}\" as public_api\nlet value = \n",
         dependency_path.display()
     );
-    let uri = workspace.write("main.chrn", &text);
+    let uri = workspace.uri("main.chrn");
 
     let mut session = Session::new().await;
     session.open(&uri, &text).await;
@@ -471,7 +471,7 @@ async fn module_completion_before_existing_separator_does_not_duplicate_it() {
         "import \"{}\" as public_api\npublic_api::ITEM\n",
         dependency_path.display()
     );
-    let uri = workspace.write("main.chrn", &text);
+    let uri = workspace.uri("main.chrn");
     let mut session = Session::new().await;
     session.open(&uri, &text).await;
 
@@ -500,7 +500,7 @@ async fn module_completion_before_existing_separator_does_not_duplicate_it() {
 async fn same_name_module_completion_appends_after_static_access() {
     let workspace = TempWorkspace::new("same_name_module_completion");
     let text = "let value = (evil::)\n";
-    let uri = workspace.write("evil.chrn", text);
+    let uri = workspace.uri("evil.chrn");
     let mut session = Session::new().await;
     session.open(&uri, text).await;
 
@@ -570,7 +570,7 @@ fn config_option_completion_inserts_assignment_syntax() {
 async fn condition_function_completion_respects_client_snippet_support() {
     let workspace = TempWorkspace::new("condition_call_completion");
     let text = "nest->\nstruct Record { value: i32 [Ran] }\n";
-    let uri = workspace.write("main.chrn", text);
+    let uri = workspace.uri("main.chrn");
     let mut position = position_of(text, "Ran", 0);
     position.character += 3;
 
@@ -609,7 +609,7 @@ async fn container_completion_inserts_type_arguments_for_prefixes_and_exact_name
         ] {
             for typed in [prefix, name] {
                 let text = format!("nest->\nstruct Record {{ value: {typed} }}\n");
-                let uri = workspace.write(&format!("main_{typed}.chrn"), &text);
+                let uri = workspace.uri(&format!("main_{typed}.chrn"));
                 session.open(&uri, &text).await;
                 assert_eq!(
                     session
@@ -671,7 +671,7 @@ async fn container_completion_inserts_type_arguments_for_prefixes_and_exact_name
 async fn callable_completion_outside_condition_shows_call_shape_without_inserting_it() {
     let workspace = TempWorkspace::new("plain_callable_completion");
     let text = "let chosen = Ran\n";
-    let uri = workspace.write("main.chrn", text);
+    let uri = workspace.uri("main.chrn");
     let mut session = Session::new_with_snippet_support(true).await;
     session.open(&uri, text).await;
 
@@ -694,7 +694,7 @@ async fn callable_completion_outside_condition_shows_call_shape_without_insertin
 async fn general_completion_uses_visible_symbols_without_raw_token_duplicates() {
     let workspace = TempWorkspace::new("general_visible_symbols");
     let text = "let visible = missing_name\nlet answer = vis\n";
-    let uri = workspace.write("main.chrn", text);
+    let uri = workspace.uri("main.chrn");
     let mut session = Session::new().await;
     session.open(&uri, text).await;
 
@@ -732,7 +732,7 @@ async fn general_completion_uses_visible_symbols_without_raw_token_duplicates() 
 async fn neutral_completion_excludes_declared_var_section_symbols() {
     let workspace = TempWorkspace::new("general_scope_filter");
     let text = "let visible = 1\nlet answer = vis\nvar->\nvisible_var: i32\nnest->\nvis\n";
-    let uri = workspace.write("main.chrn", text);
+    let uri = workspace.uri("main.chrn");
     let mut session = Session::new().await;
     session.open(&uri, text).await;
 
@@ -776,7 +776,7 @@ async fn neutral_completion_excludes_declared_var_section_symbols() {
 async fn static_access_on_an_intrinsic_namespace_offers_extern_types() {
     let workspace = TempWorkspace::new("intrinsic_static_completion");
     let text = "complex->\n    override JAVA {\n        types {\n            change i8 = java::i\n        }\n    }\n";
-    let uri = workspace.write("main.chrn", text);
+    let uri = workspace.uri("main.chrn");
 
     let mut session = Session::new().await;
     session.open(&uri, text).await;
@@ -818,7 +818,7 @@ async fn multi_segment_intrinsic_completion_stays_under_its_root_namespace() {
         let text = format!(
             "complex->\n    override {root} {{\n        types {{\n            change i8 = {qualified}\n        }}\n    }}\n"
         );
-        let uri = workspace.write(&format!("{}.chrn", root.to_lowercase()), &text);
+        let uri = workspace.uri(&format!("{}.chrn", root.to_lowercase()));
         session.open(&uri, &text).await;
 
         let mut pos = position_of(&text, &qualified, 0);
@@ -854,7 +854,7 @@ async fn embedded_override_arrow_completes_the_intrinsic_namespace() {
 
     let workspace = TempWorkspace::new("embedded_override_arrow_completion");
     let text = "nest->\nstruct Structure { field1: i32, field2: u32 }\ncomplex->\nfor Structure {\n    field1 {\n        override JAVA=>idents { change i32 = rust::char }\n    }\n}\n";
-    let uri = workspace.write("main.chrn", text);
+    let uri = workspace.uri("main.chrn");
 
     let mut session = Session::new().await;
     session.open(&uri, text).await;
@@ -926,7 +926,7 @@ async fn chained_override_arrow_completes_the_next_namespace_segment() {
         let text = format!(
             "nest->\nstruct Structure {{ field1: i32 }}\ncomplex->\nfor Structure {{\n    field1 {{\n        override {target}idents {{ change i32 = rust::char }}\n    }}\n}}\n"
         );
-        let uri = workspace.write(&format!("{}.chrn", root.to_lowercase()), &text);
+        let uri = workspace.uri(&format!("{}.chrn", root.to_lowercase()));
         session.open(&uri, &text).await;
 
         let mut position = position_of(&text, &target, 0);
@@ -958,7 +958,7 @@ async fn braced_override_body_completes_namespace_children() {
 
     let workspace = TempWorkspace::new("braced_override_namespace_completion");
     let text = "nest->\nstruct Structure { field1: i32 }\ncomplex->\nfor Structure {\n    field1 {\n        override JAVA {\n            t\n        }\n    }\n}\n";
-    let uri = workspace.write("main.chrn", text);
+    let uri = workspace.uri("main.chrn");
 
     let mut session = Session::new().await;
     session.open(&uri, text).await;
@@ -1000,7 +1000,7 @@ async fn override_root_completion_offers_intrinsic_namespaces() {
     ] {
         let target = format!("override {prefix}");
         let text = format!("complex->\n{target}\n");
-        let uri = workspace.write(&format!("{name}.chrn"), &text);
+        let uri = workspace.uri(&format!("{name}.chrn"));
         session.open(&uri, &text).await;
 
         let mut position = position_of(&text, &target, 0);
@@ -1049,7 +1049,7 @@ async fn arrow_config_completion_matches_braces_for_struct_members() {
         let marked = format!("{declarations}{config}");
         let position = position_of(&marked, "~", 0);
         let text = marked.replace('~', "");
-        let uri = workspace.write(&format!("{name}.chrn"), &text);
+        let uri = workspace.uri(&format!("{name}.chrn"));
         let diagnostics = session.open(&uri, &text).await;
         assert!(diagnostics.is_empty(), "{name}: {diagnostics:?}");
         assert_eq!(
@@ -1092,7 +1092,7 @@ async fn scalar_arrow_completion_uses_member_options_and_stops_at_parent_close()
     let workspace = TempWorkspace::new("scalar_arrow_completion");
     let text =
         "nest->\nstruct Outer { value: i32, sibling: i32 }\ncomplex->\nfor Outer { value =>\n}\n\n";
-    let uri = workspace.write("main.chrn", text);
+    let uri = workspace.uri("main.chrn");
     let mut session = Session::new().await;
     let diagnostics = session.open(&uri, text).await;
     assert!(diagnostics.is_empty(), "{diagnostics:?}");
