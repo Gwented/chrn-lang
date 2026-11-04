@@ -40,7 +40,7 @@ fn type_of(compiler: &ScriptCompiler, interner: &Intern, name: &str) -> TypeId {
     let var_def = find_user_var(compiler, name_id);
 
     match &var_def.state {
-        VariableState::Known(value_id) => compiler.val_infos[*value_id].type_id,
+        VariableState::Known(val_info_id) => compiler.val_infos[*val_info_id].type_id,
         VariableState::ReservedTypeSlot(_) => {
             panic!("Variable '{}' is still a reserved type slot", name)
         }
@@ -176,15 +176,19 @@ fn infer_val_array_yields_list_type() {
     let mut compiler = core_only_compiler();
 
     let ints = Value::List(vec![
-        Value::ArbitraryInt(ArbitraryIntKind::I64(1)),
-        Value::ArbitraryInt(ArbitraryIntKind::I64(2)),
+        compiler
+            .vals
+            .push(Value::ArbitraryInt(ArbitraryIntKind::I64(1))),
+        compiler
+            .vals
+            .push(Value::ArbitraryInt(ArbitraryIntKind::I64(2))),
     ]);
     let type_id = infer_type_from_val(&mut compiler, &ints).unwrap();
     assert_list_type(&compiler, type_id, 1, CORE_I64);
 
-    let strs = Value::List(vec![Value::InternedStr(
+    let strs = Value::List(vec![compiler.vals.push(Value::InternedStr(
         InternedId::new(0).into_tagged::<UTF8Tag>(),
-    )]);
+    ))]);
     let type_id = infer_type_from_val(&mut compiler, &strs).unwrap();
     assert_list_type(&compiler, type_id, 1, CORE_STR);
 }
@@ -195,9 +199,11 @@ fn infer_val_array_only_reads_first_element() {
     let mut compiler = core_only_compiler();
 
     let mixed = Value::List(vec![
-        Value::Bool(true),
-        Value::ArbitraryInt(ArbitraryIntKind::I64(1)),
-        Value::Char('c'),
+        compiler.vals.push(Value::Bool(true)),
+        compiler
+            .vals
+            .push(Value::ArbitraryInt(ArbitraryIntKind::I64(1))),
+        compiler.vals.push(Value::Char('c')),
     ]);
     let type_id = infer_type_from_val(&mut compiler, &mixed).unwrap();
     assert_list_type(&compiler, type_id, 1, CORE_BOOL);
@@ -208,9 +214,12 @@ fn infer_val_array_only_reads_first_element() {
 fn infer_val_nested_array_preserves_list_layers() {
     let mut compiler = core_only_compiler();
 
-    let nested = Value::List(vec![Value::List(vec![Value::List(vec![
-        Value::ArbitraryFloat(ArbitraryFloatKind::F64(1.0)),
-    ])])]);
+    let leaf = compiler
+        .vals
+        .push(Value::ArbitraryFloat(ArbitraryFloatKind::F64(1.0)));
+    let inner = compiler.vals.push(Value::List(vec![leaf]));
+    let middle = compiler.vals.push(Value::List(vec![inner]));
+    let nested = Value::List(vec![middle]);
     let type_id = infer_type_from_val(&mut compiler, &nested).unwrap();
     assert_list_type(&compiler, type_id, 3, CORE_F64);
 }
@@ -231,7 +240,8 @@ fn infer_val_empty_array_is_none() {
 fn infer_val_nested_empty_array_is_none() {
     let mut compiler = core_only_compiler();
 
-    let nested_empty = Value::List(vec![Value::List(vec![])]);
+    let empty = compiler.vals.push(Value::List(vec![]));
+    let nested_empty = Value::List(vec![empty]);
     assert_eq!(infer_type_from_val(&mut compiler, &nested_empty), None);
 }
 
@@ -253,10 +263,10 @@ fn infer_val_func_yields_return_type() {
 fn infer_val_tuple_is_unreachable() {
     let mut compiler = core_only_compiler();
 
-    infer_type_from_val(
-        &mut compiler,
-        &Value::Tuple(vec![Value::ArbitraryInt(ArbitraryIntKind::I64(1))]),
-    );
+    let element = compiler
+        .vals
+        .push(Value::ArbitraryInt(ArbitraryIntKind::I64(1)));
+    infer_type_from_val(&mut compiler, &Value::Tuple(vec![element]));
 }
 
 /// There are no runtime values at compile time, so a `RuntimeStr` reaching here is a compiler bug.
@@ -499,18 +509,17 @@ fn infer_intrinsic_namespace_constant_test() {
             .expect("`CONSTANT` should be interned");
         let var_def = find_user_var(&compiler, name_id);
 
-        let VariableState::Known(val_id) = var_def.state else {
+        let VariableState::Known(val_info_id) = var_def.state else {
             panic!("`{path}` did not resolve to a known value");
         };
 
-        let val_info = &compiler.val_infos[val_id];
+        let val_info = &compiler.val_infos[val_info_id];
 
         assert_eq!(val_info.type_id, type_id, "type of `{path}`");
 
-        let found = val_info
-            .const_val
-            .as_ref()
-            .unwrap_or_else(|| panic!("`{path}` has no constant value"));
+        let found = &compiler.vals[val_info
+            .const_val_id
+            .unwrap_or_else(|| panic!("`{path}` has no constant value"))];
 
         assert!(
             values_eq(found, &expected),
@@ -541,22 +550,22 @@ fn intrinsic_namespace_constants_are_not_rewritten_test() {
             .into_state();
 
         for idx in 0..generated {
-            let val_id = ValueInfoId::new(idx as u32);
-            let found = &compiler.val_infos[val_id];
-            let expected = &baseline.val_infos[val_id];
+            let val_info_id = ValueInfoId::new(idx as u32);
+            let found = &compiler.val_infos[val_info_id];
+            let expected = &baseline.val_infos[val_info_id];
 
             assert_eq!(
                 found.type_id, expected.type_id,
-                "{text:?} changed the type of intrinsic {val_id:?}"
+                "{text:?} changed the type of intrinsic {val_info_id:?}"
             );
 
-            match (&found.const_val, &expected.const_val) {
+            match (&found.const_val_id, &expected.const_val_id) {
                 (Some(found_val), Some(expected_val)) => assert!(
-                    values_eq(found_val, expected_val),
-                    "{text:?} changed intrinsic {val_id:?} to {found_val:?}, was {expected_val:?}"
+                    values_eq(&compiler.vals[*found_val], &baseline.vals[*expected_val]),
+                    "{text:?} changed intrinsic {val_info_id:?} to {found_val:?}, was {expected_val:?}"
                 ),
                 (found_opt, expected_opt) => panic!(
-                    "{text:?} changed intrinsic {val_id:?} from {expected_opt:?} to {found_opt:?}"
+                    "{text:?} changed intrinsic {val_info_id:?} from {expected_opt:?} to {found_opt:?}"
                 ),
             }
 

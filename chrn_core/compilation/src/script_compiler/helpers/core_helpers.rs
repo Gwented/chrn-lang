@@ -933,7 +933,7 @@ pub static CORE_BOUNDARIES_DATASET: [(u32, TypeBoundaryFlags); 11] = [
 pub struct InstantiationReservations {
     pub symbols: usize,
     pub scopes: usize,
-    /// One `VarDef`, one `ResolvedExpr`, and one `ValueInfo` each.
+    /// One `VarDef`, one `ResolvedExpr`, one `ValueInfo`, and one constant `Value` each.
     pub variables: usize,
 }
 

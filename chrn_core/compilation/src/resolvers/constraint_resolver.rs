@@ -146,13 +146,14 @@ impl<'a> ConstraintResolver<'a> {
             //What about a general value formatting kind where it may be a literal or variable? Tokens
             //know if they're a literal so.
             let expr = &self.compiler.exprs[args.inner[schema_arg_idx]];
-            let val_opt = &self.compiler.val_infos[expr.val_id].const_val;
+            let val_id_opt = &self.compiler.val_infos[expr.val_info_id].const_val_id;
 
             // Was already reported so we need to skip
-            let Some(val) = &val_opt else {
+            let Some(val_id) = &val_id_opt else {
                 continue;
             };
 
+            let val = &self.compiler.vals[*val_id];
             let Some(input) = DirectivePreprocessExpectInput::from_val(val, &expr.expr_hir) else {
                 let core_msg = format!("No directive uses input `{}`", val.kind().to_classified());
                 let builder = SourceDiagnostic::builder(
@@ -415,17 +416,17 @@ impl<'a> ConstraintResolver<'a> {
     ) -> Result<(), PresetErr> {
         // Beep
         let array_expr = &self.compiler.exprs[array_expr_id];
-        let val_id = array_expr.val_id;
+        let val_info_id = array_expr.val_info_id;
         // This seems like something that should be an error earlier since an array with unfinished
         // values after full type resolution is just plainly broken as of right now. Need some layer
         // before this that can serve this as a guarantee
-        let const_array = self.compiler.val_infos[val_id]
-            .const_val
+        let const_array_val_id = self.compiler.val_infos[val_info_id]
+            .const_val_id
             .as_ref()
             .expect("NOT DONE YET");
 
         // Maybe just add expects for expressions :(
-        let Value::List(values) = const_array else {
+        let Value::List(vals) = &self.compiler.vals[*const_array_val_id] else {
             panic!("NOT DONE");
         };
 
@@ -433,8 +434,13 @@ impl<'a> ConstraintResolver<'a> {
         // 2. Check for the identifier of the option to ensure it aligns with something in the schema
         // 3. Check boundaries
         // 4. unwrap()
-        match schema_lookup::validate_opt(schema, user_boundaries_opt, sp_opt_name_id.inner, values)
-        {
+        match schema_lookup::validate_opt(
+            schema,
+            user_boundaries_opt,
+            sp_opt_name_id.inner,
+            vals,
+            &self.compiler.vals,
+        ) {
             SchemaResult::Valid => Ok(()),
             res => {
                 let opt_name = self.interner.extract_utf8_str(sp_opt_name_id.inner);
@@ -866,7 +872,7 @@ impl<'a> ConstraintResolver<'a> {
     // ) -> Option<TypeBoundaryFlags> {
     //     let expr = &self.compiler.exprs[expr_id ];
     //     match &expr.expr_hir {
-    //         ExprHir::Val(val_id) => {
+    //         ExprHir::Val(val_info_id) => {
     //             panic!("Val id");
     //         }
     //         ExprHir::Var(sym_id) => {
@@ -1421,7 +1427,7 @@ impl<'a> ConstraintResolver<'a> {
         //                 Type::Constrained(type_constraint) => todo!(),
         //             },
         //             SymbolKind::Val(_) | SymbolKind::Unknown => {
-        //                 let type_id = &self.compiler.vals[cond_expr.val_id ].type_id;
+        //                 let type_id = &self.compiler.val_infos[cond_expr.val_info_id].type_id;
         //                 let ty = &self.compiler.types[type_id ].ty;
         //
         //                 if let Type::BuiltinType(BuiltinType::Bool) = ty {
@@ -1438,7 +1444,7 @@ impl<'a> ConstraintResolver<'a> {
         //     }
         //     // Only `BinaryExpr` can actually evaluate to a boolean here, just re-using the logic
         //     ExprHir::BinaryExpr { .. } | ExprHir::Unary { .. } | ExprHir::Default(..) => {
-        //         let type_id = &self.compiler.vals[cond_expr.val_id ].type_id;
+        //         let type_id = &self.compiler.val_infos[cond_expr.val_info_id].type_id;
         //         let ty = &self.compiler.types[type_id ].ty;
         //
         //         if let Type::BuiltinType(BuiltinType::Bool) = ty {
@@ -1451,7 +1457,7 @@ impl<'a> ConstraintResolver<'a> {
         //         }
         //     }
         //     ExprHir::Val(_) => {
-        //         let type_id = &self.compiler.vals[cond_expr.val_id ].type_id;
+        //         let type_id = &self.compiler.val_infos[cond_expr.val_info_id].type_id;
         //         let ty = &self.compiler.types[type_id ].ty;
         //
         //         if let Type::BuiltinType(BuiltinType::Bool) = ty {

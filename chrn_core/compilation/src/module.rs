@@ -36,33 +36,6 @@ use crate::{
     },
 };
 
-/// Attempts to loads a registered source.
-///
-/// `region_id` should be a reserved ID that will be used for the `ConfigLoaderOutput` region,
-/// if successful.
-pub fn load_source(
-    src_kind: &SourceKind,
-    src_id: SourceId,
-    region_id: SourceRegionId,
-    cfg: &ChrnConfig,
-) -> ConfigLoaderOutput {
-    match src_kind {
-        SourceKind::Path(src_path) => {
-            //WARN: A canonical path can still name a directory or become unreadable before opening.
-            let file = match file_ops::fopen(&src_path.path) {
-                Ok(file) => file,
-                Err((err, _)) => {
-                    return ConfigLoaderOutput::UnrecoverableErr(ConfigLoadError::IO(err));
-                }
-            };
-            ConfigLoader::new(region_id, file, src_id, cfg).load_config()
-        }
-        SourceKind::InMemory(src) => {
-            ConfigLoader::new(region_id, Cursor::new(&src.src), src_id, cfg).load_config()
-        }
-    }
-}
-
 // Maybe not
 /// Convenience over `extract_main` and `extract_modules`.
 pub fn extract_all_modules(
@@ -697,9 +670,36 @@ fn resolve_module(
     Ok(sub_mod)
 }
 
-/// Returns `SourceDiagnosticBuilder` if `name_id` is the same as a reserved identifier
-/// `path_id` is used to report
-fn ensure_not_reserved(
+/// Attempts to loads a registered source.
+///
+/// `region_id` should be a reserved ID that will be used for the `ConfigLoaderOutput` region,
+/// if successful.
+pub fn load_source(
+    src_kind: &SourceKind,
+    src_id: SourceId,
+    region_id: SourceRegionId,
+    cfg: &ChrnConfig,
+) -> ConfigLoaderOutput {
+    match src_kind {
+        SourceKind::Path(src_path) => {
+            //WARN: A canonical path can still name a directory or become unreadable before opening.
+            let file = match file_ops::fopen(&src_path.path) {
+                Ok(f) => f,
+                Err((e, _)) => {
+                    return ConfigLoaderOutput::UnrecoverableErr(ConfigLoadError::IO(e));
+                }
+            };
+            ConfigLoader::new(region_id, file, src_id, cfg).load_config()
+        }
+        SourceKind::InMemory(s) => {
+            ConfigLoader::new(region_id, Cursor::new(&s.src), src_id, cfg).load_config()
+        }
+    }
+}
+
+/// Rejects reserved module identifiers, attributing the diagnostic to `src_id`.
+/// Callers can annotate the returned builder with the declaration or import span.
+pub fn ensure_not_reserved(
     name_id: InternedIdUTF8,
     src_id: SourceId,
 ) -> Result<(), SourceDiagnosticBuilder> {

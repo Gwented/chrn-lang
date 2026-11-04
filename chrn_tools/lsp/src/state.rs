@@ -2197,7 +2197,7 @@ impl RefCollector<'_> {
             MemberLookupPattern::NoRestrictions,
         ) {
             MemberLookupResult::Found(memb_id) => {
-                let entity = match &compiler.sym_members[memb_id] {
+                let entity = match &compiler.sym_membs[memb_id] {
                     MemberSymbolKind::Field(field) => {
                         let owner = compiler.get_struct(field.local_parent_sym_id);
                         let field_idx = owner
@@ -2291,10 +2291,10 @@ impl RefCollector<'_> {
 
     /// The type of a variable whose value is already known, if it has one.
     fn variable_type(&self, var_id: chrn_utils::id_types::VariableId) -> Option<TypeId> {
-        let VariableState::Known(val_id) = self.compiler.vars[var_id].state else {
+        let VariableState::Known(val_info_id) = self.compiler.vars[var_id].state else {
             return None;
         };
-        Some(self.compiler.val_infos[val_id].type_id)
+        Some(self.compiler.val_infos[val_info_id].type_id)
     }
 
     /// Walks a `complex->` config block and its nested members.

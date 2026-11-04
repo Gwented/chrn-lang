@@ -2,7 +2,7 @@ use chrn_utils::id_types::SourceId;
 use chrn_utils::source_utils::source_manager::SourceManager;
 use chrn_utils::{
     arena::Arena,
-    id_types::{InternedIdUTF8, ModuleId, PathId, ScopeId, SourceRegionId, SymbolId},
+    id_types::{InternedIdUTF8, ModuleId, ScopeId, SourceRegionId, SymbolId},
     source_utils::{source_region::SourceRegion, source_span::SourceSpan},
     utils::containers::SpannedContainer,
 };

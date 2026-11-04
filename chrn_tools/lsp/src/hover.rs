@@ -283,11 +283,11 @@ fn symbol_hover(
     let mut hover_text = match sym.kind {
         SymbolKind::Type(type_id) => type_symbol_hover(compiler, interner, sym, type_id),
         SymbolKind::Variable(var_id) => match compiler.vars[var_id].state {
-            VariableState::Known(val_id) => {
-                let val_info = &compiler.val_infos[val_id];
+            VariableState::Known(val_info_id) => {
+                let val_info = &compiler.val_infos[val_info_id];
                 let type_str = variable_type_label(compiler, val_info, interner);
-                let val_str = match &val_info.const_val {
-                    Some(v) => format_value(v, interner),
+                let val_str = match val_info.const_val_id {
+                    Some(id) => format_value(&compiler.vals[id], compiler, interner),
                     None => "unknown".to_string(),
                 };
                 format!(
@@ -584,7 +584,7 @@ fn config_member_hover(
         return format!("Configures **{}**: Unknown", name);
     };
 
-    match &compiler.sym_members[linked_memb_id] {
+    match &compiler.sym_membs[linked_memb_id] {
         MemberSymbolKind::Field(field_repre) => format!(
             "Configures field **{}**: `{}`",
             name,
@@ -633,7 +633,9 @@ fn variable_type_label(
     val_info: &compilation::semantic::values::ValueInfo,
     interner: &Intern,
 ) -> String {
-    if let Some(label) = arbitrary_label_for_value(&val_info.const_val) {
+    if let Some(label) =
+        arbitrary_label_for_value(val_info.const_val_id.map(|id| &compiler.vals[id]))
+    {
         return label.to_string();
     }
     if let Some(label) = arbitrary_label_for_type(compiler, val_info.type_id) {
@@ -648,7 +650,7 @@ fn variable_type_label(
 }
 
 /// Generic label from a known constant value, if it is an arbitrary numeric.
-fn arbitrary_label_for_value(val: &Option<Value>) -> Option<&'static str> {
+fn arbitrary_label_for_value(val: Option<&Value>) -> Option<&'static str> {
     match val {
         Some(Value::ArbitraryInt(_)) => Some("Arbitrary Integer"),
         Some(Value::ArbitraryFloat(_)) => Some("Arbitrary Float"),
@@ -835,14 +837,42 @@ fn format_type(
 ///
 /// Used in variable hover to show `name: Type = <value>` when the value is
 /// statically known.  Returns `"Unknown"` for runtime / unresolved values.
-fn format_value(v: &Value, interner: &Intern) -> String {
+fn format_value(v: &Value, compiler: &ScriptCompiler, interner: &Intern) -> String {
+    // Shared collections can represent exponentially many displayed elements.
+    let mut remaining = 64;
+    format_value_inner(v, compiler, interner, &mut remaining)
+}
+
+fn format_value_inner(
+    v: &Value,
+    compiler: &ScriptCompiler,
+    interner: &Intern,
+    remaining: &mut usize,
+) -> String {
+    if *remaining == 0 {
+        return "..".to_string();
+    }
+    *remaining -= 1;
+
     match v {
         Value::ArbitraryInt(num) => num.to_string(),
         Value::ArbitraryFloat(num) => num.to_string(),
         Value::Bool(boolean) => format!("{}", boolean),
         Value::Char(c) => format!("'{}'", c),
         Value::Tuple(elems) => {
-            let parts: Vec<String> = elems.iter().map(|ev| format_value(ev, interner)).collect();
+            let mut parts = Vec::new();
+            for val_id in elems {
+                if *remaining == 0 {
+                    parts.push("..".to_string());
+                    break;
+                }
+                parts.push(format_value_inner(
+                    &compiler.vals[*val_id],
+                    compiler,
+                    interner,
+                    remaining,
+                ));
+            }
             format!("({})", parts.join(", "))
         }
         Value::InternedStr(id) => {
@@ -851,13 +881,18 @@ fn format_value(v: &Value, interner: &Intern) -> String {
         Value::RuntimeStr(s) => format!("\"{s}\""),
         Value::Func(_) => "Function".to_string(),
         Value::List(elems) => {
-            let mut parts: Vec<String> = elems
-                .iter()
-                .take(5)
-                .map(|ev| format_value(ev, interner))
-                .collect();
-            if elems.len() > 5 {
-                parts.push("..".to_string());
+            let mut parts = Vec::new();
+            for (i, val_id) in elems.iter().enumerate() {
+                if i == 5 || *remaining == 0 {
+                    parts.push("..".to_string());
+                    break;
+                }
+                parts.push(format_value_inner(
+                    &compiler.vals[*val_id],
+                    compiler,
+                    interner,
+                    remaining,
+                ));
             }
             format!("\\[{}\\]", parts.join(", "))
         }

@@ -11,43 +11,45 @@ use crate::{
     },
 };
 
+/// Attempts to infer a type using `Value` directly
 pub(crate) fn infer_type_from_val(compiler: &mut ScriptCompiler, val: &Value) -> Option<TypeId> {
-    match val {
-        Value::ArbitraryInt(kind) => Some(kind.type_id()),
-        Value::ArbitraryFloat(kind) => Some(kind.type_id()),
-        Value::Bool(_) => Some(TypeId::new(compiler_consts::CORE_BOOL)),
-        Value::Char(_) => Some(TypeId::new(compiler_consts::CORE_CHAR)),
-        Value::Func(func_sym) => {
-            let func_def = compiler.get_func(func_sym.into_tagged::<FuncTag>());
-            Some(func_def.ret_type)
-        }
-        Value::InternedStr(_) => Some(TypeId::new(compiler_consts::CORE_STR)),
-        Value::List(elements) => {
-            // Would this be possible?
-            if elements.is_empty() {
-                return None;
-            }
-
-            // Preserve each array layer while inferring its element type.
-            let inner = infer_type_from_val(compiler, &elements[0])?;
-            Some(compiler.push_ty(TypeInfo::new(
-                Type::BuiltinTypeInfo(BuiltinTypeInfo::new(BuiltinType::List(inner))),
-                compiler.intrinsic_registry.core_mod_id,
-            )))
-        }
-        // Both of these are not possible as of right now from an operation
-        // since there are no runtime values RIGHT NOW, and unknown is not a comptaible
-        // binary op so it can't acually be produced.
-        // Tuples also are not used outside of expressing type constraints.
-        //
-        // Value::RuntimeStr(_) => TypeId::new(compiler_constants::CORE_STR),
-        // Value::Tuple(_) => TypeId::new(compiler_constants::CORE_TUPLE),
-        // Value::Unknown => TypeId::new(script_compiler::TYPE_UNKNOWN_IDX),
-        Value::Tuple(_) | Value::RuntimeStr(_) => unreachable!(),
-        Value::Unknown => None,
+    let mut val = val;
+    let mut depth = 0;
+    while let Value::List(elements) = val {
+        let val_id = *elements.first()?;
+        val = &compiler.vals[val_id];
+        depth += 1;
     }
+
+    let mut type_id = match val {
+        Value::ArbitraryInt(kind) => kind.type_id(),
+        Value::ArbitraryFloat(kind) => kind.type_id(),
+        Value::Bool(_) => TypeId::new(compiler_consts::CORE_BOOL),
+        Value::Char(_) => TypeId::new(compiler_consts::CORE_CHAR),
+        Value::Func(func_sym) => {
+            compiler
+                .get_func(func_sym.into_tagged::<FuncTag>())
+                .ret_type
+        }
+        Value::InternedStr(_) => TypeId::new(compiler_consts::CORE_STR),
+        // Tuples only express type constraints; runtime values cannot result from constant evaluation.
+        Value::Tuple(_) | Value::RuntimeStr(_) => unreachable!(),
+        Value::Unknown => return None,
+        // Previous loop makes this impossible
+        Value::List(_) => unreachable!(),
+    };
+
+    // Preserving every array layer. Allocating types after.
+    for _ in 0..depth {
+        type_id = compiler.push_ty(TypeInfo::new(
+            Type::BuiltinTypeInfo(BuiltinTypeInfo::new(BuiltinType::List(type_id))),
+            compiler.intrinsic_registry.core_mod_id,
+        ));
+    }
+    Some(type_id)
 }
 
+/// Attempts to infer a type using known binary-op semantics
 pub(crate) fn infer_type_from_binary_op(
     lhs_type_id: TypeId,
     rhs_type_id: TypeId,

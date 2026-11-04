@@ -41,17 +41,15 @@ pub struct ResolvedExpr {
     /// User -> User -> None
     pub user: Option<ExprId>,
     pub meta: ResolvedExprMetadata,
-    // This is not an option type even though `Value` as an `Option<Value>` because symbols are
-    // already represented as unknown from `SymbolKind` and `Value` types already have the metadata
-    // of their type and if they have a const value inside.
-    pub val_id: ValueInfoId,
+    /// Value metadata associated with `Self`, if any.
+    pub val_info_id: ValueInfoId,
 }
 
 impl ResolvedExpr {
     pub fn new(
         type_id: TypeId,
         expr_hir: ExprHir,
-        val_id: ValueInfoId,
+        val_info_id: ValueInfoId,
         meta: ResolvedExprMetadata,
         inputs: Vec<ExprId>,
     ) -> ResolvedExpr {
@@ -61,7 +59,7 @@ impl ResolvedExpr {
             inputs,
             meta,
             user: None,
-            val_id,
+            val_info_id,
         }
     }
 }

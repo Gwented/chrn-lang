@@ -1,7 +1,7 @@
 // The value system of script would be simple but the serial does need this too so maybe re-use
 // it?
 
-use chrn_utils::id_types::{ExprId, SymbolId, TypeId, InternedIdUTF8};
+use chrn_utils::id_types::{ExprId, InternedIdUTF8, SymbolId, TypeId, ValueId};
 use lang::{
     chrn_classifier::{ChrnClassifiable, ChrnClassified},
     types::boundaries::TypeBoundaryFlags,
@@ -16,15 +16,15 @@ use crate::semantic::arbitraries::{ArbitraryFloatKind, ArbitraryIntKind};
 pub struct ValueInfo {
     pub type_id: TypeId,
     pub expr_id: ExprId,
-    pub const_val: Option<Value>,
+    pub const_val_id: Option<ValueId>,
 }
 
 impl ValueInfo {
-    pub fn new(type_id: TypeId, expr_id: ExprId, const_val: Option<Value>) -> ValueInfo {
+    pub fn new(type_id: TypeId, expr_id: ExprId, const_val_id: Option<ValueId>) -> ValueInfo {
         ValueInfo {
             type_id,
             expr_id,
-            const_val,
+            const_val_id,
         }
     }
 }
@@ -37,8 +37,8 @@ pub enum Value {
     Bool(bool),
     Char(char),
     Func(SymbolId),
-    Tuple(Vec<Value>),
-    List(Vec<Value>),
+    Tuple(Vec<ValueId>),
+    List(Vec<ValueId>),
     InternedStr(InternedIdUTF8),
     RuntimeStr(String),
     Unknown,

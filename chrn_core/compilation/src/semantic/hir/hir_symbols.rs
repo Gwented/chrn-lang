@@ -236,7 +236,7 @@ impl MemberSymbolKind {
     /// Only field and variant members are considered to have underlying types.
     // Should that be the case though?
     pub fn boundaries(compiler: &ScriptCompiler, memb_id: MemberId) -> Option<TypeBoundaryFlags> {
-        let type_id_opt = match &compiler.sym_members[memb_id] {
+        let type_id_opt = match &compiler.sym_membs[memb_id] {
             MemberSymbolKind::Field(field_repre) => Some(field_repre.type_id),
             MemberSymbolKind::Variant(variant_repre) => variant_repre.type_id,
         };

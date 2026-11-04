@@ -76,7 +76,9 @@ pub fn find_type_id(
                     SymbolKind::Variable(var_id) => {
                         let type_id = match compiler.vars[*var_id].state {
                             VariableState::ReservedTypeSlot(type_id) => type_id,
-                            VariableState::Known(val_id) => compiler.val_infos[val_id].type_id,
+                            VariableState::Known(val_info_id) => {
+                                compiler.val_infos[val_info_id].type_id
+                            }
                         };
 
                         return Some(type_id);
@@ -355,7 +357,7 @@ pub fn find_symbols_named_ref<'a>(
                 found_members.append(
                     &mut new_members
                         .iter()
-                        .map(|m_id| &compiler.sym_members[*m_id])
+                        .map(|m_id| &compiler.sym_membs[*m_id])
                         .collect(),
                 );
             }
@@ -427,7 +429,7 @@ pub fn find_symbols_named_from_module_ref<'a>(
                     found_members.append(
                         &mut new_members
                             .iter()
-                            .map(|m_id| &compiler.sym_members[*m_id])
+                            .map(|m_id| &compiler.sym_membs[*m_id])
                             .collect(),
                     );
                 }

@@ -533,11 +533,11 @@ fn registered_constant<'a>(
 
     let var = &compiler.vars[var_id];
 
-    let VariableState::Known(val_id) = var.state else {
+    let VariableState::Known(val_info_id) = var.state else {
         panic!("`{name_id:?}` in {scope_id:?} has no known value");
     };
 
-    let val = &compiler.val_infos[val_id];
+    let val = &compiler.val_infos[val_info_id];
     let expr = &compiler.exprs[val.expr_id];
 
     RegisteredConstant {
@@ -823,14 +823,17 @@ fn representative_core_namespace_values_are_registered() {
         assert!(matches!(found.sym.kind, SymbolKind::Variable(_)));
         assert!(matches!(found.var.meta, VariableMetadata::Generated));
         assert_eq!(found.val.type_id, TypeId::new(builtin_ty_to_id(value_kind)));
-        assert!(same_value(found.val.const_val.as_ref().unwrap(), &expected));
+        assert!(same_value(
+            &compiler.vals[found.val.const_val_id.unwrap()],
+            &expected
+        ));
         assert_eq!(found.expr.type_id, found.val.type_id);
         assert!(
-            matches!(found.expr.expr_hir, ExprHir::LiteralVal(val_id) if val_id == found.expr.val_id)
+            matches!(found.expr.expr_hir, ExprHir::LiteralVal(val_info_id) if val_info_id == found.expr.val_info_id)
         );
         assert!(matches!(found.expr.meta, ResolvedExprMetadata::Generated));
         assert_eq!(
-            compiler.val_infos[found.expr.val_id].expr_id,
+            compiler.val_infos[found.expr.val_info_id].expr_id,
             found.val.expr_id
         );
     }
@@ -996,7 +999,7 @@ fn representative_float_math_constants_are_loaded() {
             TypeId::new(builtin_ty_to_id(BuiltinTypeKind::F64))
         );
         assert!(same_value(
-            rc.val.const_val.as_ref().unwrap(),
+            &compiler.vals[rc.val.const_val_id.unwrap()],
             &Value::ArbitraryFloat(ArbitraryFloatKind::F64(expected_val))
         ));
     }
@@ -1023,7 +1026,7 @@ fn representative_float_math_constants_are_loaded() {
             TypeId::new(builtin_ty_to_id(BuiltinTypeKind::F64))
         );
         assert!(same_value(
-            rc.val.const_val.as_ref().unwrap(),
+            &compiler.vals[rc.val.const_val_id.unwrap()],
             &Value::ArbitraryFloat(ArbitraryFloatKind::F64(expected_val))
         ));
     }
@@ -1050,7 +1053,7 @@ fn representative_float_math_constants_are_loaded() {
             TypeId::new(builtin_ty_to_id(BuiltinTypeKind::F64))
         );
         assert!(same_value(
-            rc.val.const_val.as_ref().unwrap(),
+            &compiler.vals[rc.val.const_val_id.unwrap()],
             &Value::ArbitraryFloat(ArbitraryFloatKind::F64(expected_val))
         ));
     }
@@ -1085,7 +1088,7 @@ fn representative_core_namespaces_declare_bits_and_bytes() {
         );
         assert_eq!(bits_rc.val.type_id, i64_type_id);
         assert!(same_value(
-            bits_rc.val.const_val.as_ref().unwrap(),
+            &compiler.vals[bits_rc.val.const_val_id.unwrap()],
             &Value::ArbitraryInt(ArbitraryIntKind::I64(expected_bits))
         ));
 
@@ -1096,7 +1099,7 @@ fn representative_core_namespaces_declare_bits_and_bytes() {
         );
         assert_eq!(bytes_rc.val.type_id, i64_type_id);
         assert!(same_value(
-            bytes_rc.val.const_val.as_ref().unwrap(),
+            &compiler.vals[bytes_rc.val.const_val_id.unwrap()],
             &Value::ArbitraryInt(ArbitraryIntKind::I64(expected_bytes))
         ));
     }
@@ -1132,7 +1135,7 @@ fn float_namespace_declares_radix_but_integer_namespace_does_not() {
             );
             assert_eq!(radix_rc.val.type_id, i64_type_id);
             assert!(same_value(
-                radix_rc.val.const_val.as_ref().unwrap(),
+                &compiler.vals[radix_rc.val.const_val_id.unwrap()],
                 &Value::ArbitraryInt(ArbitraryIntKind::I64(expected))
             ));
         } else {
@@ -1164,7 +1167,7 @@ fn representative_char_and_str_constants_are_loaded() {
         );
         assert_eq!(rc.val.type_id, i64_type_id);
         assert!(same_value(
-            rc.val.const_val.as_ref().unwrap(),
+            &compiler.vals[rc.val.const_val_id.unwrap()],
             &Value::ArbitraryInt(ArbitraryIntKind::I64(expected))
         ));
     };
@@ -1190,7 +1193,7 @@ fn representative_char_and_str_constants_are_loaded() {
         );
         assert_eq!(rc.val.type_id, char_type_id);
         assert!(same_value(
-            rc.val.const_val.as_ref().unwrap(),
+            &compiler.vals[rc.val.const_val_id.unwrap()],
             &Value::Char(expected)
         ));
     }
@@ -1208,7 +1211,8 @@ fn representative_char_and_str_constants_are_loaded() {
         .expect("NEWLINE should be a compiler-known identifier");
     let newline = registered_constant(&compiler, str_scope, newline_name);
     assert_eq!(newline.val.type_id, str_type_id);
-    let Value::InternedStr(newline_value) = newline.val.const_val.as_ref().unwrap() else {
+    let Value::InternedStr(newline_value) = &compiler.vals[newline.val.const_val_id.unwrap()]
+    else {
         panic!("str::NEWLINE should store an interned string")
     };
     assert_eq!(interner.extract_utf8_str(*newline_value), "\n");
@@ -1239,7 +1243,7 @@ fn representative_float_attributes_are_loaded() {
         let rc = registered_constant(&compiler, f16_scope, name_id);
         assert_eq!(rc.val.type_id, i64_type_id);
         assert!(same_value(
-            rc.val.const_val.as_ref().unwrap(),
+            &compiler.vals[rc.val.const_val_id.unwrap()],
             &Value::ArbitraryInt(ArbitraryIntKind::I64(expected))
         ));
     };
@@ -1250,7 +1254,7 @@ fn representative_float_attributes_are_loaded() {
         let rc = registered_constant(&compiler, f16_scope, name_id);
         assert_eq!(rc.val.type_id, f64_type_id);
         assert!(same_value(
-            rc.val.const_val.as_ref().unwrap(),
+            &compiler.vals[rc.val.const_val_id.unwrap()],
             &Value::ArbitraryFloat(ArbitraryFloatKind::F64(expected))
         ));
     };
@@ -1272,7 +1276,7 @@ fn representative_float_attributes_are_loaded() {
         let rc = registered_constant(&compiler, f32_scope, name_id);
         assert_eq!(rc.val.type_id, i64_type_id);
         assert!(same_value(
-            rc.val.const_val.as_ref().unwrap(),
+            &compiler.vals[rc.val.const_val_id.unwrap()],
             &Value::ArbitraryInt(ArbitraryIntKind::I64(expected))
         ));
     };
@@ -1283,7 +1287,7 @@ fn representative_float_attributes_are_loaded() {
         let rc = registered_constant(&compiler, f32_scope, name_id);
         assert_eq!(rc.val.type_id, f64_type_id);
         assert!(same_value(
-            rc.val.const_val.as_ref().unwrap(),
+            &compiler.vals[rc.val.const_val_id.unwrap()],
             &Value::ArbitraryFloat(ArbitraryFloatKind::F64(expected))
         ));
     };
@@ -1304,7 +1308,7 @@ fn representative_float_attributes_are_loaded() {
         let rc = registered_constant(&compiler, f64_scope, name_id);
         assert_eq!(rc.val.type_id, f64_type_id);
         assert!(same_value(
-            rc.val.const_val.as_ref().unwrap(),
+            &compiler.vals[rc.val.const_val_id.unwrap()],
             &Value::ArbitraryFloat(ArbitraryFloatKind::F64(expected))
         ));
     };
@@ -1351,7 +1355,7 @@ fn representative_float_attributes_are_loaded() {
             );
             assert!(
                 same_value(
-                    registered.val.const_val.as_ref().unwrap(),
+                    &compiler.vals[registered.val.const_val_id.unwrap()],
                     &Value::ArbitraryInt(ArbitraryIntKind::I64(expected)),
                 ),
                 "{kind:?}::{name} has the wrong IEEE 754 value"

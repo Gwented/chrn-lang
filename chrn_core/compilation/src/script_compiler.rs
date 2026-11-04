@@ -1,4 +1,4 @@
-use chrn_utils::id_types::InternedId;
+use chrn_utils::id_types::{InternedId, ValueId};
 pub mod compiler_consts;
 pub(crate) mod helpers;
 pub mod reporter;
@@ -20,6 +20,7 @@ use chrn_utils::{
 };
 use lang::types::{boundaries::TypeBoundaryFlags, builtins::BuiltinType};
 
+use crate::semantic::values::Value;
 use crate::{
     id_tag_decls::{
         AliasTag, ConfigMemberTag, ConfigRootTag, DirectiveParameterizedTag, DirectiveTag, EnumTag,
@@ -74,8 +75,8 @@ pub struct ScriptCompiler {
     pub types: Arena<TypeInfo, TypeId>,
     /// Held `ValueInfo`s
     pub val_infos: Arena<ValueInfo, ValueInfoId>,
-    //TODO:
-    // pub vals: Arena<Value, ValueId>,
+    /// Held const values
+    pub vals: Arena<Value, ValueId>,
     /// Held `Exprs`s
     pub exprs: Arena<ResolvedExpr, ExprId>,
     /// Held `Symbol`s
@@ -85,7 +86,7 @@ pub struct ScriptCompiler {
     /// All symbols considered a "member" of another. This is here to serve the same purpose of a
     /// collection that would be considered fields, but more general since the language is small
     /// scale and would likely not benefit much from such a wide variety of collections.
-    pub sym_members: Arena<MemberSymbolKind, MemberId>,
+    pub sym_membs: Arena<MemberSymbolKind, MemberId>,
     /// `ImplMemberKind` arena
     pub impl_membs: Arena<ImplMemberKind, ImplMemberId>,
     /// `VarDef` arena
@@ -146,9 +147,8 @@ impl ScriptCompiler {
                     + 1,
             ),
             val_infos: Arena::with_capacity(ns_counts.variables),
+            vals: Arena::with_capacity(ns_counts.variables),
             exprs: Arena::with_capacity(ns_counts.variables),
-            // Not sure if these should be put in their own separate constants comprised of their
-            // own semantics or composed like this. Lets do nothing!
             syms: Arena::with_capacity(
                 core_helpers::CORE_BUILTIN_TYPES_DATASET.len()
                     + core_helpers::CORE_BOUNDARIES_DATASET.len()
@@ -156,15 +156,13 @@ impl ScriptCompiler {
                     + mod_addition
                     + ns_counts.symbols,
             ),
-            sym_members: Arena::new(),
+            sym_membs: Arena::new(),
             impls: Arena::new(),
             impl_membs: Arena::new(),
             vars: Arena::with_capacity(ns_counts.variables),
             cfgs: Arena::new(),
-            // ignore this
             scopes: Arena::with_capacity(scope_capacity),
             directives: Arena::with_capacity(compiler_helpers::DIRECTIVES_DATASET.len()),
-            //TEST:
             intrinsic_registry,
             comp_stage: CompilerStage::Namespace,
         };
@@ -213,8 +211,6 @@ impl ScriptCompiler {
                 SymbolKind::Namespace,
             );
 
-            // Module symbols go into the neutral scope because, uh
-            // Um
             let scope_id = self.push_scope(ScopeType::Compiler, current_mod_id);
             let scope = &mut self.get_scope_mut(scope_id).scope;
             scope
@@ -490,7 +486,7 @@ impl ScriptCompiler {
 
     /// Assumes the member symbol given is a field
     pub fn get_field(&self, memb_id: TaggedId<MemberId, FieldTag>) -> &FieldRepre {
-        match &self.sym_members[memb_id.inner()] {
+        match &self.sym_membs[memb_id.inner()] {
             MemberSymbolKind::Field(field_repre) => field_repre,
             MemberSymbolKind::Variant(_) => unreachable!(),
         }
@@ -501,7 +497,7 @@ impl ScriptCompiler {
         &mut self,
         memb_id: TaggedId<MemberId, FieldTag>,
     ) -> &mut FieldRepre {
-        match &mut self.sym_members[memb_id.inner()] {
+        match &mut self.sym_membs[memb_id.inner()] {
             MemberSymbolKind::Field(field_repre) => field_repre,
             _ => unreachable!(),
         }
@@ -509,7 +505,7 @@ impl ScriptCompiler {
 
     /// Assumes the member symbol given is a variant
     pub fn get_variant(&self, memb_id: TaggedId<MemberId, VariantTag>) -> &VariantRepre {
-        match &self.sym_members[memb_id.inner()] {
+        match &self.sym_membs[memb_id.inner()] {
             MemberSymbolKind::Variant(variant_repre) => variant_repre,
             _ => unreachable!(),
         }
@@ -520,7 +516,7 @@ impl ScriptCompiler {
         &mut self,
         memb_id: TaggedId<MemberId, VariantTag>,
     ) -> &mut VariantRepre {
-        match &mut self.sym_members[memb_id.inner()] {
+        match &mut self.sym_membs[memb_id.inner()] {
             MemberSymbolKind::Variant(variant_repre) => variant_repre,
             _ => unreachable!(),
         }
@@ -623,7 +619,7 @@ impl ScriptCompiler {
                 SymbolKind::Type(type_id) => *type_id,
                 SymbolKind::Variable(var_id) => match self.vars[*var_id].state {
                     VariableState::ReservedTypeSlot(type_id) => type_id,
-                    VariableState::Known(val_id) => self.val_infos[val_id].type_id,
+                    VariableState::Known(val_info_id) => self.val_infos[val_info_id].type_id,
                 },
                 SymbolKind::ExternType(_) | SymbolKind::Namespace => {
                     unreachable!()
@@ -640,7 +636,7 @@ impl ScriptCompiler {
                 SymbolKind::Type(type_id) => Some(*type_id),
                 SymbolKind::Variable(var_id) => match self.vars[*var_id].state {
                     VariableState::ReservedTypeSlot(type_id) => Some(type_id),
-                    VariableState::Known(val_id) => Some(self.val_infos[val_id].type_id),
+                    VariableState::Known(val_info_id) => Some(self.val_infos[val_info_id].type_id),
                 },
                 SymbolKind::ExternType(_) | SymbolKind::Namespace => None,
             },
@@ -673,14 +669,14 @@ impl ScriptCompiler {
 
     /// Attempts to get a `TypeId` out of the given `MemberId` if possible
     pub fn get_type_id_from_memb_id(&self, memb_id: MemberId) -> Option<TypeId> {
-        match &self.sym_members[memb_id] {
+        match &self.sym_membs[memb_id] {
             MemberSymbolKind::Field(field_repre) => Some(field_repre.type_id),
             MemberSymbolKind::Variant(variant_repre) => variant_repre.type_id,
         }
     }
 
     pub(super) fn get_sym_id_from_memb_id(&self, memb_id: MemberId) -> Option<TypeId> {
-        match &self.sym_members[memb_id] {
+        match &self.sym_membs[memb_id] {
             MemberSymbolKind::Field(field_repre) => Some(field_repre.type_id),
             MemberSymbolKind::Variant(variant_repre) => variant_repre.type_id,
         }
@@ -700,7 +696,7 @@ impl ScriptCompiler {
     }
 
     pub(super) fn get_span_from_memb_id(&self, memb_id: MemberId) -> SourceSpan {
-        match &self.sym_members[memb_id] {
+        match &self.sym_membs[memb_id] {
             MemberSymbolKind::Field(field_repre) => field_repre.name_span,
             MemberSymbolKind::Variant(variant_repre) => variant_repre.name_span,
         }
@@ -1119,23 +1115,23 @@ impl ScriptCompiler {
         let type_id = self.register_instantiation_type(current_scope_id, base, &var.ty);
 
         let expr_id = self.exprs.make_id();
-        let val_id = self.val_infos.make_id();
+        let val_info_id = self.val_infos.make_id();
 
         let expr = ResolvedExpr::new(
             type_id,
-            ExprHir::LiteralVal(val_id),
-            val_id,
+            ExprHir::LiteralVal(val_info_id),
+            val_info_id,
             ResolvedExprMetadata::Generated,
             Vec::new(),
         );
 
-        let val_info = ValueInfo::new(type_id, expr_id, var.val.to_val().into());
+        let val_info = ValueInfo::new(type_id, expr_id, Some(self.vals.push(var.val.to_val())));
 
         let var_def = VarDef::new(
             sym_id.into_tagged::<VarTag>(),
             base.name_id,
             VariableMetadata::Generated,
-            VariableState::Known(val_id),
+            VariableState::Known(val_info_id),
         );
 
         self.vars.push(var_def);

@@ -627,7 +627,6 @@ impl Lexer<'_> {
                 }
             }
         }
-        // dbg!(speculated_toks, self.cursor.len(), toks.len());
 
         self.cfg.perf_tracker_mut().stop(ChrnPerfStage::Lexer);
 
@@ -1259,6 +1258,7 @@ impl Lexer<'_> {
             return b as char;
         }
 
+        // Should this NOT use closest end?
         let closest_end = bytes::get_next_ascii_character(self.cursor.items, self.cursor.pos());
         let chunk = &self.cursor.items[self.cursor.pos()..closest_end];
 

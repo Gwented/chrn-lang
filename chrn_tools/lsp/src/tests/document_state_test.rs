@@ -535,6 +535,56 @@ async fn test_hover_reports_array_type_and_limits_displayed_elements() {
     }
 }
 
+#[test]
+fn test_hover_bounds_shared_array_expansion_and_nested_depth() {
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .start_paused(true)
+        .build()
+        .unwrap()
+        .block_on(async {
+            let workspace = TempWorkspace::new("hover_shared_arrays");
+            let mut text = String::from("let branch0 = [7]\nlet deep0 = [9]\n");
+            for depth in 1..=8 {
+                let previous = depth - 1;
+                text.push_str(&format!(
+                    "let branch{depth} = [branch{previous}, branch{previous}, branch{previous}, branch{previous}, branch{previous}]\n"
+                ));
+            }
+            for depth in 1..=80 {
+                let previous = depth - 1;
+                text.push_str(&format!("let deep{depth} = [deep{previous}]\n"));
+            }
+            text.push_str("let use_branch = branch8\nlet use_deep = deep80\n");
+            let uri = workspace.uri("main.chrn");
+            let mut session = Session::new().await;
+            let diagnostics = session.open(&uri, &text).await;
+            assert!(diagnostics.is_empty(), "{diagnostics:?}");
+
+            for name in ["branch8", "deep80"] {
+                let hover = session
+                    .hover(&uri, position_of(&text, name, 1))
+                    .await
+                    .unwrap_or_else(|| panic!("hovering `{name}` returns contents"));
+                let contents = hover_text(&hover);
+                let declaration = contents.lines().next().unwrap();
+                let (binding, value) = declaration.split_once(" = ").unwrap();
+                assert!(binding.starts_with(&format!("{name}: List<")), "{binding}");
+                assert!(value.starts_with("\\["), "{name}: {value}");
+                assert!(value.ends_with("\\]"), "{name}: {value}");
+                assert!(value.contains(".."), "{name} should truncate its value");
+                assert!(value.len() < 1024, "{name} expanded to {} bytes", value.len());
+                if name == "branch8" {
+                    assert!(value.contains('7'), "shared array preview lost its leaf value");
+                }
+            }
+
+            let state = session.backend().doc_cache.get(uri.as_str()).unwrap();
+            let state = state.read();
+            assert!(state.get_lsp_diagnostics().is_empty());
+        });
+}
+
 /// A `//` inside a string is not a comment; the real line comment still is.
 #[tokio::test(start_paused = true)]
 async fn test_hover_after_comment_marker_in_string_on_same_line() {
@@ -1071,11 +1121,13 @@ fn test_registered_virtual_graph_resolves_values_without_files() {
         .iter()
         .find(|var| var.name_id == total_name)
         .unwrap();
-    let VariableState::Known(value_id) = total.state else {
+    let VariableState::Known(val_info_id) = total.state else {
         panic!("total must be evaluated");
     };
     assert!(matches!(
-        compiler.val_infos[value_id].const_val,
+        compiler.val_infos[val_info_id]
+            .const_val_id
+            .map(|id| &compiler.vals[id]),
         Some(Value::ArbitraryInt(ArbitraryIntKind::I64(23)))
     ));
     let total_offset = main.rfind("total").unwrap();

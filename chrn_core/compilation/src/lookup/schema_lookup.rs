@@ -1,6 +1,6 @@
 use chrn_utils::{
     arena::Arena,
-    id_types::{InternedIdUTF8, TypeId},
+    id_types::{InternedIdUTF8, TypeId, ValueId},
 };
 use lang::{
     config_schemas::{self, ConfigSchema, ConfigSchemaKind, OptionSchemaConstraint},
@@ -84,7 +84,8 @@ pub fn validate_opt(
     user_boundaries_opt: Option<TypeBoundaryFlags>,
     // Given like this so it doesn't matter if it's a root or member option
     opt_name_id: InternedIdUTF8,
-    opt_values: &[Value],
+    opt_values: &[ValueId],
+    vals: &Arena<Value, ValueId>,
 ) -> SchemaResult {
     // This messes with past conventions of opt meaning Option<T> not option option Options..
     let Some(schema_opt) = schema.get_opt(opt_name_id) else {
@@ -100,7 +101,8 @@ pub fn validate_opt(
                 OptionSchemaConstraint::Boundaries(required_boundaries) => {
                     let required_boundaries = *required_boundaries;
                     // Ok
-                    for (i, val) in opt_values.iter().enumerate() {
+                    for (i, val_id) in opt_values.iter().enumerate() {
+                        let val = &vals[*val_id];
                         // Since valid or not is not descriptive, we should probably have this
                         // as spanned as the other non-assuming result types
                         let Some(current_boundaries) = val.kind().boundaries() else {
@@ -121,7 +123,8 @@ pub fn validate_opt(
                 }
                 // [2]
                 OptionSchemaConstraint::SameTypeAsConfig => {
-                    for (i, val) in opt_values.iter().enumerate() {
+                    for (i, val_id) in opt_values.iter().enumerate() {
+                        let val = &vals[*val_id];
                         // dbg!(val.kind().boundaries(), user_boundaries_opt);
 
                         // Is matching all cases because this will have more cases, eventually.

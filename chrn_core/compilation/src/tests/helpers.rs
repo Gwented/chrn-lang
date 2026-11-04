@@ -633,10 +633,10 @@ pub(super) fn value_of(compiler: &ScriptCompiler, interner: &Intern, name: &str)
     let var_def = find_user_var(compiler, name_id);
 
     match &var_def.state {
-        VariableState::Known(value_id) => compiler.val_infos[*value_id]
-            .const_val
-            .clone()
-            .unwrap_or_else(|| panic!("Variable '{}' has no constant value", name)),
+        VariableState::Known(val_info_id) => compiler.vals[compiler.val_infos[*val_info_id]
+            .const_val_id
+            .unwrap_or_else(|| panic!("Variable '{}' has no constant value", name))]
+        .clone(),
         VariableState::ReservedTypeSlot(_) => {
             panic!("Variable '{}' is still a reserved type slot", name)
         }

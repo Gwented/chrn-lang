@@ -10,7 +10,7 @@ use crate::semantic::hir::hir_impls::ImplMemberKind;
 use crate::semantic::hir::hir_symbols::SymbolKind;
 use crate::semantic::values::ValueInfo;
 use crate::walk_type_id_deferred;
-use chrn_utils::id_types::TypeId;
+use chrn_utils::id_types::{TypeId, ValueId};
 use chrn_utils::source_utils::source_diagnostic::annotations::AnnotationKind;
 use chrn_utils::source_utils::source_span::SourceSpan;
 use lang::types::builtins::BuiltinType;
@@ -396,11 +396,11 @@ fn type_resolver_complex_test() {
         other => panic!("CONSTANT symbol should be Variable, got {:?}", other),
     };
     let var_def = &compiler.vars[var_id];
-    let val_id = match &var_def.state {
-        VariableState::Known(val_id) => *val_id,
+    let val_info_id = match &var_def.state {
+        VariableState::Known(val_info_id) => *val_info_id,
         other => panic!("CONSTANT should be Known, got {:?}", other),
     };
-    let val_info = &compiler.val_infos[val_id];
+    let val_info = &compiler.val_infos[val_info_id];
     assert_eq!(
         val_info.type_id,
         TypeId::new(CORE_I64),
@@ -408,11 +408,11 @@ fn type_resolver_complex_test() {
     );
     assert!(
         matches!(
-            val_info.const_val,
+            val_info.const_val_id.map(|id| &compiler.vals[id]),
             Some(Value::ArbitraryInt(ArbitraryIntKind::I64(4)))
         ),
         "CONSTANT should have const value Some(I64(4)), got {:?}",
-        val_info.const_val
+        val_info.const_val_id
     );
 }
 
@@ -441,11 +441,11 @@ fn type_resolver_string_concat_type_test() {
         .get_interned_id_from_str("X")
         .expect("'X' should be interned");
     let var_def = find_user_var(&compiler, name_id);
-    let val_id = match &var_def.state {
-        VariableState::Known(val_id) => *val_id,
+    let val_info_id = match &var_def.state {
+        VariableState::Known(val_info_id) => *val_info_id,
         other => panic!("'X' should be Known, got {:?}", other),
     };
-    let val_info = &compiler.val_infos[val_id];
+    let val_info = &compiler.val_infos[val_info_id];
 
     assert_eq!(
         val_info.type_id,
@@ -571,7 +571,7 @@ fn type_resolver_literal_types_match_arbitrary_type_id() {
         let name_id = res.interner.get_interned_id_from_str(name).unwrap();
         let var_def = find_user_var(&res.compiler, name_id);
         match &var_def.state {
-            VariableState::Known(value_id) => res.compiler.val_infos[*value_id].type_id,
+            VariableState::Known(val_info_id) => res.compiler.val_infos[*val_info_id].type_id,
             _ => panic!("unexpected var state"),
         }
     };
@@ -603,19 +603,25 @@ fn root_option_expr_and_value<'a>(
     let array_expr = &resolution.compiler.exprs[option.array_expr_id];
     (
         array_expr,
-        &resolution.compiler.val_infos[array_expr.val_id],
+        &resolution.compiler.val_infos[array_expr.val_info_id],
     )
 }
 
-fn assert_i64_array(option_name: &str, value: &ValueInfo, expected: &[i64]) {
-    let Some(Value::List(values)) = &value.const_val else {
+fn assert_i64_array(
+    compiler: &ScriptCompiler,
+    option_name: &str,
+    value: &ValueInfo,
+    expected: &[i64],
+) {
+    let Some(Value::List(values)) = value.const_val_id.map(|id| &compiler.vals[id]) else {
         panic!(
             "option `{option_name}` should hold a constant array, got {:?}",
-            value.const_val
+            value.const_val_id
         );
     };
     assert_eq!(values.len(), expected.len());
     for (value, expected) in values.iter().zip(expected) {
+        let value = &compiler.vals[*value];
         assert!(
             matches!(value, Value::ArbitraryInt(found) if *found == int_from_i64(*expected)),
             "expected i64 value {expected}, got {value:?}"
@@ -627,18 +633,27 @@ fn concrete_type(resolution: &Resolution, mut type_id: TypeId) -> TypeId {
     walk_type_id_deferred!(&resolution.compiler.types, type_id).inner
 }
 
-fn assert_nested_array_value(found: &Value, expected: &Value) {
-    match (found, expected) {
-        (Value::List(found), Value::List(expected)) => {
+enum ExpectedArrayValue {
+    List(Vec<ExpectedArrayValue>),
+    Int(i64),
+}
+
+fn assert_nested_array_value(
+    compiler: &ScriptCompiler,
+    found: ValueId,
+    expected: &ExpectedArrayValue,
+) {
+    match (&compiler.vals[found], expected) {
+        (Value::List(found), ExpectedArrayValue::List(expected)) => {
             assert_eq!(found.len(), expected.len());
             for (found, expected) in found.iter().zip(expected) {
-                assert_nested_array_value(found, expected);
+                assert_nested_array_value(compiler, *found, expected);
             }
         }
-        _ => assert!(
-            values_eq(found, expected),
-            "expected {expected:?}, got {found:?}"
-        ),
+        (Value::ArbitraryInt(found), ExpectedArrayValue::Int(expected)) => {
+            assert_eq!(*found, int_from_i64(*expected));
+        }
+        (found, _) => panic!("unexpected nested array value {found:?}"),
     }
 }
 
@@ -677,7 +692,7 @@ fn standing_expr_resolves_pending_symbol_in_root_option() {
     let (expr, value) = root_option_expr_and_value(&resolution, "values");
     assert_list_i64_type(&resolution, expr.type_id, 1);
     assert_list_i64_type(&resolution, value.type_id, 1);
-    assert_i64_array("values", value, &[4]);
+    assert_i64_array(&resolution.compiler, "values", value, &[4]);
 }
 
 #[test]
@@ -701,12 +716,12 @@ fn standing_expr_repairs_each_dependent_expression_tree() {
     let (direct_expr, direct_value) = root_option_expr_and_value(&resolution, "direct");
     assert_list_i64_type(&resolution, direct_expr.type_id, 1);
     assert_list_i64_type(&resolution, direct_value.type_id, 1);
-    assert_i64_array("direct", direct_value, &[4]);
+    assert_i64_array(&resolution.compiler, "direct", direct_value, &[4]);
 
     let (computed_expr, computed_value) = root_option_expr_and_value(&resolution, "computed");
     assert_list_i64_type(&resolution, computed_expr.type_id, 1);
     assert_list_i64_type(&resolution, computed_value.type_id, 1);
-    assert_i64_array("computed", computed_value, &[1, 6]);
+    assert_i64_array(&resolution.compiler, "computed", computed_value, &[1, 6]);
 }
 
 #[test]
@@ -743,10 +758,10 @@ fn standing_expr_preserves_nested_pending_array_layers() {
     let (expr, value) = root_option_expr_and_value(&resolution, "values");
     assert_list_i64_type(&resolution, expr.type_id, 3);
     assert_list_i64_type(&resolution, value.type_id, 3);
-    let expected = Value::List(vec![Value::List(vec![Value::List(vec![
-        Value::ArbitraryInt(int_from_i64(4)),
-    ])])]);
-    assert_nested_array_value(value.const_val.as_ref().unwrap(), &expected);
+    let expected = ExpectedArrayValue::List(vec![ExpectedArrayValue::List(vec![
+        ExpectedArrayValue::List(vec![ExpectedArrayValue::Int(4)]),
+    ])]);
+    assert_nested_array_value(&resolution.compiler, value.const_val_id.unwrap(), &expected);
 }
 
 #[test]
@@ -763,11 +778,60 @@ fn standing_expr_accepts_separately_allocated_matching_nested_lists() {
     let (expr, value) = root_option_expr_and_value(&resolution, "values");
     assert_list_i64_type(&resolution, expr.type_id, 2);
     assert_list_i64_type(&resolution, value.type_id, 2);
-    let expected = Value::List(vec![
-        Value::List(vec![Value::ArbitraryInt(int_from_i64(4))]),
-        Value::List(vec![Value::ArbitraryInt(int_from_i64(1))]),
+    let expected = ExpectedArrayValue::List(vec![
+        ExpectedArrayValue::List(vec![ExpectedArrayValue::Int(4)]),
+        ExpectedArrayValue::List(vec![ExpectedArrayValue::Int(1)]),
     ]);
-    assert_nested_array_value(value.const_val.as_ref().unwrap(), &expected);
+    assert_nested_array_value(&resolution.compiler, value.const_val_id.unwrap(), &expected);
+}
+
+#[test]
+fn nested_array_constants_share_values_through_direct_and_forward_references() {
+    let resolution = resolve_single_module(
+        "let FORWARD = SOURCE
+         let PENDING_ARRAY = [FORWARD, FORWARD]
+         let SOURCE = [[4, 7]]
+         let DIRECT = SOURCE
+         let DIRECT_ARRAY = [DIRECT, SOURCE]",
+        Stage::Type,
+    )
+    .expect_ok();
+    let compiler = &resolution.compiler;
+    let value_id = |name: &str| {
+        let name_id = resolution.interner.get_interned_id_from_str(name).unwrap();
+        let variable = find_user_var(compiler, name_id);
+        let VariableState::Known(info_id) = variable.state else {
+            panic!("{name} should resolve to a known value");
+        };
+        compiler.val_infos[info_id].const_val_id.unwrap()
+    };
+
+    let source_id = value_id("SOURCE");
+    assert_eq!(
+        value_id("FORWARD"),
+        source_id,
+        "forward reference copied the array"
+    );
+    assert_eq!(
+        value_id("DIRECT"),
+        source_id,
+        "direct reference copied the array"
+    );
+    for name in ["PENDING_ARRAY", "DIRECT_ARRAY"] {
+        let Value::List(elements) = &compiler.vals[value_id(name)] else {
+            panic!("{name} should hold a constant array");
+        };
+        assert_eq!(
+            elements,
+            &[source_id, source_id],
+            "{name} copied nested elements"
+        );
+    }
+    let expected = ExpectedArrayValue::List(vec![ExpectedArrayValue::List(vec![
+        ExpectedArrayValue::Int(4),
+        ExpectedArrayValue::Int(7),
+    ])]);
+    assert_nested_array_value(compiler, source_id, &expected);
 }
 
 #[test]
@@ -786,7 +850,7 @@ fn standing_expr_waits_for_each_pending_array_element() {
     let (expr, value) = root_option_expr_and_value(&resolution, "values");
     assert_list_i64_type(&resolution, expr.type_id, 1);
     assert_list_i64_type(&resolution, value.type_id, 1);
-    assert_i64_array("values", value, &[4, 7]);
+    assert_i64_array(&resolution.compiler, "values", value, &[4, 7]);
 }
 
 #[test]

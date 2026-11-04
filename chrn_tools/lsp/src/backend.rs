@@ -524,10 +524,10 @@ fn symbol_completion_kind(compiler: &ScriptCompiler, sym: &Symbol) -> Completion
         }
         SymbolKind::Variable(var_id) => {
             let var = &compiler.vars[var_id];
-            let VariableState::Known(val_id) = var.state else {
+            let VariableState::Known(val_info_id) = var.state else {
                 return CompletionItemKind::VARIABLE;
             };
-            let mut type_id = compiler.val_infos[val_id].type_id;
+            let mut type_id = compiler.val_infos[val_info_id].type_id;
             let checked = compilation::walk_type_id_deferred!(&compiler.types, type_id);
             match &compiler.types[checked.inner].ty {
                 Type::BuiltinTypeInfo(_) | Type::Struct(_) | Type::TypeDef(_) | Type::Enum(_) => {
@@ -593,10 +593,10 @@ fn is_call_symbol(compiler: &ScriptCompiler, sym: &Symbol) -> bool {
     let type_id = match sym.kind {
         SymbolKind::Type(type_id) => type_id,
         SymbolKind::Variable(var_id) => {
-            let VariableState::Known(value_id) = compiler.vars[var_id].state else {
+            let VariableState::Known(val_info_id) = compiler.vars[var_id].state else {
                 return false;
             };
-            compiler.val_infos[value_id].type_id
+            compiler.val_infos[val_info_id].type_id
         }
         _ => return false,
     };

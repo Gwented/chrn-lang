@@ -42,6 +42,7 @@ use chrn_utils::source_utils::source_manager::SourceManager;
 use compilation::config_loader::{ConfigLoader, ConfigLoaderOutput};
 use compilation::lexer::Lexer;
 use compilation::module::{
+    ensure_not_reserved,
     module_concepts::{Bind, ImportKind, Module, ModuleState},
     module_finder::ModuleFinder,
 };
@@ -57,7 +58,7 @@ use chrn_utils::arena::Arena;
 use chrn_utils::core_error::{self, ConfigLoadError};
 use chrn_utils::err_codes::ErrorCode;
 use chrn_utils::id_types::{InternedIdUTF8, ModuleId, SourceId, SourceRegionId};
-use chrn_utils::intern::{self, Intern};
+use chrn_utils::intern::Intern;
 use chrn_utils::source_utils::source_diagnostic::SourceDiagnostic;
 use chrn_utils::source_utils::source_diagnostic::{SourceDiagnosticSink, SourceDiagnosticSummary};
 use chrn_utils::source_utils::source_manager::SourceKind;
@@ -367,16 +368,8 @@ pub(crate) fn resolve_document_modules(
             .collect_imports(&mut interner, &mut src_manager);
 
     let mut config_errors = SourceDiagnosticSummary::default();
-    if name_id.inner().id == intern::INTERNED_CORE {
-        config_errors.push_diag(
-            SourceDiagnostic::builder(
-                ErrorCode::CompilerInternals.into(),
-                DiagnosticLevel::Error,
-                "`core` is a reserved module identifier",
-                main_src_id,
-            )
-            .build(),
-        );
+    if let Err(builder) = ensure_not_reserved(name_id, main_src_id) {
+        config_errors.push_diag(builder.build());
     }
     if !finder_summary.diags.is_empty() {
         config_errors.append_summary(&mut finder_summary);
@@ -1138,28 +1131,25 @@ pub(crate) fn resolve_modules_lsp(
             let src_id = sp_src_id.inner;
             let path_span = sp_src_id.span;
 
-            let reserved_span = if import.name_id.inner().id == intern::INTERNED_CORE {
-                Some(path_span)
-            } else {
-                import
-                    .sp_alias_id
-                    .as_ref()
-                    .filter(|alias| alias.inner.inner().id == intern::INTERNED_CORE)
-                    .map(|alias| alias.span)
-            };
-            if let Some(span) = reserved_span {
+            if let Err(builder) = ensure_not_reserved(import.name_id, current_src_id) {
                 diags.push(
-                    SourceDiagnostic::builder(
-                        None,
-                        DiagnosticLevel::Error,
-                        "`core` is a reserved module identifier",
-                        current_src_id,
-                    )
-                    .add_annotation(span, AnnotationKind::Primary, None)
-                    .build(),
+                    builder
+                        .add_annotation(path_span, AnnotationKind::Primary, None)
+                        .build(),
                 );
                 importer_mod.imports[i].kind = ImportKind::ErrorSource(sp_src_id.clone());
                 continue;
+            }
+            if let Some(alias) = &import.sp_alias_id {
+                if let Err(builder) = ensure_not_reserved(alias.inner, current_src_id) {
+                    diags.push(
+                        builder
+                            .add_annotation(alias.span, AnnotationKind::Primary, None)
+                            .build(),
+                    );
+                    importer_mod.imports[i].kind = ImportKind::ErrorSource(sp_src_id.clone());
+                    continue;
+                }
             }
 
             // A no-alias import of the file itself is a self-import: it resolves to
