@@ -22,5 +22,8 @@ pub const CFG_MAX_COMPLEX_NEST_LEVEL: u8 = 2;
 /// Default max bits for numeric values
 pub const DEFAULT_MAX_NUMERIC_BITS: u32 = 256;
 
+/// Identifier escape prefix `e#`
+pub const ESCAPE_PREFIX: &str = "e#";
+
 #[cfg(test)]
 mod tests;

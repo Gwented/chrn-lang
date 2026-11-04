@@ -82,8 +82,6 @@ pub struct ModuleFinder<'a> {
     summary: SourceDiagnosticSummary,
     // Maybe make this general information if anything later wants this info
     // Or loader coult generate this
-    /// Prevents `peek_behind_char` from potentially reading p"" strings which do not need to be UTF-8
-    last_end_quote_pos: Option<usize>,
     /// Path origin so that errors can accurately report the path where the import was declared
     current_region: &'a SourceRegion,
 }
@@ -99,7 +97,6 @@ impl ModuleFinder<'_> {
         ModuleFinder {
             cursor: BasicCursor::new(src_bytes),
             cfg,
-            last_end_quote_pos: None,
             current_region,
             summary: SourceDiagnosticSummary::default(),
         }
@@ -127,9 +124,9 @@ impl ModuleFinder<'_> {
             let b = self.peek();
 
             match b {
-                b'"' => {
+                b'"' | b'\'' => {
                     self.cursor.skip(1);
-                    self.skip_quotes()
+                    self.skip_quotes(b);
                 }
                 b'i' | b'b' => {
                     let prev_ch = self.peek_behind_char();
@@ -138,10 +135,17 @@ impl ModuleFinder<'_> {
                         || (self.cursor.pos() == keywords::EMBEDDING_CLAUSE_SIZE
                             && &self.cursor.items[0..keywords::EMBEDDING_CLAUSE_SIZE] == b"@def");
 
+                    //NOTE: Might tokenize.
+
                     // Catching "/* */import" so that it doesn't interpret '/import' as an invalid keyword
 
                     // These checks are needed for the parser to stay simple
-                    let can_check = !prev_ch.is_alphanumeric() || at_file_start;
+                    // The `#` check is needed so that cases like "let x = e#import" do not get
+                    // picked up as valid.
+                    // `_` is a valid identifier character so need explicit skip
+                    let can_check =
+                        (!prev_ch.is_alphanumeric() && prev_ch != '#' && prev_ch != '_')
+                            || at_file_start;
 
                     if can_check {
                         //TODO: Both have the exact same flow, but encoding mutation is still a
@@ -153,6 +157,12 @@ impl ModuleFinder<'_> {
                                 continue;
                             }
                             self.cursor.skip(IMPORT_BYTES.len());
+
+                            // Reject identifier continuations but allow scenarios like
+                            // `import"thingy.chrn"`
+                            if self.peek_char().is_alphanumeric() || self.peek() == b'_' {
+                                continue;
+                            }
 
                             self.skip_comments_and_whitespace();
                             let parse_kind = self.parse_path_modifier();
@@ -187,6 +197,10 @@ impl ModuleFinder<'_> {
                                 continue;
                             }
                             self.cursor.skip(BIND_BYTES.len());
+
+                            if self.peek_char().is_alphanumeric() || self.peek() == b'_' {
+                                continue;
+                            }
 
                             self.skip_comments_and_whitespace();
 
@@ -228,22 +242,86 @@ impl ModuleFinder<'_> {
         (bind, imports, summary)
     }
 
-    /// If there is a path modifier such as `virtual` at the cursor, returns it's corresponding
-    /// `SourceParseKind`
-    ///
-    /// Does no mutation if no modifier is present
-    /// Expects that comments and whitespace were already already skipped.
-    fn parse_path_modifier(&mut self) -> SourceParseKind {
-        // Could just have len set to largest KW then end == VIRTUAL_BYTES.len()
-        let maybe_kind = self.slice_as_kw(VIRTUAL_BYTES.len());
-
-        if maybe_kind == VIRTUAL_BYTES {
-            self.cursor.skip(VIRTUAL_BYTES.len());
-            SourceParseKind::InMemory
-        } else {
-            SourceParseKind::Filesystem
-        }
-    }
+    // fn read_escape(&mut self) -> Option<char> {
+    //     match self.peek() {
+    //         b'n' => {
+    //             self.cursor.skip(1);
+    //             Some('\n')
+    //         }
+    //         b'r' => {
+    //             self.cursor.skip(1);
+    //             Some('\r')
+    //         }
+    //         b't' => {
+    //             self.cursor.skip(1);
+    //             Some('\t')
+    //         }
+    //         b'\\' => {
+    //             self.cursor.skip(1);
+    //             Some('\\')
+    //         }
+    //         b'0' => {
+    //             self.advance_char();
+    //             Some('\0')
+    //         }
+    //         b'\'' => {
+    //             self.cursor.skip(1);
+    //             Some('\'')
+    //         }
+    //         b'"' => {
+    //             self.advance();
+    //             Some('"')
+    //         }
+    //         b'x' => {
+    //             self.advance();
+    //             let mut val: u8 = 0;
+    //             let mut count = 0;
+    //
+    //             while count < 2 {
+    //                 let digit = Self::hex_val(self.peek())?;
+    //                 val = (val << 4) | digit;
+    //                 self.advance();
+    //                 count += 1;
+    //             }
+    //
+    //             if Self::hex_val(self.peek()).is_some() {
+    //                 None
+    //             } else {
+    //                 Some(val as char)
+    //             }
+    //         }
+    //         b'u' => {
+    //             if self.peek_ahead(1) != b'{' {
+    //                 return None;
+    //             }
+    //             self.cursor.skip(2);
+    //
+    //             let mut val: u32 = 0;
+    //             let mut count: usize = 0;
+    //
+    //             loop {
+    //                 let c = self.peek();
+    //
+    //                 if c == b'}' && count > 0 {
+    //                     self.advance();
+    //                     break;
+    //                 }
+    //
+    //                 let digit = Self::hex_val(c)? as u32;
+    //                 val = (val << 4) | digit;
+    //                 self.advance();
+    //                 count += 1;
+    //
+    //                 if count > 6 {
+    //                     return None;
+    //                 }
+    //             }
+    //
+    //             char::from_u32(val)
+    //         }
+    //         _ => None,
+    //     }
+    // }
 
     /// Assumes the starting point is at the opening quote
     fn parse_import(
@@ -266,6 +344,10 @@ impl ModuleFinder<'_> {
             self.skip_comments_and_whitespace();
 
             let start = self.cursor.pos() as u32;
+            if self.slice_up_to(crate::ESCAPE_PREFIX.len()) == crate::ESCAPE_PREFIX.as_bytes() {
+                self.cursor.skip(crate::ESCAPE_PREFIX.len());
+            }
+
             let Some(id) = self.read_id(interner) else {
                 return Err(QuoteError::Ignore);
             };
@@ -322,6 +404,46 @@ impl ModuleFinder<'_> {
         Ok(import)
     }
 
+    /// Assumes the starting point is at the opening quote
+    fn parse_bind(
+        &mut self,
+        src_manager: &mut SourceManager,
+        parse_kind: SourceParseKind,
+        interner: &mut Intern,
+    ) -> Result<Bind, QuoteError> {
+        // Doesn't need ident since binds are not referenced
+        let (_, src_id, src_span) = self.handle_path(interner, parse_kind, src_manager)?;
+        let bind = Bind::new(src_id, src_span);
+
+        self.cfg.logger().log_dbg(|| {
+            let bind_display = &src_manager.display_source(src_id, interner);
+            let region_path = src_manager.display_source(self.current_region.src_id, interner);
+            format!(
+                "Created bind which points to `{}` for region \"{}\"",
+                bind_display, region_path
+            )
+        });
+
+        Ok(bind)
+    }
+
+    /// If there is a path modifier such as `virtual` at the cursor, returns it's corresponding
+    /// `SourceParseKind`
+    ///
+    /// Does no mutation if no modifier is present
+    /// Expects that comments and whitespace were already already skipped.
+    fn parse_path_modifier(&mut self) -> SourceParseKind {
+        // Could just have len set to largest KW then end == VIRTUAL_BYTES.len()
+        let maybe_kind = self.slice_as_kw(VIRTUAL_BYTES.len());
+
+        if maybe_kind == VIRTUAL_BYTES {
+            self.cursor.skip(VIRTUAL_BYTES.len());
+            SourceParseKind::InMemory
+        } else {
+            SourceParseKind::Filesystem
+        }
+    }
+
     /// Wraps `pathbuf_from_bytes` to return a diagnostic
     fn create_pathbuf(&self, slice: &[u8]) -> Result<PathBuf, SourceDiagnostic> {
         match files::pathbuf_from_bytes(slice) {
@@ -354,7 +476,6 @@ impl ModuleFinder<'_> {
         while self.cursor.pos() < self.cursor.len() {
             match self.peek() {
                 b'"' => {
-                    self.last_end_quote_pos = Some(self.cursor.pos());
                     self.cursor.skip(1);
                     flags |= ReadPathMetadata::FLAG_HAS_END_Q;
                     break;
@@ -371,29 +492,6 @@ impl ModuleFinder<'_> {
 
         let end_cursor = self.cursor.pos();
         (end_cursor, ReadPathMetadata::new(flags))
-    }
-
-    /// Assumes the starting point is at the opening quote
-    fn parse_bind(
-        &mut self,
-        src_manager: &mut SourceManager,
-        parse_kind: SourceParseKind,
-        interner: &mut Intern,
-    ) -> Result<Bind, QuoteError> {
-        // Doesn't need ident since binds are not referenced
-        let (_, src_id, src_span) = self.handle_path(interner, parse_kind, src_manager)?;
-        let bind = Bind::new(src_id, src_span);
-
-        self.cfg.logger().log_dbg(|| {
-            let bind_display = &src_manager.display_source(src_id, interner);
-            let region_path = src_manager.display_source(self.current_region.src_id, interner);
-            format!(
-                "Created bind which points to `{}` for region \"{}\"",
-                bind_display, region_path
-            )
-        });
-
-        Ok(bind)
     }
 
     /// Utility for `Import` and `Bind` to share handling of their source processing
@@ -557,30 +655,42 @@ impl ModuleFinder<'_> {
         let id_str = str::from_utf8(&self.cursor.items[start..end])
             .expect("Loop should only accept valid UTF-8 characters.");
 
+        if id_str.len() == 0 {
+            return None;
+        }
+
         Some(interner.intern_str(&id_str))
     }
 
     /// Returns previous character
     fn peek_behind_char(&self) -> char {
-        let start = self.last_end_quote_pos.unwrap_or_default();
-        // Inclusive since otherwise it would skip the current character and there would need to be
-        // a saturating sub to make up for it
-        let chunk = &self.cursor.items[start..=self.cursor.pos()];
+        let prefix = &self.cursor.items[..self.cursor.pos()];
+        // NOTE: There are many different ways to handle this but keeping this route for now.
+        // Checking at most if 4 bytes are occupied for UTF-8
+        let Some(offset) = prefix
+            .iter()
+            .rev()
+            .take(4)
+            .position(|byte| byte & 0xC0 != 0x80)
+        else {
+            return '\0';
+        };
+        let chunk = &prefix[prefix.len() - offset - 1..];
 
         std::str::from_utf8(chunk)
             .ok()
-            .and_then(|c| c.chars().rev().skip(1).next())
+            .and_then(|c| c.chars().next())
             .unwrap_or('\0')
     }
 
     /// Expects to start 1 after the start quote.
-    fn skip_quotes(&mut self) {
+    fn skip_quotes(&mut self, q_type: u8) {
+        debug_assert!(q_type == b'\'' || q_type == b'"');
         while self.cursor.pos() < self.cursor.len() {
             match self.peek() {
                 // Bare minimum is skipping \", otherwise this doesn't really matter
                 b'\\' => self.cursor.skip(2),
-                b'"' => {
-                    self.last_end_quote_pos = Some(self.cursor.pos());
+                b if b == q_type => {
                     self.cursor.skip(1);
                     break;
                 }
@@ -601,6 +711,19 @@ impl ModuleFinder<'_> {
         let len = start + (kw_len);
 
         while end < self.cursor.len() && self.cursor.items[end].is_ascii_alphabetic() && end < len {
+            end += 1;
+        }
+
+        &self.cursor.items[start..end]
+    }
+
+    //TODO: Inside `BasicCursor`?
+    fn slice_up_to(&self, len: usize) -> &[u8] {
+        let start = self.cursor.pos();
+        let mut end = self.cursor.pos();
+        let len = start + (len);
+
+        while end < self.cursor.len() && end < len {
             end += 1;
         }
 
@@ -693,7 +816,12 @@ impl ModuleFinder<'_> {
             // Should there be skip_comments_whitespace_quotes?
             self.skip_comments_and_whitespace();
             let b = self.peek();
-            if self.cursor.pos() >= self.cursor.len() || b == b'i' || b == b'b' || b == b'"' {
+            if self.cursor.pos() >= self.cursor.len()
+                || b == b'i'
+                || b == b'b'
+                || b == b'"'
+                || b == b'\''
+            {
                 break;
             }
             self.cursor.skip(1);

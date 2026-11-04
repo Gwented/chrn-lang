@@ -333,6 +333,348 @@ fn modfinder_import_with_alias() {
     _ = fs::remove_dir_all(&dir);
 }
 
+/// Escaped keyword aliases use the identifier value while retaining the full source span.
+#[test]
+fn modfinder_escaped_keyword_alias() {
+    let dir = create_temp_dir("escaped_keyword_alias_proof");
+    let sub = make_sub_script(&dir);
+    let source = format!("import \"{}\" as e#import\n", sub.display());
+    let main = create_chrn_file(&dir, "main.chrn", &source);
+    let (module, graph, interner, diags) = extract_main(
+        &main,
+        fs::File::open(&main).unwrap(),
+        &mut ChrnConfig::default(),
+    )
+    .expect("an escaped keyword is a valid import alias");
+    fs::remove_dir_all(&dir).unwrap();
+
+    assert!(diags.diags.is_empty(), "unexpected diagnostics: {diags:?}");
+    assert_eq!(module.imports.len(), 1);
+    let import = &module.imports[0];
+    let ImportKind::UnresolvedSource(path) = &import.kind else {
+        panic!("expected an unresolved source import");
+    };
+    assert_eq!(
+        graph
+            .src_manager
+            .extract_path(path.inner.into_tagged::<PathTag>())
+            .path,
+        sub
+    );
+    let alias = import.sp_alias_id.as_ref().expect("alias must be retained");
+    assert_eq!(interner.extract_utf8_str(alias.inner), "import");
+    let alias_start = source.find("e#import").unwrap() as u32;
+    assert_eq!(
+        alias.span,
+        SourceSpan::new(module.region_id.unwrap(), alias_start, alias_start + 8)
+    );
+}
+
+/// Identifier operands must not become imports before expression type checking.
+#[test]
+fn modfinder_escaped_identifier_division_does_not_import_operand() {
+    let dir = create_temp_dir("escaped_identifier_operand_proof");
+    let operand = create_chrn_file(&dir, "operand.chrn", "let hidden = 1\n");
+    let visible = make_sub_script(&dir);
+    let source = format!(
+        "let e#import = 8\nlet ratio = e#import / \"{}\"\nimport \"{}\"\n",
+        operand.display(),
+        visible.display(),
+    );
+    let main = create_chrn_file(&dir, "main.chrn", &source);
+    let (module, graph, mut interner, diags) = extract_main(
+        &main,
+        fs::File::open(&main).unwrap(),
+        &mut ChrnConfig::default(),
+    )
+    .expect("the source region must load before expression type checking");
+    fs::remove_dir_all(&dir).unwrap();
+
+    // The division is a later type error, not an import declaration. Confirm
+    // that the real lexer treats its left operand as an escaped identifier.
+    let mut cfg = ChrnConfig::default();
+    let region = &graph.region_arena[module.region_id.unwrap()];
+    let tokens = Lexer::new(
+        region.self_id,
+        region.src_id,
+        &region.src_bytes,
+        region.script_start,
+        &mut cfg,
+    )
+    .tokenize(&mut interner);
+    assert_eq!(tokens.toks[7].tok, Token::Id(interner.intern_str("import")));
+    assert_eq!(tokens.toks[8].tok, Token::Slash);
+    assert!(matches!(tokens.toks[9].tok, Token::Str(_)));
+    assert!(module.bind.is_none());
+    assert!(diags.diags.is_empty(), "unexpected diagnostics: {diags:?}");
+    let paths: Vec<_> = module
+        .imports
+        .iter()
+        .map(|import| {
+            let ImportKind::UnresolvedSource(path) = &import.kind else {
+                panic!("expected an unresolved source import");
+            };
+            graph
+                .src_manager
+                .extract_path(path.inner.into_tagged::<PathTag>())
+                .path
+                .clone()
+        })
+        .collect();
+    assert_eq!(
+        paths,
+        [visible],
+        "the division operand must stay an expression"
+    );
+}
+
+/// An underscore is part of an identifier, including before import/bind text.
+#[test]
+fn modfinder_underscore_identifiers_do_not_create_module_edges() {
+    let dir = create_temp_dir("underscore_module_edges_proof");
+    let operand = create_chrn_file(&dir, "operand.chrn", "let hidden = 1\n");
+    let visible = make_sub_script(&dir);
+    let source = format!(
+        "let _import = 8\nlet _bind = 8\nlet first = _import / \"{}\"\nlet second = _bind / \"{}\"\nimport \"{}\"\n",
+        operand.display(),
+        operand.display(),
+        visible.display(),
+    );
+    let main = create_chrn_file(&dir, "main.chrn", &source);
+    let (module, graph, mut interner, diags) = extract_main(
+        &main,
+        fs::File::open(&main).unwrap(),
+        &mut ChrnConfig::default(),
+    )
+    .expect("identifier expressions must remain available for later type checking");
+    fs::remove_dir_all(&dir).unwrap();
+
+    let mut cfg = ChrnConfig::default();
+    let region = get_module_region(&graph.region_arena, &module);
+    let tokens = Lexer::new(
+        region.self_id,
+        region.src_id,
+        &region.src_bytes,
+        region.script_start,
+        &mut cfg,
+    )
+    .tokenize(&mut interner);
+    for name in ["_import", "_bind"] {
+        let start = source.rfind(name).unwrap() as u32;
+        let index = tokens
+            .toks
+            .iter()
+            .position(|token| token.span.start == start)
+            .unwrap();
+        assert_eq!(tokens.toks[index].tok, Token::Id(interner.intern_str(name)));
+        assert_eq!(tokens.toks[index + 1].tok, Token::Slash);
+        assert!(matches!(tokens.toks[index + 2].tok, Token::Str(_)));
+    }
+    assert!(diags.diags.is_empty(), "unexpected diagnostics: {diags:?}");
+    let paths: Vec<_> = module
+        .imports
+        .iter()
+        .map(|import| {
+            let ImportKind::UnresolvedSource(path) = &import.kind else {
+                panic!("expected an unresolved source import");
+            };
+            graph
+                .src_manager
+                .extract_path(path.inner.into_tagged::<PathTag>())
+                .path
+                .clone()
+        })
+        .collect();
+    let bind_path = module.bind.as_ref().map(|bind| {
+        graph
+            .src_manager
+            .extract_path(bind.path_id.into_tagged::<PathTag>())
+            .path
+            .clone()
+    });
+    assert_eq!(
+        (paths, bind_path),
+        (vec![visible], None),
+        "identifier operands must not create imports or a bind"
+    );
+}
+
+/// Non-UTF-8 comment bytes must not turn identifier operands into module declarations.
+#[test]
+fn modfinder_non_utf8_comments_preserve_identifier_boundaries() {
+    let dir = create_temp_dir("non_utf8_comment_boundaries_proof");
+    let operand = create_chrn_file(&dir, "operand.chrn", "let hidden = 1\n");
+    let visible = make_sub_script(&dir);
+    let mut actual = Vec::new();
+    for (comment, name) in [
+        (b"// \xff\n".as_slice(), "_import"),
+        (b"/* \xff */\n".as_slice(), "_bind"),
+    ] {
+        let suffix = format!(
+            "let {name} = 8\nlet ratio = {name} / \"{}\"\nimport \"{}\"\n",
+            operand.display(),
+            visible.display(),
+        );
+        let mut source = comment.to_vec();
+        source.extend_from_slice(suffix.as_bytes());
+        let main = dir.join("main.chrn");
+        fs::write(&main, &source).unwrap();
+        let (module, graph, mut interner, diags) = extract_main(
+            &main,
+            fs::File::open(&main).unwrap(),
+            &mut ChrnConfig::default(),
+        )
+        .expect("comment bytes must leave a loadable source region");
+
+        let mut cfg = ChrnConfig::default();
+        let region = get_module_region(&graph.region_arena, &module);
+        let tokens = Lexer::new(
+            region.self_id,
+            region.src_id,
+            &region.src_bytes,
+            region.script_start,
+            &mut cfg,
+        )
+        .tokenize(&mut interner);
+        assert_eq!(tokens.found_invalid_toks, 0, "{name}: comments are trivia");
+        let start = (comment.len() + suffix.rfind(name).unwrap()) as u32;
+        let index = tokens
+            .toks
+            .iter()
+            .position(|token| token.span.start == start)
+            .unwrap();
+        assert_eq!(tokens.toks[index].tok, Token::Id(interner.intern_str(name)));
+        assert_eq!(tokens.toks[index + 1].tok, Token::Slash);
+        assert!(matches!(tokens.toks[index + 2].tok, Token::Str(_)));
+        let (_, parse_diags) = parser::parse(&mut cfg, region, &tokens.toks, &interner);
+        assert!(parse_diags.diags.is_empty(), "{name}: {parse_diags:?}");
+        assert_eq!(module.state, ModuleState::Loaded);
+        assert!(diags.diags.is_empty(), "{name}: {diags:?}");
+        let paths: Vec<_> = module
+            .imports
+            .iter()
+            .map(|import| {
+                let ImportKind::UnresolvedSource(path) = &import.kind else {
+                    panic!("expected an unresolved source import");
+                };
+                graph
+                    .src_manager
+                    .extract_path(path.inner.into_tagged::<PathTag>())
+                    .path
+                    .clone()
+            })
+            .collect();
+        let bind_path = module.bind.as_ref().map(|bind| {
+            graph
+                .src_manager
+                .extract_path(bind.path_id.into_tagged::<PathTag>())
+                .path
+                .clone()
+        });
+        actual.push((name, paths, bind_path));
+    }
+    fs::remove_dir_all(&dir).unwrap();
+    assert_eq!(
+        actual,
+        vec![
+            ("_import", vec![visible.clone()], None),
+            ("_bind", vec![visible], None),
+        ],
+        "comment bytes must not change identifier token boundaries"
+    );
+}
+
+/// Keyword prefixes inside identifiers cannot select the virtual path modifier.
+#[test]
+fn modfinder_keyword_prefix_identifier_does_not_resolve_virtual_source() {
+    let dir = create_temp_dir("keyword_prefix_virtual_proof");
+    let source = "let importvirtual = 8\nlet ratio = importvirtual / \"missing_operand\"\n";
+    let main = create_chrn_file(&dir, "main.chrn", source);
+    let (module, graph, mut interner, diags) = extract_main(
+        &main,
+        fs::File::open(&main).unwrap(),
+        &mut ChrnConfig::default(),
+    )
+    .expect("identifier expressions must remain available for later type checking");
+    fs::remove_dir_all(&dir).unwrap();
+
+    let mut cfg = ChrnConfig::default();
+    let region = get_module_region(&graph.region_arena, &module);
+    let tokens = Lexer::new(
+        region.self_id,
+        region.src_id,
+        &region.src_bytes,
+        region.script_start,
+        &mut cfg,
+    )
+    .tokenize(&mut interner);
+    assert_eq!(
+        tokens.toks[7].tok,
+        Token::Id(interner.intern_str("importvirtual"))
+    );
+    assert_eq!(tokens.toks[8].tok, Token::Slash);
+    assert!(matches!(tokens.toks[9].tok, Token::Str(_)));
+    assert!(module.imports.is_empty());
+    assert!(module.bind.is_none());
+    let messages: Vec<_> = diags
+        .diags
+        .iter()
+        .map(|diag| diag.core_msg.as_str())
+        .collect();
+    assert_eq!(
+        messages,
+        Vec::<&str>::new(),
+        "an identifier operand must not request a virtual module"
+    );
+}
+
+/// An unfinished alias must not manufacture an empty module identifier.
+#[test]
+fn modfinder_missing_alias_does_not_create_empty_identifier() {
+    let dir = create_temp_dir("missing_alias_identifier_proof");
+    let sub = make_sub_script(&dir);
+    let visible = create_chrn_file(&dir, "visible.chrn", "let value = 1\n");
+    let main = create_chrn_file(
+        &dir,
+        "main.chrn",
+        &format!(
+            "import \"{}\"\nimport \"{}\" as",
+            visible.display(),
+            sub.display()
+        ),
+    );
+    let (module, graph, interner, _) = extract_main(
+        &main,
+        fs::File::open(&main).unwrap(),
+        &mut ChrnConfig::default(),
+    )
+    .expect("an unfinished alias must leave a recoverable source region");
+    fs::remove_dir_all(&dir).unwrap();
+
+    let ImportKind::UnresolvedSource(path) = &module.imports[0].kind else {
+        panic!("the unrelated valid import must be retained");
+    };
+    assert_eq!(
+        graph
+            .src_manager
+            .extract_path(path.inner.into_tagged::<PathTag>())
+            .path,
+        visible
+    );
+    let empty_aliases: Vec<_> = module
+        .imports
+        .iter()
+        .filter_map(|import| import.sp_alias_id.as_ref())
+        .filter(|alias| interner.extract_utf8_str(alias.inner).is_empty())
+        .map(|alias| alias.span)
+        .collect();
+    assert_eq!(
+        empty_aliases,
+        [],
+        "an alias requires a nonempty identifier token"
+    );
+}
+
 /// `ModuleFinder` should find a `bind` statement.
 #[test]
 fn modfinder_bind() {
@@ -551,6 +893,39 @@ fn modfinder_import_inside_string_is_not_parsed() {
     assert!(diags.diags.is_empty(), "no diagnostics expected");
 }
 
+/// A double quote inside a character literal must not hide subsequent imports.
+#[test]
+fn modfinder_character_quote_preserves_following_import() {
+    let dir = create_temp_dir("character_quote_import_proof");
+    let sub = make_sub_script(&dir);
+    let main = create_chrn_file(
+        &dir,
+        "main.chrn",
+        &format!("let quote = '\"'\nimport \"{}\"\n", sub.display()),
+    );
+    let (module, graph, _, diags) = extract_main(
+        &main,
+        fs::File::open(&main).unwrap(),
+        &mut ChrnConfig::default(),
+    )
+    .expect("a double quote is valid character content");
+    fs::remove_dir_all(&dir).unwrap();
+
+    assert!(diags.diags.is_empty(), "unexpected diagnostics: {diags:?}");
+    assert_eq!(module.state, ModuleState::Loaded);
+    assert_eq!(module.imports.len(), 1, "character content must stay opaque");
+    let ImportKind::UnresolvedSource(path) = &module.imports[0].kind else {
+        panic!("expected an unresolved source import");
+    };
+    assert_eq!(
+        graph
+            .src_manager
+            .extract_path(path.inner.into_tagged::<PathTag>())
+            .path,
+        sub
+    );
+}
+
 /// Comment markers inside a string must not hide subsequent imports.
 #[test]
 fn modfinder_string_comment_marker_preserves_following_import() {
@@ -641,6 +1016,71 @@ fn modfinder_comments_between_statement_tokens() {
             .extract_path(bind.path_id.into_tagged::<PathTag>())
             .path,
         target
+    );
+}
+
+/// Comments and quotes delimit import/bind keywords without requiring whitespace.
+#[test]
+fn modfinder_compact_statement_token_boundaries() {
+    let dir = create_temp_dir("compact_statement_boundaries_proof");
+    let sub = make_sub_script(&dir);
+    let target = create_chrn_file(&dir, "data.bin", "serialized data");
+    let mut actual = Vec::new();
+    for separator in ["", "/* path */"] {
+        let source = format!(
+            "import{separator}\"{}\"\nbind{separator}\"{}\"\n",
+            sub.display(),
+            target.display(),
+        );
+        let main = create_chrn_file(&dir, "main.chrn", &source);
+        let (module, graph, mut interner, diags) = extract_main(
+            &main,
+            fs::File::open(&main).unwrap(),
+            &mut ChrnConfig::default(),
+        )
+        .expect("compact statements must load");
+        let mut cfg = ChrnConfig::default();
+        let region = get_module_region(&graph.region_arena, &module);
+        let tokens = Lexer::new(
+            region.self_id,
+            region.src_id,
+            &region.src_bytes,
+            region.script_start,
+            &mut cfg,
+        )
+        .tokenize(&mut interner);
+        assert_eq!(tokens.found_invalid_toks, 0, "{separator:?}");
+        let (_, parse_diags) = parser::parse(&mut cfg, region, &tokens.toks, &interner);
+        assert!(parse_diags.diags.is_empty(), "{separator:?}: {parse_diags:?}");
+        assert!(diags.diags.is_empty(), "{separator:?}: {diags:?}");
+        let paths: Vec<_> = module
+            .imports
+            .iter()
+            .map(|import| {
+                let ImportKind::UnresolvedSource(path) = &import.kind else {
+                    panic!("expected an unresolved source import");
+                };
+                graph
+                    .src_manager
+                    .extract_path(path.inner.into_tagged::<PathTag>())
+                    .path
+                    .clone()
+            })
+            .collect();
+        let bind_path = module.bind.as_ref().map(|bind| {
+            graph
+                .src_manager
+                .extract_path(bind.path_id.into_tagged::<PathTag>())
+                .path
+                .clone()
+        });
+        actual.push((paths, bind_path));
+    }
+    fs::remove_dir_all(&dir).unwrap();
+    assert_eq!(
+        actual,
+        vec![(vec![sub], Some(target)); 2],
+        "quote and comment boundaries must preserve both import and bind paths"
     );
 }
 

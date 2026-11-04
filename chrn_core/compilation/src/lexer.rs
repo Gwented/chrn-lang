@@ -1088,6 +1088,7 @@ impl Lexer<'_> {
         }
     }
 
+    // Should maybe be general fn
     fn read_escape(&mut self) -> Option<char> {
         match self.peek() {
             b'n' => {

@@ -30,10 +30,10 @@ use crate::{
 pub fn exec(cli: &Cli, cli_cfg: &CliConfig) -> Result<String, Option<String>> {
     match &cli.command {
         Commands::Check(check_cmd) => exec_check(check_cmd, &cli.glob_args, &cli_cfg),
+        Commands::Embed(embed_cmd) => exec_embed(embed_cmd, &cli.glob_args, &cli_cfg),
         Commands::Fmt(fmt_cmd) => exec_fmt(fmt_cmd, &cli_cfg),
         Commands::Gen(gen_cmd) => todo!(),
         Commands::Query(query_cmd) => exec_query(query_cmd, &cli.glob_args, &cli_cfg),
-        Commands::Embed(embed_cmd) => exec_embed(embed_cmd, &cli.glob_args, &cli_cfg),
         Commands::Doc(doc_cmd) => exec_doc(doc_cmd, &cli.glob_args, cli_cfg),
     }
 }
