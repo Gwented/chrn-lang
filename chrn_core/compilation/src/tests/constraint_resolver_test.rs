@@ -1,5 +1,5 @@
 use super::helpers::*;
-use crate::script_compiler::helpers::core_helpers::core_instantiation_reservations;
+use crate::script_compiler::helpers::core_helpers::core_helpers_dataset::core_instantiation_reservations;
 use crate::semantic::arbitraries::{
     ArbitraryFloatKind, float_from_f64, int_from_i32, int_from_u32,
 };

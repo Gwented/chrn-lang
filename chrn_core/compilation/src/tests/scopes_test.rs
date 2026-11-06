@@ -5,12 +5,18 @@ use crate::lookup::scopes::scopes_concepts::{
     ScopeLookupPreferenceFlags, ScopeType,
 };
 use crate::script_compiler::compiler_consts::builtin_ty_to_id;
-use crate::script_compiler::helpers::core_helpers::CORE_BUILTIN_TYPES_DATASET;
+use crate::script_compiler::helpers::core_helpers::core_helpers_dataset::{
+    BUILTIN_TYPES_RANGE, TYPES_NAMESPACE,
+};
+use crate::script_compiler::helpers::instantiation_symbols::{
+    InstantiationSymbolBase, InstantiationSymbolKind, InstantiationTypeKind,
+};
 use crate::semantic::hir::hir_concepts::Type;
 use crate::semantic::hir::hir_symbols::SymbolKind;
-use chrn_utils::{id_types::InternedId, intern::UTF8Tag};
 use chrn_utils::id_types::{ScopeId, SymbolId, TypeId};
 use chrn_utils::intern;
+use chrn_utils::{id_types::InternedId, intern::UTF8Tag};
+use lang::types::builtins::BuiltinType;
 use lang::types::builtins::BuiltinTypeKind;
 
 /// Runs lexing, parsing, and namespace resolution on a single-module script, returning the
@@ -37,6 +43,22 @@ fn sym_in_scope(
     let sym_id = compiler.get_scope(scope_id).scope.table.interned_to_sym[&name_id];
 
     (scope_id, sym_id)
+}
+
+fn builtin_type_entry(
+    base: &InstantiationSymbolBase,
+) -> (u32, BuiltinType, &'static [InstantiationSymbolBase]) {
+    let InstantiationSymbolKind::Type(ty) = &base.kind else {
+        unreachable!("expected a built-in type descriptor");
+    };
+    let InstantiationTypeKind::BuiltinType(builtin_ty) = &ty.kind else {
+        unreachable!("expected a built-in type descriptor");
+    };
+    (
+        base.name_id.inner().id,
+        builtin_ty.clone(),
+        ty.ns.as_ref().map(|ns| ns.ns).unwrap_or(&[]),
+    )
 }
 
 #[test]
@@ -256,13 +278,14 @@ fn scope_lookup_no_preference_test() {
 fn namespaced_builtins() -> Vec<(String, TypeId)> {
     let interner = Intern::init();
 
-    CORE_BUILTIN_TYPES_DATASET
+    TYPES_NAMESPACE[BUILTIN_TYPES_RANGE]
         .iter()
+        .map(builtin_type_entry)
         .filter(|(_, _, ns)| !ns.is_empty())
         .map(|(interned, builtin_ty, _)| {
             (
                 interner
-                    .extract_utf8_str(InternedId::new(*interned).into_tagged::<UTF8Tag>())
+                    .extract_utf8_str(InternedId::new(interned).into_tagged::<UTF8Tag>())
                     .to_string(),
                 TypeId::new(builtin_ty_to_id(builtin_ty.kind())),
             )
@@ -364,9 +387,12 @@ fn scope_core_type_namespace_unreachable_test() {
     );
 
     // `sized`/`unsized` are pointer-sized, so neither carries an intrinsic namespace
-    for (interned, builtin_ty, ns) in &CORE_BUILTIN_TYPES_DATASET {
+    for (interned, builtin_ty, ns) in TYPES_NAMESPACE[BUILTIN_TYPES_RANGE]
+        .iter()
+        .map(builtin_type_entry)
+    {
         let interner = Intern::init();
-        let name = interner.extract_utf8_str(InternedId::new(*interned).into_tagged::<UTF8Tag>());
+        let name = interner.extract_utf8_str(InternedId::new(interned).into_tagged::<UTF8Tag>());
 
         if !ns.is_empty() {
             continue;
@@ -386,7 +412,11 @@ fn scope_core_type_namespace_unreachable_test() {
 #[test]
 fn builtin_id_repository_builder_full_build() {
     let mut builder = BuiltinIdRepository::builder();
-    for (idx, (_, builtin_ty, _)) in CORE_BUILTIN_TYPES_DATASET.iter().enumerate() {
+    for (idx, (_, builtin_ty, _)) in TYPES_NAMESPACE[BUILTIN_TYPES_RANGE]
+        .iter()
+        .map(builtin_type_entry)
+        .enumerate()
+    {
         builder.add(builtin_ty.kind(), SymbolId::new(idx as u32));
     }
     let repo = builder.build();
@@ -421,7 +451,10 @@ fn builtin_id_repository_initialized_in_compiler() {
         .as_ref()
         .expect("builtin_repo must be initialized in ScriptCompiler");
 
-    for (_, builtin_ty, _) in &CORE_BUILTIN_TYPES_DATASET {
+    for (_, builtin_ty, _) in TYPES_NAMESPACE[BUILTIN_TYPES_RANGE]
+        .iter()
+        .map(builtin_type_entry)
+    {
         assert!(
             repo.get(builtin_ty.kind()).is_some(),
             "missing symbol for {:?} in builtin_repo",

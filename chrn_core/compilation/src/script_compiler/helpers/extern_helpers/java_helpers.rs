@@ -6,22 +6,26 @@ use crate::script_compiler::{
     helpers::instantiation_symbols::InstantiationSymbolBase,
 };
 
+/// JAVA::*
 pub static JAVA_NAMESPACE_ENTRY: [InstantiationSymbolBase; 1] = [new_extern_namespace(
     intern::INTERNED_JAVA_UPPER,
     &JAVA_NAMESPACE,
 )];
 
+/// JAVA::java::*
 pub static JAVA_NAMESPACE: [InstantiationSymbolBase; 1] = [new_extern_namespace(
     intern::INTERNED_TYPES_LOWER,
     &TYPES_NAMESPACE,
 )];
 
+/// JAVA::java::types::*
 pub static TYPES_NAMESPACE: [InstantiationSymbolBase; 1] = [new_extern_namespace(
     intern::INTERNED_JAVA_LOWER,
     &JAVA_LOWER_NAMESPACE,
 )];
 
 /// `java` which paths to Java's primitive and standard string types.
+/// java::types::long/types/..
 pub static JAVA_LOWER_NAMESPACE: [InstantiationSymbolBase; 9] = [
     new_extern_sym(
         intern::INTERNED_LONG,

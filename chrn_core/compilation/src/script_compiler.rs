@@ -18,8 +18,10 @@ use chrn_utils::{
     intern,
     source_utils::source_span::SourceSpan,
 };
-use lang::types::{boundaries::TypeBoundaryFlags, builtins::BuiltinType};
 
+use crate::script_compiler::helpers::instantiation_symbols::{
+    InstantiationNamespace, InstantiationSymbolOrigin, InstantiationType,
+};
 use crate::semantic::values::Value;
 use crate::{
     id_tag_decls::{
@@ -38,10 +40,11 @@ use crate::{
     resolvers::resolver_state::CompilerStage,
     script_compiler::helpers::{
         compiler_helpers,
-        core_helpers::{self, CoreFunc},
+        core_helpers::core_helpers_dataset::{self as core_helpers, CoreFunc},
         extern_helpers::{self},
         instantiation_symbols::{
-            InstantiationSymbolBase, InstantiationSymbolKind, InstantiationVariable, InstiationType,
+            InstantiationSymbolBase, InstantiationSymbolKind, InstantiationTypeKind,
+            InstantiationVariable,
         },
     },
     semantic::{
@@ -139,19 +142,15 @@ impl ScriptCompiler {
 
         let mut compiler = ScriptCompiler {
             mods,
-            // + 1 for `Type::Unknown` since it's not in either array
+            // + 1 for `Type::Unknown`, which has no declaration.
             types: Arena::with_capacity(
-                core_helpers::CORE_BUILTIN_TYPES_DATASET.len()
-                    + core_helpers::CORE_BOUNDARIES_DATASET.len()
-                    + core_helpers::CORE_FUNCS_DATASET.len()
-                    + 1,
+                core_helpers::TYPES_NAMESPACE.len() + core_helpers::CORE_FUNCS_DATASET.len() + 1,
             ),
             val_infos: Arena::with_capacity(ns_counts.variables),
             vals: Arena::with_capacity(ns_counts.variables),
             exprs: Arena::with_capacity(ns_counts.variables),
             syms: Arena::with_capacity(
-                core_helpers::CORE_BUILTIN_TYPES_DATASET.len()
-                    + core_helpers::CORE_BOUNDARIES_DATASET.len()
+                core_helpers::TYPES_NAMESPACE.len()
                     + core_helpers::CORE_FUNCS_DATASET.len()
                     + mod_addition
                     + ns_counts.symbols,
@@ -867,10 +866,8 @@ impl ScriptCompiler {
             false,
             Table::with_capacities(
                 0,
-                // Does not include + 1 because `Unknown` has no identifier given
-                core_helpers::CORE_BUILTIN_TYPES_DATASET.len()
-                    + core_helpers::CORE_BOUNDARIES_DATASET.len()
-                    + core_helpers::CORE_FUNCS_DATASET.len(),
+                // The types namespace adds one binding; Unknown has no identifier.
+                core_helpers::TYPES_NAMESPACE.len() + core_helpers::CORE_FUNCS_DATASET.len() + 1,
             ),
         );
 
@@ -1027,9 +1024,6 @@ impl ScriptCompiler {
         current_scope_id: ScopeId,
         root_dataset: &[&[InstantiationSymbolBase]],
     ) {
-        // iterative version was a bit verbose..
-        // let mut stack: Vec<ExternFrame> = Vec::with_capacity(10);
-
         for base in root_dataset {
             self.register_instantiation_bases(current_scope_id, base);
         }
@@ -1042,77 +1036,156 @@ impl ScriptCompiler {
         bases: &[InstantiationSymbolBase],
     ) {
         for base in bases {
+            let sym_origin = match base.sym_origin {
+                InstantiationSymbolOrigin::Compiler => SymbolOrigin::Compiler,
+                InstantiationSymbolOrigin::Core => {
+                    SymbolOrigin::Module(self.intrinsic_registry.core_mod_id)
+                }
+            };
+
             match &base.kind {
-                InstantiationSymbolKind::Namespace(syms) => {
-                    // Creating namespace as a symbol with the identifier associated first.
-                    let sym_id = self.syms.make_id();
-                    let scope_id = self.scopes.make_id();
-                    let sym_kind = SymbolKind::Namespace;
-                    let associated_scope = AssociatedScopeKind::Scope(scope_id);
+                InstantiationSymbolKind::Namespace(ns) => {
+                    let scope_id =
+                        self.register_instantiation_namespace(current_scope_id, sym_origin, base);
 
-                    let sym = base.to_sym(sym_id, None, associated_scope.into(), sym_kind);
-
-                    // Putting the found namespace into the current table's scope before recursively
-                    // descending into new scope
-                    let current_table = &mut self.scopes[current_scope_id].scope.table;
-                    self.syms.push(sym);
-                    current_table.interned_to_sym.insert(base.name_id, sym_id);
-
-                    let scope = Scope::new(scope_id, ScopeType::Compiler, true, None);
-
-                    // Pushing it's scope so that future scope instantiations are aligned with len()
-                    self.scopes.push(ScopeInfo::new(
-                        scope,
-                        sym_id.into(),
-                        //WARN: This should be an Option, or at least use some origin enum instead
-                        self.intrinsic_registry.core_mod_id,
-                    ));
-
-                    self.register_instantiation_bases(scope_id, syms);
+                    self.register_instantiation_bases(scope_id, ns.ns);
                 }
                 InstantiationSymbolKind::ExternType(plat_kind) => {
                     let sym_id = self.syms.make_id();
                     let sym_kind = SymbolKind::ExternType(*plat_kind);
-                    let sym = base.to_sym(sym_id, None, None, sym_kind);
+                    let sym = base.to_sym(sym_id, None, None, sym_origin, sym_kind);
 
                     let current_table = &mut self.scopes[current_scope_id].scope.table;
                     self.syms.push(sym);
                     current_table.interned_to_sym.insert(base.name_id, sym_id);
                 }
                 InstantiationSymbolKind::Variable(var) => {
-                    self.register_instantiation_var(current_scope_id, base, var)
+                    self.register_instantiation_var(current_scope_id, sym_origin, base, var);
+                }
+                InstantiationSymbolKind::Type(ty) => {
+                    self.register_instantiation_type(current_scope_id, sym_origin, base, ty);
                 }
             }
         }
     }
+
+    /// Registers a compile-time namespace, returning it's `ScopeId`
+    ///
+    /// This does NOT add anything to the namespace, that is what `register_all_instantiation_bases`
+    /// is for. This only registers the namespace into the given scope.
+    fn register_instantiation_namespace(
+        &mut self,
+        current_scope_id: ScopeId,
+        sym_origin: SymbolOrigin,
+        base: &InstantiationSymbolBase,
+    ) -> ScopeId {
+        debug_assert!(matches!(base.kind, InstantiationSymbolKind::Namespace(_)));
+        // Creating namespace as a symbol with the identifier associated first.
+        let sym_id = self.syms.make_id();
+        let scope_id = self.scopes.make_id();
+        let sym_kind = SymbolKind::Namespace;
+        let associated_scope = AssociatedScopeKind::Scope(scope_id);
+
+        let sym = base.to_sym(sym_id, None, associated_scope.into(), sym_origin, sym_kind);
+
+        // Putting the found namespace into the current table's scope before recursively
+        // descending into new scope
+        let current_table = &mut self.scopes[current_scope_id].scope.table;
+        self.syms.push(sym);
+        current_table.interned_to_sym.insert(base.name_id, sym_id);
+
+        let scope = Scope::new(scope_id, base.scope_origin, true, None);
+
+        // Pushing it's scope so that future scope instantiations are aligned with len()
+        self.scopes.push(ScopeInfo::new(
+            scope,
+            sym_id.into(),
+            // Said the same thing twice..
+            //WARN: This should be an Option, or at least use some origin enum instead
+            self.intrinsic_registry.core_mod_id,
+        ));
+        scope_id
+    }
+
+    /// Registers a compile-time type, returning it's `TypeId`
+    fn register_instantiation_type(
+        &mut self,
+        current_scope_id: ScopeId,
+        sym_origin: SymbolOrigin,
+        base: &InstantiationSymbolBase,
+        ty: &InstantiationType,
+        //TODO: Enum that says whether to put it in core, compile-time, etc.
+        //Only core uses this so only core is fine, for now
+        // is_core: bool
+    ) -> TypeId {
+        let sym_id = self.syms.make_id();
+
+        let type_id = self.types.make_id();
+        let ty_kind = match &ty.kind {
+            InstantiationTypeKind::BuiltinType(builtin_ty) => {
+                debug_assert_eq!(
+                    type_id.id,
+                    compiler_consts::builtin_ty_to_id(builtin_ty.kind())
+                );
+                Type::BuiltinTypeInfo(BuiltinTypeInfo::new(builtin_ty.clone()))
+            }
+            InstantiationTypeKind::Boundary(flags) => Type::Boundaries(*flags),
+        };
+        self.types
+            .push(TypeInfo::new(ty_kind, self.intrinsic_registry.core_mod_id));
+
+        let ns = ty.ns.as_ref().filter(|ns| !ns.ns.is_empty());
+        let ns_scope_id = ns.map(|_| self.scopes.make_id());
+        let sym = base.to_sym(
+            sym_id,
+            None,
+            ns_scope_id.map(AssociatedScopeKind::Scope),
+            sym_origin,
+            SymbolKind::Type(type_id),
+        );
+        self.syms.push(sym);
+        self.scopes[current_scope_id]
+            .scope
+            .table
+            .interned_to_sym
+            .insert(base.name_id, sym_id);
+
+        if let Some(ns) = ns {
+            let scope_id = ns_scope_id.unwrap();
+            let scope = Scope::new(scope_id, base.scope_origin, false, None);
+            //TODO: Maybe this should use origin instead of `ModuleId?`
+            let scope_info =
+                ScopeInfo::new(scope, sym_id.into(), self.intrinsic_registry.core_mod_id);
+            self.scopes.push(scope_info);
+            self.register_instantiation_bases(scope_id, ns.ns);
+        }
+        type_id
+    }
     // Can't remember if this was made in the current diff or the last? Let's guess instead of looking!
 
-    /// Registers `InstantiationVariable` given it's already present information
+    /// Registers a compile-time variable, returning it's `SymbolId`
     fn register_instantiation_var(
         &mut self,
         current_scope_id: ScopeId,
+        sym_origin: SymbolOrigin,
         base: &InstantiationSymbolBase,
         var: &InstantiationVariable,
-    ) {
+    ) -> SymbolId {
         let sym_id = self.syms.make_id();
         let var_id = self.vars.make_id();
 
-        let sym = Symbol::new(
-            base.name_id,
-            sym_id,
-            None,
-            base.sym_origin,
-            base.is_priv,
-            None,
-            base.scope_origin,
-            SymbolKind::Variable(var_id),
-        );
+        let sym = base.to_sym(sym_id, None, None, sym_origin, SymbolKind::Variable(var_id));
 
         self.syms.push(sym);
         let current_table = &mut self.scopes[current_scope_id].scope.table;
         current_table.interned_to_sym.insert(base.name_id, sym_id);
 
-        let type_id = self.register_instantiation_type(current_scope_id, base, &var.ty);
+        let InstantiationTypeKind::BuiltinType(builtin_ty) = &var.ty else {
+            unreachable!()
+        };
+
+        // let type_id = self.register_instantiation_type(current_scope_id, base, &var.ty);
+        let type_id = TypeId::new(compiler_consts::builtin_ty_to_id(builtin_ty.kind()));
 
         let expr_id = self.exprs.make_id();
         let val_info_id = self.val_infos.make_id();
@@ -1137,20 +1210,7 @@ impl ScriptCompiler {
         self.vars.push(var_def);
         self.exprs.push(expr);
         self.val_infos.push(val_info);
-    }
-
-    // TEST:
-    fn register_instantiation_type(
-        &mut self,
-        current_scope_id: ScopeId,
-        base: &InstantiationSymbolBase,
-        ty: &InstiationType,
-    ) -> TypeId {
-        match ty {
-            InstiationType::BuiltinType(builtin) => {
-                TypeId::new(compiler_consts::builtin_ty_to_id(builtin.kind()))
-            }
-        }
+        sym_id
     }
 
     /// Helper to load all of core's functions and predicates
@@ -1206,23 +1266,68 @@ impl ScriptCompiler {
         core_mod_id: ModuleId,
         core_scope_id: ScopeId,
     ) -> BuiltinIdRepository {
-        // -- Concrete types --
+        let types_ns_base = InstantiationSymbolBase::new(
+            InternedId::new(intern::INTERNED_TYPES_LOWER).into_tagged::<UTF8Tag>(),
+            InstantiationSymbolOrigin::Core,
+            ScopeType::Core,
+            false,
+            InstantiationSymbolKind::Namespace(InstantiationNamespace::new(
+                &core_helpers::TYPES_NAMESPACE,
+            )),
+        );
+        let types_scope_id = self.register_instantiation_namespace(
+            core_scope_id,
+            SymbolOrigin::Module(core_mod_id),
+            &types_ns_base,
+        );
+
+        // Keep the core bindings as aliases for existing qualified and unqualified lookup.
         let mut builder = BuiltinIdRepository::builder();
-        for (interned, ty, ns) in &core_helpers::CORE_BUILTIN_TYPES_DATASET {
-            let interned_id = InternedId::new(*interned).into_tagged::<UTF8Tag>();
-            let sym_id =
-                self.register_builtin(interned_id, ty.clone(), ns, core_scope_id, core_mod_id);
-            builder.add(ty.kind(), sym_id);
+        for base in &core_helpers::TYPES_NAMESPACE[core_helpers::BUILTIN_TYPES_RANGE] {
+            let InstantiationSymbolKind::Type(ty) = &base.kind else {
+                unreachable!()
+            };
+            let InstantiationTypeKind::BuiltinType(builtin_ty) = &ty.kind else {
+                unreachable!()
+            };
+            let sym_id = self.syms.make_id();
+            self.register_instantiation_type(
+                types_scope_id,
+                SymbolOrigin::Module(core_mod_id),
+                base,
+                ty,
+            );
+            //TODO: See how we can best do "core::types/funcs" for intrinsic finding
+            self.scopes[core_scope_id]
+                .scope
+                .table
+                .interned_to_sym
+                .insert(base.name_id, sym_id);
+            builder.add(builtin_ty.kind(), sym_id);
         }
 
-        // Is a special cookie because you're not supposed to be able to instantiate an `Unknown`
-        // type on purpose. This is just a compiler internal type.
+        // Unknown has no declared name and retains its compatibility-sensitive TypeId.
         self.types.push(TypeInfo::new(Type::Unknown, core_mod_id));
 
-        // -- Boundaries --
-        for (interned, flags) in core_helpers::CORE_BOUNDARIES_DATASET.iter().cloned() {
-            let interned_id = InternedId::new(interned).into_tagged::<UTF8Tag>();
-            self.register_boundary(interned_id, flags, core_scope_id, core_mod_id);
+        for base in &core_helpers::TYPES_NAMESPACE[core_helpers::BOUNDARIES_RANGE] {
+            let InstantiationSymbolKind::Type(ty) = &base.kind else {
+                unreachable!()
+            };
+            let InstantiationTypeKind::Boundary(_) = &ty.kind else {
+                unreachable!()
+            };
+            let sym_id = self.syms.make_id();
+            self.register_instantiation_type(
+                types_scope_id,
+                SymbolOrigin::Module(core_mod_id),
+                base,
+                ty,
+            );
+            self.scopes[core_scope_id]
+                .scope
+                .table
+                .interned_to_sym
+                .insert(base.name_id, sym_id);
         }
 
         builder.build()
@@ -1234,87 +1339,6 @@ impl ScriptCompiler {
         let type_id = self.types.make_id();
         self.types.push(ty_info);
         type_id
-    }
-
-    /// Registers a single core builtin-type and pushes it
-    fn register_builtin(
-        &mut self,
-        name_id: InternedIdUTF8,
-        builtin_ty: BuiltinType,
-        ns: &[InstantiationSymbolBase],
-        core_scope_id: ScopeId,
-        core_mod_id: ModuleId,
-    ) -> SymbolId {
-        let type_id = self.types.make_id();
-        let sym_id = self.syms.make_id();
-
-        self.types.push(TypeInfo::new(
-            Type::BuiltinTypeInfo(BuiltinTypeInfo::new(builtin_ty)),
-            core_mod_id,
-        ));
-
-        // The scope, when present, only needs its id here. Its members are registered
-        // after this built-in's symbol.
-        let ns_scope_id = if ns.is_empty() {
-            None
-        } else {
-            Some(self.scopes.make_id())
-        };
-
-        let sym = Symbol::new(
-            name_id,
-            sym_id,
-            None,
-            SymbolOrigin::Module(core_mod_id),
-            false,
-            ns_scope_id.map(AssociatedScopeKind::Scope),
-            ScopeType::Core,
-            SymbolKind::Type(type_id),
-        );
-
-        self.syms.push(sym);
-        let table = &mut self.scopes[core_scope_id].scope.table;
-        table.interned_to_sym.insert(name_id, sym_id);
-
-        if let Some(scope_id) = ns_scope_id {
-            // Compiler generated or core generated??
-            // Feels like, core.
-            let scope = Scope::new(scope_id, ScopeType::Core, false, None);
-            let scope_info = ScopeInfo::new(scope, sym_id.into(), core_mod_id);
-            self.scopes.push(scope_info);
-            self.register_instantiation_bases(scope_id, ns);
-        }
-
-        sym_id
-    }
-
-    /// Registers a single core boundary type and pushes it
-    fn register_boundary(
-        &mut self,
-        name_id: InternedIdUTF8,
-        flags: TypeBoundaryFlags,
-        core_scope_id: ScopeId,
-        core_mod_id: ModuleId,
-    ) {
-        let type_id = self.types.make_id();
-        let sym_id = self.syms.make_id();
-
-        self.types
-            .push(TypeInfo::new(Type::Boundaries(flags), core_mod_id));
-        let sym = Symbol::new(
-            name_id,
-            sym_id,
-            None,
-            SymbolOrigin::Module(core_mod_id),
-            false,
-            None,
-            ScopeType::Core,
-            SymbolKind::Type(type_id),
-        );
-
-        self.syms.push(sym);
-        let table = &mut self.scopes[core_scope_id].scope.table;
-        table.interned_to_sym.insert(name_id, sym_id);
     }
 }
 

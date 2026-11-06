@@ -7,9 +7,9 @@ use lang::types::externs::ExternPlatformType;
 use crate::{
     lookup::scopes::scopes_concepts::ScopeType,
     script_compiler::helpers::instantiation_symbols::{
-        InstantiationSymbolBase, InstantiationSymbolKind,
+        InstantiationNamespace, InstantiationSymbolBase, InstantiationSymbolKind,
+        InstantiationSymbolOrigin,
     },
-    semantic::hir::hir_symbols::SymbolOrigin,
 };
 
 //NOTE: The "entry" naming is because the recursive loop goes off of only scope id and extern kinds,
@@ -22,7 +22,7 @@ pub static ALL_EXTERN_NAMESPACES_DATASET: [&[InstantiationSymbolBase]; 2] = [
 ];
 
 // Expected default for extern types
-const EXTERN_SYM_ORIGIN: SymbolOrigin = SymbolOrigin::Compiler;
+const EXTERN_SYM_ORIGIN: InstantiationSymbolOrigin = InstantiationSymbolOrigin::Compiler;
 const EXTERN_SCOPE_TYPE: ScopeType = ScopeType::Compiler;
 const EXTERN_IS_PRIV: bool = true;
 
@@ -36,7 +36,7 @@ const fn new_extern_namespace(
         EXTERN_SYM_ORIGIN,
         EXTERN_SCOPE_TYPE,
         EXTERN_IS_PRIV,
-        InstantiationSymbolKind::Namespace(syms),
+        InstantiationSymbolKind::Namespace(InstantiationNamespace::new(syms)),
     )
 }
 

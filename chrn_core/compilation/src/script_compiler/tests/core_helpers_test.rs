@@ -20,13 +20,14 @@ use crate::{
         compiler_consts::{CORE_UNKNOWN, builtin_ty_to_id},
         helpers::{
             compiler_helpers::DIRECTIVES_DATASET,
-            core_helpers::{
-                CORE_BOUNDARIES_DATASET, CORE_BUILTIN_TYPES_DATASET, CORE_FUNCS_DATASET,
+            core_helpers::core_helpers_dataset::{
+                BOUNDARIES_RANGE, BUILTIN_TYPES_RANGE, CORE_FUNCS_DATASET, TYPES_NAMESPACE,
                 core_instantiation_reservations, count_instantiation_bases,
             },
             instantiation_symbols::{
-                InstantiationSymbolBase, InstantiationSymbolKind, InstantiationVariable,
-                InstiationType, InstiationValue,
+                InstantiationNamespace, InstantiationSymbolBase, InstantiationSymbolKind,
+                InstantiationSymbolOrigin, InstantiationType, InstantiationTypeKind,
+                InstantiationValueKind, InstantiationVariable,
             },
         },
     },
@@ -42,6 +43,46 @@ use crate::{
 /// Builds the core module the same way `ScriptCompiler::init` does, with no user modules
 fn core_only_compiler() -> ScriptCompiler {
     ScriptCompiler::init(Arena::new())
+}
+
+/// Finds the exported namespace and checks its ownership and complete type surface.
+fn core_types_scope(compiler: &ScriptCompiler) -> ScopeId {
+    let core_mod_id = compiler.intrinsic_registry.core_mod_id;
+    let core_scope_id = compiler.extract_scope_id(ScopeType::Core, core_mod_id);
+    let name_id = InternedId::new(intern::INTERNED_TYPES_LOWER).into_tagged::<UTF8Tag>();
+    let sym_id = compiler.scopes[core_scope_id].scope.table.interned_to_sym[&name_id];
+    let sym = &compiler.syms[sym_id];
+    assert!(matches!(sym.kind, SymbolKind::Namespace));
+    assert!(matches!(sym.sym_origin, SymbolOrigin::Module(id) if id == core_mod_id));
+    assert!(compiler.mods[core_mod_id].exports.contains(&sym_id));
+    let Some(AssociatedScopeKind::Scope(scope_id)) = sym.associated_scope else {
+        panic!("core::types must own a scope");
+    };
+    let scope_info = &compiler.scopes[scope_id];
+    assert_eq!(scope_info.sym_owner, Some(sym_id));
+    assert_eq!(scope_info.mod_owner, core_mod_id);
+    assert_eq!(scope_info.scope.scope_type, ScopeType::Core);
+    assert_eq!(
+        scope_info.scope.table.interned_to_sym.len(),
+        TYPES_NAMESPACE.len()
+    );
+    scope_id
+}
+
+fn builtin_type_entry(
+    base: &InstantiationSymbolBase,
+) -> (u32, BuiltinType, &'static [InstantiationSymbolBase]) {
+    let InstantiationSymbolKind::Type(ty) = &base.kind else {
+        unreachable!("expected a built-in type descriptor");
+    };
+    let InstantiationTypeKind::BuiltinType(builtin_ty) = &ty.kind else {
+        unreachable!("expected a built-in type descriptor");
+    };
+    (
+        base.name_id.inner().id,
+        builtin_ty.clone(),
+        ty.ns.as_ref().map(|ns| ns.ns).unwrap_or(&[]),
+    )
 }
 
 #[test]
@@ -189,8 +230,14 @@ fn complex_scope_instantiates_extern_type_namespaces() {
 fn core_builtin_type_id_alignment() {
     let compiler = core_only_compiler();
     let interner = Intern::init();
+    let types_scope_id = core_types_scope(&compiler);
+    let core_scope_id =
+        compiler.extract_scope_id(ScopeType::Core, compiler.intrinsic_registry.core_mod_id);
 
-    for (idx, (interned, builtin_ty, _ns)) in CORE_BUILTIN_TYPES_DATASET.iter().cloned().enumerate()
+    for (idx, (interned, builtin_ty, _ns)) in TYPES_NAMESPACE[BUILTIN_TYPES_RANGE]
+        .iter()
+        .map(builtin_type_entry)
+        .enumerate()
     {
         // The dataset is loaded sequentially, so an entry's index is the `TypeId` it gets, and the
         // `CORE_*` constant behind `builtin_ty_to_id` must name that same id
@@ -223,7 +270,17 @@ fn core_builtin_type_id_alignment() {
             .as_ref()
             .and_then(|repo| repo.get(info.ty.kind()))
             .expect("builtin symbol id in repository");
+        let name_id = InternedId::new(interned).into_tagged::<UTF8Tag>();
+        assert_eq!(
+            compiler.scopes[types_scope_id].scope.table.interned_to_sym[&name_id], sym_id,
+            "built-in repository must reference the types namespace symbol"
+        );
+        assert_eq!(
+            compiler.scopes[core_scope_id].scope.table.interned_to_sym[&name_id], sym_id,
+            "core built-in alias must reuse the types namespace symbol"
+        );
         let sym = &compiler.syms[sym_id];
+        assert!(matches!(sym.kind, SymbolKind::Type(id) if id == TypeId::new(core_id)));
         assert_eq!(
             sym.name_id,
             InternedId::new(interned).into_tagged::<UTF8Tag>(),
@@ -252,7 +309,16 @@ fn core_boundaries_follow_builtins() {
     // Boundaries are pushed directly after the unknown type
     let first = CORE_UNKNOWN + 1;
 
-    for (idx, (interned, flags)) in CORE_BOUNDARIES_DATASET.into_iter().enumerate() {
+    let types_scope_id = core_types_scope(&compiler);
+    let core_scope_id =
+        compiler.extract_scope_id(ScopeType::Core, compiler.intrinsic_registry.core_mod_id);
+    for (idx, base) in TYPES_NAMESPACE[BOUNDARIES_RANGE].iter().enumerate() {
+        let InstantiationSymbolKind::Type(ty) = &base.kind else {
+            unreachable!()
+        };
+        let InstantiationTypeKind::Boundary(flags) = ty.kind else {
+            unreachable!()
+        };
         let type_id = TypeId::new(first + idx as u32);
         let type_info = &compiler.types[type_id];
 
@@ -265,13 +331,15 @@ fn core_boundaries_follow_builtins() {
 
         assert_eq!(found, flags, "boundary at {type_id:?} does not match");
 
-        let sym = compiler
-            .syms
-            .items
-            .iter()
-            .find(|sym| sym.name_id == InternedId::new(interned).into_tagged::<UTF8Tag>())
-            .expect("boundary symbol should exist");
-
+        let sym_id = compiler.scopes[types_scope_id].scope.table.interned_to_sym[&base.name_id];
+        assert_eq!(
+            compiler.scopes[core_scope_id].scope.table.interned_to_sym[&base.name_id], sym_id,
+            "core boundary alias must reuse the types namespace symbol"
+        );
+        let sym = &compiler.syms[sym_id];
+        assert!(
+            matches!(sym.sym_origin, SymbolOrigin::Module(id) if id == compiler.intrinsic_registry.core_mod_id)
+        );
         assert!(
             matches!(sym.kind, SymbolKind::Type(id) if id == type_id),
             "boundary symbol does not point at its type"
@@ -282,7 +350,7 @@ fn core_boundaries_follow_builtins() {
 /// `TypeId` of the first core function, which is pushed after the builtins, the unknown type and
 /// the boundaries
 fn first_core_func_type_id() -> u32 {
-    CORE_UNKNOWN + 1 + CORE_BOUNDARIES_DATASET.len() as u32
+    CORE_UNKNOWN + 1 + BOUNDARIES_RANGE.len() as u32
 }
 
 #[test]
@@ -396,10 +464,7 @@ fn startup_reservations_match_loaded_data() {
     let compiler = core_only_compiler();
     let ns_counts = core_instantiation_reservations();
 
-    let expected_type_count = CORE_BUILTIN_TYPES_DATASET.len()
-        + CORE_BOUNDARIES_DATASET.len()
-        + CORE_FUNCS_DATASET.len()
-        + 1;
+    let expected_type_count = TYPES_NAMESPACE.len() + CORE_FUNCS_DATASET.len() + 1;
     assert_eq!(compiler.types.len(), expected_type_count);
     assert_eq!(compiler.types.capacity(), expected_type_count);
 
@@ -424,8 +489,7 @@ fn startup_reservations_match_loaded_data() {
             idents.len()
         })
         .sum();
-    let expected_symbol_count = CORE_BUILTIN_TYPES_DATASET.len()
-        + CORE_BOUNDARIES_DATASET.len()
+    let expected_symbol_count = TYPES_NAMESPACE.len()
         + CORE_FUNCS_DATASET.len()
         + expected_module_symbol_count
         + ns_counts.symbols;
@@ -443,8 +507,7 @@ fn startup_reservations_match_loaded_data() {
     assert_eq!(compiler.scopes.capacity(), expected_scope_count);
 
     let core_mod = &compiler.mods[compiler.intrinsic_registry.core_mod_id];
-    let expected_core_exports =
-        CORE_BUILTIN_TYPES_DATASET.len() + CORE_BOUNDARIES_DATASET.len() + CORE_FUNCS_DATASET.len();
+    let expected_core_exports = TYPES_NAMESPACE.len() + CORE_FUNCS_DATASET.len() + 1;
     assert_eq!(core_mod.exports.len(), expected_core_exports);
     assert_eq!(core_mod.exports.capacity(), expected_core_exports);
 }
@@ -491,8 +554,7 @@ fn startup_reservations_include_user_module_symbols() {
             idents.len()
         })
         .sum();
-    let expected_symbol_count = CORE_BUILTIN_TYPES_DATASET.len()
-        + CORE_BOUNDARIES_DATASET.len()
+    let expected_symbol_count = TYPES_NAMESPACE.len()
         + CORE_FUNCS_DATASET.len()
         + expected_module_symbol_count
         + ns_counts.symbols;
@@ -588,7 +650,7 @@ fn builtin_ns_scope(
     }
 }
 
-/// `Value` has no `PartialEq`, and only the variants `InstiationValue` can produce are compared.
+/// `Value` has no `PartialEq`, and only the variants `InstantiationValueKind` can produce are compared.
 fn same_value(left: &Value, right: &Value) -> bool {
     match (left, right) {
         (Value::ArbitraryInt(l), Value::ArbitraryInt(r)) => l == r,
@@ -606,7 +668,11 @@ fn core_namespaced_builtins_own_a_core_scope() {
     let compiler = core_only_compiler();
     let core_mod_id = compiler.intrinsic_registry.core_mod_id;
 
-    for (idx, (_, builtin_ty, ns)) in CORE_BUILTIN_TYPES_DATASET.iter().enumerate() {
+    for (idx, (_, builtin_ty, ns)) in TYPES_NAMESPACE[BUILTIN_TYPES_RANGE]
+        .iter()
+        .map(builtin_type_entry)
+        .enumerate()
+    {
         let type_id = TypeId::new(idx as u32);
         let Some(scope_id) = builtin_ns_scope(&compiler, type_id, ns) else {
             continue;
@@ -707,8 +773,9 @@ fn core_float_namespace_ieee_metadata_is_append_only() {
         BuiltinTypeKind::F32,
         BuiltinTypeKind::F64,
     ] {
-        let (_, _, namespace) = CORE_BUILTIN_TYPES_DATASET
+        let (_, _, namespace) = TYPES_NAMESPACE[BUILTIN_TYPES_RANGE]
             .iter()
+            .map(builtin_type_entry)
             .find(|(_, builtin_ty, _)| builtin_ty.kind() == kind)
             .expect("IEEE float type should be present in the core dataset");
         let names: Vec<u32> = namespace
@@ -734,8 +801,9 @@ fn core_float_namespace_ieee_metadata_is_append_only() {
         intern::INTERNED_DIGITS,
         intern::INTERNED_MANTISSA_DIGITS,
     ];
-    let (_, _, f128_namespace) = CORE_BUILTIN_TYPES_DATASET
+    let (_, _, f128_namespace) = TYPES_NAMESPACE[BUILTIN_TYPES_RANGE]
         .iter()
+        .map(builtin_type_entry)
         .find(|(_, builtin_ty, _)| builtin_ty.kind() == BuiltinTypeKind::F128)
         .expect("f128 should be present in the core dataset");
     let names: Vec<u32> = f128_namespace
@@ -799,8 +867,9 @@ fn representative_core_namespace_values_are_registered() {
     ];
 
     for (owner_kind, name, value_kind, expected) in cases {
-        let (_, _, namespace) = CORE_BUILTIN_TYPES_DATASET
+        let (_, _, namespace) = TYPES_NAMESPACE[BUILTIN_TYPES_RANGE]
             .iter()
+            .map(builtin_type_entry)
             .find(|(_, builtin_ty, _)| builtin_ty.kind() == owner_kind)
             .unwrap();
         let scope_id = builtin_ns_scope(
@@ -819,7 +888,9 @@ fn representative_core_namespace_values_are_registered() {
             found.sym.name_id,
             InternedId::new(name).into_tagged::<UTF8Tag>()
         );
-        assert!(matches!(found.sym.sym_origin, SymbolOrigin::Compiler));
+        assert!(
+            matches!(found.sym.sym_origin, SymbolOrigin::Module(id) if id == compiler.intrinsic_registry.core_mod_id)
+        );
         assert!(matches!(found.sym.kind, SymbolKind::Variable(_)));
         assert!(matches!(found.var.meta, VariableMetadata::Generated));
         assert_eq!(found.val.type_id, TypeId::new(builtin_ty_to_id(value_kind)));
@@ -848,7 +919,10 @@ fn core_namespace_constants_stay_out_of_the_core_scope() {
 
     // Intrinsic namespace constants are only reachable through the built-in that owns them.
     // Leaking them into the core scope would make them resolve bare, and would collide across the ten namespaces
-    for (_, _, ns) in &CORE_BUILTIN_TYPES_DATASET {
+    for (_, _, ns) in TYPES_NAMESPACE[BUILTIN_TYPES_RANGE]
+        .iter()
+        .map(builtin_type_entry)
+    {
         for base in ns.iter() {
             assert!(
                 !table.interned_to_sym.contains_key(&base.name_id),
@@ -902,55 +976,85 @@ fn core_namespace_arenas_are_reserved_exactly() {
 static COUNT_LEAF_DATASET: [InstantiationSymbolBase; 2] = [
     InstantiationSymbolBase::new(
         InternedId::new(intern::INTERNED_MAX_UPPER).into_tagged::<UTF8Tag>(),
-        SymbolOrigin::Compiler,
+        InstantiationSymbolOrigin::Compiler,
         ScopeType::Compiler,
         false,
         InstantiationSymbolKind::Variable(InstantiationVariable::new(
-            InstiationType::BuiltinType(BuiltinType::I8),
-            InstiationValue::I64(1),
+            InstantiationTypeKind::BuiltinType(BuiltinType::I8),
+            InstantiationValueKind::I64(1),
         )),
     ),
     InstantiationSymbolBase::new(
         InternedId::new(intern::INTERNED_INT).into_tagged::<UTF8Tag>(),
-        SymbolOrigin::Compiler,
+        InstantiationSymbolOrigin::Compiler,
         ScopeType::Compiler,
         false,
         InstantiationSymbolKind::ExternType(ExternPlatformType::Java(JavaTypeKind::Int)),
     ),
 ];
 
-static COUNT_ROOT_DATASET: [InstantiationSymbolBase; 2] = [
+static COUNT_ROOT_DATASET: [InstantiationSymbolBase; 5] = [
     InstantiationSymbolBase::new(
         InternedId::new(intern::INTERNED_TYPES_LOWER).into_tagged::<UTF8Tag>(),
-        SymbolOrigin::Compiler,
+        InstantiationSymbolOrigin::Compiler,
         ScopeType::Compiler,
         false,
-        InstantiationSymbolKind::Namespace(&COUNT_LEAF_DATASET),
+        InstantiationSymbolKind::Namespace(InstantiationNamespace::new(&COUNT_LEAF_DATASET)),
     ),
     InstantiationSymbolBase::new(
         InternedId::new(intern::INTERNED_MIN_UPPER).into_tagged::<UTF8Tag>(),
-        SymbolOrigin::Compiler,
+        InstantiationSymbolOrigin::Compiler,
         ScopeType::Compiler,
         false,
         InstantiationSymbolKind::Variable(InstantiationVariable::new(
-            InstiationType::BuiltinType(BuiltinType::I8),
-            InstiationValue::I64(0),
+            InstantiationTypeKind::BuiltinType(BuiltinType::I8),
+            InstantiationValueKind::I64(0),
+        )),
+    ),
+    InstantiationSymbolBase::new(
+        InternedId::new(intern::INTERNED_I8).into_tagged::<UTF8Tag>(),
+        InstantiationSymbolOrigin::Compiler,
+        ScopeType::Core,
+        false,
+        InstantiationSymbolKind::Type(InstantiationType::new(
+            InstantiationTypeKind::BuiltinType(BuiltinType::I8),
+            Some(InstantiationNamespace::new(&COUNT_LEAF_DATASET)),
+        )),
+    ),
+    InstantiationSymbolBase::new(
+        InternedId::new(intern::INTERNED_NIL).into_tagged::<UTF8Tag>(),
+        InstantiationSymbolOrigin::Compiler,
+        ScopeType::Core,
+        false,
+        InstantiationSymbolKind::Type(InstantiationType::new(
+            InstantiationTypeKind::BuiltinType(BuiltinType::Nil),
+            None,
+        )),
+    ),
+    InstantiationSymbolBase::new(
+        InternedId::new(intern::INTERNED_RUNTIME).into_tagged::<UTF8Tag>(),
+        InstantiationSymbolOrigin::Compiler,
+        ScopeType::Core,
+        false,
+        InstantiationSymbolKind::Type(InstantiationType::new(
+            InstantiationTypeKind::BuiltinType(BuiltinType::Runtime),
+            Some(InstantiationNamespace::new(&[])),
         )),
     ),
 ];
 
-/// The core dataset is flat, so nesting is only covered here. `register_instantiation_bases`
-/// descends into a namespace, which the reservation counts must follow.
+/// Reservations descend through both namespaces and type-owned namespaces. Empty and absent
+/// type namespaces contribute no scope or members.
 #[test]
 fn count_instantiation_bases_descends_into_namespaces() {
     let counts = count_instantiation_bases(&COUNT_ROOT_DATASET);
 
-    // Namespace, its two members, and the root variable
-    assert_eq!(counts.symbols, 4);
-    // Only the nested namespace owns one; the root's own scope belongs to its caller
-    assert_eq!(counts.scopes, 1);
-    // The extern type contributes no value
-    assert_eq!(counts.variables, 2);
+    // Five root symbols, two members of the namespace, and two members of the type.
+    assert_eq!(counts.symbols, 9);
+    // The namespace and the populated type each own a scope.
+    assert_eq!(counts.scopes, 2);
+    // One root variable and one variable in each populated namespace.
+    assert_eq!(counts.variables, 3);
 }
 
 #[test]
@@ -977,8 +1081,9 @@ fn representative_float_math_constants_are_loaded() {
         (intern::INTERNED_EULER_GAMMA, std::f64::consts::EULER_GAMMA),
     ];
 
-    let f16_entry = CORE_BUILTIN_TYPES_DATASET
+    let f16_entry = TYPES_NAMESPACE[BUILTIN_TYPES_RANGE]
         .iter()
+        .map(builtin_type_entry)
         .find(|(_, b, _)| b.kind() == BuiltinTypeKind::F16)
         .unwrap();
     let f16_scope = builtin_ns_scope(
@@ -1004,8 +1109,9 @@ fn representative_float_math_constants_are_loaded() {
         ));
     }
 
-    let f32_entry = CORE_BUILTIN_TYPES_DATASET
+    let f32_entry = TYPES_NAMESPACE[BUILTIN_TYPES_RANGE]
         .iter()
+        .map(builtin_type_entry)
         .find(|(_, b, _)| b.kind() == BuiltinTypeKind::F32)
         .unwrap();
     let f32_scope = builtin_ns_scope(
@@ -1031,8 +1137,9 @@ fn representative_float_math_constants_are_loaded() {
         ));
     }
 
-    let f64_entry = CORE_BUILTIN_TYPES_DATASET
+    let f64_entry = TYPES_NAMESPACE[BUILTIN_TYPES_RANGE]
         .iter()
+        .map(builtin_type_entry)
         .find(|(_, b, _)| b.kind() == BuiltinTypeKind::F64)
         .unwrap();
     let f64_scope = builtin_ns_scope(
@@ -1075,8 +1182,9 @@ fn representative_core_namespaces_declare_bits_and_bytes() {
 
     for &(kind, expected_bits, expected_bytes) in expected_bits_bytes {
         let type_id = TypeId::new(builtin_ty_to_id(kind));
-        let entry = CORE_BUILTIN_TYPES_DATASET
+        let entry = TYPES_NAMESPACE[BUILTIN_TYPES_RANGE]
             .iter()
+            .map(builtin_type_entry)
             .find(|(_, b, _)| b.kind() == kind)
             .unwrap();
         let scope_id = builtin_ns_scope(&compiler, type_id, entry.2).unwrap();
@@ -1114,8 +1222,9 @@ fn float_namespace_declares_radix_but_integer_namespace_does_not() {
         (BuiltinTypeKind::F32, Some(2)),
         (BuiltinTypeKind::I32, None),
     ] {
-        let (_, _, namespace) = CORE_BUILTIN_TYPES_DATASET
+        let (_, _, namespace) = TYPES_NAMESPACE[BUILTIN_TYPES_RANGE]
             .iter()
+            .map(builtin_type_entry)
             .find(|(_, builtin_ty, _)| builtin_ty.kind() == kind)
             .unwrap();
         let scope_id =
@@ -1153,8 +1262,9 @@ fn representative_char_and_str_constants_are_loaded() {
     let str_type_id = TypeId::new(builtin_ty_to_id(BuiltinTypeKind::Str));
 
     let entry = |kind: BuiltinTypeKind| {
-        CORE_BUILTIN_TYPES_DATASET
+        TYPES_NAMESPACE[BUILTIN_TYPES_RANGE]
             .iter()
+            .map(builtin_type_entry)
             .find(|(_, b, _)| b.kind() == kind)
             .unwrap_or_else(|| panic!("{kind:?} entry in dataset"))
     };
@@ -1230,8 +1340,9 @@ fn representative_float_attributes_are_loaded() {
     let f64_type_id = TypeId::new(builtin_ty_to_id(BuiltinTypeKind::F64));
 
     let f16_type_id = TypeId::new(builtin_ty_to_id(BuiltinTypeKind::F16));
-    let f16_entry = CORE_BUILTIN_TYPES_DATASET
+    let f16_entry = TYPES_NAMESPACE[BUILTIN_TYPES_RANGE]
         .iter()
+        .map(builtin_type_entry)
         .find(|(_, b, _)| b.kind() == BuiltinTypeKind::F16)
         .unwrap();
     let f16_scope = builtin_ns_scope(&compiler, f16_type_id, f16_entry.2).unwrap();
@@ -1263,8 +1374,9 @@ fn representative_float_attributes_are_loaded() {
     check_f16_f64("EPSILON", 0.0009765625);
 
     let f32_type_id = TypeId::new(builtin_ty_to_id(BuiltinTypeKind::F32));
-    let f32_entry = CORE_BUILTIN_TYPES_DATASET
+    let f32_entry = TYPES_NAMESPACE[BUILTIN_TYPES_RANGE]
         .iter()
+        .map(builtin_type_entry)
         .find(|(_, b, _)| b.kind() == BuiltinTypeKind::F32)
         .unwrap();
     let f32_scope = builtin_ns_scope(&compiler, f32_type_id, f32_entry.2).unwrap();
@@ -1295,8 +1407,9 @@ fn representative_float_attributes_are_loaded() {
     check_f32_i64("MANTISSA_DIGITS", std::f32::MANTISSA_DIGITS as i64);
     check_f32_f64("NAN", f32::NAN as f64);
 
-    let f64_entry = CORE_BUILTIN_TYPES_DATASET
+    let f64_entry = TYPES_NAMESPACE[BUILTIN_TYPES_RANGE]
         .iter()
+        .map(builtin_type_entry)
         .find(|(_, b, _)| b.kind() == BuiltinTypeKind::F64)
         .unwrap();
     let f64_scope = builtin_ns_scope(&compiler, f64_type_id, f64_entry.2).unwrap();
@@ -1330,8 +1443,9 @@ fn representative_float_attributes_are_loaded() {
     for (kind, exponent_bits, significand_bits, stored_significand_bits, min_subnormal_exponent) in
         ieee_layouts
     {
-        let entry = CORE_BUILTIN_TYPES_DATASET
+        let entry = TYPES_NAMESPACE[BUILTIN_TYPES_RANGE]
             .iter()
+            .map(builtin_type_entry)
             .find(|(_, builtin_ty, _)| builtin_ty.kind() == kind)
             .expect("IEEE float type should be present in the core dataset");
         let scope_id = builtin_ns_scope(&compiler, TypeId::new(builtin_ty_to_id(kind)), entry.2)

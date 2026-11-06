@@ -1,5 +1,8 @@
 //! General purpose of this module and all sub-modules is to have composable datasets which
 //! allows for procedural insertion.
+//!
+// Go on. No.
+//! Convention for namespaces is to have an entry
 pub(super) mod compiler_helpers;
 pub(crate) mod core_helpers;
 pub(super) mod extern_helpers;

@@ -1,3 +1,7 @@
 /* *///import virtual "../chrn_core/chrn_tests/other.chrn"
 // When you don't think about it, the first virtual module was `core`. Wow.
-import virtual "CHERNGENTS"
+// import "../chrn_core/chrn_tests/CHERNGENTS.chrn"
+let x =3
+
+var->
+    x: core::types::i32

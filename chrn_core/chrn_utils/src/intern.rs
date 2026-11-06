@@ -1,4 +1,4 @@
-use std::{collections::HashMap, ops::Range, time};
+use std::{collections::HashMap, ops::Range};
 
 use crate::{
     id_types::{
@@ -168,6 +168,7 @@ pub const INTERNED_UTF32_BITS: u32 = 152;
 pub const INTERNED_CHRN: u32 = 153;
 pub const INTERNED_MAX_NUMERIC_BITS: u32 = 154;
 pub const INTERNED_VIRTUAL: u32 = 155;
+pub const INTERNED_FUNCS: u32 = 156;
 
 // Collection,
 // CharacterMappable,
@@ -346,6 +347,7 @@ pub static PRELOADED_STRINGS: [(&str, u32); INTERNER_PRELOAD_SIZE] = [
     ("chrn", INTERNED_CHRN),
     ("max_numeric_bits", INTERNED_MAX_NUMERIC_BITS),
     ("virtual", INTERNED_VIRTUAL),
+    ("funcs", INTERNED_FUNCS),
 ];
 
 #[derive(Debug)]
@@ -369,14 +371,24 @@ pub struct Intern {
     // There has to be a better way.
 }
 
-pub const INTERNER_PRELOAD_SIZE: usize = (INTERNED_VIRTUAL + 1) as usize;
+const fn preload_strings_total_size() -> usize {
+    let mut i = 0;
+    let mut size = 0;
+    while i < PRELOADED_STRINGS.len() {
+        size += PRELOADED_STRINGS[i].0.len();
+        i += 1;
+    }
+    size
+}
+
+pub const INTERNER_PRELOAD_SIZE: usize = (INTERNED_FUNCS + 1) as usize;
 
 impl Intern {
     /// Creates interner that pre-loads itself with all defined interned string literals.
     pub fn init() -> Intern {
         let mut interner = Intern {
             id_map: HashMap::with_capacity(INTERNER_PRELOAD_SIZE),
-            stored_bytes: Vec::new(),
+            stored_bytes: Vec::with_capacity(preload_strings_total_size()),
             id_map_offset_data: Vec::with_capacity(INTERNER_PRELOAD_SIZE),
         };
 
