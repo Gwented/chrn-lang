@@ -262,9 +262,6 @@ impl<'res> TypeResolver<'res> {
             // The pending symbol the expression was found in
             // The index of the expression to set as stale.
             // The actual parent's info to fill in.
-            //
-            // We're allocating this each time, maybe we should declare this outside so that it can be
-            // re-used
             let mut resolved_parents: Vec<(SymbolId, usize, ParentInfo)> = Vec::new();
 
             while self.ty_ctx.needs_check {
@@ -390,7 +387,7 @@ impl<'res> TypeResolver<'res> {
                 //WARN: By logic this seems fine since if the queue is empty then that means everything
                 //found in pending_expr has a fully resolved parent.
                 //
-                // These are removed since if (for some reason) there are a lot of expressions that
+                // These are removed since if there are a lot of expressions that
                 // need resolution tracked, this would hold memory longer than required.
                 for sym_id in removable_syms.drain(..) {
                     self.ty_ctx.sym_queue.remove(&sym_id);
@@ -629,6 +626,7 @@ impl<'res> TypeResolver<'res> {
 
         let abs_typedef = env.ast_info.get_typedef(ast_id);
 
+        //TODO: Typechecker
         let type_id = match resolution_helpers::resolve_type_expr_ret_preset(
             &mut self.compiler,
             AssociatedScopeKind::Module(env.current_mod),
@@ -638,7 +636,29 @@ impl<'res> TypeResolver<'res> {
             self.interner,
             env,
         ) {
-            Ok(type_id) => type_id,
+            Ok(type_id) => {
+                // Can use this since var defined types use the same semantics
+                if !typechecker::check_field_or_variant(&self.compiler.types, type_id) {
+                    let fmtted_ty = Type::to_classified(&self.compiler.types, type_id);
+                    let core_msg = format!("Cannot use type `{fmtted_ty}` for a var defined type");
+
+                    let builder = SourceDiagnostic::builder(
+                        None,
+                        DiagnosticLevel::Error,
+                        core_msg,
+                        env.region.src_id,
+                    )
+                    .add_annotation(
+                        abs_typedef.sp_ty_expr.span,
+                        AnnotationKind::Primary,
+                        None,
+                    );
+                    self.summary.push_diag(builder.build());
+                    TypeId::new(compiler_consts::CORE_UNKNOWN)
+                } else {
+                    type_id
+                }
+            }
             Err(preset_err) => {
                 preset_reporter::report_preset(
                     &self.compiler,

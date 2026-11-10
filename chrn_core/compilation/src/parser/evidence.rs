@@ -7,7 +7,7 @@
 // large. The tree. The tree wants a probability model.
 
 use crate::{
-    lexer::token::{SpannedToken, TokenKind},
+    lexer::token::{TokenInfo, TokenKind},
     parser::Branch,
 };
 
@@ -37,7 +37,7 @@ pub(super) struct Evidence {
     pub(super) env: SemanticEnv,
     pub(super) situation: SemanticSituation,
     pub(super) expected: TokenKind,
-    pub(super) found: SpannedToken,
+    pub(super) found: TokenInfo,
     pub(super) branch: Branch,
 }
 
@@ -46,7 +46,7 @@ impl Evidence {
         env: SemanticEnv,
         situation: SemanticSituation,
         expected: TokenKind,
-        found: SpannedToken,
+        found: TokenInfo,
         branch: Branch,
     ) -> Self {
         Self {
@@ -62,7 +62,7 @@ impl Evidence {
     pub(super) fn with_initial(
         initial_evidence: InitialEvidence,
         expected: TokenKind,
-        found: SpannedToken,
+        found: TokenInfo,
     ) -> Self {
         Self {
             env: initial_evidence.env,
@@ -78,8 +78,8 @@ impl Evidence {
 pub(super) struct EvidenceBuilder {
     env: SemanticEnv,
     situation: SemanticSituation,
-    expected: SpannedToken,
-    found: SpannedToken,
+    expected: TokenInfo,
+    found: TokenInfo,
     // Tokens gone by during propagation to give a rough idea of the slice the evidence needs.
     // Not sure if this would help much
     toks_passed: u32,
@@ -89,8 +89,8 @@ impl EvidenceBuilder {
     pub(super) fn new(
         env: SemanticEnv,
         situation: SemanticSituation,
-        expected: SpannedToken,
-        found: SpannedToken,
+        expected: TokenInfo,
+        found: TokenInfo,
         toks_passed: u32,
     ) -> Self {
         Self {

@@ -1,5 +1,6 @@
-//TODO: Evidence info is very unfinished
-// Collapse past over-fit fns
+//TODO:
+// - Evidence info is very unfinished
+// - Collapse past over-fit fns
 //
 // What if there was a queue per stage, where here for example, `chrn` would be made, and chrn would
 // require that the parsing stage is done for it to be processed. it of course is processed in the
@@ -15,7 +16,7 @@ mod parser_state;
 
 use crate::chrn_config::ChrnConfig;
 use crate::chrn_config::chrn_perf::ChrnPerfStage;
-use crate::lexer::token::{SpannedToken, StringForm, Token, TokenInt, TokenKind, TokenString};
+use crate::lexer::token::{StringForm, Token, TokenInfo, TokenInt, TokenKind, TokenString};
 use crate::lookup::scopes::scopes_concepts::ScopeLookupPattern;
 use crate::parser::ast::ast_concepts::{
     AbstractAlias, AbstractConfig, AbstractConfigKind, AbstractDecl,
@@ -49,7 +50,7 @@ use lang::keywords::Keyword;
 pub fn parse(
     cfg: &mut ChrnConfig,
     region: &SourceRegion,
-    toks: &[SpannedToken],
+    toks: &[TokenInfo],
     interner: &Intern,
 ) -> (AstInfo, SourceDiagnosticSummary) {
     cfg.perf_tracker_mut().start(region.src_id);
@@ -537,7 +538,6 @@ fn parse_alias_stmt(
     Ok(alias)
 }
 
-/// Since `modules.rs` handles modules with it's own mini-parser, this is just a parser check.
 /// Since `module.rs` handles modules with it's own mini-parser, this is just a parser check.
 fn check_bind(ctx: &mut ParserContext, interner: &Intern) -> Result<(), Token> {
     if ctx.peek_tok() == Token::Keyword(Keyword::Virtual) {

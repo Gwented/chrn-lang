@@ -4,7 +4,7 @@ use chrn_utils::{id_types::InternedIdUTF8, intern::Intern};
 use toolsc::cursors::BasicCursor;
 
 use crate::{
-    lexer::token::{SpannedToken, Token, TokenFloat, TokenInt, TokenKind, TokenString},
+    lexer::token::{Token, TokenFloat, TokenInfo, TokenInt, TokenKind, TokenString},
     parser::parser_helpers::DelimiterContext,
     semantic::hir::hir_directives::{
         DirectivePreprocessExpectInput,
@@ -24,7 +24,7 @@ use crate::{
 /// Returns `None` for malformed or unsupported directives, including truncated input.
 /// NOTE: `hash_idx` must point to a `#` token.
 pub fn process_directive(
-    toks: &[SpannedToken],
+    toks: &[TokenInfo],
     hash_idx: usize,
     interner: &Intern,
 ) -> Option<DirectivePreprocess> {
@@ -45,7 +45,7 @@ pub fn process_directive(
 
 /// Attempts to parse a directive out of `Token`, expecting the correct syntax
 fn make_directive(
-    cursor: &mut BasicCursor<SpannedToken>,
+    cursor: &mut BasicCursor<TokenInfo>,
     schema: &DirectivePreprocessSchema,
     delim_ctx: DelimiterContext,
     interner: &Intern,
@@ -98,10 +98,7 @@ fn make_directive(
 }
 
 /// Returns `true` if `expected` == found
-fn expect_id(
-    cursor: &mut BasicCursor<SpannedToken>,
-    expected: TokenKind,
-) -> Option<InternedIdUTF8> {
+fn expect_id(cursor: &mut BasicCursor<TokenInfo>, expected: TokenKind) -> Option<InternedIdUTF8> {
     let found = cursor.advance_owned_checked()?;
     let tok_opt = match found.tok {
         Token::Id(id)
@@ -126,7 +123,7 @@ fn expect_id(
 }
 
 /// Returns `true` if `expected` == found
-fn expect_tok(cursor: &mut BasicCursor<SpannedToken>, expected: TokenKind) -> bool {
+fn expect_tok(cursor: &mut BasicCursor<TokenInfo>, expected: TokenKind) -> bool {
     cursor
         .advance_ref_checked()
         .is_some_and(|found| found.tok.kind() == expected)

@@ -206,9 +206,7 @@ impl MemberResolver<'_> {
                 type_id,
             );
 
-            self.compiler
-                .sym_membs
-                .push(MemberSymbolKind::Field(field));
+            self.compiler.sym_membs.push(MemberSymbolKind::Field(field));
             fields.push(memb_id.into_tagged::<FieldTag>());
         }
 
@@ -289,7 +287,7 @@ impl MemberResolver<'_> {
                             self.summary.push_diag(builder.build());
                             TypeId::new(compiler_consts::CORE_UNKNOWN)
                         } else {
-                            type_id.into()
+                            type_id
                         }
                     }
                     res => {

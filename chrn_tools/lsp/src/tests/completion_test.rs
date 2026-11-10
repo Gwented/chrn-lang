@@ -41,7 +41,7 @@ fn nested_config_without_a_member_type_still_offers_member_options() {
         configured_members: Vec::new(),
     };
 
-    let labels: Vec<String> = config_completion_items(&state, &compiler, candidate, "")
+    let labels: Vec<String> = config_completion_items(&state, &compiler, candidate, "", true)
         .into_iter()
         .map(|item| item.label)
         .collect();
@@ -571,7 +571,7 @@ fn config_option_completion_inserts_assignment_syntax() {
         configured_options: Vec::new(),
         configured_members: Vec::new(),
     };
-    let items = config_completion_items(&state, &compiler, candidate, "iden");
+    let items = config_completion_items(&state, &compiler, candidate, "iden", true);
     let [item] = items.as_slice() else {
         panic!("the option prefix resolves to one item: {items:?}");
     };
@@ -608,6 +608,289 @@ async fn condition_function_completion_respects_client_snippet_support() {
         assert_eq!(item.insert_text.as_deref(), Some(expected_text));
         assert_eq!(item.insert_text_format, expected_format);
     }
+}
+
+#[test]
+fn keyword_completion_follows_sections_and_preserves_the_current_section_marker() {
+    Builder::new_current_thread()
+        .enable_all()
+        .start_paused(true)
+        .build()
+        .unwrap()
+        .block_on(async {
+            let workspace = TempWorkspace::new("section_keywords");
+            let mut session = Session::new().await;
+            for (name, marked, expected) in [
+                ("neutral", "~\n", &["alias", "as", "bind", "complex->", "export", "import", "let", "nest->", "var->", "virtual"][..]),
+                ("var", "var->\n~\n", &["complex->", "nest->"][..]),
+                ("nest", "nest->\n~\n", &["complex->", "enum", "export", "struct", "var->"][..]),
+                ("complex", "complex->\n~\n", &["for", "nest->", "override", "var->"][..]),
+                ("later_sections", "~\nvar->\nnest->\ncomplex->\n", &["alias", "as", "bind", "export", "import", "let", "virtual"][..]),
+                ("reordered", "complex->\nvar->\n~\nnest->\n", &[][..]),
+                ("embedded", "header: data\n@def\nlet text = \"complex->\"\n// nest->\nvar->\n~\n@end\nserialized: data\n", &["complex->", "nest->"][..]),
+                ("current_marker", "ne~st->\n", &["nest->"][..]),
+                ("partial_declaration", "nest->\nst~", &["struct"][..]),
+            ] {
+                let position = position_of(marked, "~", 0);
+                let text = marked.replace('~', "");
+                let uri = workspace.uri(&format!("{name}.chrn"));
+                session.open(&uri, &text).await;
+                assert_eq!(session.backend().docs.read().get(uri.as_str()).unwrap().as_str(), text);
+                let Some(CompletionResponse::Array(items)) = session.completion(&uri, position, None).await else {
+                    panic!("{name}: expected completion array");
+                };
+                let mut keywords: Vec<_> = items.iter().filter(|item| item.kind == Some(CompletionItemKind::KEYWORD)).map(|item| item.label.as_str()).collect();
+                keywords.sort_unstable();
+                assert_eq!(keywords, expected, "{name}: keyword suggestions follow the active section");
+                if !matches!(name, "current_marker" | "partial_declaration") {
+                    for name in ["i32", "true"] {
+                        assert!(items.iter().any(|item| item.label == name), "{name}: keyword filtering preserves non-keyword suggestions");
+                    }
+                }
+            }
+        });
+}
+
+#[test]
+fn keyword_completion_separates_words_without_changing_markers_or_snippets() {
+    Builder::new_current_thread()
+        .enable_all()
+        .start_paused(true)
+        .build()
+        .unwrap()
+        .block_on(async {
+            let workspace = TempWorkspace::new("keyword_spaces");
+            for supports_snippets in [false, true] {
+                let mut session = Session::new_with_snippet_support(supports_snippets).await;
+                let uri = workspace.uri("main.chrn");
+                let text = "let value = 1\n";
+                session.open(&uri, text).await;
+                let mut position = position_of(text, "let value", 0);
+                position.line += 1;
+                position.character = 0;
+                let Some(CompletionResponse::Array(items)) =
+                    session.completion(&uri, position, None).await
+                else {
+                    panic!("keywords complete at EOF");
+                };
+                let eof_as = items.iter().find(|item| item.label == "as").unwrap();
+                assert_eq!(eof_as.insert_text.as_deref(), Some("as "));
+                let Some(CompletionTextEdit::Edit(edit)) = &eof_as.text_edit else {
+                    panic!("EOF completion replaces the empty word");
+                };
+                assert_eq!(edit.range, Range::new(position, position));
+                assert_eq!(edit.new_text, "as ");
+                for (section, names) in [
+                    (
+                        "",
+                        &["as", "export", "virtual", "bind", "import", "alias", "let"][..],
+                    ),
+                    ("nest->\n", &["export", "struct", "enum"][..]),
+                    ("complex->\n", &["override", "for"][..]),
+                ] {
+                    let text = format!("{section}\n");
+                    session.change_full(&uri, &text).await;
+                    let position = position_of(
+                        &text,
+                        "\n",
+                        section.bytes().filter(|byte| *byte == b'\n').count(),
+                    );
+                    let Some(CompletionResponse::Array(items)) =
+                        session.completion(&uri, position, None).await
+                    else {
+                        panic!("{section:?}: keywords complete at the line end");
+                    };
+                    for name in names {
+                        // Existing declaration tests cover snippet text and tab stops.
+                        if supports_snippets && !["as", "export", "virtual"].contains(name) {
+                            continue;
+                        }
+                        let item = items.iter().find(|item| item.label == *name).unwrap();
+                        assert_eq!(item.kind, Some(CompletionItemKind::KEYWORD), "{name}");
+                        assert_eq!(
+                            item.insert_text.as_deref(),
+                            Some(format!("{name} ").as_str()),
+                            "{name}"
+                        );
+                        assert_eq!(item.insert_text_format, None, "{name}");
+                        let Some(CompletionTextEdit::Edit(edit)) = &item.text_edit else {
+                            panic!("{name}: explicit keyword replacement required");
+                        };
+                        assert_eq!(edit.range, Range::new(position, position), "{name}");
+                        assert_eq!(edit.new_text, format!("{name} "), "{name}");
+                    }
+                }
+                session.change_full(&uri, "\n").await;
+                let position = position_of("\n", "\n", 0);
+                let Some(CompletionResponse::Array(items)) =
+                    session.completion(&uri, position, None).await
+                else {
+                    panic!("neutral completion returns the ordinary symbols and markers");
+                };
+                for name in ["var->", "nest->", "complex->", "true", "false", "i32"] {
+                    let item = items.iter().find(|item| item.label == name).unwrap();
+                    assert_eq!(item.insert_text, None, "{name}: retain default insertion");
+                    assert_eq!(item.text_edit, None, "{name}: do not add a space");
+                }
+                for (marked, expected) in [
+                    ("a~", Some("as ")),
+                    ("a~s\n", Some("as ")),
+                    ("as~ ", None),
+                    ("as~\tname", None),
+                ] {
+                    let position = position_of(marked, "~", 0);
+                    let text = marked.replace('~', "");
+                    session.change_full(&uri, &text).await;
+                    assert_eq!(
+                        session
+                            .backend()
+                            .docs
+                            .read()
+                            .get(uri.as_str())
+                            .unwrap()
+                            .as_str(),
+                        text
+                    );
+                    let Some(CompletionResponse::Array(items)) =
+                        session.completion(&uri, position, None).await
+                    else {
+                        panic!("{marked:?}: keyword prefix completes");
+                    };
+                    let item = items.iter().find(|item| item.label == "as").unwrap();
+                    assert_eq!(item.insert_text.as_deref(), expected, "{marked:?}");
+                    assert_eq!(item.insert_text_format, None, "{marked:?}");
+                    if let Some(expected) = expected {
+                        let start = position_of(&text, "a", 0);
+                        let mut end = start;
+                        end.character += text.trim_end().len() as u32;
+                        let Some(CompletionTextEdit::Edit(edit)) = &item.text_edit else {
+                            panic!("{marked:?}: replace the complete word");
+                        };
+                        assert_eq!(edit.range, Range::new(start, end), "{marked:?}");
+                        assert_eq!(edit.new_text, expected, "{marked:?}");
+                    } else {
+                        assert_eq!(
+                            item.text_edit, None,
+                            "{marked:?}: preserve existing whitespace"
+                        );
+                    }
+                }
+            }
+        });
+}
+
+#[test]
+fn declaration_completion_inserts_tab_stops_only_for_snippet_clients() {
+    Builder::new_current_thread()
+        .enable_all()
+        .start_paused(true)
+        .build()
+        .unwrap()
+        .block_on(async {
+            let workspace = TempWorkspace::new("declaration_snippets");
+            for supports_snippets in [false, true] {
+                let mut session = Session::new_with_snippet_support(supports_snippets).await;
+                for (section, name, prefix, snippet) in [
+                    ("complex->\n", "for", "fo", "for $1 {\n\t$0\n}"),
+                    ("nest->\n", "struct", "str", "struct $1 {\n\t$0\n}"),
+                    ("nest->\n", "enum", "en", "enum $1 {\n\t$0\n}"),
+                    ("complex->\n", "override", "over", "override $1 {\n\t$0\n}"),
+                    ("", "let", "le", "let $1 = $0"),
+                    ("", "alias", "ali", "alias $1($2) = [$0]"),
+                    ("", "import", "imp", "import \"$0\""),
+                    ("", "bind", "bi", "bind \"$0\""),
+                ] {
+                    for (typed, cursor) in [
+                        (prefix, prefix.len()),
+                        (name, name.len()),
+                        (name, prefix.len()),
+                    ] {
+                        let text = format!("{section}{typed} \t\r\n");
+                        let uri = workspace.uri(&format!("main_{typed}_{cursor}.chrn"));
+                        session.open(&uri, &text).await;
+                        assert_eq!(
+                            session.backend().docs.read().get(uri.as_str()).unwrap().as_str(),
+                            text
+                        );
+                        let start = position_of(&text, typed, 0);
+                        let mut position = start;
+                        position.character += cursor as u32;
+                        let Some(CompletionResponse::Array(items)) =
+                            session.completion(&uri, position, None).await
+                        else {
+                            panic!("{typed}: expected completion array");
+                        };
+                        let matching: Vec<_> = items.iter().filter(|item| item.label == name).collect();
+                        let [item] = matching.as_slice() else {
+                            panic!("{typed}: expected one {name} completion, got {items:?}");
+                        };
+                        assert_eq!(item.kind, Some(CompletionItemKind::KEYWORD), "{typed}");
+                        assert_eq!(
+                            item.insert_text.as_deref(),
+                            supports_snippets.then_some(snippet),
+                            "{typed}: snippet support = {supports_snippets}"
+                        );
+                        assert_eq!(
+                            item.insert_text_format,
+                            supports_snippets.then_some(InsertTextFormat::SNIPPET),
+                            "{typed}: snippet support = {supports_snippets}"
+                        );
+                        if supports_snippets {
+                            let mut end = start;
+                            end.character += typed.len() as u32;
+                            let Some(CompletionTextEdit::Edit(edit)) = &item.text_edit else {
+                                panic!("{typed}: replace the complete keyword, including text after the cursor");
+                            };
+                            assert_eq!(edit.range, Range::new(start, end), "{typed}: cursor {cursor}");
+                            assert_eq!(edit.new_text, snippet, "{typed}: cursor {cursor}");
+                        }
+                    }
+                }
+            }
+        });
+}
+
+#[test]
+fn declaration_completion_preserves_existing_contents_after_the_keyword() {
+    Builder::new_current_thread()
+        .enable_all()
+        .start_paused(true)
+        .build()
+        .unwrap()
+        .block_on(async {
+            let workspace = TempWorkspace::new("existing_declaration_completion");
+            let mut session = Session::new_with_snippet_support(true).await;
+            for (section, name, contents) in [
+                ("complex->\n", "for", " Person {}"),
+                ("nest->\n", "struct", " Person {}"),
+                ("nest->\n", "enum", " Status {}"),
+                ("complex->\n", "override", " JAVA {}"),
+                ("", "let", " value = 3"),
+                ("", "alias", " // existing declaration comment"),
+                ("", "import", " virtual \"definitions\""),
+                ("", "bind", " virtual \"payload\""),
+            ] {
+                let text = format!("{section}{name}{contents}\n");
+                let uri = workspace.uri(&format!("main_{name}.chrn"));
+                session.open(&uri, &text).await;
+                let mut position = position_of(&text, name, 0);
+                position.character += name.len() as u32;
+                let Some(CompletionResponse::Array(items)) =
+                    session.completion(&uri, position, None).await
+                else {
+                    panic!("{name}: expected completion array");
+                };
+                let item = items
+                    .iter()
+                    .find(|item| item.label == name)
+                    .unwrap_or_else(|| panic!("{name}: keyword remains available: {items:?}"));
+                assert_eq!(item.insert_text, None, "{name}: preserve {contents:?}");
+                assert_eq!(
+                    item.insert_text_format, None,
+                    "{name}: preserve {contents:?}"
+                );
+            }
+        });
 }
 
 /// Container completions expose their type arguments and insert empty slots.
@@ -817,6 +1100,11 @@ async fn static_access_on_an_intrinsic_namespace_offers_extern_types() {
         int.kind,
         Some(tower_lsp::lsp_types::CompletionItemKind::CLASS)
     );
+    assert_eq!(int.insert_text, None, "extern types remain terminal symbols");
+    let Some(CompletionTextEdit::Edit(edit)) = &int.text_edit else {
+        panic!("qualified completion replaces the type prefix");
+    };
+    assert_eq!(edit.new_text, "int");
 }
 
 /// A repeated intrinsic segment name such as `types` must be resolved through
@@ -854,7 +1142,7 @@ async fn multi_segment_intrinsic_completion_stays_under_its_root_namespace() {
         actual.sort_by(|a, b| a.0.cmp(&b.0));
         assert_eq!(
             actual,
-            vec![(expected.to_string(), Some(CompletionItemKind::VARIABLE))],
+            vec![(format!("{expected}::"), Some(CompletionItemKind::MODULE))],
             "`{qualified}` completes only its own language namespace"
         );
     }
@@ -891,7 +1179,7 @@ async fn embedded_override_arrow_completes_the_intrinsic_namespace() {
     actual.sort_by_key(|(label, _)| *label);
     assert_eq!(
         actual,
-        vec![("types", Some(CompletionItemKind::VARIABLE))],
+        vec![("types::", Some(CompletionItemKind::MODULE))],
         "`JAVA=>` exposes only its namespace child despite invalid shorthand content"
     );
     {
@@ -960,7 +1248,7 @@ async fn chained_override_arrow_completes_the_next_namespace_segment() {
             .collect();
         assert_eq!(
             actual,
-            vec![(expected.into(), Some(CompletionItemKind::VARIABLE))],
+            vec![(format!("{expected}::"), Some(CompletionItemKind::MODULE))],
             "`{target}` completes only its platform's child namespace despite invalid remaining shorthand content"
         );
     }
@@ -994,7 +1282,7 @@ async fn braced_override_body_completes_namespace_children() {
         .collect();
     assert_eq!(
         actual,
-        vec![("types".into(), Some(CompletionItemKind::VARIABLE))],
+        vec![("types::".into(), Some(CompletionItemKind::MODULE))],
         "the `t` prefix selects only JAVA's `types` namespace child"
     );
 }
@@ -1036,7 +1324,7 @@ async fn override_root_completion_offers_intrinsic_namespaces() {
         actual.sort_by(|a, b| a.0.cmp(&b.0));
         let expected: Vec<_> = expected
             .iter()
-            .map(|label| (label.to_string(), Some(CompletionItemKind::VARIABLE)))
+            .map(|label| (format!("{label}::"), Some(CompletionItemKind::MODULE)))
             .collect();
         assert_eq!(
             actual, expected,
@@ -1150,7 +1438,8 @@ async fn scalar_arrow_completion_uses_member_options_and_stops_at_parent_close()
     let CompletionResponse::Array(items) = response else {
         panic!("completion must return an item array");
     };
-    assert!(items.iter().any(|item| item.label == "let"));
+    assert!(items.iter().any(|item| item.label == "for"));
+    assert!(items.iter().all(|item| item.label != "let"));
 }
 
 #[test]
@@ -1171,7 +1460,7 @@ fn qualified_core_and_user_module_completions_follow_namespace_ownership() {
             let mut session = Session::new().await;
             session.open(&uri, &text).await;
             for (path, required, forbidden) in [
-                ("core::", vec!["types", "funcs"], vec!["i8", "Numeric"]),
+                ("core::", vec!["types::", "funcs::"], vec!["i8", "Numeric"]),
                 (
                     "core::types::",
                     vec!["i8", "Numeric"],
@@ -1196,6 +1485,81 @@ fn qualified_core_and_user_module_completions_follow_namespace_ownership() {
                         "{path} must not offer {name}: {items:?}"
                     );
                 }
+            }
+        });
+}
+
+#[test]
+fn namespace_completion_inserts_separators_only_for_namespace_symbols() {
+    Builder::new_current_thread()
+        .enable_all()
+        .start_paused(true)
+        .build()
+        .unwrap()
+        .block_on(async {
+            let workspace = TempWorkspace::new("namespace_separators");
+            let text = "let a = core::t\nlet b = core::types::i32::MAX\n";
+            let uri = workspace.uri("main.chrn");
+            let mut session = Session::new().await;
+            session.open(&uri, text).await;
+            for (path, cursor, label, insertion, kind, replaced) in [
+                (
+                    "core::t",
+                    "core::t".len(),
+                    "types::",
+                    "types::",
+                    CompletionItemKind::MODULE,
+                    "t",
+                ),
+                (
+                    "core::types::i32",
+                    "core::types".len(),
+                    "types::",
+                    "types",
+                    CompletionItemKind::MODULE,
+                    "types",
+                ),
+                (
+                    "core::types::i32",
+                    "core::t".len(),
+                    "types::",
+                    "types",
+                    CompletionItemKind::MODULE,
+                    "types",
+                ),
+                (
+                    "core::types::i32",
+                    "core::types::i32".len(),
+                    "i32",
+                    "i32",
+                    CompletionItemKind::STRUCT,
+                    "i32",
+                ),
+            ] {
+                let path_start = position_of(text, path, 0);
+                let mut position = path_start;
+                position.character += cursor as u32;
+                let Some(CompletionResponse::Array(items)) =
+                    session.completion(&uri, position, None).await
+                else {
+                    panic!("{path} at {cursor}: expected completion array");
+                };
+                let item = items
+                    .iter()
+                    .find(|item| item.label == label)
+                    .unwrap_or_else(|| panic!("{path} at {cursor}: missing {label}: {items:?}"));
+                assert_eq!(item.kind, Some(kind), "{path} at {cursor}");
+                let Some(CompletionTextEdit::Edit(edit)) = &item.text_edit else {
+                    panic!("{path} at {cursor}: explicit prefix replacement required");
+                };
+                let prefix_len = path.rfind(replaced).unwrap();
+                let mut start = path_start;
+                start.character += prefix_len as u32;
+                let mut end = start;
+                end.character += replaced.len() as u32;
+                assert_eq!(edit.range, Range::new(start, end), "{path} at {cursor}");
+                assert_eq!(edit.new_text, insertion, "{path} at {cursor}");
+                assert_eq!(item.insert_text_format, None);
             }
         });
 }

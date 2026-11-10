@@ -1,16 +1,16 @@
 use chrn_utils::source_utils::source_diagnostic::SourceDiagnostic;
-use compilation::{lexer::token::SpannedToken, parser::ast::ast_concepts::AstInfo};
+use compilation::{lexer::token::TokenInfo, parser::ast::ast_concepts::AstInfo};
 
 use crate::linter::Lintable;
 
 #[derive(Debug)]
 pub struct InconsistentCommaLinter<'a> {
     ast_info: &'a AstInfo,
-    toks: &'a [SpannedToken],
+    toks: &'a [TokenInfo],
 }
 
 impl InconsistentCommaLinter<'_> {
-    pub fn new<'a>(ast_info: &'a AstInfo, toks: &'a [SpannedToken]) -> InconsistentCommaLinter<'a> {
+    pub fn new<'a>(ast_info: &'a AstInfo, toks: &'a [TokenInfo]) -> InconsistentCommaLinter<'a> {
         InconsistentCommaLinter { ast_info, toks }
     }
 }

@@ -31,5 +31,5 @@ pub fn is_similar(a: &str, b: &str) -> bool {
 
     let p = 1.0 - (distance / (max_len as f64));
 
-    p >= 0.70
+    p >= 0.75
 }

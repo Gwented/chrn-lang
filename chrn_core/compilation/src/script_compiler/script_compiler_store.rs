@@ -6,7 +6,7 @@ use chrn_utils::{
 
 use crate::{
     chrn_config::ChrnConfig,
-    lexer::{token::SpannedToken, trivia::Trivia},
+    lexer::{token::TokenInfo, trivia::Trivia},
     parser::ast::ast_concepts::AstInfo,
     semantic::{compilation_unit::CompilationUnit, hir::hir_directives::DirectivePreprocessStore},
 };
@@ -32,7 +32,7 @@ pub struct ScriptCompilerStore {
     pub interner: Intern,
     pub src_manager: SourceManager,
     /// These are `Option` types due to modules being stored in a dense array
-    pub toks: Vec<Option<Vec<SpannedToken>>>,
+    pub toks: Vec<Option<Vec<TokenInfo>>>,
     /// These are `Option` types due to modules being stored in a dense array
     pub trivias: Vec<Option<Vec<Trivia>>>,
     /// These are `Option` types due to modules being stored in a dense array
@@ -48,7 +48,7 @@ impl ScriptCompilerStore {
         region_arena: Arena<SourceRegion, SourceRegionId>,
         interner: Intern,
         src_manager: SourceManager,
-        toks: Vec<Option<Vec<SpannedToken>>>,
+        toks: Vec<Option<Vec<TokenInfo>>>,
         trivias: Vec<Option<Vec<Trivia>>>,
         asts: Vec<Option<AstInfo>>,
         compilation_syms: Vec<Option<Vec<CompilationUnit>>>,

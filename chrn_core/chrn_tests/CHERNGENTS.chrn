@@ -1,20 +1,28 @@
 /* *///import virtual "../chrn_core/chrn_tests/other.chrn"
 import "../chrn_core/chrn_tests/chrn.chrn"
 
+let e#_ = 4
 var->
     // Emit help
-    // expo x: char;
+    // expo x: char
     // Emit help
     // x: char;
     // fix me
-    // x: core::IsEmpty
-    // Please stop.
-    x : IsEmpty
+    // Color namespaces the same as modules???????????? questino mark
+    // y: core::funcs::IsEmpty;
+    // Maybe just call these "VarDefined"?
+    x: core::types::Integer
+    // Maybe internally static access accepts up to `types` since nothing exists past the last `::`?
+    // x: CHERNGENTS::CHERNGENTS::core::types::
 
 nest->
-struct A {}
+export struct A {}
 
 complex->
+
+for A {
+    
+}
 
 // Seems ok
 /*override JAVA=>types {

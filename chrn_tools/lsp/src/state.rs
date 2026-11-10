@@ -40,7 +40,7 @@ use chrn_utils::source_utils::source_manager::{SourceKind, SourceManager};
 use compilation::chrn_config::ChrnConfig;
 use compilation::id_tag_decls::ConfigMemberTag;
 use compilation::lexer::Lexer;
-use compilation::lexer::token::SpannedToken;
+use compilation::lexer::token::TokenInfo;
 use compilation::lexer::token::Token as ScriptToken;
 use compilation::lexer::trivia::{Trivia, TriviaKind};
 use compilation::lookup::member_lookup::{self, MemberLookupPattern, MemberLookupResult};
@@ -164,7 +164,7 @@ pub struct DocumentState {
     /// The raw source text of the document.
     pub text: Arc<String>,
     /// Lexical tokens for the script section (from the lexer).
-    pub tokens: Vec<SpannedToken>,
+    pub tokens: Vec<TokenInfo>,
     /// Trivia (comments, whitespace) from lexing; used for `offset_in_comment`.
     pub trivia: Vec<Trivia>,
     /// String interner shared by all analysis stages for this document.
@@ -215,7 +215,7 @@ impl DocumentState {
     /// complete it.
     pub fn new(
         text: Arc<String>,
-        tokens: Vec<SpannedToken>,
+        tokens: Vec<TokenInfo>,
         trivia: Vec<Trivia>,
         interner: Intern,
         src_manager: SourceManager,
@@ -1012,7 +1012,7 @@ impl DocumentState {
     /// `byte_offset` is an **absolute** byte offset in the document. The method
     /// internally subtracts `script_start` to convert it to the relative offset
     /// against which the token spans are stored.
-    pub fn get_token_at_offset(&self, byte_offset: usize) -> Option<&SpannedToken> {
+    pub fn get_token_at_offset(&self, byte_offset: usize) -> Option<&TokenInfo> {
         let rel_offset = byte_offset.saturating_sub(self.script_start);
         let idx = self
             .tokens
@@ -1797,7 +1797,7 @@ impl Default for DocumentCache {
 /// All source coordinates come from AST or lexer spans in the main region.
 struct RefCollector<'a> {
     compiler: &'a ScriptCompiler,
-    tokens: &'a [SpannedToken],
+    tokens: &'a [TokenInfo],
     map: &'a mut Vec<(SourceSpan, SemanticEntity)>,
 }
 
@@ -1833,7 +1833,7 @@ impl PathCursor {
 impl<'a> RefCollector<'a> {
     fn new(
         compiler: &'a ScriptCompiler,
-        tokens: &'a [SpannedToken],
+        tokens: &'a [TokenInfo],
         map: &'a mut Vec<(SourceSpan, SemanticEntity)>,
     ) -> Self {
         RefCollector {

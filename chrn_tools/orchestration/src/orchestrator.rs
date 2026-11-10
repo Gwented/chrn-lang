@@ -5,7 +5,7 @@ use chrn_utils::{
     source_utils::{source_diagnostic::SourceDiagnosticSummary, source_region::SourceRegion},
 };
 use compilation::{
-    lexer::{Lexer, lexer_output::LexerOutput, token::SpannedToken},
+    lexer::{Lexer, lexer_output::LexerOutput, token::TokenInfo},
     module::module_concepts::{ModuleKind, ModuleState},
     parser::{self, ast::ast_concepts::AstInfo},
     resolvers::{
@@ -283,7 +283,7 @@ pub fn run_parser(
     //TODO: I don't think this can stay external and maintain usefulness
     compiler_cache: &Option<&mut ScriptCompilerCache>,
     current_mod_id: ModuleId,
-    toks: &[SpannedToken],
+    toks: &[TokenInfo],
 ) -> (Option<AstInfo>, SourceDiagnosticSummary) {
     let module = &compiler.mods[current_mod_id];
     let region = match &module.kind {

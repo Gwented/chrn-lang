@@ -1,10 +1,10 @@
-use crate::lexer::{token::SpannedToken, trivia::Trivia};
+use crate::lexer::{token::TokenInfo, trivia::Trivia};
 
 /// Container for lexer-specific output data
 pub struct LexerOutput {
     // Not even going to comment on what was here before.
     /// Tokens collected by Lexer
-    pub toks: Vec<SpannedToken>,
+    pub toks: Vec<TokenInfo>,
     /// Trivia collected by Lexer
     pub trivia: Vec<Trivia>,
     /// Every index of an `Token::HashSymbol` instance
@@ -17,7 +17,7 @@ pub struct LexerOutput {
 
 impl LexerOutput {
     pub const fn new(
-        toks: Vec<SpannedToken>,
+        toks: Vec<TokenInfo>,
         trivia: Vec<Trivia>,
         hash_tok_indices: Vec<usize>,
         found_invalid_toks: u8,

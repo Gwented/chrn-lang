@@ -143,6 +143,7 @@ where
     }
 }
 
+// TODO: Rename to check_field_like?
 /// Fields and variants encode the same type semantics so this is shared.
 ///
 /// Returns `true` if the type is a valid field or variant candidate, `false` if invalid

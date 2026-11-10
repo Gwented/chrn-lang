@@ -19,7 +19,7 @@ use toolsc::cursors::BasicCursor;
 
 use crate::{
     chrn_config::ChrnConfig,
-    lexer::token::{self, SpannedToken, Token, TokenFloat, TokenInt, TokenKind, TokenString},
+    lexer::token::{self, Token, TokenFloat, TokenInfo, TokenInt, TokenKind, TokenString},
     parser::{
         Evidence, InitialEvidence, NeutralBranch, SectionBranch, SemanticSituation, branch::Branch,
         parse_fmt,
@@ -65,7 +65,7 @@ const A_BRANCH_FUNC_SET: u64 = A_BASE_EXIT_SET | token::C_BRACKET;
 pub(super) struct ParserContext<'a> {
     cfg: &'a ChrnConfig,
     pub(super) region: &'a SourceRegion,
-    pub(super) cursor: BasicCursor<'a, SpannedToken>,
+    pub(super) cursor: BasicCursor<'a, TokenInfo>,
     //TODO: Maybe a budget too
     pub(super) summary: SourceDiagnosticSummary,
 }
@@ -74,7 +74,7 @@ impl<'a> ParserContext<'a> {
     pub(super) fn new(
         cfg: &'a ChrnConfig,
         region: &'a SourceRegion,
-        toks: &'a [SpannedToken],
+        toks: &'a [TokenInfo],
     ) -> ParserContext<'a> {
         ParserContext {
             cfg,
@@ -152,7 +152,7 @@ impl<'a> ParserContext<'a> {
     /// returned so that assistance can enhance the error message where needed. It can be ignored.
     pub(super) fn create_diag_builder(
         &mut self,
-        found: &SpannedToken,
+        found: &TokenInfo,
         core_msg: String,
     ) -> (SourceDiagnosticBuilder, Option<SemanticSituation>) {
         let builder =
@@ -503,7 +503,7 @@ impl<'a> ParserContext<'a> {
         &self,
         mut builder: SourceDiagnosticBuilder,
         expected: TokenKind,
-        found: &SpannedToken,
+        found: &TokenInfo,
         branch: Branch,
         interner: &Intern,
     ) -> SourceDiagnosticBuilder {
@@ -815,7 +815,7 @@ impl<'a> ParserContext<'a> {
 
     // Not sure about this default
     // Probably will become option for these
-    pub(super) fn peek_ahead(&self, dest: usize) -> SpannedToken {
+    pub(super) fn peek_ahead(&self, dest: usize) -> TokenInfo {
         self.cursor
             .peek_ahead_owned_checked(dest)
             // But what if the final token isn't EOF..
@@ -824,7 +824,7 @@ impl<'a> ParserContext<'a> {
 
     //FIX: I don't like these defaults
     //
-    pub(super) fn peek_behind(&self, dest: usize) -> SpannedToken {
+    pub(super) fn peek_behind(&self, dest: usize) -> TokenInfo {
         // The caller must establish that the requested token precedes the current position.
         assert!(dest <= self.cursor.pos(), "cursor position underflow");
         self.cursor
@@ -850,7 +850,7 @@ impl<'a> ParserContext<'a> {
             .span
     }
 
-    fn advance(&mut self) -> SpannedToken {
+    fn advance(&mut self) -> TokenInfo {
         // If it made it here there has to be at least ONE token inside so this is fine
         self.cursor
             .advance_owned_checked()

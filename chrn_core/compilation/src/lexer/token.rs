@@ -14,8 +14,9 @@ use crate::{
 };
 
 #[derive(Debug, Clone)]
-pub struct SpannedToken {
+pub struct TokenInfo {
     pub tok: Token,
+    // Is this ok to be `SpannedContainer<Token>`?
     pub span: SourceSpan,
     /// A span that correlates to the trivia vector created by the lexer
     /// This corresponds to owned indices of the token, not the source file's bytes.
@@ -78,13 +79,13 @@ pub enum StringForm {
     /// Declaration: "I am default"
     Default,
     /// May or may not contain invalid UTF-8. Still considered valid.
-    /// Declaration: as p"(Imagine a replacement character being here) I am still valid"
+    /// Declaration: p"(Imagine a replacement character being here) I am still valid"
     ///
     /// 'p' stands for permissive or path.
     MaybeUTF8,
 }
 
-/// chrn
+/// All possible tokens
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Token {
     // To help with error messages
@@ -117,6 +118,7 @@ pub enum Token {
     QuestionMark,
     Assign,
     EqualTo,
+    Semicolon,
     Colon,
     // This name NEEDS to be changed
     Walrus,
@@ -176,6 +178,7 @@ impl Token {
             Token::Percent => TokenKind::Percent,
             Token::GreaterOrEq => TokenKind::GreaterOrEq,
             Token::LessOrEq => TokenKind::LessOrEq,
+            Token::Semicolon => TokenKind::Semicolon,
             Token::NotEq => TokenKind::NotEq,
             Token::At => TokenKind::At,
             Token::And => TokenKind::And,
@@ -251,6 +254,7 @@ pub enum TokenKind {
     NotSlimArrow,
     StaticAccess,
     Slash,
+    Semicolon,
     HashSymbol,
     DotRangeInclusive,
     Percent,
@@ -328,6 +332,7 @@ impl Display for TokenKind {
             TokenKind::Asterisk => write!(f, "*"),
             TokenKind::Walrus => write!(f, ":="),
             TokenKind::Tilde => write!(f, "~"),
+            TokenKind::Semicolon => write!(f, ";"),
             TokenKind::Dot => write!(f, "."),
             TokenKind::VerticalBar => write!(f, "|"),
             TokenKind::Invalid => write!(f, "invalid"),
@@ -392,9 +397,10 @@ pub(crate) const KEYWORD: u64 = 1 << 41;
 pub(crate) const BOOL: u64 = 1 << 42;
 pub(crate) const STATIC_ACCESS: u64 = 1 << 43;
 pub(crate) const NOT_SLIM_ARROW: u64 = 1 << 44;
-pub(crate) const DEF: u64 = 1 << 45;
-pub(crate) const END: u64 = 1 << 46;
-pub(crate) const EOF: u64 = 1 << 47;
+pub(crate) const SEMICOLON: u64 = 1 << 45;
+pub(crate) const DEF: u64 = 1 << 46;
+pub(crate) const END: u64 = 1 << 47;
+pub(crate) const EOF: u64 = 1 << 48;
 
 //FIX: PLEASE ASSERT THIS THING
 impl TokenKind {
@@ -424,6 +430,7 @@ impl TokenKind {
             TokenKind::Percent => PERCENT,
             TokenKind::Colon => COLON,
             TokenKind::OParen => O_PAREN,
+            TokenKind::Semicolon => SEMICOLON,
             TokenKind::CParen => C_PAREN,
             TokenKind::Plus => PLUS,
             TokenKind::Hyphen => HYPHEN,

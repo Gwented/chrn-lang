@@ -542,10 +542,7 @@ fn symbol_completion_kind(compiler: &ScriptCompiler, sym: &Symbol) -> Completion
                 Type::Deferred(_) => unreachable!(),
             }
         }
-        SymbolKind::Namespace => match sym.associated_scope.expect("Should have namespace") {
-            scopes_concepts::AssociatedScopeKind::Module(_) => CompletionItemKind::MODULE,
-            scopes_concepts::AssociatedScopeKind::Scope(_) => CompletionItemKind::VARIABLE,
-        },
+        SymbolKind::Namespace => CompletionItemKind::MODULE,
         // Core exposes extern names as terminal type symbols even though it does
         // not yet attach a `TypeId` to them.
         SymbolKind::ExternType(_) => CompletionItemKind::CLASS,
@@ -665,6 +662,44 @@ fn completion_context(
         }
     }
     (section, bracket_depth > 0)
+}
+
+fn keyword_completion_allowed(
+    state: &DocumentState,
+    label: &str,
+    section: scopes_concepts::ScopeType,
+    start_b: usize,
+) -> bool {
+    let section_keyword = match label {
+        "var->" => Some(lang::keywords::Keyword::Var),
+        "nest->" => Some(lang::keywords::Keyword::Nest),
+        "complex->" => Some(lang::keywords::Keyword::Complex),
+        _ => None,
+    };
+    if let Some(keyword) = section_keyword {
+        let relative_start = crate::text::abs_to_rel_offset(start_b as u32, state.script_start);
+        return !state.tokens.windows(2).any(|tokens| {
+            tokens[0].tok == ScriptToken::Keyword(keyword)
+                && tokens[1].tok == ScriptToken::SlimArrow
+                && tokens[0].span.start != relative_start
+        });
+    }
+
+    match label {
+        "bind" | "import" | "alias" | "let" | "as" | "virtual" => {
+            section == scopes_concepts::ScopeType::Neutral
+        }
+        "export" => matches!(
+            section,
+            scopes_concepts::ScopeType::Neutral | scopes_concepts::ScopeType::Nest
+        ),
+        "struct" | "enum" => section == scopes_concepts::ScopeType::Nest,
+        "for" | "override" => section == scopes_concepts::ScopeType::Complex,
+        // `in` is reserved. `change` belongs inside override config bodies,
+        // which use the schema/namespace completion paths above this fallback.
+        "in" | "change" => false,
+        _ => true,
+    }
 }
 
 /// Collects symbols owned by `mod_id`'s qualified namespace.
@@ -1314,6 +1349,7 @@ fn override_root_completion_items(
     state: &DocumentState,
     compiler: &ScriptCompiler,
     prefix: &str,
+    module_suffix: bool,
 ) -> Vec<CompletionItem> {
     let roots: Vec<_> = if let Some(scope_id) = compiler.intrinsic_registry.complex_scope_id {
         compiler.scopes[scope_id]
@@ -1336,10 +1372,8 @@ fn override_root_completion_items(
         .into_iter()
         .filter_map(|name_id| {
             let name = state.interner.extract_utf8_str(name_id);
-            (prefix.is_empty() || name.starts_with(prefix)).then(|| CompletionItem {
-                label: name.to_string(),
-                kind: Some(CompletionItemKind::VARIABLE),
-                ..Default::default()
+            (prefix.is_empty() || name.starts_with(prefix)).then(|| {
+                completion_item(name.to_string(), CompletionItemKind::MODULE, module_suffix)
             })
         })
         .collect()
@@ -1350,6 +1384,7 @@ pub(crate) fn config_completion_items(
     compiler: &ScriptCompiler,
     candidate: ConfigCompletionCandidate,
     prefix: &str,
+    module_suffix: bool,
 ) -> Vec<CompletionItem> {
     if let Some(scope_id) = candidate.scope_id {
         return compiler.scopes[scope_id]
@@ -1363,7 +1398,7 @@ pub(crate) fn config_completion_items(
                     completion_item(
                         name.to_string(),
                         symbol_completion_kind(compiler, sym),
-                        true,
+                        module_suffix,
                     )
                 })
             })
@@ -1515,20 +1550,7 @@ fn classify_id_token(
                         }
                         return Some(SemanticTokenType::Variable.as_u32());
                     }
-                    SymbolKind::Namespace => match sym.associated_scope {
-                        Some(scopes_concepts::AssociatedScopeKind::Module(_)) => {
-                            return Some(SemanticTokenType::Keyword.as_u32());
-                        }
-                        Some(scopes_concepts::AssociatedScopeKind::Scope(scope_id)) => {
-                            let token_type = if compiler.scopes[scope_id].scope.is_intrinsic {
-                                SemanticTokenType::Class
-                            } else {
-                                SemanticTokenType::Variable
-                            };
-                            return Some(token_type.as_u32());
-                        }
-                        None => return None,
-                    },
+                    SymbolKind::Namespace => return Some(SemanticTokenType::Keyword.as_u32()),
                     SymbolKind::ExternType(_) => {
                         return Some(SemanticTokenType::Type.as_u32());
                     }
@@ -2141,7 +2163,7 @@ impl LanguageServer for Backend {
             start_b += 1;
         }
         let prefix = &state.text[start_b..byte_off.min(state.text.len())];
-        let module_suffix = !state.text[byte_off..].starts_with("::");
+        let module_suffix = !state.text[end_b..].starts_with("::");
         let (section, in_condition) = completion_context(state, byte_off);
         let call_completion = in_condition && !state.text[byte_off..].starts_with('(');
         let snippet_support = self.snippet_support.load(Ordering::Relaxed);
@@ -2284,7 +2306,7 @@ impl LanguageServer for Backend {
                     }
                 }
             }
-            set_completion_edits(&mut items, &state.text, start_b, byte_off);
+            set_completion_edits(&mut items, &state.text, start_b, end_b);
             return Ok(Some(CompletionResponse::Array(items)));
         }
 
@@ -2363,7 +2385,7 @@ impl LanguageServer for Backend {
                     }
                 }
             }
-            set_completion_edits(&mut items, &state.text, start_b, byte_off);
+            set_completion_edits(&mut items, &state.text, start_b, end_b);
             return Ok(Some(CompletionResponse::Array(items)));
         }
 
@@ -2372,7 +2394,8 @@ impl LanguageServer for Backend {
         if let Some(compiler) = &state.compiler
             && completion_follows_override(state, start_b)
         {
-            let items = override_root_completion_items(state, compiler, prefix);
+            let mut items = override_root_completion_items(state, compiler, prefix, module_suffix);
+            set_completion_edits(&mut items, &state.text, start_b, end_b);
             return Ok(Some(CompletionResponse::Array(items)));
         }
 
@@ -2383,7 +2406,7 @@ impl LanguageServer for Backend {
             && let Some(path) = override_config_namespace_path(state, start_b)
             && let Some(scope_id) = resolve_intrinsic_config_namespace_path(compiler, &path)
         {
-            let items = compiler.scopes[scope_id]
+            let mut items: Vec<_> = compiler.scopes[scope_id]
                 .scope
                 .table
                 .iter_interned()
@@ -2402,6 +2425,7 @@ impl LanguageServer for Backend {
                     })
                 })
                 .collect();
+            set_completion_edits(&mut items, &state.text, start_b, end_b);
             return Ok(Some(CompletionResponse::Array(items)));
         }
 
@@ -2411,7 +2435,13 @@ impl LanguageServer for Backend {
         if let Some(compiler) = &state.compiler
             && let Some(candidate) = config_completion_candidate(state, compiler, byte_off)
         {
-            let items = config_completion_items(state, compiler, candidate, prefix);
+            let mut items =
+                config_completion_items(state, compiler, candidate, prefix, module_suffix);
+            for item in &mut items {
+                if item.kind == Some(CompletionItemKind::MODULE) {
+                    set_completion_edits(std::slice::from_mut(item), &state.text, start_b, end_b);
+                }
+            }
             return Ok(Some(CompletionResponse::Array(items)));
         }
 
@@ -2497,9 +2527,39 @@ impl LanguageServer for Backend {
             // TODO: Offer directives from their new registry once its tooling API is defined.
         }
 
+        // Preserve existing declaration contents when completing their keyword.
+        let declaration_snippet = snippet_support
+            && state.text[end_b..]
+                .split('\n')
+                .next()
+                .is_none_or(|rest| rest.trim().is_empty());
         for (label, kind) in SUGGESTIONS {
-            if (prefix.is_empty() || label.starts_with(prefix)) && seen.insert(label.to_string()) {
+            if (prefix.is_empty() || label.starts_with(prefix))
+                && keyword_completion_allowed(state, label, section, start_b)
+                && seen.insert(label.to_string())
+            {
                 let mut item = completion_item(label.to_string(), *kind, module_suffix);
+                if declaration_snippet {
+                    let snippet = match *label {
+                        "for" | "struct" | "enum" | "override" => {
+                            Some(format!("{label} $1 {{\n\t$0\n}}"))
+                        }
+                        "let" => Some("let $1 = $0".to_string()),
+                        "alias" => Some("alias $1($2) = [$0]".to_string()),
+                        "import" | "bind" => Some(format!("{label} \"$0\"")),
+                        _ => None,
+                    };
+                    if let Some(snippet) = snippet {
+                        item.insert_text = Some(snippet);
+                        item.insert_text_format = Some(InsertTextFormat::SNIPPET);
+                        set_completion_edits(
+                            std::slice::from_mut(&mut item),
+                            &state.text,
+                            start_b,
+                            end_b,
+                        );
+                    }
+                }
                 let generic = match *label {
                     "List" | "Set" | "Tuple" => Some(("<..>", "<$0>", "<>")),
                     "Map" => Some(("<.., ..>", "<$1, $2>$0", "<, >")),
@@ -2516,10 +2576,28 @@ impl LanguageServer for Backend {
                         item.insert_text_format = Some(InsertTextFormat::SNIPPET);
                     }
                 }
+                if *kind == CompletionItemKind::KEYWORD
+                    && !label.ends_with("->")
+                    && item.insert_text.is_none()
+                    && !state.text[end_b..].starts_with([' ', '\t'])
+                {
+                    item.insert_text = Some(format!("{label} "));
+                    set_completion_edits(
+                        std::slice::from_mut(&mut item),
+                        &state.text,
+                        start_b,
+                        end_b,
+                    );
+                }
                 items.push(item);
             }
         }
 
+        for item in &mut items {
+            if item.kind == Some(CompletionItemKind::MODULE) {
+                set_completion_edits(std::slice::from_mut(item), &state.text, start_b, end_b);
+            }
+        }
         Ok(Some(CompletionResponse::Array(items)))
     }
 }

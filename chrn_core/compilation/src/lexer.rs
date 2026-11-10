@@ -1,9 +1,7 @@
 //NOTE: Loader enforces size constraints so the lexer doesn't have to track any activity to ensure
 //the program is running safely
 // At most there could be some indexing errors although unlikely
-
-//WARN: LEXER HAS BEEN CHANGED TO USE (INCLUSIVE, EXCLUSIVE) SO THERE MAY BE BUGS LATER IF SOMETHING
-//WAS MISSED. I DO NOT BELIEVE THERE ARE BUGS LEFT.
+//TODO: Maybe have Token::from_byte
 
 pub mod lexer_output;
 pub mod notations;
@@ -24,7 +22,7 @@ use crate::{
     lexer::{
         lexer_output::LexerOutput,
         notations::{FloatNotation, IntegerNotation, Notation},
-        token::{SpannedToken, StringForm, Token, TokenFloat, TokenInt, TokenString},
+        token::{StringForm, Token, TokenFloat, TokenInfo, TokenInt, TokenString},
         trivia::{Trivia, TriviaKind},
     },
 };
@@ -48,7 +46,6 @@ pub struct Lexer<'a> {
     cfg: &'a mut ChrnConfig,
     /// For threshold of invalid tokens before terminating lex
     invalid_toks: u8,
-    last_quote_pos: Option<usize>,
     trivia: Vec<Trivia>,
     trivia_start_idx: usize,
     trivia_end_idx: usize,
@@ -74,7 +71,6 @@ impl Lexer<'_> {
             current_src_id,
             cursor: BasicCursor::new(src),
             script_start,
-            last_quote_pos: None,
             trivia: Vec::with_capacity(speculated_trivia),
             cfg,
             invalid_toks: 0,
@@ -96,7 +92,7 @@ impl Lexer<'_> {
     pub fn tokenize(&mut self, interner: &mut Intern) -> LexerOutput {
         // 40 bytes : 1 token
         let speculated_toks = self.cursor.len() / 40;
-        let mut toks: Vec<SpannedToken> = Vec::with_capacity(speculated_toks);
+        let mut toks: Vec<TokenInfo> = Vec::with_capacity(speculated_toks);
         let mut hash_tok_indices: Vec<usize> = Vec::new();
 
         self.cfg.perf_tracker_mut().start(self.current_src_id);
@@ -119,7 +115,7 @@ impl Lexer<'_> {
                 //Will probably just remove spanning from EOF.
                 let eof_start = (self.cursor.len().saturating_sub(1)) as u32;
 
-                toks.push(SpannedToken {
+                toks.push(TokenInfo {
                     tok: Token::EOF,
                     //WARN: Is this a pointing to non-utf8 token because eof is only one byte issue?
                     span: SourceSpan::new(self.current_region_id, eof_start, eof_start + 1),
@@ -159,7 +155,6 @@ impl Lexer<'_> {
                 c if c.is_ascii_digit() => {
                     toks.push(self.read_num(interner));
                 }
-                //TODO: Tests for these types of lexed tokens that are multi-layered
                 ':' => {
                     // WARN: EXCLUSIVE SPANNING: self.cursor.pos() is now + 1 so that it captures ":" since
                     // the end is exclusive
@@ -180,7 +175,7 @@ impl Lexer<'_> {
                         Token::Colon
                     };
 
-                    toks.push(SpannedToken {
+                    toks.push(TokenInfo {
                         tok,
                         span: SourceSpan::new(
                             self.current_region_id,
@@ -192,24 +187,11 @@ impl Lexer<'_> {
                     });
                 }
                 '(' => {
-                    let pos = self.cursor.pos() as u32;
-                    toks.push(SpannedToken {
-                        tok: Token::OParen,
-                        span: SourceSpan::new(self.current_region_id, pos, pos + 1),
-                        leading_trivia_indices: self.trivia_start_idx as u32
-                            ..self.trivia_end_idx as u32,
-                    });
-
+                    self.push_single_byte_tok(&mut toks, Token::OParen);
                     self.advance();
                 }
                 ')' => {
-                    let pos = self.cursor.pos() as u32;
-                    toks.push(SpannedToken {
-                        tok: Token::CParen,
-                        span: SourceSpan::new(self.current_region_id, pos, pos + 1),
-                        leading_trivia_indices: self.trivia_start_idx as u32
-                            ..self.trivia_end_idx as u32,
-                    });
+                    self.push_single_byte_tok(&mut toks, Token::CParen);
                     self.advance();
                 }
                 '<' => {
@@ -225,7 +207,7 @@ impl Lexer<'_> {
                         Token::OAngleBracket
                     };
 
-                    toks.push(SpannedToken {
+                    toks.push(TokenInfo {
                         tok,
                         span: SourceSpan::new(
                             self.current_region_id,
@@ -249,7 +231,7 @@ impl Lexer<'_> {
                         Token::CAngleBracket
                     };
 
-                    toks.push(SpannedToken {
+                    toks.push(TokenInfo {
                         tok,
                         span: SourceSpan::new(
                             self.current_region_id,
@@ -261,65 +243,30 @@ impl Lexer<'_> {
                     });
                 }
                 '[' => {
-                    let pos = self.cursor.pos() as u32;
-                    toks.push(SpannedToken {
-                        tok: Token::OBracket,
-                        span: SourceSpan::new(self.current_region_id, pos, pos + 1),
-                        leading_trivia_indices: self.trivia_start_idx as u32
-                            ..self.trivia_end_idx as u32,
-                    });
-
+                    self.push_single_byte_tok(&mut toks, Token::OBracket);
                     self.advance();
                 }
                 ']' => {
-                    let pos = self.cursor.pos() as u32;
-                    toks.push(SpannedToken {
-                        tok: Token::CBracket,
-                        span: SourceSpan::new(self.current_region_id, pos, pos + 1),
-                        leading_trivia_indices: self.trivia_start_idx as u32
-                            ..self.trivia_end_idx as u32,
-                    });
-
+                    self.push_single_byte_tok(&mut toks, Token::CBracket);
                     self.advance();
                 }
                 '{' => {
-                    let pos = self.cursor.pos() as u32;
-                    toks.push(SpannedToken {
-                        tok: Token::OCurlyBracket,
-                        span: SourceSpan::new(self.current_region_id, pos, pos + 1),
-                        leading_trivia_indices: self.trivia_start_idx as u32
-                            ..self.trivia_end_idx as u32,
-                    });
-
+                    self.push_single_byte_tok(&mut toks, Token::OCurlyBracket);
                     self.advance();
                 }
                 '}' => {
-                    let pos = self.cursor.pos() as u32;
-                    toks.push(SpannedToken {
-                        tok: Token::CCurlyBracket,
-                        span: SourceSpan::new(self.current_region_id, pos, pos + 1),
-                        leading_trivia_indices: self.trivia_start_idx as u32
-                            ..self.trivia_end_idx as u32,
-                    });
-
+                    self.push_single_byte_tok(&mut toks, Token::CCurlyBracket);
                     self.advance();
                 }
                 ',' => {
-                    let pos = self.cursor.pos() as u32;
-                    toks.push(SpannedToken {
-                        tok: Token::Comma,
-                        span: SourceSpan::new(self.current_region_id, pos, pos + 1),
-                        leading_trivia_indices: self.trivia_start_idx as u32
-                            ..self.trivia_end_idx as u32,
-                    });
-
+                    self.push_single_byte_tok(&mut toks, Token::Comma);
                     self.advance();
                 }
                 '@' => {
                     // Allows for same behavior even in file with serialized data
                     if self.is_def_start() {
                         // in_def = true;
-                        toks.push(SpannedToken {
+                        toks.push(TokenInfo {
                             tok: Token::Def,
                             span: SourceSpan::new(
                                 self.current_region_id,
@@ -336,7 +283,7 @@ impl Lexer<'_> {
                     } else if self.is_def_end() {
                         // in_def = false;
 
-                        toks.push(SpannedToken {
+                        toks.push(TokenInfo {
                             tok: Token::End,
                             span: SourceSpan::new(
                                 self.current_region_id,
@@ -351,7 +298,7 @@ impl Lexer<'_> {
                         break;
                     } else {
                         let pos = self.cursor.pos() as u32;
-                        toks.push(SpannedToken {
+                        toks.push(TokenInfo {
                             tok: Token::At,
                             span: SourceSpan::new(self.current_region_id, pos, pos + 1),
                             leading_trivia_indices: self.trivia_start_idx as u32
@@ -375,7 +322,7 @@ impl Lexer<'_> {
                         Token::Dot
                     };
 
-                    toks.push(SpannedToken {
+                    toks.push(TokenInfo {
                         tok,
                         span: SourceSpan::new(
                             self.current_region_id,
@@ -388,15 +335,7 @@ impl Lexer<'_> {
                 }
                 '#' => {
                     hash_tok_indices.push(toks.len());
-
-                    let pos = self.cursor.pos() as u32;
-                    toks.push(SpannedToken {
-                        tok: Token::HashSymbol,
-                        span: SourceSpan::new(self.current_region_id, pos, pos + 1),
-                        leading_trivia_indices: self.trivia_start_idx as u32
-                            ..self.trivia_end_idx as u32,
-                    });
-
+                    self.push_single_byte_tok(&mut toks, Token::HashSymbol);
                     self.advance();
                 }
                 '&' => {
@@ -411,7 +350,7 @@ impl Lexer<'_> {
                         Token::Ampersand
                     };
 
-                    toks.push(SpannedToken {
+                    toks.push(TokenInfo {
                         tok,
                         span: SourceSpan::new(
                             self.current_region_id,
@@ -435,7 +374,7 @@ impl Lexer<'_> {
                         Token::VerticalBar
                     };
 
-                    toks.push(SpannedToken {
+                    toks.push(TokenInfo {
                         tok,
                         span: SourceSpan::new(
                             self.current_region_id,
@@ -456,14 +395,7 @@ impl Lexer<'_> {
                     toks.push(sp_tok);
                 }
                 '+' => {
-                    let pos = self.cursor.pos() as u32;
-                    toks.push(SpannedToken {
-                        tok: Token::Plus,
-                        span: SourceSpan::new(self.current_region_id, pos, pos + 1),
-                        leading_trivia_indices: self.trivia_start_idx as u32
-                            ..self.trivia_end_idx as u32,
-                    });
-
+                    self.push_single_byte_tok(&mut toks, Token::Plus);
                     self.advance();
                 }
                 '-' => {
@@ -478,7 +410,7 @@ impl Lexer<'_> {
                         Token::Hyphen
                     };
 
-                    toks.push(SpannedToken {
+                    toks.push(TokenInfo {
                         tok: token,
                         span: SourceSpan::new(
                             self.current_region_id,
@@ -490,37 +422,20 @@ impl Lexer<'_> {
                     });
                 }
                 '*' => {
-                    let pos = self.cursor.pos() as u32;
-                    toks.push(SpannedToken {
-                        tok: Token::Asterisk,
-                        span: SourceSpan::new(self.current_region_id, pos, pos + 1),
-                        leading_trivia_indices: self.trivia_start_idx as u32
-                            ..self.trivia_end_idx as u32,
-                    });
-
+                    self.push_single_byte_tok(&mut toks, Token::Asterisk);
                     self.advance();
                 }
                 '^' => {
-                    let pos = self.cursor.pos() as u32;
-                    toks.push(SpannedToken {
-                        tok: Token::Caret,
-                        span: SourceSpan::new(self.current_region_id, pos, pos + 1),
-                        leading_trivia_indices: self.trivia_start_idx as u32
-                            ..self.trivia_end_idx as u32,
-                    });
-
+                    self.push_single_byte_tok(&mut toks, Token::Caret);
+                    self.advance();
+                }
+                ';' => {
+                    self.push_single_byte_tok(&mut toks, Token::Semicolon);
                     self.advance();
                 }
                 // Trivia handles comment possbibilites
                 '/' => {
-                    let pos = self.cursor.pos() as u32;
-                    toks.push(SpannedToken {
-                        tok: Token::Slash,
-                        span: SourceSpan::new(self.current_region_id, pos, pos + 1),
-                        leading_trivia_indices: self.trivia_start_idx as u32
-                            ..self.trivia_end_idx as u32,
-                    });
-
+                    self.push_single_byte_tok(&mut toks, Token::Slash);
                     self.advance();
                 }
                 '=' => {
@@ -539,7 +454,7 @@ impl Lexer<'_> {
                         Token::Assign
                     };
 
-                    toks.push(SpannedToken {
+                    toks.push(TokenInfo {
                         tok,
                         span: SourceSpan::new(
                             self.current_region_id,
@@ -551,14 +466,7 @@ impl Lexer<'_> {
                     });
                 }
                 '~' => {
-                    let pos = self.cursor.pos() as u32;
-                    toks.push(SpannedToken {
-                        tok: Token::Tilde,
-                        span: SourceSpan::new(self.current_region_id, pos, pos + 1),
-                        leading_trivia_indices: self.trivia_start_idx as u32
-                            ..self.trivia_end_idx as u32,
-                    });
-
+                    self.push_single_byte_tok(&mut toks, Token::Tilde);
                     self.advance();
                 }
                 '!' => {
@@ -571,7 +479,7 @@ impl Lexer<'_> {
                         Token::ExclamationPoint
                     };
 
-                    toks.push(SpannedToken {
+                    toks.push(TokenInfo {
                         tok,
                         span: SourceSpan::new(
                             self.current_region_id,
@@ -583,35 +491,17 @@ impl Lexer<'_> {
                     });
                 }
                 '?' => {
-                    let pos = self.cursor.pos() as u32;
-                    toks.push(SpannedToken {
-                        tok: Token::QuestionMark,
-                        span: SourceSpan::new(self.current_region_id, pos, pos + 1),
-                        leading_trivia_indices: self.trivia_start_idx as u32
-                            ..self.trivia_end_idx as u32,
-                    });
-
+                    self.push_single_byte_tok(&mut toks, Token::QuestionMark);
                     self.advance();
                 }
                 '%' => {
-                    let pos = self.cursor.pos() as u32;
-                    toks.push(SpannedToken {
-                        tok: Token::Percent,
-                        span: SourceSpan::new(self.current_region_id, pos, pos + 1),
-                        leading_trivia_indices: self.trivia_start_idx as u32
-                            ..self.trivia_end_idx as u32,
-                    });
-
+                    self.push_single_byte_tok(&mut toks, Token::Percent);
                     self.advance();
                 }
                 _ => {
                     toks.push(self.recover_invalid(None, interner));
                     if self.invalid_toks > MAX_INVALID_TOKS {
-                        // TODO: Maybe this should be at the end because technically @ is invalid too
-                        // Is this still needed?
-                        // in_def = false;
-
-                        toks.push(SpannedToken {
+                        toks.push(TokenInfo {
                             tok: Token::EOF,
                             span: SourceSpan::new(
                                 self.current_region_id,
@@ -635,9 +525,19 @@ impl Lexer<'_> {
         LexerOutput::new(toks, trivia, hash_tok_indices, self.invalid_toks)
     }
 
+    /// Pushes `tok`, assuming that it represents one byte.
+    fn push_single_byte_tok(&self, toks: &mut Vec<TokenInfo>, tok: Token) {
+        let pos = self.cursor.pos() as u32;
+        toks.push(TokenInfo {
+            tok,
+            span: SourceSpan::new(self.current_region_id, pos, pos + 1),
+            leading_trivia_indices: self.trivia_start_idx as u32..self.trivia_end_idx as u32,
+        });
+    }
+
     /// Reads a string of characters based off of language expected heuristics
     /// May return an invalid token
-    fn read_ident(&mut self, interner: &mut Intern) -> SpannedToken {
+    fn read_ident(&mut self, interner: &mut Intern) -> TokenInfo {
         let mut start = self.cursor.pos();
 
         // e# for escape
@@ -685,14 +585,14 @@ impl Lexer<'_> {
 
         if !is_escaped {
             if interned_id.inner().id == intern::INTERNED_TRUE {
-                return SpannedToken {
+                return TokenInfo {
                     tok: Token::BoolLiteral(true),
                     span,
                     leading_trivia_indices: self.trivia_start_idx as u32
                         ..self.trivia_end_idx as u32,
                 };
             } else if interned_id.inner().id == intern::INTERNED_FALSE {
-                return SpannedToken {
+                return TokenInfo {
                     tok: Token::BoolLiteral(false),
                     span,
                     leading_trivia_indices: self.trivia_start_idx as u32
@@ -702,12 +602,12 @@ impl Lexer<'_> {
         }
 
         match Keyword::try_from_interned_id(interned_id) {
-            Some(kw) if !is_escaped => SpannedToken {
+            Some(kw) if !is_escaped => TokenInfo {
                 tok: Token::Keyword(kw),
                 span,
                 leading_trivia_indices: self.trivia_start_idx as u32..self.trivia_end_idx as u32,
             },
-            _ => SpannedToken {
+            _ => TokenInfo {
                 tok: Token::Id(interned_id),
                 span,
                 leading_trivia_indices: self.trivia_start_idx as u32..self.trivia_end_idx as u32,
@@ -719,7 +619,7 @@ impl Lexer<'_> {
     /// based off of language expected heuristics.
     ///
     /// May return an invalid token.
-    fn read_num(&mut self, interner: &mut Intern) -> SpannedToken {
+    fn read_num(&mut self, interner: &mut Intern) -> TokenInfo {
         let start = self.cursor.pos();
 
         let mut notation: u8 = 0;
@@ -835,7 +735,7 @@ impl Lexer<'_> {
                 self.increment_invalid_tok();
                 // NOTE: I don't actually think this is possible. Like at all.
                 let msg_id = interner.intern_str("<invalid ASCII in numeric>");
-                return SpannedToken {
+                return TokenInfo {
                     tok: Token::Invalid(msg_id),
                     span: SourceSpan::new(self.current_region_id, start as u32, end as u32),
                     leading_trivia_indices: self.trivia_start_idx as u32
@@ -853,7 +753,7 @@ impl Lexer<'_> {
                 if digits.is_empty() {
                     self.increment_invalid_tok();
                     let msg_id = interner.intern_str("<empty numeric literal>");
-                    return SpannedToken {
+                    return TokenInfo {
                         tok: Token::Invalid(msg_id),
                         span: SourceSpan::new(self.current_region_id, start as u32, end as u32),
                         leading_trivia_indices: self.trivia_start_idx as u32
@@ -891,7 +791,7 @@ impl Lexer<'_> {
 
         match num_notation {
             Notation::Integer(n) => {
-                SpannedToken {
+                TokenInfo {
                     tok: Token::Integer(TokenInt::new(id, n)),
                     // NOTE: Same read_id reasoning
                     span,
@@ -899,7 +799,7 @@ impl Lexer<'_> {
                         ..self.trivia_end_idx as u32,
                 }
             }
-            Notation::Float(n) => SpannedToken {
+            Notation::Float(n) => TokenInfo {
                 tok: Token::Float(TokenFloat::new(id, n)),
                 span,
                 leading_trivia_indices: self.trivia_start_idx as u32..self.trivia_end_idx as u32,
@@ -915,7 +815,7 @@ impl Lexer<'_> {
         &mut self,
         form: StringForm,
         interner: &mut Intern,
-    ) -> Result<SpannedToken, QuoteError> {
+    ) -> Result<TokenInfo, QuoteError> {
         let start = match form {
             StringForm::Default => self.cursor.pos(),
             //WARN: Hi
@@ -972,7 +872,7 @@ impl Lexer<'_> {
                 match quotes_res {
                     Ok(p) => {
                         let interned_id = interner.intern_str(p);
-                        Ok(SpannedToken {
+                        Ok(TokenInfo {
                             tok: Token::Str(TokenString::new(interned_id, form)),
                             span,
                             leading_trivia_indices: self.trivia_start_idx as u32
@@ -985,7 +885,7 @@ impl Lexer<'_> {
                         self.increment_invalid_tok();
                         let invalid_str = String::from_utf8_lossy(slice);
                         let msg_id = interner.intern_str(&invalid_str);
-                        Ok(SpannedToken {
+                        Ok(TokenInfo {
                             tok: Token::Invalid(msg_id),
                             span,
                             leading_trivia_indices: self.trivia_start_idx as u32
@@ -1008,7 +908,7 @@ impl Lexer<'_> {
         }
     }
 
-    fn read_char(&mut self, interner: &mut Intern) -> Result<SpannedToken, QuoteError> {
+    fn read_char(&mut self, interner: &mut Intern) -> Result<TokenInfo, QuoteError> {
         // Starts 1 after single quote
         let start = self.cursor.pos();
 
@@ -1069,7 +969,7 @@ impl Lexer<'_> {
         let span = SourceSpan::new(self.current_region_id, (start - 1) as u32, end as u32);
 
         match result_char {
-            Some(ch) => Ok(SpannedToken {
+            Some(ch) => Ok(TokenInfo {
                 tok: Token::Char(ch),
                 span,
                 leading_trivia_indices: self.trivia_start_idx as u32..self.trivia_end_idx as u32,
@@ -1077,7 +977,7 @@ impl Lexer<'_> {
             None => {
                 self.increment_invalid_tok();
                 let id = interner.intern_str("empty character literal");
-                Ok(SpannedToken {
+                Ok(TokenInfo {
                     tok: Token::Invalid(id),
                     span,
                     leading_trivia_indices: self.trivia_start_idx as u32
@@ -1212,7 +1112,7 @@ impl Lexer<'_> {
         false
     }
 
-    fn recover_invalid(&mut self, start: Option<usize>, interner: &mut Intern) -> SpannedToken {
+    fn recover_invalid(&mut self, start: Option<usize>, interner: &mut Intern) -> TokenInfo {
         self.increment_invalid_tok();
         let start = if let Some(s) = start {
             s
@@ -1240,7 +1140,7 @@ impl Lexer<'_> {
 
         let id = interner.intern_str(&err_str);
 
-        SpannedToken {
+        TokenInfo {
             tok: Token::Invalid(id),
             // Same offset reason as all other spans
             // WARN: Could this be an error at some poitn where end - 1 < 0?

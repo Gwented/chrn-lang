@@ -177,7 +177,7 @@ A directive after the closing brace applies to the whole enum."#,
         key: "import",
         description: "Imports a `.chrn` module so its exported declarations can be used",
         example: Some(
-            r#"Both examples use this file. Relative import paths are resolved from the server's working directory; place `definitions.chrn` there for these examples.
+            r#"Relative import paths are resolved from the working directory.
 
 **`definitions.chrn`:**
 ```chrn
@@ -202,17 +202,16 @@ let limit = defs::LIMIT
 var->
     item: defs::Item
 ```
-Use `::` to access an exported declaration. `as` changes the local module name."#,
+Use `::` to access exported declarations."#,
         ),
     },
     Document {
         key: "export",
         description: "Makes a declaration available to modules that import this file",
         example: Some(
-            r#"Use `export` on `let`, `alias`, `struct`, or `enum`. It does not change where the declaration is allowed.
+            r#"Use `export` on `let`, `alias`, `struct`, or `enum`.
 
-**Values and aliases:**
-Alias constraint analysis is unfinished.
+**Values and aliases (alias analysis unfinished):**
 ```chrn
 export let LIMIT = 42
 export alias NonEmpty() = [!IsEmpty]
@@ -255,7 +254,7 @@ An embedding describes the serialized data after `@end` and does not need `bind`
         key: "alias",
         description: "Names a reusable group of conditions, directives, or both",
         example: Some(
-            r#"Alias constraint analysis is unfinished, and calls with arguments are currently rejected by the parser. The following examples illustrate the language syntax, not working constraint checks.
+            r#"Alias constraint analysis and calls with arguments are not implemented.
 
 Declare aliases in the neutral section and call them inside a condition block. Parameters require a concrete type or a type boundary.
 
@@ -294,7 +293,7 @@ alias Ordered(min: Integer, max: Integer) = [min < max]
 var->
     name: str [Ordered(1, 10)]
 ```
-The last two examples evaluate the arguments, not the serialized value."#,
+Typed and boundary parameters let aliases constrain their arguments."#,
         ),
     },
     Document {
@@ -363,7 +362,7 @@ In a member override, an explicit source type must match that member."#,
         key: "as",
         description: "Chooses the local name used to access an imported module",
         example: Some(
-            r#"Both examples use this file. Relative import paths are resolved from the server's working directory; place `definitions.chrn` there for these examples.
+            r#"Relative import paths are resolved from the working directory.
 
 **`definitions.chrn`:**
 ```chrn
@@ -388,7 +387,7 @@ let limit = defs::LIMIT
 var->
     item: defs::Item
 ```
-Use `::` to access an exported declaration. `as` changes the local module name."#,
+Use `::` to access exported declarations."#,
         ),
     },
     Document {
@@ -442,7 +441,7 @@ enum Color { Red Green Blue }
         key: "complex->",
         description: "Starts the section configuring existing types, members, and language mappings",
         example: Some(
-            r#"A `for` block selects a configuration target. Its option assignments configure that target; nested member blocks select individual fields or variants. `override` configures language-specific type mappings.
+            r#"Use `for` to configure types and their fields or variants. Use `override` for language-specific type mappings.
 
 **Type and member options:**
 ```chrn
@@ -517,7 +516,7 @@ This Rust mapping is local to `age`."#,
         key: "for",
         description: "Selects an existing type or front-facing value to configure in `complex->`",
         example: Some(
-            r#"Option assignments on the root configure the selected target. A block named after a member configures that member. These options do not rename chrn declarations.
+            r#"Assign options directly in the `for` block to configure the selected type. Use a block named after a field or variant to configure that member.
 
 **Type and member options:**
 ```chrn
@@ -540,7 +539,7 @@ complex->
 for var Person {}
 for nest Person { idents = "Human" }
 ```
-`var` selects the front-facing declaration; `nest` selects the structural type. An empty block selects the target without assigning options.
+`var` selects the front-facing declaration; `nest` selects the structural type.
 
 **Shortened member block:**
 ```chrn
@@ -563,14 +562,14 @@ import "definitions.chrn"
 complex->
 for definitions::Item { idents = "Product" }
 ```
-The importing module's configuration takes priority over configuration for that type in the imported module. Relative imports use the server's working directory."#,
+The importing module's configuration takes priority over configuration for that type in the imported module."#,
         ),
     },
     Document {
         key: "virtual",
         description: "Selects a named in-memory source for an import or bind",
         example: Some(
-            r#"Place `virtual` between `import` or `bind` and the quoted source name. The application running chrn must supply that source in memory before analysis. Names must be valid UTF-8 and match exactly; they are not resolved as file paths. A virtual source and a file with the same name remain separate sources.
+            r#"Place `virtual` between `import` or `bind` and the quoted source name. The application running chrn must supply that source in memory before analysis. Names must be valid UTF-8 and match the registered name exactly.
 
 **Direct import:**
 The application supplies a source named `definitions` containing:
@@ -603,7 +602,7 @@ import virtual "definitions" as defs
 import "settings.chrn" as settings
 let total = defs::LIMIT + settings::EXTRA
 ```
-Here `total` is 12. The file path is resolved from the working directory.
+The file path is resolved from the working directory.
 
 **Binding in-memory serialized data:**
 The application supplies a source named `payload` containing `{"name": "Ada"}`. Select it in the neutral section, before any section keyword:
@@ -612,7 +611,6 @@ bind virtual "payload"
 var->
     name: str
 ```
-This records the serialized-data source; it does not perform serialization or validation by itself.
 
 **Invalid: unregistered source:**
 ```chrn
@@ -764,9 +762,7 @@ pub static BUILTIN_TYPE_DOCS: [Document; 27] = [
     Document {
         key: "Runtime",
         description: "Defers the value's type to runtime",
-        example: Some(
-            "Use `Runtime` when the serialized value's type is not known in advance.\n\n**Example:**\n```chrn\nvar->\n    payload: Runtime\n```",
-        ),
+        example: Some("```chrn\nvar->\n    payload: Runtime\n```"),
     },
 ];
 
@@ -805,7 +801,7 @@ var->
         key: "IsWhitespace",
         description: "Checks whether a string contains only Unicode whitespace",
         example: Some(
-            r#"Condition analysis is unfinished. Use this predicate without parentheses. Negating it requires a string that is not entirely whitespace; it does not forbid whitespace between other characters.
+            r#"Condition analysis is unfinished. Use this predicate without parentheses. `!IsWhitespace` requires at least one non-whitespace character.
 
 **Whitespace-only string:**
 ```chrn
@@ -824,35 +820,35 @@ var->
         key: "Contains",
         description: "Planned predicate for checking whether a value contains an argument; not implemented",
         example: Some(
-            "This is planned syntax and does not work yet.\n\n**Planned syntax:**\n```chrn\nvar->\n    project: str [Contains(\"chrn\")]\n```",
+            "**Planned syntax:**\n```chrn\nvar->\n    project: str [Contains(\"chrn\")]\n```",
         ),
     },
     Document {
         key: "Range",
         description: "Planned predicate for checking a value or length against a range; not implemented",
         example: Some(
-            "This is planned syntax and does not work yet. The first number will be included and the second will not. Numbers will use their value; strings and collections will use their length.\n\n**Planned number check:**\n```chrn\nvar->\n    percentage: f64 [Range(0.0, 100.0)]\n```\n\n**Planned string length check:**\n```chrn\nvar->\n    username: str [Range(1, 25)]\n```",
+            "The lower bound is inclusive; the upper bound is exclusive. Numbers use their value; strings and collections use their length.\n\n**Planned number check:**\n```chrn\nvar->\n    percentage: f64 [Range(0.0, 100.0)]\n```\n\n**Planned string length check:**\n```chrn\nvar->\n    username: str [Range(1, 25)]\n```",
         ),
     },
     Document {
         key: "StartsW",
         description: "Planned predicate for checking a value's prefix; not implemented",
         example: Some(
-            "This is planned syntax and does not work yet.\n\n**Planned syntax:**\n```chrn\nvar->\n    resource: str [StartsW(\"chrn:\")]\n```",
+            "**Planned syntax:**\n```chrn\nvar->\n    resource: str [StartsW(\"chrn:\")]\n```",
         ),
     },
     Document {
         key: "EndsW",
         description: "Planned predicate for checking a value's suffix; not implemented",
         example: Some(
-            "This is planned syntax and does not work yet.\n\n**Planned syntax:**\n```chrn\nvar->\n    config_file: str [EndsW(\".chrn\")]\n```",
+            "**Planned syntax:**\n```chrn\nvar->\n    config_file: str [EndsW(\".chrn\")]\n```",
         ),
     },
     Document {
         key: "Equals",
         description: "Planned predicate for equality with an argument; not implemented",
         example: Some(
-            "This is planned syntax and does not work yet.\n\n**Planned syntax:**\n```chrn\nlet required_version = 2\nvar->\n    version: u32 [Equals(required_version)]\n```",
+            "**Planned syntax:**\n```chrn\nlet required_version = 2\nvar->\n    version: u32 [Equals(required_version)]\n```",
         ),
     },
 ];
@@ -1056,8 +1052,6 @@ var->
         example: Some(
             r#"Limits numeric literals and computed numeric values. Accepts one integer literal representable as `u32`, not a `let` name or an arithmetic expression.
 
-The compiler needs the limit before evaluating any expressions. If setting the limit required evaluation, a value larger than that limit could be evaluated first. A literal lets the compiler read the setting before evaluation begins.
-
 Only the entry module can change this setting; imported modules use the entry module's limit.
 
 **Within an 8-bit limit:**
@@ -1095,7 +1089,7 @@ pub static CONFIG_OPTION_DOCS: [Document; 3] = [
         key: "cases",
         description: "Sets letter-case conventions accepted for serialized identifiers",
         example: Some(
-            r#"Use this option on a struct, enum, or member. Assign one convention as a string or several as a list. The chrn declaration keeps its original name.
+            r#"Use this option on a struct, enum, or member. Assign one convention as a string or several as a list.
 
 **One convention on a type:**
 ```chrn
@@ -1128,7 +1122,7 @@ for Person {
         key: "idents",
         description: "Sets alternative identifiers accepted from serialized data",
         example: Some(
-            r#"Use a string for one identifier or a list for several. On a config root, this option names the configured type; on a config member, it names the member, not the member's type. It does not rename either chrn declaration.
+            r#"Use a string for one identifier or a list for several. On a config root, this option names the configured type. On a config member, it names the field or variant. Use the original declared names in chrn code.
 
 **Type identifier:**
 ```chrn
@@ -1164,7 +1158,7 @@ for Status {
         key: "default_val",
         description: "Sets a member default for null/None data where the target language supports it",
         example: Some(
-            r#"Set this option in a member's config block. The value must match the member's type. This is serialization metadata; it does not initialize a chrn variable.
+            r#"Set this option in a member's config block. The value must match the member's type.
 
 **Literal default:**
 ```chrn

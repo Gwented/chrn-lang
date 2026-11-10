@@ -1,7 +1,7 @@
 use chrn_utils::{id_types::AstId, intern::Intern, source_utils::source_span::SourceSpan};
 use compilation::{
     lexer::{
-        token::{SpannedToken, Token},
+        token::{TokenInfo, Token},
         trivia::{CommentLocation, Trivia, TriviaKind},
     },
     parser::ast::ast_concepts::{AbstractVar, AstInfo},
@@ -14,7 +14,7 @@ pub(crate) struct TextBuilder<'a> {
     ast_info: &'a AstInfo,
     // items: &'a [Item],
     // sections: &'a [Option<AbstractSection>],
-    toks: &'a Vec<SpannedToken>,
+    toks: &'a Vec<TokenInfo>,
     interner: &'a Intern,
     trivia: &'a Vec<Trivia>,
     pos: usize,
@@ -28,7 +28,7 @@ impl TextBuilder<'_> {
         ast_info: &'a AstInfo,
         // items: &'a [Item],
         // sections: &'a [Option<AbstractSection>],
-        toks: &'a Vec<SpannedToken>,
+        toks: &'a Vec<TokenInfo>,
         interner: &'a Intern,
         trivia: &'a Vec<Trivia>,
     ) -> TextBuilder<'a> {
@@ -359,7 +359,7 @@ impl TextBuilder<'_> {
         self.indent -= 4;
     }
 
-    fn peek_spanned(&self) -> SpannedToken {
+    fn peek_spanned(&self) -> TokenInfo {
         let t = self.toks[self.pos].clone();
         t
     }
@@ -379,7 +379,7 @@ impl TextBuilder<'_> {
         Some(self.toks[self.pos - distance].tok)
     }
 
-    fn peek_behind_spanned(&self, distance: usize) -> Option<SpannedToken> {
+    fn peek_behind_spanned(&self, distance: usize) -> Option<TokenInfo> {
         if self.pos.checked_sub(distance).is_none() {
             return None;
         }
@@ -393,7 +393,7 @@ impl TextBuilder<'_> {
         t
     }
 
-    fn advance_spanned(&mut self) -> SpannedToken {
+    fn advance_spanned(&mut self) -> TokenInfo {
         let t = self.toks[self.pos].clone();
         self.pos += 1;
         t
