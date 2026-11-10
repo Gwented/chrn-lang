@@ -4,6 +4,12 @@ use crate::tests::session::{Session, TempWorkspace, hover_text, position_of};
 use chrn_utils::id_types::{ModuleId, SourceRegionId, SymbolId};
 use chrn_utils::source_utils::source_span::SourceSpan;
 use compilation::{
+    lookup::scopes::{
+        find_sym_id,
+        scopes_concepts::{
+            AssociatedScopeKind, ScopeLookupPattern, ScopeLookupPreferenceFlags, ScopeType,
+        },
+    },
     module::module_concepts::{ImportKind, ModuleState},
     semantic::{arbitraries::ArbitraryIntKind, hir::hir_symbols::VariableState, values::Value},
 };
@@ -618,7 +624,7 @@ async fn test_hover_after_comment_marker_in_string_on_same_line() {
 #[tokio::test(start_paused = true)]
 async fn test_hover_resolves_builtin_namespace_members() {
     let workspace = TempWorkspace::new("hover_builtin_member");
-    let text = "@def\nlet limit = i32::MAX\n@end\n";
+    let text = "@def\nlet limit = i32::MAX\nlet qualified = core::types::i8::MAX\n@end\n";
     let uri = workspace.uri("builtin_member.chrn");
 
     let mut session = Session::new().await;
@@ -633,6 +639,15 @@ async fn test_hover_resolves_builtin_namespace_members() {
         hover_text(&hover).contains("MAX"),
         "hover names the member, got `{}`",
         hover_text(&hover)
+    );
+    let qualified_hover = session
+        .hover(&uri, position_of(text, "MAX", 1))
+        .await
+        .expect("qualified builtin constant hovers");
+    let contents = hover_text(&qualified_hover);
+    assert!(
+        contents.contains("MAX") && contents.contains("127"),
+        "qualified i8 bound: {contents}"
     );
 }
 
@@ -1092,7 +1107,7 @@ fn test_registered_virtual_graph_resolves_values_without_files() {
         assert_eq!(state.interner.extract_utf8_str(module.name_id), name);
         assert_eq!(module.state, ModuleState::Loaded);
         if index < 4 {
-            let region = &state.region_arena[module.region_id.unwrap()];
+            let region = &state.region_arena[module.kind.expect_user().region_id];
             assert_eq!(
                 state
                     .src_manager
@@ -1136,4 +1151,105 @@ fn test_registered_virtual_graph_resolves_values_without_files() {
         Some(SemanticEntity::Symbol(_))
     ));
     assert!(state.get_lsp_diagnostics().is_empty());
+}
+
+#[test]
+fn qualified_core_paths_map_each_segment_to_its_namespace_symbol() {
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .start_paused(true)
+        .build()
+        .unwrap()
+        .block_on(async {
+            let workspace = TempWorkspace::new("qualified_core_semantics");
+            let text = "@def\nlet limit = core::types::i8::MAX\nlet callable = core::funcs::Range\nnest->\nstruct Record { value: core::types::i8 }\n@end\n";
+            let uri = workspace.uri("main.chrn");
+            let mut session = Session::new().await;
+            let diagnostics = session.open(&uri, text).await;
+            assert!(diagnostics.is_empty(), "qualified paths analyze: {diagnostics:?}");
+            let state = session.backend().doc_cache.get(uri.as_str()).unwrap();
+            {
+                let state = state.read();
+                let compiler = state.compiler.as_ref().unwrap();
+                let core_mod_id = compiler.intrinsic_registry.core_mod_id;
+                let core_scope_id = compiler.extract_scope_id(ScopeType::Core, core_mod_id);
+                let name_id = |name: &str| state.interner.get_interned_id_from_str(name).unwrap();
+                let find_in_scope = |scope_id, name| {
+                    find_sym_id(
+                        compiler,
+                        AssociatedScopeKind::Scope(scope_id),
+                        name_id(name),
+                        ScopeType::Core,
+                        ScopeLookupPattern::NamespaceOnly,
+                        ScopeLookupPreferenceFlags::none(),
+                    )
+                    .unwrap()
+                    .found_sym_id
+                };
+                let types_sym_id = find_in_scope(core_scope_id, "types");
+                let funcs_sym_id = find_in_scope(core_scope_id, "funcs");
+                let i8_sym_id = compiler.intrinsic_registry.glob_implicit_idents[&name_id("i8")];
+                let Some(AssociatedScopeKind::Scope(i8_scope_id)) =
+                    compiler.syms[i8_sym_id].associated_scope
+                else {
+                    panic!("i8 namespace");
+                };
+                let max_sym_id = find_in_scope(i8_scope_id, "MAX");
+                let Some(AssociatedScopeKind::Scope(funcs_scope_id)) =
+                    compiler.syms[funcs_sym_id].associated_scope
+                else {
+                    panic!("funcs namespace");
+                };
+                let range_sym_id = find_in_scope(funcs_scope_id, "Range");
+                let core_entity = SemanticEntity::Module(core_mod_id);
+                let types_entity = SemanticEntity::Symbol(types_sym_id);
+                let i8_entity = SemanticEntity::Symbol(i8_sym_id);
+                for (path, segments) in [
+                    (
+                        "core::types::i8::MAX",
+                        vec![
+                            ("core", core_entity),
+                            ("types", types_entity),
+                            ("i8", i8_entity),
+                            ("MAX", SemanticEntity::Symbol(max_sym_id)),
+                        ],
+                    ),
+                    (
+                        "core::funcs::Range",
+                        vec![
+                            ("core", core_entity),
+                            ("funcs", SemanticEntity::Symbol(funcs_sym_id)),
+                            ("Range", SemanticEntity::Symbol(range_sym_id)),
+                        ],
+                    ),
+                    (
+                        "core::types::i8 }",
+                        vec![("core", core_entity), ("types", types_entity), ("i8", i8_entity)],
+                    ),
+                ] {
+                    let start = text.find(path).unwrap();
+                    for (name, expected) in segments {
+                        let offset = start + path.find(name).unwrap();
+                        assert_eq!(
+                            state.get_entity_at_offset(offset),
+                            Some(&expected),
+                            "{path}: {name}"
+                        );
+                        assert!(
+                            state.symbol_map.iter().any(|(span, entity)| {
+                                *entity == expected
+                                    && span.start as usize + state.script_start == offset
+                                    && span.end as usize + state.script_start == offset + name.len()
+                            }),
+                            "{path}: exact {name} span"
+                        );
+                    }
+                }
+            }
+            let hover = session
+                .hover(&uri, position_of(text, "Range", 0))
+                .await
+                .expect("qualified function reference hovers");
+            assert!(hover_text(&hover).contains("Range"), "{}", hover_text(&hover));
+        });
 }

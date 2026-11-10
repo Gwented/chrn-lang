@@ -1205,11 +1205,12 @@ pub fn count_instantiation_bases(bases: &[InstantiationSymbolBase]) -> Instantia
     counts
 }
 
-/// Counts the types namespace and intrinsic type members, excluding type symbols reserved separately.
+/// Counts the types and funcs namespaces and intrinsic type members, excluding type and function
+/// symbols reserved separately.
 pub fn core_instantiation_reservations() -> InstantiationReservations {
     let mut counts = InstantiationReservations {
-        symbols: 1,
-        scopes: 1,
+        symbols: CORE_NAMESPACE.len(),
+        scopes: CORE_NAMESPACE.len(),
         variables: 0,
     };
 

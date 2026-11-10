@@ -362,11 +362,13 @@ fn exec_embed(
             println!("{rendered}");
         }
 
+        // Internally it's always 0
+        let region_id = SourceRegionId::new(compiler.intrinsic_registry.main_mod_id.id);
+        debug_assert_eq!(region_id.id, 0);
+
         // This is fine since main should be 0, unless internals broke. At that point the compiler
         // would need to directly take note of what the entry point was then we'd just use the id here.
-        compiler_store
-            .region_arena
-            .swap_remove(SourceRegionId::new(0))
+        compiler_store.region_arena.swap_remove(region_id)
     } else {
         match module::extract_main(
             SourceKind::Path(SourcePath::new(src_path.clone())),
@@ -398,7 +400,8 @@ fn exec_embed(
 
                 // Taking out region from main since that's all we're interested in
                 let mut arena = graph.region_arena;
-                let main_region_id = main_mod.region_id.expect("Just created");
+                let main_region_id = main_mod.kind.expect_user().region_id;
+                debug_assert_eq!(main_region_id.id, 0);
                 arena.swap_remove(main_region_id)
             }
             Err(init_err) => {

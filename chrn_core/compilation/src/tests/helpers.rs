@@ -40,9 +40,7 @@ pub(super) fn get_module_region<'a>(
     arena: &'a Arena<SourceRegion, SourceRegionId>,
     module: &Module,
 ) -> &'a SourceRegion {
-    let region_id = module
-        .region_id
-        .expect("Module should have a source region");
+    let region_id = module.kind.expect_user().region_id;
     &arena[region_id]
 }
 
@@ -77,10 +75,11 @@ pub(super) fn mock_single_module_compiler_with_config(
     let module = Module::new(
         Default::default(),
         Default::default(),
+        ModuleFlagMetadata::none(),
         Default::default(),
         Default::default(),
         Default::default(),
-        Some(region_id),
+        ModuleKind::User(UserModuleMetadata::new(region_id)),
     );
 
     // Should use compiler store now
@@ -133,10 +132,11 @@ pub(super) fn mock_single_module(
     let module = Module::new(
         interner.intern_str(name),
         ModuleState::Loaded,
+        ModuleFlagMetadata::none(),
         ModuleId::new(mod_id),
         None,
         imports,
-        Some(region_id),
+        ModuleKind::User(UserModuleMetadata::new(region_id)),
     );
 
     (module, source_region)
@@ -183,9 +183,9 @@ pub(super) fn build_registration_envs<'a>(
 
         // No region => no env. This is the path for lib-style modules with no source
         // (e.g. the implicit `core` module injected by `ScriptCompiler::init`).
-        let current_region = match &module.region_id {
-            Some(region_id) => &arena[*region_id],
-            None => {
+        let current_region = match &module.kind {
+            ModuleKind::User(meta) => &arena[meta.region_id],
+            ModuleKind::Core => {
                 all_envs.push(None);
                 continue;
             }
@@ -227,9 +227,9 @@ pub(super) fn build_resolver_envs<'a>(
         let mod_id = ModuleId::new(i as u32);
         let module = &compiler.mods[mod_id];
 
-        let current_region = match &module.region_id {
-            Some(region_id) => &arena[*region_id],
-            None => {
+        let current_region = match &module.kind {
+            ModuleKind::User(meta) => &arena[meta.region_id],
+            ModuleKind::Core => {
                 all_envs.push(None);
                 continue;
             }
@@ -283,7 +283,9 @@ pub(super) use lang::keywords::Keyword;
 
 pub(super) use crate::{
     lexer::Lexer,
-    module::module_concepts::{Import, ImportKind, Module, ModuleState},
+    module::module_concepts::{
+        Import, ImportKind, Module, ModuleFlagMetadata, ModuleKind, ModuleState, UserModuleMetadata,
+    },
     parser::{self},
     resolvers::{
         member_resolver::MemberResolver, name_resolver::NamespaceResolver,
@@ -542,9 +544,9 @@ fn build_asts(
     let mut asts = Vec::new();
     for mod_idx in 0..compiler.mods.len() {
         let module = &compiler.mods[ModuleId::new(mod_idx as u32)];
-        let region = match module.region_id {
-            Some(region_id) => &arena[region_id],
-            None => {
+        let region = match &module.kind {
+            ModuleKind::User(meta) => &arena[meta.region_id],
+            ModuleKind::Core => {
                 asts.push(None);
                 continue;
             }

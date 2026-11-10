@@ -1,7 +1,22 @@
 /* *///import virtual "../chrn_core/chrn_tests/other.chrn"
-// When you don't think about it, the first virtual module was `core`. Wow.
-// import "../chrn_core/chrn_tests/CHERNGENTS.chrn"
-let x =3
+import "../chrn_core/chrn_tests/chrn.chrn"
 
 var->
-    x: core::types::i32
+    // Emit help
+    // expo x: char;
+    // Emit help
+    // x: char;
+    // fix me
+    // x: core::IsEmpty
+    // Please stop.
+    x : IsEmpty
+
+nest->
+struct A {}
+
+complex->
+
+// Seems ok
+/*override JAVA=>types {
+    change = java::byte
+}*/

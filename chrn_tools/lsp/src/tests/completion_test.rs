@@ -89,6 +89,20 @@ async fn completion_in_the_script_section_offers_keywords() {
         labels.contains(&"var->"),
         "section markers are offered, got {labels:?}"
     );
+    for (name, kind) in [
+        ("i8", CompletionItemKind::STRUCT),
+        ("Numeric", CompletionItemKind::VARIABLE),
+    ] {
+        let matching: Vec<_> = items.iter().filter(|item| item.label == name).collect();
+        assert_eq!(matching.len(), 1, "implicit {name} appears once: {items:?}");
+        assert_eq!(matching[0].kind, Some(kind));
+    }
+    for name in ["types", "types::", "funcs", "funcs::"] {
+        assert!(
+            !labels.contains(&name),
+            "core namespace {name} is not implicit: {labels:?}"
+        );
+    }
 }
 
 /// A completion request at the end of a line comment is still in the comment.
@@ -349,33 +363,35 @@ fn max_numeric_bits_completion_works_at_eof_and_preserves_existing_arguments() {
 #[tokio::test(start_paused = true)]
 async fn static_access_on_a_builtin_type_offers_its_namespace_members() {
     let workspace = TempWorkspace::new("builtin_static_completion");
-    let text = "let flag = 3\ni32::M\n";
+    let text = "let flag = 3\ni32::M\ncore::types::i32::M\n";
     let uri = workspace.uri("main.chrn");
 
     let mut session = Session::new().await;
     session.open(&uri, text).await;
 
-    // Cursor directly after the typed prefix so the `::` trigger applies.
-    let mut pos = position_of(text, "M", 0);
-    pos.character += 1;
+    for occurrence in [0, 1] {
+        // Cursor directly after the typed prefix so the `::` trigger applies.
+        let mut pos = position_of(text, "M", occurrence);
+        pos.character += 1;
 
-    let response = session
-        .completion(&uri, pos, None)
-        .await
-        .expect("the script section completes");
-    let CompletionResponse::Array(items) = response else {
-        panic!("the server answers completion with a plain item array");
-    };
+        let response = session
+            .completion(&uri, pos, None)
+            .await
+            .expect("the script section completes");
+        let CompletionResponse::Array(items) = response else {
+            panic!("the server answers completion with a plain item array");
+        };
 
-    let labels: Vec<&str> = items.iter().map(|item| item.label.as_str()).collect();
-    assert!(
-        labels.contains(&"MAX"),
-        "`i32::` completes MAX, got {labels:?}"
-    );
-    assert!(
-        labels.contains(&"MIN"),
-        "`i32::` completes MIN, got {labels:?}"
-    );
+        let labels: Vec<&str> = items.iter().map(|item| item.label.as_str()).collect();
+        assert!(
+            labels.contains(&"MAX"),
+            "`i32::` completes MAX, got {labels:?}"
+        );
+        assert!(
+            labels.contains(&"MIN"),
+            "`i32::` completes MIN, got {labels:?}"
+        );
+    }
 }
 
 /// Completing through the current module's namespace exposes symbols owned by that
@@ -569,7 +585,7 @@ fn config_option_completion_inserts_assignment_syntax() {
 #[tokio::test(start_paused = true)]
 async fn condition_function_completion_respects_client_snippet_support() {
     let workspace = TempWorkspace::new("condition_call_completion");
-    let text = "nest->\nstruct Record { value: i32 [Ran] }\n";
+    let text = "nest->\nstruct Record { value: i32 [core::funcs::Ran] }\n";
     let uri = workspace.uri("main.chrn");
     let mut position = position_of(text, "Ran", 0);
     position.character += 3;
@@ -670,7 +686,7 @@ async fn container_completion_inserts_type_arguments_for_prefixes_and_exact_name
 #[tokio::test(start_paused = true)]
 async fn callable_completion_outside_condition_shows_call_shape_without_inserting_it() {
     let workspace = TempWorkspace::new("plain_callable_completion");
-    let text = "let chosen = Ran\n";
+    let text = "let chosen = core::funcs::Ran\n";
     let uri = workspace.uri("main.chrn");
     let mut session = Session::new_with_snippet_support(true).await;
     session.open(&uri, text).await;
@@ -1135,4 +1151,51 @@ async fn scalar_arrow_completion_uses_member_options_and_stops_at_parent_close()
         panic!("completion must return an item array");
     };
     assert!(items.iter().any(|item| item.label == "let"));
+}
+
+#[test]
+fn qualified_core_and_user_module_completions_follow_namespace_ownership() {
+    Builder::new_current_thread()
+        .enable_all()
+        .start_paused(true)
+        .build()
+        .unwrap()
+        .block_on(async {
+            let workspace = TempWorkspace::new("implicit_namespace_completion");
+            let dep_uri = workspace.write("dep.chrn", "nest->\nexport struct item {}\n");
+            let text = format!(
+                "import \"{}\" as deps\nlet a = core::\nlet b = core::types::\nlet c = deps::i\n",
+                dep_uri.to_file_path().unwrap().display()
+            );
+            let uri = workspace.uri("main.chrn");
+            let mut session = Session::new().await;
+            session.open(&uri, &text).await;
+            for (path, required, forbidden) in [
+                ("core::", vec!["types", "funcs"], vec!["i8", "Numeric"]),
+                (
+                    "core::types::",
+                    vec!["i8", "Numeric"],
+                    vec!["types", "funcs"],
+                ),
+                ("deps::i", vec!["item"], vec!["i8", "i32"]),
+            ] {
+                let mut position = position_of(&text, path, 0);
+                position.character += path.len() as u32;
+                let Some(CompletionResponse::Array(items)) =
+                    session.completion(&uri, position, None).await
+                else {
+                    panic!("{path}: expected completion array");
+                };
+                let labels: Vec<_> = items.iter().map(|item| item.label.as_str()).collect();
+                for name in required {
+                    assert!(labels.contains(&name), "{path} offers {name}: {items:?}");
+                }
+                for name in forbidden {
+                    assert!(
+                        !labels.contains(&name),
+                        "{path} must not offer {name}: {items:?}"
+                    );
+                }
+            }
+        });
 }

@@ -1,6 +1,6 @@
 use chrn_utils::{
     arena::Arena,
-    id_types::{InternedIdUTF8, ScopeId, TypeId, VariableId},
+    id_types::{InternedIdUTF8, ScopeId, SourceRegionId, TypeId, VariableId},
     intern::{self, Intern},
     source_utils::source_span::SourceSpan,
     utils::containers::SpannedContainer,
@@ -14,7 +14,9 @@ use lang::types::{
 
 use crate::{
     lookup::scopes::scopes_concepts::{AssociatedScopeKind, ScopeType},
-    module::module_concepts::{Import, ImportKind, Module},
+    module::module_concepts::{
+        Import, ImportKind, Module, ModuleFlagMetadata, ModuleKind, UserModuleMetadata,
+    },
     script_compiler::{
         ScriptCompiler,
         compiler_consts::{CORE_UNKNOWN, builtin_ty_to_id},
@@ -231,8 +233,6 @@ fn core_builtin_type_id_alignment() {
     let compiler = core_only_compiler();
     let interner = Intern::init();
     let types_scope_id = core_types_scope(&compiler);
-    let core_scope_id =
-        compiler.extract_scope_id(ScopeType::Core, compiler.intrinsic_registry.core_mod_id);
 
     for (idx, (interned, builtin_ty, _ns)) in TYPES_NAMESPACE[BUILTIN_TYPES_RANGE]
         .iter()
@@ -276,8 +276,8 @@ fn core_builtin_type_id_alignment() {
             "built-in repository must reference the types namespace symbol"
         );
         assert_eq!(
-            compiler.scopes[core_scope_id].scope.table.interned_to_sym[&name_id], sym_id,
-            "core built-in alias must reuse the types namespace symbol"
+            compiler.intrinsic_registry.glob_implicit_idents[&name_id], sym_id,
+            "implicit built-in identifier must reuse the types namespace symbol"
         );
         let sym = &compiler.syms[sym_id];
         assert!(matches!(sym.kind, SymbolKind::Type(id) if id == TypeId::new(core_id)));
@@ -310,8 +310,6 @@ fn core_boundaries_follow_builtins() {
     let first = CORE_UNKNOWN + 1;
 
     let types_scope_id = core_types_scope(&compiler);
-    let core_scope_id =
-        compiler.extract_scope_id(ScopeType::Core, compiler.intrinsic_registry.core_mod_id);
     for (idx, base) in TYPES_NAMESPACE[BOUNDARIES_RANGE].iter().enumerate() {
         let InstantiationSymbolKind::Type(ty) = &base.kind else {
             unreachable!()
@@ -333,8 +331,8 @@ fn core_boundaries_follow_builtins() {
 
         let sym_id = compiler.scopes[types_scope_id].scope.table.interned_to_sym[&base.name_id];
         assert_eq!(
-            compiler.scopes[core_scope_id].scope.table.interned_to_sym[&base.name_id], sym_id,
-            "core boundary alias must reuse the types namespace symbol"
+            compiler.intrinsic_registry.glob_implicit_idents[&base.name_id], sym_id,
+            "implicit boundary identifier must reuse the types namespace symbol"
         );
         let sym = &compiler.syms[sym_id];
         assert!(
@@ -398,13 +396,27 @@ fn core_funcs_follow_boundaries() {
 }
 
 #[test]
-fn core_funcs_are_symbols_in_core_scope() {
+fn core_funcs_are_symbols_in_funcs_namespace() {
     let compiler = core_only_compiler();
     let first = first_core_func_type_id();
 
     let core_mod_id = compiler.intrinsic_registry.core_mod_id;
     let core_scope_id = compiler.extract_scope_id(ScopeType::Core, core_mod_id);
-    let table = &compiler.get_scope(core_scope_id).scope.table;
+    let funcs_name_id = InternedId::new(intern::INTERNED_FUNCS).into_tagged::<UTF8Tag>();
+    let funcs_sym_id = compiler.scopes[core_scope_id].scope.table.interned_to_sym[&funcs_name_id];
+    let funcs_sym = &compiler.syms[funcs_sym_id];
+    assert!(matches!(funcs_sym.kind, SymbolKind::Namespace));
+    assert!(matches!(funcs_sym.sym_origin, SymbolOrigin::Module(id) if id == core_mod_id));
+    assert!(compiler.mods[core_mod_id].exports.contains(&funcs_sym_id));
+    let Some(AssociatedScopeKind::Scope(funcs_scope_id)) = funcs_sym.associated_scope else {
+        panic!("core::funcs must own a scope");
+    };
+    let funcs_scope = &compiler.scopes[funcs_scope_id];
+    assert_eq!(funcs_scope.sym_owner, Some(funcs_sym_id));
+    assert_eq!(funcs_scope.mod_owner, core_mod_id);
+    assert_eq!(funcs_scope.scope.scope_type, ScopeType::Core);
+    let table = &funcs_scope.scope.table;
+    assert_eq!(table.interned_to_sym.len(), CORE_FUNCS_DATASET.len());
 
     for (idx, core_func) in CORE_FUNCS_DATASET.iter().enumerate() {
         let type_id = TypeId::new(first + idx as u32);
@@ -413,7 +425,7 @@ fn core_funcs_are_symbols_in_core_scope() {
         let sym_id = *table
             .interned_to_sym
             .get(&name_id)
-            .unwrap_or_else(|| panic!("core func {:?} is not in the core scope", core_func.kind));
+            .unwrap_or_else(|| panic!("core func {:?} is not in core::funcs", core_func.kind));
 
         let sym = &compiler.syms[sym_id];
 
@@ -499,15 +511,14 @@ fn startup_reservations_match_loaded_data() {
     assert_eq!(compiler.directives.len(), DIRECTIVES_DATASET.len());
     assert_eq!(compiler.directives.capacity(), DIRECTIVES_DATASET.len());
 
-    // `load_core` creates one core scope plus a scope for every built-in carrying an intrinsic
-    // namespace; module-symbol registration creates one compiler scope for every module, including
-    // the implicit core module.
+    // `load_core` creates the core, types, and funcs scopes plus built-in intrinsic namespaces;
+    // module-symbol registration creates one compiler scope per module, including core.
     let expected_scope_count = compiler.mods.len() + 1 + ns_counts.scopes;
     assert_eq!(compiler.scopes.len(), expected_scope_count);
     assert_eq!(compiler.scopes.capacity(), expected_scope_count);
 
     let core_mod = &compiler.mods[compiler.intrinsic_registry.core_mod_id];
-    let expected_core_exports = TYPES_NAMESPACE.len() + CORE_FUNCS_DATASET.len() + 1;
+    let expected_core_exports = 2;
     assert_eq!(core_mod.exports.len(), expected_core_exports);
     assert_eq!(core_mod.exports.capacity(), expected_core_exports);
 }
@@ -525,10 +536,11 @@ fn startup_reservations_include_user_module_symbols() {
     let module = Module::new(
         InternedId::new(2).into_tagged::<UTF8Tag>(),
         Default::default(),
+        ModuleFlagMetadata::none(),
         Default::default(),
         None,
         vec![import],
-        None,
+        ModuleKind::User(UserModuleMetadata::new(SourceRegionId::new(0))),
     );
     let compiler = ScriptCompiler::init(Arena::from(vec![module]));
     let ns_counts = core_instantiation_reservations();

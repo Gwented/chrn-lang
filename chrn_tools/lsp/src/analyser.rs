@@ -43,7 +43,9 @@ use compilation::config_loader::{ConfigLoader, ConfigLoaderOutput};
 use compilation::lexer::Lexer;
 use compilation::module::{
     ensure_not_reserved,
-    module_concepts::{Bind, ImportKind, Module, ModuleState},
+    module_concepts::{
+        Bind, ImportKind, Module, ModuleFlagMetadata, ModuleKind, ModuleState, UserModuleMetadata,
+    },
     module_finder::ModuleFinder,
 };
 use parking_lot::RwLock;
@@ -378,10 +380,11 @@ pub(crate) fn resolve_document_modules(
     let mut main_mod = Module::new(
         name_id,
         main_state,
+        ModuleFlagMetadata::none(),
         ModuleId::new(0),
         bind.clone(),
         main_imports,
-        Some(SourceRegionId::new(0)),
+        ModuleKind::User(UserModuleMetadata::new(SourceRegionId::new(0))),
     );
 
     let mut seen: Vec<SourceId> = vec![main_src_id];
@@ -413,7 +416,7 @@ pub(crate) fn resolve_document_modules(
     let imported_uris: Vec<String> = sub_mods
         .iter()
         .filter_map(|m| {
-            let region_id = m.region_id?;
+            let region_id = m.kind.expect_user().region_id;
             let region = &sub_regions[region_id.id as usize - 1];
             let SourceKind::Path(p) = src_manager.extract_source(region.src_id) else {
                 return None;
@@ -1364,10 +1367,11 @@ pub(crate) fn resolve_modules_lsp(
             let sub_mod = Module::new(
                 import.name_id,
                 sub_state,
+                ModuleFlagMetadata::none(),
                 current_mod_id,
                 bind.clone(),
                 sub_imports,
-                Some(sub_region_id),
+                ModuleKind::User(UserModuleMetadata::new(sub_region_id)),
             );
 
             // Push the new module onto the worklist so its own imports will be

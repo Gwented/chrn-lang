@@ -831,7 +831,8 @@ fn test_virtual_import_recovery_attributes_reserved_names_and_broken_regions() {
         }
         let broken_diag = &state.config_errors.diags[2];
         assert_eq!(broken_diag.core_msg, "Could not find `@end` after `@def`");
-        let broken_region = &state.region_arena[compiler.mods[broken_id].region_id.unwrap()];
+        let broken_region =
+            &state.region_arena[compiler.mods[broken_id].kind.expect_user().region_id];
         assert_eq!(broken_diag.src_id, broken_region.src_id);
         assert_ne!(broken_diag.src_id, entry_src);
         for summary in [

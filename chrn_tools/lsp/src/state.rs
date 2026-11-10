@@ -50,7 +50,7 @@ use compilation::lookup::scopes::scopes_concepts::ScopeLookupPattern;
 use compilation::lookup::scopes::scopes_concepts::ScopeLookupPreferenceFlags;
 use compilation::lookup::scopes::scopes_concepts::ScopeType;
 use compilation::module::module_concepts::ImportKind;
-use compilation::module::module_concepts::ModuleState;
+use compilation::module::module_concepts::{ModuleKind, ModuleState};
 
 use chrn_utils::id_types::id_tags::TaggedId;
 use compilation::parser::ast::ast_concepts::{AbstractDecl, AbstractImpl, AstInfo, Item};
@@ -322,9 +322,9 @@ impl DocumentState {
                 continue;
             }
 
-            let src_region_id = match module.region_id {
-                Some(rid) => rid,
-                None => continue,
+            let src_region_id = match &module.kind {
+                ModuleKind::User(meta) => meta.region_id,
+                ModuleKind::Core => continue,
             };
             let region = &self.region_arena[src_region_id];
 
@@ -552,13 +552,13 @@ impl DocumentState {
         // which required reading `compiler.exprs.len()` between per-module
         // resolver iterations — the borrow that forced a fresh `TypeResolver`
         // per module (and the resolver-state corruption that came with it).
-        let main_region_id = compiler.mods[ModuleId::new(0)].region_id;
+        let main_region_id = compiler.mods[ModuleId::new(0)].kind.expect_user().region_id;
         for expr in &compiler.exprs.items {
             // Compiler-generated exprs carry no source span, so there is nothing to index.
             let ResolvedExprMetadata::User(span) = &expr.meta else {
                 continue;
             };
-            if Some(span.region_id) != main_region_id {
+            if span.region_id != main_region_id {
                 continue;
             }
             if let ExprHir::Var(sym_id) = expr.expr_hir {
@@ -948,8 +948,8 @@ impl DocumentState {
 
             let module = &compiler.mods[mod_id];
 
-            if let Some(region_id) = module.region_id {
-                let region = &self.region_arena[region_id];
+            if let ModuleKind::User(meta) = &module.kind {
+                let region = &self.region_arena[meta.region_id];
                 let label = match self.src_manager.extract_source(region.src_id) {
                     SourceKind::Path(source) => source
                         .path
@@ -1048,7 +1048,7 @@ impl DocumentState {
         };
         let ast = self.asts[owner_id].as_ref()?;
         let module = &compiler.mods[ModuleId::new(owner_id as u32)];
-        let region = &self.region_arena[module.region_id?];
+        let region = &self.region_arena[module.kind.expect_user().region_id];
         let SourceKind::Path(path) = self.src_manager.extract_source(region.src_id) else {
             return None;
         };
@@ -1058,7 +1058,10 @@ impl DocumentState {
     /// Path of the file backing `mod_id`'s source region.
     fn module_path(&self, mod_id: ModuleId) -> Option<&Path> {
         let compiler = self.compiler.as_ref()?;
-        let region = &self.region_arena[compiler.mods[mod_id].region_id?];
+        let ModuleKind::User(meta) = &compiler.mods[mod_id].kind else {
+            return None;
+        };
+        let region = &self.region_arena[meta.region_id];
         match self.src_manager.extract_source(region.src_id) {
             SourceKind::Path(source) => Some(source.path.as_path()),
             SourceKind::InMemory(_) => None,
@@ -1290,7 +1293,10 @@ fn module_inputs<'a>(
     (0..mods.len())
         .map(|mod_idx| {
             let ast_info = asts[mod_idx].as_ref()?;
-            let region_id = mods[ModuleId::new(mod_idx as u32)].region_id?;
+            let region_id = mods[ModuleId::new(mod_idx as u32)]
+                .kind
+                .expect_user()
+                .region_id;
             Some((ast_info, &regions[region_id]))
         })
         .collect()
@@ -2019,30 +2025,10 @@ impl RefCollector<'_> {
         }
     }
 
-    /// Indexes a `mod::Type` path written as a list of path segments, recursing
+    /// Indexes a qualified type path, including compiler namespace segments, and recurses
     /// into the type arguments of any generic segment.
     fn path_segment_refs(&mut self, path: &[SpannedContainer<PathSegment>]) {
-        if path.len() == 2 {
-            let mod_name_part = &path[0];
-            let sym_name_part = &path[1];
-            if let PathSegment::Ident(mod_name_id) = mod_name_part.inner
-                && let Some(found_mod) = self.module_named(mod_name_id)
-            {
-                self.map
-                    .push((mod_name_part.span, SemanticEntity::Module(found_mod)));
-                if let PathSegment::Ident(sym_name_id) = sym_name_part.inner
-                    && let Some(sym_id) = self.lookup_in_module(
-                        found_mod,
-                        sym_name_id,
-                        [ScopeType::Neutral, ScopeType::Var],
-                    )
-                {
-                    self.map
-                        .push((sym_name_part.span, SemanticEntity::Symbol(sym_id)));
-                }
-                return;
-            }
-        }
+        self.static_access_refs(path);
         for part in path {
             if let PathSegment::Generic(generic) = &part.inner {
                 for arg in &generic.inputs {

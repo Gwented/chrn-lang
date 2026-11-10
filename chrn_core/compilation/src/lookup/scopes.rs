@@ -13,6 +13,7 @@ use crate::{
         AssociatedScopeKind, SCOPE_NEST_ONLY, SCOPE_VAR_ONLY, ScopeInfo, ScopeLookupPattern,
         ScopeLookupPreferenceFlags, ScopeType, SymbolLookupOutput,
     },
+    module::module_concepts::ModuleKind,
     script_compiler::ScriptCompiler,
     semantic::hir::{
         hir_concepts::Type,
@@ -53,7 +54,7 @@ pub fn find_type_id(
     let accessible_scopes = compute_accessible_scopes(
         lookup_pat,
         scope_type.accessible_scopes(),
-        current_mod.region_id,
+        &current_mod.kind,
     );
     // Loops over all allowed scopes and checks their individual namespaces
 
@@ -123,15 +124,13 @@ pub fn find_sym_id_intrinsic(
     // Is this ok?
     let lookup_pat = ScopeLookupPattern::NamespaceOnly;
 
-    // Avoiding vector allocations right now so it can just use a pointer offset instead based off
-    // of hard-coded truths but will probably just, not do that.
     match associated_scope {
         AssociatedScopeKind::Module(mod_id) => {
             let current_mod = &compiler.mods[mod_id];
             let accessible_scopes = compute_accessible_scopes(
                 lookup_pat,
                 scope_type.accessible_scopes(),
-                current_mod.region_id,
+                &current_mod.kind,
             );
 
             for allowed_scope_type in accessible_scopes {
@@ -147,7 +146,6 @@ pub fn find_sym_id_intrinsic(
                                 .get(&target_name_id)
                                 .copied()
                             {
-                                let associated = compiler.syms[sym_id].associated_scope;
                                 return Some(SymbolLookupOutput::new(
                                     sym_id,
                                     scope_info.scope.self_id,
@@ -177,18 +175,7 @@ pub fn find_sym_id_intrinsic(
     None
 }
 
-/// - compiler: The environment to seaerch in
-/// - associated_scope: The type of scope to search which could differ depending on if the scope
-/// belongs to a module, symbol, etc.
-/// - target_name_id: The identifier to search for in the given scope
-/// - scope_type: The type of scope this search was started from
-/// - lookup_pat: How much access the lookup should have
-/// - lookup_pref: Symbols marked as preferred are prioritized as the return type. If not found,
-/// returns the last symbol under the target identifier.
-///
-/// - On `Some`: Returns Symbol found and the `ScopeId` from the scope it was found in
-/// - Returns `None` when no symbol with the target identifier was found under the constraints
-/// given.
+/// Given the context, attempts to find a `SymbolId`
 pub fn find_sym_id(
     compiler: &ScriptCompiler,
     associated_scope: AssociatedScopeKind,
@@ -196,10 +183,8 @@ pub fn find_sym_id(
     scope_type: ScopeType,
     lookup_pat: ScopeLookupPattern,
     lookup_pref: ScopeLookupPreferenceFlags,
-    // Named struct maybe
+    // in_ns: bool,
 ) -> Option<SymbolLookupOutput> {
-    // Avoiding vector allocations right now so it can just use a pointer offset instead based off
-    // of hard-coded truths but will probably just, not do that.
     match associated_scope {
         AssociatedScopeKind::Module(mod_id) => {
             let current_mod = &compiler.mods[mod_id];
@@ -207,23 +192,36 @@ pub fn find_sym_id(
             let accessible_scopes = compute_accessible_scopes(
                 lookup_pat,
                 scope_type.accessible_scopes(),
-                current_mod.region_id,
+                &current_mod.kind,
             );
 
             // If a preferred is given, the most recent same ident symbol found that is not
-            // preferred is stored so that it can be returned if the preferred symbol was never found.
-            // Compromise!
+            // preferred is stored so that it can be returned if the preferred symbol was never
+            // found.
             let mut default_return: Option<SymbolLookupOutput> = None;
 
             for allowed_scope_type in accessible_scopes {
                 if let Some(scope_info) = find_scope_in_mod(compiler, *allowed_scope_type, mod_id) {
-                    // Found a symbol in the particular scope under the given identifier
-                    if let Some(sym_id) = scope_info
-                        .scope
-                        .table
-                        .interned_to_sym
-                        .get(&target_name_id)
-                        .copied()
+                    // Required to ensure correct permissions are exercised
+                    let current_scope_mod = &compiler.mods[scope_info.mod_owner];
+
+                    let can_search = match current_scope_mod.kind {
+                        ModuleKind::User(_) => true,
+                        // If this were extended beyond core it would just be a movement of where the
+                        // metadata is stored. This is fine for now and likely permanent.
+                        //
+                        // This is to prevent other modules from implicitly doing "core::" which
+                        // would pollute namespaces with core's namespaces.
+                        ModuleKind::Core => current_mod.kind.is_core(),
+                    };
+
+                    if can_search
+                        && let Some(sym_id) = scope_info
+                            .scope
+                            .table
+                            .interned_to_sym
+                            .get(&target_name_id)
+                            .copied()
                     {
                         // Storing what would be the default return if preferences aren't matched
                         default_return =
@@ -239,11 +237,10 @@ pub fn find_sym_id(
                         return default_return;
                     }
 
-                    //TODO: Make sure this works as intended
                     if let Some(intrinsic_scope_id) = scope_info.scope.intrinsic_scope {
                         let intrinsic_scope = &compiler.scopes[intrinsic_scope_id].scope;
 
-                        // So if in override, but searching complex, it will not try to look at the
+                        // If in override, but searching complex, it will not try to look at the
                         // intrinsic scope unless it's looking at it's own scope
                         //
                         // Further meaning: Any scope can be given an intrinsic scope. But, it is
@@ -272,6 +269,27 @@ pub fn find_sym_id(
                             }
                         }
                     }
+
+                    // Needs different handling since if core used the same handling above, that
+                    // would mean "core::" is always implicitly being checked, meaning something
+                    // like "types" being typed would resolve to "core::types".
+                    // Separating this makes it so we can choose to ignore it's actual structure
+                    //
+                    // TODO: Disallow core and namespace "thing::"
+                    // Need new metadata to do that
+                    if lookup_pat == ScopeLookupPattern::NoRestrictions {
+                        if let Some(sym_id) = compiler
+                            .intrinsic_registry
+                            .glob_implicit_idents
+                            .get(&target_name_id)
+                            .copied()
+                        {
+                            // dbg!(lookup_pat);
+                            // panic!();
+                            default_return =
+                                Some(SymbolLookupOutput::new(sym_id, scope_info.scope.self_id));
+                        }
+                    }
                 }
             }
 
@@ -294,7 +312,6 @@ pub fn find_sym_id(
             }
         }
     }
-
     None
 }
 
@@ -491,16 +508,18 @@ fn collect_inner_symbols<'a>(
 fn compute_accessible_scopes<'a>(
     lookup_pat: ScopeLookupPattern,
     accessible_scopes: &'a [ScopeType],
-    region_id_opt: Option<SourceRegionId>,
+    mod_kind: &ModuleKind,
 ) -> &'a [ScopeType] {
     match lookup_pat {
         //WARN: Core is always the last scope so this is kept so an owned vec isn't created
         //May change
-        ScopeLookupPattern::NamespaceOnly if region_id_opt.is_some() => {
+        ScopeLookupPattern::NamespaceOnly if !mod_kind.is_core() => {
             &accessible_scopes[..accessible_scopes.len() - 1]
         }
         // If it's core then it'll only have access to core anyways so this is fine
-        ScopeLookupPattern::NoRestrictions | ScopeLookupPattern::NamespaceOnly => accessible_scopes,
+        ScopeLookupPattern::NoRestrictions
+        // | ScopeLookupPattern::InNamespaceNoRestrictions
+        | ScopeLookupPattern::NamespaceOnly => accessible_scopes,
         ScopeLookupPattern::OnlyVar => &SCOPE_VAR_ONLY,
         ScopeLookupPattern::OnlyNest => &SCOPE_NEST_ONLY,
     }

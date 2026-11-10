@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use chrn_utils::id_types::{InternedId, ValueId};
 pub mod compiler_consts;
 pub(crate) mod helpers;
@@ -19,6 +21,7 @@ use chrn_utils::{
     source_utils::source_span::SourceSpan,
 };
 
+use crate::module::module_concepts::{ModuleFlagMetadata, ModuleKind};
 use crate::script_compiler::helpers::instantiation_symbols::{
     InstantiationNamespace, InstantiationSymbolOrigin, InstantiationType,
 };
@@ -118,15 +121,14 @@ impl ScriptCompiler {
         // WARN: This is a little dangerous because it is a contract saying, this MUST load core as
         // the next scope. As long as load_core is called first, this remains truthful.
         let core_mod_id = mods.make_id();
-        let intrinsic_registry = IntrinsicRegistry::new(core_mod_id, None, None);
+        let intrinsic_registry = IntrinsicRegistry::new(core_mod_id, None, None, HashMap::new());
 
-        // For capacity (em-dash). An alias replaces the import's name rather than adding a second
+        // For capacity. An alias replaces the import's name rather than adding a second
         // identifier, so each import is worth exactly one symbol.
         let mut import_len = 0;
         for imports in mods.iter().map(|m| &m.imports) {
             import_len += imports.len();
         }
-        // (Could be hallucinating a bit here)
 
         // `load_core` adds the implicit core module and one core import to every module, including
         // the implicit core module itself.
@@ -169,16 +171,17 @@ impl ScriptCompiler {
         let builtin_repo = compiler.load_core();
         compiler.intrinsic_registry.builtin_repo = Some(builtin_repo);
         compiler.load_directives();
-        compiler.create_module_symbols();
+        compiler.generate_module_symbols();
 
         compiler
     }
 
+    //TODO: Consider adding import metadata similar to `ModuleFlagMetadata`
     /// Creates the symbols needed for modules to be able to access to access their imports
     ///
     /// This is done by going through each module and injecting the module symbols found during the
     /// initial module dependency graph stage.
-    fn create_module_symbols(&mut self) {
+    fn generate_module_symbols(&mut self) {
         // Loops through all modules, registering themselves as a symbol to themselves, iterating
         // through their imports to then inject those symbols as modules that can be looked up
 
@@ -872,17 +875,21 @@ impl ScriptCompiler {
         );
 
         let scope_info = ScopeInfo::new(core_scope, None, core_mod_id);
-
         self.scopes.push(scope_info);
+
+        //FIXME: In scopes, when the core module is seen, it's inners are iterated over as though
+        //every module that is using a pattern that can access core is literally "core::" by
+        //default. This enables "types" to immediately expand to "core::types".
 
         // Uses module only so that there are no possible borrow checker issues.
         let mut core_mod = Module::new(
             core_name_id,
             ModuleState::Loaded,
+            ModuleFlagMetadata::new_has_implicit_idents(),
             core_mod_id,
             None,
             Vec::new(),
-            None,
+            ModuleKind::Core,
         );
 
         core_mod.scopes.push(core_scope_id);
@@ -1117,10 +1124,10 @@ impl ScriptCompiler {
         //TODO: Enum that says whether to put it in core, compile-time, etc.
         //Only core uses this so only core is fine, for now
         // is_core: bool
-    ) -> TypeId {
+    ) -> (SymbolId, TypeId) {
         let sym_id = self.syms.make_id();
-
         let type_id = self.types.make_id();
+
         let ty_kind = match &ty.kind {
             InstantiationTypeKind::BuiltinType(builtin_ty) => {
                 debug_assert_eq!(
@@ -1131,6 +1138,7 @@ impl ScriptCompiler {
             }
             InstantiationTypeKind::Boundary(flags) => Type::Boundaries(*flags),
         };
+        //WARN:
         self.types
             .push(TypeInfo::new(ty_kind, self.intrinsic_registry.core_mod_id));
 
@@ -1151,7 +1159,7 @@ impl ScriptCompiler {
             .insert(base.name_id, sym_id);
 
         if let Some(ns) = ns {
-            let scope_id = ns_scope_id.unwrap();
+            let scope_id = ns_scope_id.expect("");
             let scope = Scope::new(scope_id, base.scope_origin, false, None);
             //TODO: Maybe this should use origin instead of `ModuleId?`
             let scope_info =
@@ -1159,7 +1167,7 @@ impl ScriptCompiler {
             self.scopes.push(scope_info);
             self.register_instantiation_bases(scope_id, ns.ns);
         }
-        type_id
+        (sym_id, type_id)
     }
     // Can't remember if this was made in the current diff or the last? Let's guess instead of looking!
 
@@ -1215,8 +1223,29 @@ impl ScriptCompiler {
 
     /// Helper to load all of core's functions and predicates
     fn load_core_funcs(&mut self, core_mod_id: ModuleId, core_scope_id: ScopeId) {
+        //TODO:
+        let funcs_ns_base = InstantiationSymbolBase::new(
+            InternedId::new(intern::INTERNED_FUNCS).into_tagged::<UTF8Tag>(),
+            InstantiationSymbolOrigin::Core,
+            ScopeType::Core,
+            false,
+            InstantiationSymbolKind::Namespace(InstantiationNamespace::new(
+                &core_helpers::FUNCS_NAMESPACE,
+            )),
+        );
+        let funcs_scope_id = self.register_instantiation_namespace(
+            core_scope_id,
+            SymbolOrigin::Module(core_mod_id),
+            &funcs_ns_base,
+        );
+
+        //TODO: Add `InstantiationFunc`
         for core_func in &core_helpers::CORE_FUNCS_DATASET {
-            self.register_core_func(core_func, core_scope_id, core_mod_id);
+            let name_id = InternedId::new(core_func.name).into_tagged::<UTF8Tag>();
+            let sym_id = self.register_core_func(core_func, funcs_scope_id, core_mod_id);
+            self.intrinsic_registry
+                .glob_implicit_idents
+                .insert(name_id, sym_id);
         }
     }
 
@@ -1226,7 +1255,7 @@ impl ScriptCompiler {
         core_func: &CoreFunc,
         scope_id: ScopeId,
         core_mod_id: ModuleId,
-    ) {
+    ) -> SymbolId {
         let type_id = self.types.make_id();
         let sym_id = self.syms.make_id();
         let name_id = InternedId::new(core_func.name).into_tagged::<UTF8Tag>();
@@ -1258,6 +1287,7 @@ impl ScriptCompiler {
         self.syms.push(sym);
         let table = &mut self.scopes[scope_id].scope.table;
         table.interned_to_sym.insert(name_id, sym_id);
+        sym_id
     }
 
     /// Helper to load all of core's types
@@ -1281,7 +1311,6 @@ impl ScriptCompiler {
             &types_ns_base,
         );
 
-        // Keep the core bindings as aliases for existing qualified and unqualified lookup.
         let mut builder = BuiltinIdRepository::builder();
         for base in &core_helpers::TYPES_NAMESPACE[core_helpers::BUILTIN_TYPES_RANGE] {
             let InstantiationSymbolKind::Type(ty) = &base.kind else {
@@ -1290,23 +1319,27 @@ impl ScriptCompiler {
             let InstantiationTypeKind::BuiltinType(builtin_ty) = &ty.kind else {
                 unreachable!()
             };
-            let sym_id = self.syms.make_id();
-            self.register_instantiation_type(
+            let (sym_id, _) = self.register_instantiation_type(
                 types_scope_id,
                 SymbolOrigin::Module(core_mod_id),
                 base,
                 ty,
             );
-            //TODO: See how we can best do "core::types/funcs" for intrinsic finding
-            self.scopes[core_scope_id]
-                .scope
-                .table
-                .interned_to_sym
+
+            self.intrinsic_registry
+                .glob_implicit_idents
                 .insert(base.name_id, sym_id);
+            //TODO: See how we can best do "core::types/funcs" for intrinsic finding
+            // self.scopes[core_scope_id]
+            //     .scope
+            //     .table
+            //     .interned_to_sym
+            //     .insert(base.name_id, sym_id);
             builder.add(builtin_ty.kind(), sym_id);
         }
 
-        // Unknown has no declared name and retains its compatibility-sensitive TypeId.
+        // Is a special cookie because you're not supposed to be able to instantiate an `Unknown`
+        // type through it's identifier. This is just a compiler internal type.
         self.types.push(TypeInfo::new(Type::Unknown, core_mod_id));
 
         for base in &core_helpers::TYPES_NAMESPACE[core_helpers::BOUNDARIES_RANGE] {
@@ -1316,18 +1349,21 @@ impl ScriptCompiler {
             let InstantiationTypeKind::Boundary(_) = &ty.kind else {
                 unreachable!()
             };
-            let sym_id = self.syms.make_id();
-            self.register_instantiation_type(
+            let (sym_id, _) = self.register_instantiation_type(
                 types_scope_id,
                 SymbolOrigin::Module(core_mod_id),
                 base,
                 ty,
             );
-            self.scopes[core_scope_id]
-                .scope
-                .table
-                .interned_to_sym
+
+            self.intrinsic_registry
+                .glob_implicit_idents
                 .insert(base.name_id, sym_id);
+            // self.scopes[core_scope_id]
+            //     .scope
+            //     .table
+            //     .interned_to_sym
+            //     .insert(base.name_id, sym_id);
         }
 
         builder.build()

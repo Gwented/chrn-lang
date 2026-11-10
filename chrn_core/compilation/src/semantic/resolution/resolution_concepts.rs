@@ -2,12 +2,14 @@
 // as the literal module name, despite them just being free functions. Maybe just a "concepts" separation.
 
 use chrn_utils::{
-    id_types::{ModuleId, SymbolId, TypeId, InternedIdUTF8},
+    id_types::{InternedIdUTF8, ModuleId, SymbolId, TypeId},
     source_utils::source_span::SourceSpan,
     utils::containers::SpannedContainer,
 };
 
-use crate::lookup::scopes::scopes_concepts::AssociatedScopeKind;
+use crate::lookup::scopes::scopes_concepts::{
+    AssociatedScopeKind, ScopeLookupPattern, SymbolLookupOutput,
+};
 
 //TODO: As of right now this is basically entirely hinging off of being usable for reporting, which
 //is probably not the most concise design but it works for now so may not need changing.
@@ -67,7 +69,7 @@ impl TypeExprResult {
 #[derive(Debug)]
 pub enum StaticAccessResult {
     /// Scope found with no issues
-    Scope(AssociatedScopeKind),
+    Found(FoundStaticAccessInfo),
     /// If `prev_seg` is `None` then `current_seg` was a symbol that wasn't found.
     /// If it's `None` then then `current_seg` was found by going through `prev_seg`
     // Should be different variants
@@ -88,7 +90,7 @@ impl StaticAccessResult {
     /// Tries to get associated scope out of result
     pub fn associated_scope(&self) -> Option<AssociatedScopeKind> {
         match self {
-            StaticAccessResult::Scope(associated_scope) => Some(*associated_scope),
+            StaticAccessResult::Found(info) => Some(info.associated_scope),
             StaticAccessResult::SymNotFound { .. }
             | StaticAccessResult::NoNamespace(_)
             | StaticAccessResult::GenericUsingStaticPath(_) => None,
@@ -96,7 +98,28 @@ impl StaticAccessResult {
     }
 }
 
+/// Metadata returned from `resolve_static_access` in `StaticAccessResult::Found`
+/// This data SHOULD be used upon any attempt to use the returned `AssociatedScopeKind`
+#[derive(Debug, Clone, Copy)]
+pub struct FoundStaticAccessInfo {
+    pub associated_scope: AssociatedScopeKind,
+    pub lookup_pat_found_in: ScopeLookupPattern,
+}
+
+impl FoundStaticAccessInfo {
+    pub fn new(
+        associated_scope: AssociatedScopeKind,
+        lookup_pat_found_in: ScopeLookupPattern,
+    ) -> Self {
+        Self {
+            associated_scope,
+            lookup_pat_found_in,
+        }
+    }
+}
+
 // -- ACKNOWLEDGE THIS --
+// No
 #[derive(PartialEq, Eq, Clone, Copy)]
 pub enum StaticAccessOption {
     None,

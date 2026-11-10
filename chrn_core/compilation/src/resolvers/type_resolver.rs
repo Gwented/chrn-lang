@@ -490,23 +490,30 @@ impl<'res> TypeResolver<'res> {
 
         let mut args = Vec::with_capacity(abs_direct.sp_args.inner.len());
         for ast_expr in &abs_direct.sp_args.inner {
-            let expr_id =
-                match self.register_expr(None, &ast_expr, None, initial_scope, scope_type, env) {
-                    Ok(id) => id,
-                    Err(preset_err) => {
-                        preset_reporter::report_preset(
-                            self.compiler,
-                            &mut self.summary,
-                            preset_err,
-                            env.region,
-                            self.cfg,
-                            self.interner,
-                        );
-                        // No valid symbol exists so nothing can actually be done here. Could typecheck the
-                        // options since they're always valid to check but not now.
-                        return;
-                    }
-                };
+            let expr_id = match self.register_expr(
+                None,
+                &ast_expr,
+                None,
+                initial_scope,
+                ScopeLookupPattern::NoRestrictions,
+                scope_type,
+                env,
+            ) {
+                Ok(id) => id,
+                Err(preset_err) => {
+                    preset_reporter::report_preset(
+                        self.compiler,
+                        &mut self.summary,
+                        preset_err,
+                        env.region,
+                        self.cfg,
+                        self.interner,
+                    );
+                    // No valid symbol exists so nothing can actually be done here. Could typecheck the
+                    // options since they're always valid to check but not now.
+                    return;
+                }
+            };
             args.push(expr_id);
         }
 
@@ -522,6 +529,7 @@ impl<'res> TypeResolver<'res> {
         let ast_id = sym.ast_id.expect("Should be user symbols only");
         let scope_type = sym.scope_origin;
         let associated_scope = AssociatedScopeKind::Module(env.current_mod);
+        let default_lookup_pat = ScopeLookupPattern::NoRestrictions;
 
         let abs_var = env.ast_info.get_var(ast_id);
 
@@ -561,6 +569,7 @@ impl<'res> TypeResolver<'res> {
             &abs_var.spanned_expr,
             None,
             associated_scope,
+            default_lookup_pat,
             scope_type,
             env,
         ) {
@@ -616,6 +625,7 @@ impl<'res> TypeResolver<'res> {
         let ast_id = sym.ast_id.expect("Should be user symbols only");
         let scope_type = sym.scope_origin;
         let associated_scope = AssociatedScopeKind::Module(env.current_mod);
+        let default_lookup_pat = ScopeLookupPattern::NoRestrictions;
 
         let abs_typedef = env.ast_info.get_typedef(ast_id);
 
@@ -624,7 +634,7 @@ impl<'res> TypeResolver<'res> {
             AssociatedScopeKind::Module(env.current_mod),
             &abs_typedef.sp_ty_expr,
             scope_type,
-            ScopeLookupPattern::NoRestrictions,
+            default_lookup_pat,
             self.interner,
             env,
         ) {
@@ -650,6 +660,7 @@ impl<'res> TypeResolver<'res> {
                 spanned_expr,
                 None,
                 associated_scope,
+                default_lookup_pat,
                 scope_type,
                 env,
             ) {
@@ -704,6 +715,7 @@ impl<'res> TypeResolver<'res> {
 
         let associated_scope = AssociatedScopeKind::Module(env.current_mod);
         let scope_type = sym.scope_origin;
+        let default_lookup_pat = ScopeLookupPattern::NoRestrictions;
 
         let fields: Vec<TaggedId<MemberId, FieldTag>> =
             self.compiler.get_struct(parent_sym_id).fields.clone();
@@ -718,6 +730,7 @@ impl<'res> TypeResolver<'res> {
                     &cond,
                     None,
                     associated_scope,
+                    default_lookup_pat,
                     scope_type,
                     env,
                 ) {
@@ -763,6 +776,7 @@ impl<'res> TypeResolver<'res> {
                 cond,
                 None,
                 associated_scope,
+                default_lookup_pat,
                 scope_type,
                 env,
             ) {
@@ -806,6 +820,7 @@ impl<'res> TypeResolver<'res> {
         let ast_id = sym.ast_id.expect("Should be user symbols only");
         let associated_scope = AssociatedScopeKind::Module(env.current_mod);
         let scope_type = sym.scope_origin;
+        let default_lookup_pat = ScopeLookupPattern::NoRestrictions;
 
         let abs_enum = env.ast_info.get_enum(ast_id);
 
@@ -822,6 +837,7 @@ impl<'res> TypeResolver<'res> {
                     &cond,
                     None,
                     associated_scope,
+                    default_lookup_pat,
                     scope_type,
                     env,
                 ) {
@@ -871,6 +887,7 @@ impl<'res> TypeResolver<'res> {
                 cond,
                 None,
                 associated_scope,
+                default_lookup_pat,
                 scope_type,
                 env,
             ) {
@@ -923,6 +940,7 @@ impl<'res> TypeResolver<'res> {
         let scope_type = sym.scope_origin;
         let associated_scope = AssociatedScopeKind::Module(env.current_mod);
         let local_scope_id = self.compiler.get_alias(parent_sym_id).local_scope_id;
+        let default_lookup_pat = ScopeLookupPattern::NoRestrictions;
 
         let abs_alias = env.ast_info.get_alias(ast_id);
 
@@ -1039,6 +1057,7 @@ impl<'res> TypeResolver<'res> {
                 Some(local_scope_id),
                 //NOTE: Could this change?
                 associated_scope,
+                default_lookup_pat,
                 scope_type,
                 env,
             ) {
@@ -1140,7 +1159,7 @@ impl<'res> TypeResolver<'res> {
         // Wouldn't this pretty much always want namespaces as it's preference? It's a namespace
         // traversal function so it can't really use anything but namespaces, with the last
         // namespace being hte only one that actually matters.
-        let last_scope = match resolution_helpers::resolve_static_access_ret_preset(
+        let info = match resolution_helpers::resolve_static_access_ret_preset(
             self.compiler,
             sp_path_segs,
             initial_scope,
@@ -1176,16 +1195,16 @@ impl<'res> TypeResolver<'res> {
                 let res = match root_meta {
                     ConfigRootMetadataKind::Complex => scopes_helpers::find_sym_id_ret_preset(
                         self.compiler,
-                        last_scope,
+                        info.associated_scope,
                         SpannedContainer::new(*interned_id, last_seg.span),
                         scope_type,
-                        lookup_pat,
+                        info.lookup_pat_found_in,
                         lookup_pref,
                     ),
                     ConfigRootMetadataKind::Override => {
                         scopes_helpers::find_sym_id_intrinsic_ret_preset(
                             self.compiler,
-                            last_scope,
+                            info.associated_scope,
                             SpannedContainer::new(*interned_id, last_seg.span),
                             scope_type,
                         )
@@ -1267,6 +1286,7 @@ impl<'res> TypeResolver<'res> {
                         &opt.array_expr,
                         None,
                         initial_scope,
+                        ScopeLookupPattern::NoRestrictions,
                         scope_type,
                         env,
                     ) {
@@ -1650,7 +1670,7 @@ impl<'res> TypeResolver<'res> {
                         ConfigRootMetadataKind::Complex => {
                             match scopes_helpers::find_sym_id_intrinsic_ret_preset(
                                 self.compiler,
-                                last_scope,
+                                info.associated_scope,
                                 sp_memb_name_id.clone(),
                                 scope_type,
                             ) {
@@ -1897,6 +1917,7 @@ impl<'res> TypeResolver<'res> {
                         &abs_opt.array_expr,
                         None,
                         associated_scope,
+                        ScopeLookupPattern::NoRestrictions,
                         // This purposeful setting is done on purpose.
                         // Ok this was funny
                         scope_type,
@@ -2108,7 +2129,8 @@ impl<'res> TypeResolver<'res> {
                             &abs_multi.assign_to,
                             scope_type,
                             StaticAccessOption::Val,
-                            ScopeLookupPattern::NamespaceOnly,
+                            //WARN: Is this a concern?
+                            // ScopeLookupPattern::NamespaceOnly,
                             ScopeLookupPreferenceFlags::new_namespace(),
                             self.interner,
                             env,
@@ -3274,6 +3296,7 @@ impl<'res> TypeResolver<'res> {
         // like var->
         local_scope_id: Option<ScopeId>,
         associated_scope: AssociatedScopeKind,
+        lookup_pat: ScopeLookupPattern,
         scope_type: ScopeType,
         env: &ResolverEnv,
     ) -> Result<ExprId, PresetErr> {
@@ -3330,8 +3353,9 @@ impl<'res> TypeResolver<'res> {
                     associated_scope,
                     *name_id,
                     scope_type,
+                    //TODO: Probably not.
                     // Should this be no restrictions?
-                    ScopeLookupPattern::NoRestrictions,
+                    lookup_pat,
                     lookup_pref,
                 ) {
                     //WARN: Constant iteration upon seeing any symbol instead of a single check
@@ -3496,10 +3520,10 @@ impl<'res> TypeResolver<'res> {
                             return Err(PresetErr::General(src_diag));
                         }
                         // NOTE: Symbols can't resolve to an extern type, it's something built-in
-                        // to. Same for directive.
+                        // to.
                         SymbolKind::ExternType(_) => {
                             // Ok buddy
-                            unreachable!("YOU LIED")
+                            unreachable!()
                         }
                     };
 
@@ -3637,6 +3661,7 @@ impl<'res> TypeResolver<'res> {
                     &*lhs,
                     local_scope_id,
                     associated_scope,
+                    lookup_pat,
                     scope_type,
                     env,
                 )?;
@@ -3646,6 +3671,7 @@ impl<'res> TypeResolver<'res> {
                     &*rhs,
                     local_scope_id,
                     associated_scope,
+                    lookup_pat,
                     scope_type,
                     env,
                 )?;
@@ -3813,6 +3839,7 @@ impl<'res> TypeResolver<'res> {
                     &ident_expr,
                     local_scope_id,
                     associated_scope,
+                    lookup_pat,
                     scope_type,
                     env,
                 )?;
@@ -3822,6 +3849,7 @@ impl<'res> TypeResolver<'res> {
                     &spanned_expr,
                     local_scope_id,
                     associated_scope,
+                    lookup_pat,
                     scope_type,
                     env,
                 )?;
@@ -3882,6 +3910,7 @@ impl<'res> TypeResolver<'res> {
                     &unary.spanned_expr,
                     local_scope_id,
                     associated_scope,
+                    lookup_pat,
                     scope_type,
                     env,
                 )?;
@@ -3997,6 +4026,7 @@ impl<'res> TypeResolver<'res> {
                     caller,
                     local_scope_id,
                     associated_scope,
+                    lookup_pat,
                     scope_type,
                     env,
                 )?;
@@ -4010,6 +4040,7 @@ impl<'res> TypeResolver<'res> {
                         sp_expr,
                         local_scope_id,
                         associated_scope,
+                        lookup_pat,
                         scope_type,
                         env,
                     )?;
@@ -4044,6 +4075,7 @@ impl<'res> TypeResolver<'res> {
                     &abs_member_access.base,
                     local_scope_id,
                     associated_scope,
+                    lookup_pat,
                     scope_type,
                     env,
                 )? {
@@ -4063,7 +4095,7 @@ impl<'res> TypeResolver<'res> {
                 }
             }
             AstExpr::StaticAccess(spanned_segments) => {
-                let last_scope = resolution_helpers::resolve_static_access_ret_preset(
+                let info = resolution_helpers::resolve_static_access_ret_preset(
                     self.compiler,
                     spanned_segments,
                     associated_scope,
@@ -4108,7 +4140,8 @@ impl<'res> TypeResolver<'res> {
                     parent_sym_id_opt,
                     &inline_expr,
                     local_scope_id,
-                    last_scope,
+                    info.associated_scope,
+                    info.lookup_pat_found_in,
                     scope_type,
                     env,
                 )
@@ -4131,6 +4164,7 @@ impl<'res> TypeResolver<'res> {
                         sp_expr,
                         local_scope_id,
                         associated_scope,
+                        lookup_pat,
                         scope_type,
                         env,
                     )?;
@@ -4284,6 +4318,7 @@ impl<'res> TypeResolver<'res> {
         member: &SpannedContainer<AstExpr>,
         local_scope: Option<ScopeId>,
         associated_scope: AssociatedScopeKind,
+        lookup_pat: ScopeLookupPattern,
         scope_type: ScopeType,
         env: &ResolverEnv,
     ) -> Result<PossibleMember, PresetErr> {
@@ -4296,6 +4331,7 @@ impl<'res> TypeResolver<'res> {
             member,
             local_scope,
             associated_scope,
+            lookup_pat,
             scope_type,
             env,
         ) {
@@ -4310,7 +4346,7 @@ impl<'res> TypeResolver<'res> {
                 todo!(),
                 name_id,
                 scope_type,
-                ScopeLookupPattern::NoRestrictions,
+                lookup_pat,
                 lookup_pref,
             ) {
                 todo!();

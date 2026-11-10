@@ -1,4 +1,6 @@
-use chrn_utils::id_types::{ModuleId, ScopeId, SymbolId};
+use std::collections::HashMap;
+
+use chrn_utils::id_types::{InternedIdUTF8, ModuleId, ScopeId, SymbolId};
 use lang::{
     chrn_classifier::{ChrnClassifiable, ChrnClassified},
     types::builtins::BuiltinTypeKind,
@@ -11,7 +13,7 @@ use crate::semantic::hir::{hir_concepts::Table, hir_symbols::SymbolKindFlat};
 #[derive(Debug)]
 pub struct ScopeInfo {
     pub scope: Scope,
-    /// For debugging purposes so that the symbol of origin is known for where a namespace lookup
+    /// So the symbol of origin is known for where a namespace lookup
     /// occured, beyond just the module or scope of origin.
     pub sym_owner: Option<SymbolId>,
     pub mod_owner: ModuleId,
@@ -143,7 +145,7 @@ impl Scope {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct SymbolLookupOutput {
     /// `SymbolId` of found symbol
     pub found_sym_id: SymbolId,
@@ -152,7 +154,7 @@ pub struct SymbolLookupOutput {
 }
 
 impl SymbolLookupOutput {
-    pub fn new(found_sym_id: SymbolId, scope_found_in: ScopeId) -> SymbolLookupOutput {
+    pub const fn new(found_sym_id: SymbolId, scope_found_in: ScopeId) -> Self {
         SymbolLookupOutput {
             found_sym_id,
             scope_found_in,
@@ -229,12 +231,15 @@ impl ScopeType {
 /// wrong since the namespace "main" owns no such thing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScopeLookupPattern {
-    /// Applies no restriction to lookups. Meaning, core is automatically searched since it's
-    /// intrinsic, any scope's accessible scopes can be searched with no restriction.
+    /// Applies no restriction to lookups. Meaning, implicit modules like core are automatically
+    /// searched since it's intrinsic, any scope's accessible scopes can be searched with
+    /// no restriction.
     NoRestrictions,
-    // WHat
+    // Should this just be a bool for `NoRestrictions`?
+    //// Has a policy similar to `NoRestrictions` with the added encoding that a namespace was used.
+    // InNamespaceNoRestrictions,
     /// Restricts lookup to only search what is within the given namespace, which restricts modules
-    /// such as core, or anything not declared within the symbol's scope containment?
+    /// such as core, or anything not declared within the symbol's scope containment.
     NamespaceOnly,
     /// Lookup that only allows `nest` to be searched and enforces it's the only section
     /// that can be searched
@@ -284,32 +289,45 @@ impl ChrnClassifiable for AssociatedScopeKind {
     }
 }
 
+//TODO:
+/// Registers metadata that is required by the compiler
 pub struct IntrinsicRegistry {
     /// `ModuleId` for intrinsically loaded core
     pub core_mod_id: ModuleId,
     /// This is here in case it ever is made dynamic. Currently it MUST be 0.
     pub main_mod_id: ModuleId,
-    /// `ScopeId` for iff a `complex` section is used, which is lazily loaded, hence the `Option`.
+    /// `ScopeId` for if a `complex` section is used, which is lazily loaded, hence the `Option`.
     pub complex_scope_id: Option<ScopeId>,
     // TEST:
-    /// All `BuiltinType` `SymbolId`s
+    // Put on heap?
+    /// All runtime assigned `BuiltinType` `SymbolId`s
     pub builtin_repo: Option<BuiltinIdRepository>,
+    /// Allows for referencing like `i8` to be done implicitly without typing something like
+    /// `core::i8`. This is not specific to core.
+    pub glob_implicit_idents: HashMap<InternedIdUTF8, SymbolId>,
 }
 
 impl IntrinsicRegistry {
-    pub fn new(
+    pub const fn new(
         core_mod_id: ModuleId,
         complex_scope_id: Option<ScopeId>,
         builtin_repo: Option<BuiltinIdRepository>,
+        glob_implicit_idents: HashMap<InternedIdUTF8, SymbolId>,
     ) -> IntrinsicRegistry {
         IntrinsicRegistry {
             core_mod_id,
             main_mod_id: ModuleId::new(0),
             complex_scope_id,
             builtin_repo,
+            glob_implicit_idents,
         }
     }
 }
+//
+// pub struct ImplicitSymbolMetadata {
+//     pub sym_id: SymbolId,
+//     pub owner_mod: ModuleId,
+// }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BuiltinIdRepository {

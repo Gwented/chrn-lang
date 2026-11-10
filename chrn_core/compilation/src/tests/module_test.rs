@@ -3,7 +3,6 @@ use chrn_utils::source_utils::source_manager::{
 };
 use chrn_utils::{id_types::InternedId, intern::UTF8Tag};
 use std::env;
-#[cfg(unix)]
 use std::ffi::OsStr;
 use std::fs;
 use std::io::Cursor;
@@ -595,7 +594,8 @@ fn modfinder_single_import() {
     let span_bytes = &region.src_bytes[import_span.start as usize..import_span.end as usize];
     let span_str = String::from_utf8_lossy(span_bytes);
     assert_eq!(
-        span_str, format!("\"{sub_canonical}\""),
+        span_str,
+        format!("\"{sub_canonical}\""),
         "import span must extract the quoted source name from src bytes"
     );
 
@@ -726,7 +726,11 @@ fn modfinder_escaped_keyword_alias() {
     let alias_start = source.find("e#import").unwrap() as u32;
     assert_eq!(
         alias.span,
-        SourceSpan::new(module.region_id.unwrap(), alias_start, alias_start + 8)
+        SourceSpan::new(
+            module.kind.expect_user().region_id,
+            alias_start,
+            alias_start + 8
+        )
     );
 }
 
@@ -749,7 +753,7 @@ fn modfinder_escaped_identifier_division_does_not_import_operand() {
     // The division is a later type error, not an import declaration. Confirm
     // that the real lexer treats its left operand as an escaped identifier.
     let mut cfg = ChrnConfig::default();
-    let region = &graph.region_arena[module.region_id.unwrap()];
+    let region = &graph.region_arena[module.kind.expect_user().region_id];
     let tokens = Lexer::new(
         region.self_id,
         region.src_id,
@@ -1605,7 +1609,7 @@ fn extract_main_simple_script() {
     );
     assert!(main_mod.bind.is_none(), "no bind expected in simple script");
     assert!(
-        main_mod.region_id.is_some(),
+        matches!(main_mod.kind, ModuleKind::User(_)),
         "main module should have a region_id"
     );
 
@@ -1684,11 +1688,12 @@ fn extract_main_with_import() {
         _ => panic!("expected UnresolvedSource, got {:?}", import.kind),
     };
     // Verify the span slices out the quoted source name from src bytes
-    let region = &graph.region_arena()[main_mod.region_id.expect("main mod has region_id")];
+    let region = &graph.region_arena()[main_mod.kind.expect_user().region_id];
     let span_bytes = &region.src_bytes[import_span.start as usize..import_span.end as usize];
     let span_str = String::from_utf8_lossy(span_bytes);
     assert_eq!(
-        span_str, format!("\"{sub_path_str}\""),
+        span_str,
+        format!("\"{sub_path_str}\""),
         "import span must extract the quoted source name from src bytes"
     );
 
@@ -1738,7 +1743,7 @@ fn extract_main_broken_config() {
     );
     assert_eq!(main_mod.self_id, ModuleId::new(0));
     assert!(
-        main_mod.region_id.is_some(),
+        matches!(main_mod.kind, ModuleKind::User(_)),
         "even a broken region gets a region_id"
     );
     // The region was pushed even for broken config
@@ -1815,7 +1820,7 @@ fn extract_main_with_at_def_block() {
     //   bytes 17-26 = "let x = 1\n"    (10 bytes of script)
     //   bytes 27-30 = "@end"           (4 bytes, the \n at byte 31 is trailing)
     // So: script_start = 12 (offset of @def), serial_start = 31 (offset after @end).
-    let region = &graph.region_arena()[main_mod.region_id.unwrap()];
+    let region = &graph.region_arena()[main_mod.kind.expect_user().region_id];
     assert_eq!(
         region.script_start, 12,
         "script_start should be at the @def directive (byte 12), got {}",
@@ -1918,7 +1923,10 @@ fn extract_all_modules_with_sub_module() {
         ModuleState::Loaded,
         "sub module must be Loaded"
     );
-    assert!(sub_mod.region_id.is_some(), "sub module must have a region");
+    assert!(
+        matches!(sub_mod.kind, ModuleKind::User(_)),
+        "sub module must have a region"
+    );
 
     // Main module must still be Loaded
     let main_mod =
@@ -2127,11 +2135,12 @@ fn import_kind_span_preserved() {
         span.end
     );
     // Verify the span slices out the quoted source name from src bytes
-    let region = &graph.region_arena()[main_mod.region_id.expect("main mod has region_id")];
+    let region = &graph.region_arena()[main_mod.kind.expect_user().region_id];
     let span_bytes = &region.src_bytes[span.start as usize..span.end as usize];
     let span_str = String::from_utf8_lossy(span_bytes);
     assert_eq!(
-        span_str, format!("\"{sub_path_str}\""),
+        span_str,
+        format!("\"{sub_path_str}\""),
         "import span must extract the quoted source name from src bytes, got '{}'",
         span_str
     );

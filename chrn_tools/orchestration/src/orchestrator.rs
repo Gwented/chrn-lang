@@ -6,7 +6,7 @@ use chrn_utils::{
 };
 use compilation::{
     lexer::{Lexer, lexer_output::LexerOutput, token::SpannedToken},
-    module::module_concepts::ModuleState,
+    module::module_concepts::{ModuleKind, ModuleState},
     parser::{self, ast::ast_concepts::AstInfo},
     resolvers::{
         constraint_resolver::ConstraintResolver,
@@ -249,9 +249,9 @@ pub fn run_lexer(
     let module = &compiler.mods[current_mod_id];
     // Skipping any that aren't `Loaded` because it usually leads to duplicated errors from the
     // config loading stage
-    let region = match &module.region_id {
-        Some(region_id) if module.state == ModuleState::Loaded => {
-            &compiler_store.region_arena[*region_id]
+    let region = match &module.kind {
+        ModuleKind::User(user_meta) if module.state == ModuleState::Loaded => {
+            &compiler_store.region_arena[user_meta.region_id]
         }
         _ => {
             // Meaning it's a lib module where None should be found upon any queries
@@ -286,9 +286,9 @@ pub fn run_parser(
     toks: &[SpannedToken],
 ) -> (Option<AstInfo>, SourceDiagnosticSummary) {
     let module = &compiler.mods[current_mod_id];
-    let region = match &module.region_id {
-        Some(region_id) => &compiler_store.region_arena[*region_id],
-        None => {
+    let region = match &module.kind {
+        ModuleKind::User(user_meta) => &compiler_store.region_arena[user_meta.region_id],
+        ModuleKind::Core => {
             // Meaning it's a lib module where None should be found upon any queries
             return (None, SourceDiagnosticSummary::default());
         }
@@ -318,9 +318,9 @@ fn create_registration_envs<'a>(
         let mod_id = ModuleId::new(i as u32);
         let module = &compiler.mods[mod_id];
 
-        let current_region = match &module.region_id {
-            Some(region_id) => &region_arena[*region_id],
-            None => {
+        let current_region = match &module.kind {
+            ModuleKind::User(user_meta) => &region_arena[user_meta.region_id],
+            ModuleKind::Core => {
                 all_envs.push(None);
                 continue;
             }
@@ -361,9 +361,9 @@ fn create_resolver_envs<'a>(
         let mod_id = ModuleId::new(i as u32);
         let module = &compiler.mods[mod_id];
 
-        let current_region = match &module.region_id {
-            Some(region_id) => &region_arena[*region_id],
-            None => {
+        let current_region = match &module.kind {
+            ModuleKind::User(user_meta) => &region_arena[user_meta.region_id],
+            ModuleKind::Core => {
                 all_envs.push(None);
                 continue;
             }

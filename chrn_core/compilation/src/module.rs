@@ -10,7 +10,10 @@ pub mod module_finder;
 use crate::{
     chrn_config::{ChrnConfig, chrn_perf::ChrnPerfStage},
     config_loader::{ConfigLoader, ConfigLoaderOutput},
-    module::module_concepts::{Import, ImportKind, Module, ModuleGraph, ModuleIdent, ModuleState},
+    module::module_concepts::{
+        Import, ImportKind, Module, ModuleFlagMetadata, ModuleGraph, ModuleIdent, ModuleKind,
+        ModuleState, UserModuleMetadata,
+    },
     semantic::checker_helpers::DuplicateTracker,
 };
 use chrn_utils::{
@@ -152,7 +155,7 @@ pub fn extract_main(
         SourceKind::Path(src) => {
             let Some(file_name) = src.path.file_prefix().and_then(|name| name.to_str()) else {
                 let core_msg = format!(
-                    "Path \"{}\" does not have a valid UTF-8 file name usable within the program",
+                    "Path \"{}\" does not have a UTF-8 file name usable within the program",
                     src.path.display()
                 );
                 let diag = SourceDiagnostic::builder(
@@ -160,7 +163,7 @@ pub fn extract_main(
                     DiagnosticLevel::Error,
                     core_msg,
                     main_src_id,
-                )
+                ).add_note("The entry point is the only module that cannot use non-UTF-8 in it's file name")
                 .build();
                 region_arena.push(main_region);
                 return Err(ModuleInitError::new(
@@ -202,15 +205,19 @@ pub fn extract_main(
         return Err(init_err);
     }
 
+    let user_meta = UserModuleMetadata::new(main_region_id);
+
     // No errors are immediately terminal after this point since the main entry point now exists and
     // can be viewed even if it's the only module that was successfully created
     let main_mod = Module::new(
         main_name_id,
         main_mod_state,
+        // All modules collected here are only user-defined so no flags can be touched.
+        ModuleFlagMetadata::none(),
         main_mod_id,
         main_bind,
         main_imports,
-        Some(main_region_id),
+        ModuleKind::User(user_meta),
     );
 
     let seen: Vec<SourceId> = vec![main_src_id];
@@ -257,9 +264,7 @@ pub fn extract_modules(
     // not processed again, create it's module, then push it to the end of the queue so that it's
     // imports can also be processed as modules.
     while let Some(mut importer_mod) = pending_mods.pop_front() {
-        let importer_region_id = importer_mod
-            .region_id
-            .expect("Root module should have region id");
+        let importer_region_id = importer_mod.kind.expect_user().region_id;
         let importer_src_id = graph.region_arena[importer_region_id].src_id;
 
         // A module binds its own name, and only its imports can carry an alias, so this is never
@@ -658,13 +663,16 @@ fn resolve_module(
     // so no special cases needed for indexing it
     graph.region_arena.push(sub_region);
 
+    let user_meta = UserModuleMetadata::new(sub_region_id);
     let sub_mod = Module::new(
         imp.name_id,
         sub_state,
+        // All modules collected here are only user-defined so no flags can be touched.
+        ModuleFlagMetadata::none(),
         current_mod_id,
         bind,
         sub_imports,
-        Some(sub_region_id),
+        ModuleKind::User(user_meta),
     );
 
     Ok(sub_mod)

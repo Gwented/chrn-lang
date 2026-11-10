@@ -4,6 +4,7 @@ use crate::lookup::scopes::scopes_concepts::{
     AssociatedScopeKind, BuiltinIdRepository, BuiltinIdRepositoryBuilder, ScopeLookupPattern,
     ScopeLookupPreferenceFlags, ScopeType,
 };
+use crate::parser::ast::ast_exprs::PathSegment;
 use crate::script_compiler::compiler_consts::builtin_ty_to_id;
 use crate::script_compiler::helpers::core_helpers::core_helpers_dataset::{
     BUILTIN_TYPES_RANGE, TYPES_NAMESPACE,
@@ -13,8 +14,14 @@ use crate::script_compiler::helpers::instantiation_symbols::{
 };
 use crate::semantic::hir::hir_concepts::Type;
 use crate::semantic::hir::hir_symbols::SymbolKind;
+use crate::semantic::resolution::{
+    resolution_concepts::{StaticAccessOption, StaticAccessResult},
+    resolve_static_access,
+};
+use chrn_utils::err_codes::ErrorCode;
 use chrn_utils::id_types::{ScopeId, SymbolId, TypeId};
 use chrn_utils::intern;
+use chrn_utils::utils::containers::SpannedContainer;
 use chrn_utils::{id_types::InternedId, intern::UTF8Tag};
 use lang::types::builtins::BuiltinType;
 use lang::types::builtins::BuiltinTypeKind;
@@ -461,4 +468,204 @@ fn builtin_id_repository_initialized_in_compiler() {
             builtin_ty.kind()
         );
     }
+}
+
+#[test]
+fn implicit_identifiers_respect_module_namespace_boundaries() {
+    let result =
+        resolve_cross_module("let VALUE = 1", "export let OTHER = 2", Stage::Namespace).expect_ok();
+    let compiler = &result.compiler;
+    let main_mod_id = ModuleId::new(0);
+    let sub_mod_id = ModuleId::new(1);
+    let core_mod_id = compiler.intrinsic_registry.core_mod_id;
+    assert!(!compiler.mods[main_mod_id].flag_meta.has_implicit_idents());
+    assert!(!compiler.mods[sub_mod_id].flag_meta.has_implicit_idents());
+    assert!(compiler.mods[core_mod_id].flag_meta.has_implicit_idents());
+    for name in ["i8", "Numeric"] {
+        let name_id = result.interner.get_interned_id_from_str(name).unwrap();
+        let expected = compiler.intrinsic_registry.glob_implicit_idents[&name_id];
+        for mod_id in [main_mod_id, sub_mod_id] {
+            let found = find_sym_id(
+                compiler,
+                AssociatedScopeKind::Module(mod_id),
+                name_id,
+                ScopeType::Neutral,
+                ScopeLookupPattern::NoRestrictions,
+                ScopeLookupPreferenceFlags::none(),
+            )
+            .unwrap();
+            assert_eq!(found.found_sym_id, expected, "bare {name} in {mod_id:?}");
+            assert!(
+                find_sym_id(
+                    compiler,
+                    AssociatedScopeKind::Module(mod_id),
+                    name_id,
+                    ScopeType::Neutral,
+                    ScopeLookupPattern::NamespaceOnly,
+                    ScopeLookupPreferenceFlags::none()
+                )
+                .is_none(),
+                "{mod_id:?} must not expose implicit {name} as its own member"
+            );
+        }
+        assert!(
+            find_sym_id(
+                compiler,
+                AssociatedScopeKind::Module(core_mod_id),
+                name_id,
+                ScopeType::Neutral,
+                ScopeLookupPattern::NamespaceOnly,
+                ScopeLookupPreferenceFlags::none()
+            )
+            .is_none(),
+            "core::{name} must use the explicit core::types namespace"
+        );
+    }
+    let types_id = result.interner.get_interned_id_from_str("types").unwrap();
+    assert!(
+        find_sym_id(
+            compiler,
+            AssociatedScopeKind::Module(main_mod_id),
+            types_id,
+            ScopeType::Neutral,
+            ScopeLookupPattern::NoRestrictions,
+            ScopeLookupPreferenceFlags::none()
+        )
+        .is_none(),
+        "core::types is not an implicit global identifier"
+    );
+    assert!(
+        find_sym_id(
+            compiler,
+            AssociatedScopeKind::Module(core_mod_id),
+            types_id,
+            ScopeType::Neutral,
+            ScopeLookupPattern::NamespaceOnly,
+            ScopeLookupPreferenceFlags::none()
+        )
+        .is_some()
+    );
+}
+
+#[test]
+fn static_access_preserves_module_and_symbol_scope_permissions() {
+    let result =
+        resolve_cross_module("let VALUE = 1", "export let OTHER = 2", Stage::Namespace).expect_ok();
+    let compiler = &result.compiler;
+    let main_scope = AssociatedScopeKind::Module(ModuleId::new(0));
+    let i8_id = result.interner.get_interned_id_from_str("i8").unwrap();
+    let i8_sym_id = compiler.intrinsic_registry.glob_implicit_idents[&i8_id];
+    let i8_scope = compiler.syms[i8_sym_id].associated_scope.unwrap();
+    let core_scope_id =
+        compiler.extract_scope_id(ScopeType::Core, compiler.intrinsic_registry.core_mod_id);
+    let types_id = result.interner.get_interned_id_from_str("types").unwrap();
+    let types_sym_id = compiler.scopes[core_scope_id].scope.table.interned_to_sym[&types_id];
+    let types_scope = compiler.syms[types_sym_id].associated_scope.unwrap();
+    for (path, expected_scope, expected_pat) in [
+        (vec!["i8"], main_scope, ScopeLookupPattern::NoRestrictions),
+        (
+            vec!["sub_module", "OTHER"],
+            AssociatedScopeKind::Module(ModuleId::new(1)),
+            ScopeLookupPattern::NamespaceOnly,
+        ),
+        (
+            vec!["i8", "MAX"],
+            i8_scope,
+            ScopeLookupPattern::NamespaceOnly,
+        ),
+        (
+            vec!["core", "types", "i8"],
+            types_scope,
+            ScopeLookupPattern::NamespaceOnly,
+        ),
+        (
+            vec!["core", "types", "i8", "MAX"],
+            i8_scope,
+            ScopeLookupPattern::NamespaceOnly,
+        ),
+    ] {
+        let segs: Vec<_> = path
+            .iter()
+            .map(|name| {
+                SpannedContainer::new(
+                    PathSegment::Ident(result.interner.get_interned_id_from_str(name).unwrap()),
+                    SourceSpan::default(),
+                )
+            })
+            .collect();
+        let found = resolve_static_access(
+            compiler,
+            &segs,
+            main_scope,
+            ScopeType::Neutral,
+            ScopeLookupPreferenceFlags::none(),
+            StaticAccessOption::None,
+        );
+        let StaticAccessResult::Found(info) = found else {
+            panic!("{path:?}: {found:?}");
+        };
+        assert_eq!(info.associated_scope, expected_scope, "{path:?}");
+        assert_eq!(info.lookup_pat_found_in, expected_pat, "{path:?}");
+        let last_id = result
+            .interner
+            .get_interned_id_from_str(path.last().unwrap())
+            .unwrap();
+        assert!(
+            find_sym_id(
+                compiler,
+                info.associated_scope,
+                last_id,
+                ScopeType::Neutral,
+                info.lookup_pat_found_in,
+                ScopeLookupPreferenceFlags::none()
+            )
+            .is_some(),
+            "final segment of {path:?}"
+        );
+    }
+}
+
+#[test]
+fn implicit_and_explicit_builtin_paths_resolve_same_value() {
+    let result = resolve_single_module("let BARE = i8::MAX\nlet QUALIFIED = core::types::i8::MAX\nvar->\n first: i8\n second: core::types::i8", Stage::Constraint).expect_ok();
+    for name in ["BARE", "QUALIFIED"] {
+        assert!(
+            matches!(
+                result.value_of(name),
+                Value::ArbitraryInt(ArbitraryIntKind::I64(127))
+            ),
+            "{name}"
+        );
+    }
+}
+
+#[test]
+fn qualified_user_module_does_not_gain_implicit_builtin_values() {
+    let result = resolve_cross_module(
+        "let BAD = sub_module::i8",
+        "export let OTHER = 2",
+        Stage::Type,
+    );
+    assert_eq!(result.ns.err_count(), 0);
+    assert_eq!(result.member.err_count(), 0);
+    assert_eq!(
+        result.ty.err_count(),
+        1,
+        "qualified user-module lookup must reject a builtin absent from that module: {:?}",
+        result.ty
+    );
+    assert_eq!(result.ty.diags[0].err_code, Some(ErrorCode::ScopeErr));
+    assert_eq!(
+        result.ty.diags[0].annotations[0].span,
+        SourceSpan::new(SourceRegionId::new(0), 22, 24)
+    );
+}
+
+#[test]
+fn qualified_core_predicate_functions_resolve() {
+    resolve_single_module(
+        "var->\n field: str [core::funcs::IsEmpty]",
+        Stage::Type,
+    )
+    .expect_ok();
 }

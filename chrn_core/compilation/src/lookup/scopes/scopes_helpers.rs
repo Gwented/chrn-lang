@@ -34,12 +34,11 @@ pub fn find_sym_id_with_static_ret_preset(
     sp_path_segs: &[SpannedContainer<PathSegment>],
     scope_type: ScopeType,
     opt: StaticAccessOption,
-    lookup_pat: ScopeLookupPattern,
     lookup_pref: ScopeLookupPreferenceFlags,
     interner: &Intern,
     env: &ResolverEnv,
 ) -> Result<SymbolLookupOutput, PresetErr> {
-    let last_scope = resolution_helpers::resolve_static_access_ret_preset(
+    let info = resolution_helpers::resolve_static_access_ret_preset(
         compiler,
         sp_path_segs,
         initial_scope,
@@ -58,10 +57,10 @@ pub fn find_sym_id_with_static_ret_preset(
             // Second request for a ret preset version
             find_sym_id_ret_preset(
                 compiler,
-                last_scope,
+                info.associated_scope,
                 SpannedContainer::new(*interned_id, last_seg.span),
                 scope_type,
-                lookup_pat,
+                info.lookup_pat_found_in,
                 lookup_pref,
             )
         }

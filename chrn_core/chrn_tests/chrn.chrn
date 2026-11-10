@@ -1,0 +1,25 @@
+// import "../chrn_core/chrn_tests/def.chrn"
+
+nest->
+    struct First {second: Second}
+    struct Second {third: Third}
+    struct Third {fourth: Fourth}
+    struct Fourth {val: i32}
+complex->
+    // With arrows this is:
+    /*First=>second=>third=>fourth {
+        val {
+            idents = "different"
+        }
+    }*/
+    // Without them:
+    // First { second { third { fourth { val { idents = "different" } } } } }
+
+    // Does not have to be at root:
+    /*First {
+        second {
+            third=>fourth {
+                val { idents = "different" }
+            }
+        }
+    }*/

@@ -19,10 +19,13 @@ pub static STR_PREFIXES: [u8; 1] = [b'p'];
 /// Module
 #[derive(Debug, Clone)]
 pub struct Module {
-    /// File name that will be used internally
+    /// Name that will be used for in source referencing like `main::`
     pub name_id: InternedIdUTF8,
     /// `ModuleId` of `self`
     pub self_id: ModuleId,
+    //NOTE: This is a little odd since it's ALL metadata. Maybe ModuleProperties?
+    /// Associated metadata that can be held in flags
+    pub flag_meta: ModuleFlagMetadata,
     /// Imports found in the module
     pub imports: Vec<Import>,
     /// Module's current state
@@ -35,46 +38,120 @@ pub struct Module {
     pub exports: Vec<SymbolId>,
     //NOTE: If the directive system goes farther we then need an isolated cfg relationship
     // pub cfg:
-    /// Metadata that exists if the module contains a source file
+    /// Metadata associated with particular kinds of modules
     // As of right now this represents the difference between a pre-loaded and user space module
-    pub region_id: Option<SourceRegionId>,
+    pub kind: ModuleKind,
 }
 
 impl Module {
     pub const fn new(
         name_id: InternedIdUTF8,
         state: ModuleState,
+        flag_meta: ModuleFlagMetadata,
         self_id: ModuleId,
         bind: Option<Bind>,
         imports: Vec<Import>,
         //TODO: Convert to explicit kind
-        region_id: Option<SourceRegionId>,
+        kind: ModuleKind,
     ) -> Module {
         Module {
             name_id,
             self_id,
             state,
             bind,
+            flag_meta,
             imports,
             exports: Vec::new(),
             scopes: Vec::new(),
-            region_id,
+            kind,
         }
     }
 }
 
+//May use bit-wise here but testing something
+//TODO: Maybe the flags are apart of it but this contains `ModuleState` because that is also metadata
+//But all of hte modue is metadata
+/// Metadata associated with `Module`
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ModuleFlagMetadata {
+    pub flags: u16,
+}
+
+impl ModuleFlagMetadata {
+    pub const FLAG_HAS_IMPLICIT_IDENTS: u16 = 1 << 1;
+    pub const FLAG_IS_INTRINSIC_MODULE: u16 = 1 << 1;
+
+    pub const fn new(flags: u16) -> Self {
+        Self { flags }
+    }
+
+    /// Constructs `Self` with no flags set.
+    pub const fn none() -> Self {
+        Self { flags: 1 }
+    }
+
+    /// Constructs `Self` with `FLAG_HAS_IMPLICIT_IDENTS` set
+    pub const fn new_has_implicit_idents() -> Self {
+        Self::new(Self::FLAG_HAS_IMPLICIT_IDENTS)
+    }
+
+    /// Constructs `Self` with `FLAG_HAS_IMPLICIT_IDENTS` set
+    pub const fn new_is_user_module() -> Self {
+        Self::new(Self::FLAG_HAS_IMPLICIT_IDENTS)
+    }
+
+    pub const fn has_implicit_idents(self) -> bool {
+        (self.flags & Self::FLAG_HAS_IMPLICIT_IDENTS) != 0
+    }
+}
+
+impl std::default::Default for ModuleFlagMetadata {
+    fn default() -> Self {
+        Self { flags: 1 }
+    }
+}
+
+/// Possible `Module` variants
+#[derive(Debug, Clone)]
 pub enum ModuleKind {
-    User,
-    Builtin,
+    User(UserModuleMetadata),
+    Core,
+}
+
+impl ModuleKind {
+    pub fn expect_user(&self) -> &UserModuleMetadata {
+        match self {
+            ModuleKind::User(meta) => meta,
+            ModuleKind::Core => panic!("Expected `ModuleKind::User`"),
+        }
+    }
+
+    pub fn is_core(&self) -> bool {
+        match self {
+            ModuleKind::Core => true,
+            ModuleKind::User(_) => false,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct UserModuleMetadata {
+    pub region_id: SourceRegionId,
+}
+
+impl UserModuleMetadata {
+    pub fn new(region_id: SourceRegionId) -> Self {
+        Self { region_id }
+    }
 }
 
 /// A state for modules to be tracked by
 // May or may not add more specific states like parsed and such, but this is fine
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ModuleState {
-    BrokenRegion,
     #[default]
     Loading,
+    BrokenRegion,
     Loaded,
 }
 

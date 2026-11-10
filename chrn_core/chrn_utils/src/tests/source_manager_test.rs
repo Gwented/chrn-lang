@@ -12,8 +12,8 @@ fn source_registration_preserves_identity_and_kind_through_growth() {
     for mut manager in [
         SourceManager::new(),
         SourceManager::default(),
-        SourceManager::with_capacity(0),
-        SourceManager::with_capacity(512),
+        SourceManager::with_capacities(0, 0, 0),
+        SourceManager::with_capacities(512, 512, 512),
     ] {
         assert!(manager.get_source(SourceId::new(0)).is_none());
         let missing_path = Path::new("unregistered/source.chrn");

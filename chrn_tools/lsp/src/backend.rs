@@ -669,9 +669,8 @@ fn completion_context(
 
 /// Collects symbols owned by `mod_id`'s qualified namespace.
 ///
-/// Core's scope is injected into user modules for unqualified lexical lookup. A
-/// qualified lookup uses `NamespaceOnly` and excludes it, so completion must do
-/// the same or `main::i8` is advertised even though the compiler rejects it.
+/// The injected core scope is not part of a user module's qualified namespace.
+/// Implicit identifiers come from the registry and must not be offered here.
 fn reachable_module_symbols(compiler: &ScriptCompiler, mod_id: ModuleId) -> Vec<SymbolId> {
     let mut symbols = Vec::new();
     let mut seen = std::collections::HashSet::new();
@@ -2299,8 +2298,8 @@ impl LanguageServer for Backend {
                 if let Some(mod_id) = crate::state::visible_module(compiler, target_id) {
                     let module = &compiler.mods[mod_id];
                     if module.self_id.id == 0 {
-                        // Current module: everything reachable through the module's own scope
-                        // tables plus the injected core scope. This mirrors real scope lookup,
+                        // Current module: everything reachable through its own scope
+                        // tables. This mirrors qualified scope lookup,
                         // so compiler-internal namespace members such as `i8::MAX` (which live
                         // in builtin-type namespace scopes) are never offered here.
                         for sym_id in reachable_module_symbols(compiler, module.self_id) {
@@ -2416,7 +2415,7 @@ impl LanguageServer for Backend {
             return Ok(Some(CompletionResponse::Array(items)));
         }
 
-        // Language keywords and argument annotations (intrinsic types/functions come from core module exports)
+        // Language keywords and argument annotations (implicit types come from the registry)
         const SUGGESTIONS: &[(&str, CompletionItemKind)] = &[
             ("@def", CompletionItemKind::SNIPPET),
             ("@end", CompletionItemKind::SNIPPET),
@@ -2448,7 +2447,6 @@ impl LanguageServer for Backend {
         let mut seen = std::collections::HashSet::new();
 
         if let Some(compiler) = &state.compiler {
-            //TODO: Should auto-complete any module that has a src of "None"
             // Follow the active section's lookup order. A source token alone is
             // not evidence that its name is visible here.
             for scope_type in section.accessible_scopes() {
@@ -2479,9 +2477,8 @@ impl LanguageServer for Backend {
                 }
             }
 
-            // Core library exports: types, functions, and constants.
-            let core_mod = &compiler.mods[compiler.intrinsic_registry.core_mod_id];
-            for sym_id in &core_mod.exports {
+            // Implicit identifiers are visible without exposing core's namespaces.
+            for sym_id in compiler.intrinsic_registry.glob_implicit_idents.values() {
                 let sym = &compiler.syms[*sym_id];
                 let name = state.interner.extract_utf8_str(sym.name_id);
                 if (prefix.is_empty() || name.starts_with(prefix)) && seen.insert(name.to_string())

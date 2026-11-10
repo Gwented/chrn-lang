@@ -1,4 +1,4 @@
-import "../chrn_core/chrn_tests/def.chrn"
+// import "../chrn_core/chrn_tests/def.chrn"
 
 nest->
     struct First {second: Second}

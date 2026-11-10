@@ -1,17 +1,16 @@
-//! Module intended for storing free functions that perform general resolution tasks
+//! General resolution functions
 
 use chrn_utils::{id_types::InternedId, intern::UTF8Tag};
 pub(crate) mod resolution_concepts;
 pub(crate) mod resolution_helpers;
 
 use chrn_utils::{
-    id_types::{TypeId},
-    intern,
-    source_utils::source_span::SourceSpan,
+    id_types::TypeId, intern, source_utils::source_span::SourceSpan,
     utils::containers::SpannedContainer,
 };
 use lang::types::builtins::{BuiltinType, BuiltinTypeKind};
 
+use crate::semantic::resolution::resolution_concepts::FoundStaticAccessInfo;
 use crate::{
     lookup::scopes::{
         self,
@@ -45,7 +44,7 @@ pub fn resolve_type_expr(
     associated_scope: AssociatedScopeKind,
     sp_ty_expr: &SpannedContainer<TypeExpr>,
     scope_type: ScopeType,
-    lookup_pattern: ScopeLookupPattern,
+    lookup_pat: ScopeLookupPattern,
     env: &ResolverEnv,
 ) -> TypeExprResult {
     let lookup_pref = ScopeLookupPreferenceFlags::new(ScopeLookupPreferenceFlags::TYPE.into());
@@ -59,7 +58,7 @@ pub fn resolve_type_expr(
                 associated_scope,
                 *name_id,
                 scope_type,
-                lookup_pattern,
+                lookup_pat,
                 lookup_pref,
             ) {
                 Some(SymbolLookupOutput { found_sym_id, .. }) => {
@@ -118,7 +117,7 @@ pub fn resolve_type_expr(
             env,
         ),
         TypeExpr::Path(sp_path_segs) => {
-            let last_scope = match resolve_static_access(
+            let info = match resolve_static_access(
                 compiler,
                 sp_path_segs,
                 associated_scope,
@@ -126,8 +125,18 @@ pub fn resolve_type_expr(
                 ScopeLookupPreferenceFlags::new(ScopeLookupPreferenceFlags::TYPE.into()),
                 StaticAccessOption::Type,
             ) {
-                StaticAccessResult::Scope(scope) => scope,
+                StaticAccessResult::Found(info) => info,
                 other => return TypeExprResult::StaticAccessFailure(other),
+            };
+
+            // TODO: Should this be something where `resolve_static_access` explicitly returns it so
+            // that the caller isn't in charge of this? Probably.
+            //
+            // If len == 1 then nothing was accessed so no restrictions given
+            let new_lookup_pat = if sp_path_segs.len() == 1 {
+                ScopeLookupPattern::NoRestrictions
+            } else {
+                ScopeLookupPattern::NamespaceOnly
             };
 
             let last_segment = &sp_path_segs[sp_path_segs.len() - 1];
@@ -141,10 +150,10 @@ pub fn resolve_type_expr(
 
                     resolve_type_expr(
                         compiler,
-                        last_scope,
+                        info.associated_scope,
                         &inline_ty_expr,
                         scope_type,
-                        lookup_pattern,
+                        info.lookup_pat_found_in,
                         env,
                     )
                 }
@@ -155,7 +164,7 @@ pub fn resolve_type_expr(
                     return resolve_generic(
                         compiler,
                         generic,
-                        last_scope,
+                        info.associated_scope,
                         sp_ty_expr.span,
                         scope_type,
                         env,
@@ -238,7 +247,7 @@ fn resolve_generic(
             }
             //TEST: TEST:
             BuiltinTypeKind::Tuple => {
-                let mut elements: Vec<TypeId> = Vec::with_capacity(generic.inputs.len());
+                let mut elems: Vec<TypeId> = Vec::with_capacity(generic.inputs.len());
 
                 for input in &generic.inputs {
                     match resolve_type_expr(
@@ -249,7 +258,7 @@ fn resolve_generic(
                         ScopeLookupPattern::NoRestrictions,
                         env,
                     ) {
-                        TypeExprResult::Type(tid) => elements.push(tid),
+                        TypeExprResult::Type(tid) => elems.push(tid),
                         other => return other,
                     }
                 }
@@ -269,8 +278,7 @@ fn resolve_generic(
                     SymbolKind::Type(type_id),
                 );
 
-                let tuple =
-                    Type::BuiltinTypeInfo(BuiltinTypeInfo::new(BuiltinType::Tuple(elements)));
+                let tuple = Type::BuiltinTypeInfo(BuiltinTypeInfo::new(BuiltinType::Tuple(elems)));
 
                 let ty_info = TypeInfo::new(tuple, compiler.intrinsic_registry.core_mod_id);
                 compiler.types.push(ty_info);
@@ -344,7 +352,7 @@ fn resolve_generic(
     TypeExprResult::UnknownGenericIdent(SpannedContainer::new(generic.base, ty_expr_span))
 }
 
-/// Genral function for traversing scopes inside of static access.
+/// Traverses scopes inside of static access.
 ///
 /// Takes in the segments to traverse, scope to start in, scope type for scoping rules, and
 /// whether or not type expression restrictions should be applied.
@@ -355,9 +363,9 @@ fn resolve_generic(
 /// - opt: What rules should be applied for when to return a particular result, given a value or
 /// type only setting.
 ///
-/// NOTE: If `sp_path_seg.len()` == 1, `current_scope` is returned, resulting in a no-op. This is
-/// done because if there is no `::` after the current segment, then going further does no real help
-/// for resolution.
+/// NOTE: If `sp_path_seg.len()` == 1, `current_scope` is returned as `AssociatedScopeKind`,
+/// resulting in a no-op. This is done because if there is no `::` after the current segment,
+/// then going further does no real help for resolution.
 pub fn resolve_static_access(
     compiler: &ScriptCompiler,
     sp_path_segs: &[SpannedContainer<PathSegment>],
@@ -366,7 +374,8 @@ pub fn resolve_static_access(
     lookup_pref: ScopeLookupPreferenceFlags,
     opt: StaticAccessOption,
 ) -> StaticAccessResult {
-    //TEST: If the path segment len == 1 this will not do anything because this is not actually
+    let mut current_lookup_pat = ScopeLookupPattern::NoRestrictions;
+    //If the path segment len == 1 this will not do anything because this is not actually
     //accessing anything. Doing this because if we have something like "Thing::Thingy" and either
     //could be a type or symbol, being able to call this without explicitly at the call site
     //skipping sounds like a more valid argument than, if you call this without accounting for that
@@ -374,31 +383,25 @@ pub fn resolve_static_access(
     //into the namespace of JAVA as though it acutally had access used, but in reality it should be
     //a no-op.
     if sp_path_segs.len() == 1 {
-        return StaticAccessResult::Scope(current_scope);
+        let info = FoundStaticAccessInfo::new(current_scope, ScopeLookupPattern::NoRestrictions);
+        return StaticAccessResult::Found(info);
     }
 
     for (i, sp_path_seg) in sp_path_segs.iter().enumerate() {
-        // This is here so that something like "i32::MAX" is still doable at root.
-        // The issue is, `NamespaceOnly` gets rid of the core module because it's rules are more
-        // like IN namespace only rather than search in this specific namespace which may be a
-        // module or individual scope. That means, unless "core::i32::MAX" is actively done, it will
-        // never find the i32 because it gets rid of core in `NamespaceOnly`.
-        // (We should probably solve this differently)
-        let lookup_pat = if i == 0 {
-            ScopeLookupPattern::NoRestrictions
-        } else {
-            ScopeLookupPattern::NamespaceOnly
-        };
+        // Means at most `module::something` was done, so nothing further should have access to
+        // more than it's own namespace.
+        if i > 0 {
+            current_lookup_pat = ScopeLookupPattern::NamespaceOnly;
+        }
 
         match &sp_path_seg.inner {
             PathSegment::Ident(interned_id) => {
-                // NOTE: `another` searched here
                 if let Some(SymbolLookupOutput { found_sym_id, .. }) = scopes::find_sym_id(
                     compiler,
                     current_scope,
                     *interned_id,
                     scope_type,
-                    lookup_pat,
+                    current_lookup_pat,
                     lookup_pref,
                 ) {
                     let sym = &compiler.syms[found_sym_id];
@@ -457,7 +460,9 @@ pub fn resolve_static_access(
         }
     }
 
-    StaticAccessResult::Scope(current_scope)
+    // Since len must be > 1 we know it's `NamespaceOnly`
+    let info = FoundStaticAccessInfo::new(current_scope, ScopeLookupPattern::NamespaceOnly);
+    StaticAccessResult::Found(info)
 }
 
 // I KNOW WHAT THIS LOOKS LIKE BUT IT MIGHT BECOME MORE THAN THIS SO IT STILL GETS ITS OWN FUNCTION

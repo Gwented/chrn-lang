@@ -714,10 +714,9 @@ pub fn type_expr_result_to_preset_err(
             expected,
             inputs_span,
         } => {
-            // The name based if confusing
             let name = interner.extract_utf8_str(*base);
-            // BRING S_IFIER IN HERE NOW
-            let core_msg = format!("`{name}` expects {expected} input(s)");
+            let s_suffix = s_suffix!(*expected);
+            let core_msg = format!("`{name}` expects {expected} input{s_suffix}");
 
             let src_diag = SourceDiagnostic::builder(
                 ErrorCode::GenericsErr.into(),
@@ -760,7 +759,7 @@ pub fn static_access_result_to_preset_err(
     env: &ResolverEnv,
 ) -> Option<PresetErr> {
     match res {
-        StaticAccessResult::Scope(_) => None,
+        StaticAccessResult::Found(_) => None,
         //TODO: Preset?
         StaticAccessResult::SymNotFound {
             current_seg,

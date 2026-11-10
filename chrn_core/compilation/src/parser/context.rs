@@ -459,7 +459,7 @@ impl<'a> ParserContext<'a> {
                 builder = SourceDiagnostic::builder(
                     ErrorCode::ConfigLoadErr.into(),
                     DiagnosticLevel::Error,
-                    //Yeah, no? No?
+                    //WARN: Ok for now
                     builder.build().core_msg,
                     self.region.src_id,
                 )

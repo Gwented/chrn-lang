@@ -54,7 +54,7 @@ impl SourcePath {
 #[derive(Debug)]
 pub struct SourceInMemory {
     // I document like an LLM.
-    /// Required name for in memory source
+    /// Required name for in-memory source
     pub name: InternedIdUTF8,
     /// Full source data
     pub src: Vec<u8>,
@@ -69,15 +69,19 @@ impl SourceInMemory {
 impl SourceManager {
     /// Creates empty `SourceManager`
     pub fn new() -> Self {
-        Self::default()
+        Self::with_capacities(0, 0, 0)
     }
 
     /// Creates `SourceManager` with capacity for sources and registration maps.
-    pub fn with_capacity(capacity: usize) -> Self {
+    pub fn with_capacities(
+        srcs_cap: usize,
+        path_src_id_cap: usize,
+        interned_id_to_src_id_cap: usize,
+    ) -> Self {
         Self {
-            srcs: Vec::with_capacity(capacity),
-            path_to_src_id: HashMap::with_capacity(capacity),
-            interned_id_to_src_id: HashMap::with_capacity(capacity),
+            srcs: Vec::with_capacity(srcs_cap),
+            path_to_src_id: HashMap::with_capacity(path_src_id_cap),
+            interned_id_to_src_id: HashMap::with_capacity(interned_id_to_src_id_cap),
         }
     }
 

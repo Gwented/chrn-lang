@@ -102,6 +102,7 @@ pub enum Token {
     Integer(TokenInt),
     Float(TokenFloat),
     /// Lossily converted
+    /// Should this be String?
     Invalid(InternedIdUTF8),
     Char(char),
     OParen,

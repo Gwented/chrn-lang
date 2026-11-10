@@ -41,6 +41,7 @@ use chrn_utils::intern::Intern;
 use compilation::id_tag_decls::{ConfigMemberTag, EnumTag, StructTag};
 use compilation::lexer::token::Token as ScriptToken;
 use compilation::lookup::scopes::scopes_concepts::AssociatedScopeKind;
+use compilation::module::module_concepts::ModuleKind;
 use compilation::script_compiler::ScriptCompiler;
 use compilation::semantic::arbitraries::{ArbitraryFloatKind, ArbitraryIntKind};
 use compilation::semantic::hir::hir_concepts::Type;
@@ -525,16 +526,16 @@ fn module_hover(
     referenced_as: chrn_utils::id_types::InternedIdUTF8,
 ) -> String {
     let interner = &state.interner;
-    let mod_path = module
-        .region_id
-        .map(|region_id| &state.region_arena[region_id])
-        .map(|region| {
+    let mod_path = match &module.kind {
+        ModuleKind::User(meta) => {
+            let region = &state.region_arena[meta.region_id];
             state
                 .src_manager
                 .display_source(region.src_id, interner)
                 .to_string()
-        })
-        .unwrap_or_else(|| "<builtin>".to_string());
+        }
+        ModuleKind::Core => "<builtin>".to_string(),
+    };
 
     let alias_prefix = compiler.mods[ModuleId::new(0)]
         .imports

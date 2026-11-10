@@ -16,7 +16,10 @@ use crate::{
     script_compiler::ScriptCompiler,
     semantic::{
         preset_reporter::{self, preset_err::PresetErr},
-        resolution::{self, StaticAccessOption, StaticAccessResult, TypeExprResult},
+        resolution::{
+            self, StaticAccessOption, StaticAccessResult, TypeExprResult,
+            resolution_concepts::FoundStaticAccessInfo,
+        },
     },
 };
 
@@ -61,7 +64,7 @@ pub(crate) fn resolve_static_access_ret_preset(
     opt: StaticAccessOption,
     interner: &Intern,
     env: &ResolverEnv,
-) -> Result<AssociatedScopeKind, PresetErr> {
+) -> Result<FoundStaticAccessInfo, PresetErr> {
     match resolution::resolve_static_access(
         compiler,
         sp_path_segs,
@@ -70,7 +73,7 @@ pub(crate) fn resolve_static_access_ret_preset(
         lookup_pref,
         opt,
     ) {
-        StaticAccessResult::Scope(scope) => Ok(scope),
+        StaticAccessResult::Found(info) => Ok(info),
         res => {
             let preset_err =
                 preset_reporter::static_access_result_to_preset_err(interner, &res, env)
