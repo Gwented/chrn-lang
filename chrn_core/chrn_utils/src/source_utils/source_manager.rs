@@ -24,14 +24,14 @@ tag_decl!(PathTag, InMemoryTag);
 #[derive(Debug, Default)]
 pub struct SourceManager {
     srcs: Vec<SourceKind>,
-    path_to_src_id: HashMap<PathBuf, TaggedId<SourceId, PathTag>>,
     // Bytes? Also two hashmaps :(
     // This uses `PathBuf` because path ids do not exist until the manager makes it. Interned ones
     // do exist prior therefore this doesn't use str/bytes or anything
+    path_to_src_id: HashMap<PathBuf, TaggedId<SourceId, PathTag>>,
     interned_id_to_src_id: HashMap<InternedIdUTF8, SourceId>,
 }
 
-/// Possible sources to store and index
+/// Acceptable kinds of sources
 #[derive(Debug)]
 pub enum SourceKind {
     Path(SourcePath),
@@ -55,14 +55,14 @@ impl SourcePath {
 pub struct SourceInMemory {
     // I document like an LLM.
     /// Required name for in-memory source
-    pub name: InternedIdUTF8,
+    pub name_id: InternedIdUTF8,
     /// Full source data
     pub src: Vec<u8>,
 }
 
 impl SourceInMemory {
-    pub fn new(name: InternedIdUTF8, src: Vec<u8>) -> Self {
-        Self { name, src }
+    pub fn new(name_id: InternedIdUTF8, src: Vec<u8>) -> Self {
+        Self { name_id, src }
     }
 }
 
@@ -132,7 +132,7 @@ impl SourceManager {
         match self.extract_source(id) {
             SourceKind::Path(src_p) => src_p.path.to_string_lossy(),
             SourceKind::InMemory(src_in_mem) => {
-                Cow::Borrowed(interner.extract_utf8_str(src_in_mem.name))
+                Cow::Borrowed(interner.extract_utf8_str(src_in_mem.name_id))
             }
         }
     }

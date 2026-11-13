@@ -96,7 +96,7 @@ pub fn extract_main(
             src_manager.register_path(&path).inner()
         }
         SourceKind::InMemory(src_in_mem) => src_manager
-            .register_in_memory(src_in_mem.name, src_in_mem.src)
+            .register_in_memory(src_in_mem.name_id, src_in_mem.src)
             .inner(),
     };
 
@@ -151,7 +151,7 @@ pub fn extract_main(
 
     // NOTE: Aliasing maybe.
     let main_name_id = match src_manager.extract_source(main_src_id) {
-        SourceKind::InMemory(src) => src.name,
+        SourceKind::InMemory(src) => src.name_id,
         SourceKind::Path(src) => {
             let Some(file_name) = src.path.file_prefix().and_then(|name| name.to_str()) else {
                 let core_msg = format!(

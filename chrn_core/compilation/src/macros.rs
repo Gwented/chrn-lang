@@ -1,5 +1,5 @@
 // The name is abstract change it. !!
-/// Handles "for _ in chrn_utils::MAX_LOOPS" boilerplate by confirming that either, it will retrieve
+/// Handles "for _ in 0..chrn_utils::MAX_LOOPS" boilerplate by confirming that either, it will retrieve
 /// a valid type id, or it will panic. This is a macro so that `loop_abort()` can be used at the
 /// actual call-site rather than a function call-site.
 ///

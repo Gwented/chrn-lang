@@ -602,6 +602,15 @@ fn is_call_symbol(compiler: &ScriptCompiler, sym: &Symbol) -> bool {
     matches!(&compiler.types[checked.inner].ty, Type::Func(func) if matches!(func.kind.form(), FuncForm::Call))
 }
 
+fn is_intrinsic_namespace(compiler: &ScriptCompiler, sym: &Symbol) -> bool {
+    matches!(sym.kind, SymbolKind::Namespace)
+        && matches!(
+            sym.associated_scope,
+            Some(scopes_concepts::AssociatedScopeKind::Scope(scope_id))
+                if compiler.scopes[scope_id].scope.is_intrinsic
+        )
+}
+
 fn symbol_completion_item(
     compiler: &ScriptCompiler,
     sym: &Symbol,
@@ -611,7 +620,11 @@ fn symbol_completion_item(
     snippet_support: bool,
 ) -> CompletionItem {
     let kind = symbol_completion_kind(compiler, sym);
-    let mut item = completion_item(label, kind, module_suffix);
+    let mut item = completion_item(
+        label,
+        kind,
+        module_suffix && !is_intrinsic_namespace(compiler, sym),
+    );
     if is_call_symbol(compiler, sym) {
         item.insert_text = Some(if call_completion {
             if snippet_support {
@@ -662,44 +675,6 @@ fn completion_context(
         }
     }
     (section, bracket_depth > 0)
-}
-
-fn keyword_completion_allowed(
-    state: &DocumentState,
-    label: &str,
-    section: scopes_concepts::ScopeType,
-    start_b: usize,
-) -> bool {
-    let section_keyword = match label {
-        "var->" => Some(lang::keywords::Keyword::Var),
-        "nest->" => Some(lang::keywords::Keyword::Nest),
-        "complex->" => Some(lang::keywords::Keyword::Complex),
-        _ => None,
-    };
-    if let Some(keyword) = section_keyword {
-        let relative_start = crate::text::abs_to_rel_offset(start_b as u32, state.script_start);
-        return !state.tokens.windows(2).any(|tokens| {
-            tokens[0].tok == ScriptToken::Keyword(keyword)
-                && tokens[1].tok == ScriptToken::SlimArrow
-                && tokens[0].span.start != relative_start
-        });
-    }
-
-    match label {
-        "bind" | "import" | "alias" | "let" | "as" | "virtual" => {
-            section == scopes_concepts::ScopeType::Neutral
-        }
-        "export" => matches!(
-            section,
-            scopes_concepts::ScopeType::Neutral | scopes_concepts::ScopeType::Nest
-        ),
-        "struct" | "enum" => section == scopes_concepts::ScopeType::Nest,
-        "for" | "override" => section == scopes_concepts::ScopeType::Complex,
-        // `in` is reserved. `change` belongs inside override config bodies,
-        // which use the schema/namespace completion paths above this fallback.
-        "in" | "change" => false,
-        _ => true,
-    }
 }
 
 /// Collects symbols owned by `mod_id`'s qualified namespace.
@@ -1349,7 +1324,6 @@ fn override_root_completion_items(
     state: &DocumentState,
     compiler: &ScriptCompiler,
     prefix: &str,
-    module_suffix: bool,
 ) -> Vec<CompletionItem> {
     let roots: Vec<_> = if let Some(scope_id) = compiler.intrinsic_registry.complex_scope_id {
         compiler.scopes[scope_id]
@@ -1373,7 +1347,7 @@ fn override_root_completion_items(
         .filter_map(|name_id| {
             let name = state.interner.extract_utf8_str(name_id);
             (prefix.is_empty() || name.starts_with(prefix)).then(|| {
-                completion_item(name.to_string(), CompletionItemKind::MODULE, module_suffix)
+                completion_item(name.to_string(), CompletionItemKind::MODULE, false)
             })
         })
         .collect()
@@ -1398,7 +1372,7 @@ pub(crate) fn config_completion_items(
                     completion_item(
                         name.to_string(),
                         symbol_completion_kind(compiler, sym),
-                        module_suffix,
+                        module_suffix && !is_intrinsic_namespace(compiler, sym),
                     )
                 })
             })
@@ -2394,7 +2368,7 @@ impl LanguageServer for Backend {
         if let Some(compiler) = &state.compiler
             && completion_follows_override(state, start_b)
         {
-            let mut items = override_root_completion_items(state, compiler, prefix, module_suffix);
+            let mut items = override_root_completion_items(state, compiler, prefix);
             set_completion_edits(&mut items, &state.text, start_b, end_b);
             return Ok(Some(CompletionResponse::Array(items)));
         }
@@ -2535,7 +2509,6 @@ impl LanguageServer for Backend {
                 .is_none_or(|rest| rest.trim().is_empty());
         for (label, kind) in SUGGESTIONS {
             if (prefix.is_empty() || label.starts_with(prefix))
-                && keyword_completion_allowed(state, label, section, start_b)
                 && seen.insert(label.to_string())
             {
                 let mut item = completion_item(label.to_string(), *kind, module_suffix);

@@ -360,7 +360,7 @@ pub(crate) fn resolve_document_modules(
                 .unwrap_or("<unnamed>");
             interner.intern_str(name)
         }
-        SourceKind::InMemory(source) => source.name,
+        SourceKind::InMemory(source) => source.name_id,
     };
 
     let mut reserved_mod_ids: Vec<(SourceId, ModuleId)> = vec![(main_src_id, ModuleId::new(0))];

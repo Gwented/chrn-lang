@@ -80,11 +80,11 @@ fn source_registration_preserves_identity_and_kind_through_growth() {
                 other => panic!("path extraction returned the wrong kind: {other:?}"),
             }
             match manager.get_source(memory_id.inner()) {
-                Some(SourceKind::InMemory(stored)) => assert_eq!(stored.name, name),
+                Some(SourceKind::InMemory(stored)) => assert_eq!(stored.name_id, name),
                 other => panic!("memory ID must retain its kind and name: {other:?}"),
             }
             match manager.extract_source(memory_id.inner()) {
-                SourceKind::InMemory(stored) => assert_eq!(stored.name, name),
+                SourceKind::InMemory(stored) => assert_eq!(stored.name_id, name),
                 other => panic!("memory extraction returned the wrong kind: {other:?}"),
             }
             assert_eq!(
@@ -93,7 +93,7 @@ fn source_registration_preserves_identity_and_kind_through_growth() {
                 "duplicate registration after growth: {display_name:?}"
             );
             let stored = manager.get_in_memory(memory_id).unwrap();
-            assert_eq!(stored.name, name);
+            assert_eq!(stored.name_id, name);
             assert_eq!(
                 stored.src, src,
                 "original bytes must survive: {display_name:?}"

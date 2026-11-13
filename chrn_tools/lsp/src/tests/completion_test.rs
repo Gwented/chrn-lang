@@ -611,7 +611,7 @@ async fn condition_function_completion_respects_client_snippet_support() {
 }
 
 #[test]
-fn keyword_completion_follows_sections_and_preserves_the_current_section_marker() {
+fn keyword_completion_offers_all_keywords_in_each_section() {
     Builder::new_current_thread()
         .enable_all()
         .start_paused(true)
@@ -620,14 +620,15 @@ fn keyword_completion_follows_sections_and_preserves_the_current_section_marker(
         .block_on(async {
             let workspace = TempWorkspace::new("section_keywords");
             let mut session = Session::new().await;
+            let all_keywords = &["alias", "as", "bind", "change", "complex->", "enum", "export", "for", "import", "in", "let", "nest->", "override", "struct", "var->", "virtual"][..];
             for (name, marked, expected) in [
-                ("neutral", "~\n", &["alias", "as", "bind", "complex->", "export", "import", "let", "nest->", "var->", "virtual"][..]),
-                ("var", "var->\n~\n", &["complex->", "nest->"][..]),
-                ("nest", "nest->\n~\n", &["complex->", "enum", "export", "struct", "var->"][..]),
-                ("complex", "complex->\n~\n", &["for", "nest->", "override", "var->"][..]),
-                ("later_sections", "~\nvar->\nnest->\ncomplex->\n", &["alias", "as", "bind", "export", "import", "let", "virtual"][..]),
-                ("reordered", "complex->\nvar->\n~\nnest->\n", &[][..]),
-                ("embedded", "header: data\n@def\nlet text = \"complex->\"\n// nest->\nvar->\n~\n@end\nserialized: data\n", &["complex->", "nest->"][..]),
+                ("neutral", "~\n", all_keywords),
+                ("var", "var->\n~\n", all_keywords),
+                ("nest", "nest->\n~\n", all_keywords),
+                ("complex", "complex->\n~\n", all_keywords),
+                ("later_sections", "~\nvar->\nnest->\ncomplex->\n", all_keywords),
+                ("reordered", "complex->\nvar->\n~\nnest->\n", all_keywords),
+                ("embedded", "header: data\n@def\nlet text = \"complex->\"\n// nest->\nvar->\n~\n@end\nserialized: data\n", all_keywords),
                 ("current_marker", "ne~st->\n", &["nest->"][..]),
                 ("partial_declaration", "nest->\nst~", &["struct"][..]),
             ] {
@@ -641,10 +642,10 @@ fn keyword_completion_follows_sections_and_preserves_the_current_section_marker(
                 };
                 let mut keywords: Vec<_> = items.iter().filter(|item| item.kind == Some(CompletionItemKind::KEYWORD)).map(|item| item.label.as_str()).collect();
                 keywords.sort_unstable();
-                assert_eq!(keywords, expected, "{name}: keyword suggestions follow the active section");
+                assert_eq!(keywords, expected, "{name}: keyword suggestions depend only on the prefix");
                 if !matches!(name, "current_marker" | "partial_declaration") {
                     for name in ["i32", "true"] {
-                        assert!(items.iter().any(|item| item.label == name), "{name}: keyword filtering preserves non-keyword suggestions");
+                        assert!(items.iter().any(|item| item.label == name), "{name}: completion preserves non-keyword suggestions");
                     }
                 }
             }
@@ -1135,6 +1136,14 @@ async fn multi_segment_intrinsic_completion_stays_under_its_root_namespace() {
             panic!("completion must return an item array");
         };
 
+        for item in &items {
+            assert_eq!(item.insert_text.as_deref(), Some(expected), "{qualified}");
+            let Some(CompletionTextEdit::Edit(edit)) = &item.text_edit else {
+                panic!("{qualified}: explicit namespace insertion required");
+            };
+            assert_eq!(edit.range, Range::new(pos, pos), "{qualified}");
+            assert_eq!(edit.new_text, expected, "{qualified}");
+        }
         let mut actual: Vec<_> = items
             .into_iter()
             .map(|item| (item.label, item.kind))
@@ -1276,6 +1285,16 @@ async fn braced_override_body_completes_namespace_children() {
     let CompletionResponse::Array(items) = response else {
         panic!("completion must return an item array");
     };
+    for item in &items {
+        assert_eq!(item.insert_text.as_deref(), Some("types"));
+        let Some(CompletionTextEdit::Edit(edit)) = &item.text_edit else {
+            panic!("the intrinsic config child has an explicit prefix replacement");
+        };
+        let mut start = position;
+        start.character -= 1;
+        assert_eq!(edit.range, Range::new(start, position));
+        assert_eq!(edit.new_text, "types");
+    }
     let actual: Vec<_> = items
         .into_iter()
         .map(|item| (item.label, item.kind))
@@ -1317,6 +1336,17 @@ async fn override_root_completion_offers_intrinsic_namespaces() {
             panic!("completion must return an item array");
         };
 
+        for item in &items {
+            let name = item.label.strip_suffix("::").unwrap();
+            assert_eq!(item.insert_text.as_deref(), Some(name), "{target}");
+            let Some(CompletionTextEdit::Edit(edit)) = &item.text_edit else {
+                panic!("{target}: explicit override target replacement required");
+            };
+            let mut start = position;
+            start.character -= prefix.len() as u32;
+            assert_eq!(edit.range, Range::new(start, position), "{target}");
+            assert_eq!(edit.new_text, name, "{target}");
+        }
         let mut actual: Vec<_> = items
             .into_iter()
             .map(|item| (item.label, item.kind))
@@ -1439,7 +1469,7 @@ async fn scalar_arrow_completion_uses_member_options_and_stops_at_parent_close()
         panic!("completion must return an item array");
     };
     assert!(items.iter().any(|item| item.label == "for"));
-    assert!(items.iter().all(|item| item.label != "let"));
+    assert!(items.iter().any(|item| item.label == "let"));
 }
 
 #[test]
@@ -1490,7 +1520,7 @@ fn qualified_core_and_user_module_completions_follow_namespace_ownership() {
 }
 
 #[test]
-fn namespace_completion_inserts_separators_only_for_namespace_symbols() {
+fn intrinsic_namespace_completion_preserves_existing_separators_without_inserting_them() {
     Builder::new_current_thread()
         .enable_all()
         .start_paused(true)
@@ -1507,7 +1537,7 @@ fn namespace_completion_inserts_separators_only_for_namespace_symbols() {
                     "core::t",
                     "core::t".len(),
                     "types::",
-                    "types::",
+                    "types",
                     CompletionItemKind::MODULE,
                     "t",
                 ),

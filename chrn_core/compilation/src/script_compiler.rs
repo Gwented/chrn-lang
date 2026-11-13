@@ -748,6 +748,8 @@ impl ScriptCompiler {
     // TODO: Fix type metadata
     /// Returns `None` if type `TypeBoundaryFlags` is found and there's more
     /// than one boundary encoded, otherwise returns `Some`
+    ///
+    /// NOTE: `TypeDef`
     pub(super) fn get_name_id_from_type_id(&self, mut type_id: TypeId) -> Option<InternedIdUTF8> {
         let checked = walk_type_id_deferred!(&self.types, type_id);
 
@@ -768,6 +770,7 @@ impl ScriptCompiler {
             // rather than rephrasing for the fact that the type itself is unknown.
             //
             // Phrases like "The type `Unknown`" sound wrong because it's not a type it's a state
+            // NOTE: Mind this for now.
             Type::Unknown => InternedId::new(intern::INTERNED_UNKNOWN)
                 .into_tagged::<UTF8Tag>()
                 .into(),

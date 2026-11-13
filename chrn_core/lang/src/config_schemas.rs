@@ -1,3 +1,4 @@
+//TODO: Refactor?
 use chrn_utils::{id_types::InternedId, intern::UTF8Tag};
 use std::fmt::Display;
 
@@ -80,7 +81,6 @@ impl Display for ConfigSchemaKind {
 
 /// All known preset schemas and the options associated with them
 pub static PRESET_CONFIG_SCHEMAS: [ConfigSchema; 3] = [
-    // ONLY 3 VALID SCHEMAS RIGHT NOW
     ConfigSchema::new(ConfigSchemaKind::Struct, &[OPT_CASES, OPT_IDENTS]),
     ConfigSchema::new(ConfigSchemaKind::Enum, &[OPT_CASES, OPT_IDENTS]),
     ConfigSchema::new(

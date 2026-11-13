@@ -1360,10 +1360,21 @@ fn parse_postfix(
 
     loop {
         if ctx.peek_tok() == Token::OParen {
-            // Handles conditions. lhs should be a name id or field access which is caught later
-            ctx.advance_tok();
+            let getter = |ctx: &mut ParserContext<'_>,
+                          interner: &Intern|
+             -> Result<SpannedContainer<AstExpr>, Token> {
+                parse_expr(ctx, 0, budget, interner)
+            };
 
-            let args = parse_call_args(ctx, budget, interner)?;
+            let args = parse_enclosing(
+                ctx,
+                &getter,
+                DelimiterContext::new(TokenKind::OParen, TokenKind::Comma, TokenKind::CParen),
+                SemanticEnv::Expr,
+                Branch::Expr,
+                interner,
+            )?;
+
             let span = SourceSpan::new(
                 ctx.region.self_id,
                 lhs.span.start,
@@ -2414,6 +2425,7 @@ fn parse_alias_decl(
     Ok(params)
 }
 
+/// Expects to be at opening '['
 fn handle_conds(
     ctx: &mut ParserContext,
     budget: &ParserBudget,

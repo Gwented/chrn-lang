@@ -12,7 +12,7 @@
 //!
 //! May change in the future but right now this seems reasonable enough, even with the 4K+ LOC
 // Artisinal hand-coded slop
-mod cfg_ctx;
+mod cfg_context;
 pub mod type_context;
 
 use chrn_utils::err_codes::ErrorCode;
@@ -53,7 +53,7 @@ use crate::parser::ast::ast_exprs::{AstExpr, PathSegment};
 use crate::parser::ast::ast_stmts::AstStmt;
 use crate::resolvers::resolver_env::ResolverEnv;
 use crate::resolvers::resolver_state::CompilerStage;
-use crate::resolvers::type_resolver::cfg_ctx::{
+use crate::resolvers::type_resolver::cfg_context::{
     ConfigMemberComplexContext, ConfigMemberContextKind, ConfigMemberOverrideContext,
     ConfigRootComplexContext, ConfigRootContextKind, ConfigRootOverrideContext,
 };
@@ -1833,6 +1833,8 @@ impl<'res> TypeResolver<'res> {
         cfg_root.linked_sym_id = Some(found_sym_id);
         cfg_root.stmts = memb_stmts;
         cfg_root.common.cfg_membs = cfg_members;
+        // dbg!(&cfg_root);
+        // dbg!(&self.compiler.impl_membs[ImplMemberId::new(0)]);
     }
 
     /// Method that recursively resolves `ConfigDefMember` and `OptionAssignmentMember`

@@ -1,14 +1,33 @@
-bind "serialized_data.chrn"
-// let x = basic_array::basic_array::basic_array::basic_array::core::IsEmpty
-
-let x = s::l
+// bind "serialized_data.chrn"
+@def
 
 var->
-    ptr: u8
-    capacity: unsized
-    len: unsized
+ptr: u8 // A
+capacity: A
+// The boundaries `Float` and `Integer` should also be usable as just a type that says,
+// whatever is in the schema should at most be integer, float, maybe even just `Number`,
+// as opposed to `Runtime` which makes all vague typing invisible too.
+// capacity: Float
+// sized & unsized may sound a bit weird. Would specifying iptr/uptr OR 
+len: unsized
 /* Could also just be
    ptr: Runtime
    capacity: Runtime
    len: Runtime
-*/
+ */
+nest->struct A { a: i32}
+complex->
+
+// Var defined types fail as config roots
+// Brings the concern of if #bin,#scient,etsy., should be schema opts
+//
+// Typedef configs have broken assignment or broken constraint checks
+for capacity {
+    // Fix member schemas so that they refer to the actual type `unsized` of something rather than `capacity`
+    default_val = [2.0]
+    // panics
+    // a {}
+}
+for len {}
+
+@end

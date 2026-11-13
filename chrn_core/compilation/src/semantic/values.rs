@@ -95,8 +95,19 @@ impl ValueKind {
     /// handled accordingly externally.
     pub fn boundaries(self) -> Option<TypeBoundaryFlags> {
         match self {
-            ValueKind::U64 => Some(TypeBoundaryFlags::UNSIGNED_INTEGER),
-            ValueKind::I64 | ValueKind::BigInt => Some(TypeBoundaryFlags::SIGNED_INTEGER),
+            //WARN: They ARE both integers but not sure how to go about this abstraction
+            // Please stop hallucinating type system semantics
+            // No.
+            ValueKind::U64 => {
+                Some(
+                    TypeBoundaryFlags::INTEGER, /*| TypeBoundaryFlags::UNSIGNED_INTEGER*/
+                )
+            }
+            ValueKind::I64 | ValueKind::BigInt => {
+                Some(
+                    TypeBoundaryFlags::INTEGER, /*| TypeBoundaryFlags::SIGNED_INTEGER*/
+                )
+            }
             ValueKind::F64 | ValueKind::BigFloat => Some(TypeBoundaryFlags::FLOAT),
             ValueKind::Char => Some(TypeBoundaryFlags::CHAR),
             // Not sure if values themselves are a good interface for getting the boundary of a flag

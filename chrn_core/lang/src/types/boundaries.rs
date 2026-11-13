@@ -172,15 +172,18 @@ impl TypeBoundaryFlags {
             return TypeDomainFlags::all();
         }
 
-        let mut result = TypeDomainFlags::all();
+        let mut res = TypeDomainFlags::all();
         for flag in self.iter() {
-            result &= flag.single_domain();
+            res &= flag.single_domain();
         }
-        result
+        res
     }
 
     /// Returns true if any concrete type satisfies both sets of constraints.
     pub fn overlaps(self, other: TypeBoundaryFlags) -> bool {
+        // dbg!(self.domain());
+        // todo!();
+        // dbg!(other.domain());
         self.domain().intersects(other.domain())
     }
 

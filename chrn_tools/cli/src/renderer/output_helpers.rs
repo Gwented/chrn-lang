@@ -67,7 +67,7 @@ pub(super) fn resolve_source<'a>(
             path: Some(source.path.to_string_lossy()),
         },
         SourceKind::InMemory(source) => SourceMetadata {
-            name: Some(interner.extract_utf8_str(source.name)),
+            name: Some(interner.extract_utf8_str(source.name_id)),
             path: None,
         },
     }

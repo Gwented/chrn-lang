@@ -968,32 +968,117 @@ fn parse_expr_call_no_args() {
 
 #[test]
 fn parse_expr_call_with_args() {
-    let text = "let x = add(1, 2)";
-    let (ast, interner) = parse_text(text);
-
-    let var = ast.get_var(section_items(&ast, SectionKind::Neutral)[0]);
-    match &var.spanned_expr.inner {
-        AstExpr::Call(func, args) => {
-            match &func.inner {
-                AstExpr::Var(id) => assert_eq!(interner.extract_utf8_str(*id), "add"),
-                other => panic!("expected Var(add), got {other:?}"),
-            }
-            assert_eq!(args.len(), 2);
-            match &args[0].inner {
-                AstExpr::Integer(id, _) => {
-                    assert_eq!(interner.extract_utf8_str(*id), "1")
+    for (arguments, expected) in [
+        ("()", vec![]),
+        ("(1)", vec!["1"]),
+        ("(1,)", vec!["1"]),
+        ("(1, 2)", vec!["1", "2"]),
+        ("(1, 2,)", vec!["1", "2"]),
+    ] {
+        let text = format!("let x = add{arguments}\nlet after = 7");
+        let (ast, diags, interner) = parse_text_with_diags(&text);
+        assert!(diags.is_empty(), "{arguments}: {diags:?}");
+        let items = section_items(&ast, SectionKind::Neutral);
+        assert_eq!(items.len(), 2, "{arguments}");
+        let var = ast.get_var(items[0]);
+        assert_eq!(interner.extract_utf8_str(var.name_id), "x");
+        assert_eq!(
+            &text[var.spanned_expr.span.range_exclusive_usize()],
+            format!("add{arguments}")
+        );
+        match &var.spanned_expr.inner {
+            AstExpr::Call(func, args) => {
+                match &func.inner {
+                    AstExpr::Var(id) => assert_eq!(interner.extract_utf8_str(*id), "add"),
+                    other => panic!("expected Var(add), got {other:?}"),
                 }
-                other => panic!("expected Integer(1), got {other:?}"),
-            }
-            match &args[1].inner {
-                AstExpr::Integer(id, _) => {
-                    assert_eq!(interner.extract_utf8_str(*id), "2")
+                assert_eq!(args.len(), expected.len(), "{arguments}");
+                for (arg, expected) in args.iter().zip(expected) {
+                    match &arg.inner {
+                        AstExpr::Integer(id, IntegerNotation::Decimal) => {
+                            assert_eq!(interner.extract_utf8_str(*id), expected);
+                            assert_eq!(&text[arg.span.range_exclusive_usize()], expected);
+                        }
+                        other => panic!("expected Integer({expected}), got {other:?}"),
+                    }
                 }
-                other => panic!("expected Integer(2), got {other:?}"),
             }
+            other => panic!("expected Call, got {other:?}"),
         }
-        other => panic!("expected Call, got {other:?}"),
+        let after = ast.get_var(items[1]);
+        assert_eq!(interner.extract_utf8_str(after.name_id), "after");
+        match &after.spanned_expr.inner {
+            AstExpr::Integer(id, IntegerNotation::Decimal) => {
+                assert_eq!(interner.extract_utf8_str(*id), "7");
+            }
+            other => panic!("expected Integer(7), got {other:?}"),
+        }
     }
+}
+
+#[test]
+fn parse_predicate_call_preserves_conditions_and_following_declarations() {
+    let text = "var->\nfield: i8 [Range(i8::MIN, i8::MAX), !IsEmpty()]\nafter: bool";
+    let (ast, diags, interner) = parse_text_with_diags(text);
+    assert!(diags.is_empty(), "{diags:?}");
+    let items = section_items(&ast, SectionKind::Var);
+    assert_eq!(items.len(), 2);
+    let field = ast.get_typedef(items[0]);
+    assert_eq!(interner.extract_utf8_str(field.name_id), "field");
+    assert_eq!(field.conds.len(), 2);
+    let range = &field.conds[0];
+    assert_eq!(
+        &text[range.span.range_exclusive_usize()],
+        "Range(i8::MIN, i8::MAX)"
+    );
+    let AstExpr::Call(func, args) = &range.inner else {
+        panic!("expected Range call, got {:?}", range.inner);
+    };
+    let AstExpr::Var(id) = func.inner else {
+        panic!("expected Range callee, got {:?}", func.inner);
+    };
+    assert_eq!(interner.extract_utf8_str(id), "Range");
+    assert_eq!(args.len(), 2);
+    for (arg, expected) in args.iter().zip(["MIN", "MAX"]) {
+        let AstExpr::StaticAccess(path) = &arg.inner else {
+            panic!("expected i8::{expected}, got {:?}", arg.inner);
+        };
+        assert_eq!(path.len(), 2);
+        for (segment, expected) in path.iter().zip(["i8", expected]) {
+            let PathSegment::Ident(id) = segment.inner else {
+                panic!("expected Ident({expected}), got {:?}", segment.inner);
+            };
+            assert_eq!(interner.extract_utf8_str(id), expected);
+            assert_eq!(&text[segment.span.range_exclusive_usize()], expected);
+        }
+        assert_eq!(
+            &text[arg.span.range_exclusive_usize()],
+            format!("i8::{expected}")
+        );
+    }
+    let AstExpr::Unary(unary) = &field.conds[1].inner else {
+        panic!("expected negated predicate, got {:?}", field.conds[1].inner);
+    };
+    assert_eq!(unary.op, UnaryOp::Not);
+    let AstExpr::Call(func, args) = &unary.spanned_expr.inner else {
+        panic!("expected IsEmpty call, got {:?}", unary.spanned_expr.inner);
+    };
+    assert!(args.is_empty());
+    let AstExpr::Var(id) = func.inner else {
+        panic!("expected IsEmpty callee, got {:?}", func.inner);
+    };
+    assert_eq!(interner.extract_utf8_str(id), "IsEmpty");
+    assert_eq!(
+        &text[field.conds[1].span.range_exclusive_usize()],
+        "!IsEmpty()"
+    );
+    let after = ast.get_typedef(items[1]);
+    assert_eq!(interner.extract_utf8_str(after.name_id), "after");
+    assert!(after.conds.is_empty());
+    let TypeExpr::Var(id) = after.sp_ty_expr.inner else {
+        panic!("expected bool type, got {:?}", after.sp_ty_expr.inner);
+    };
+    assert_eq!(interner.extract_utf8_str(id), "bool");
 }
 
 #[test]

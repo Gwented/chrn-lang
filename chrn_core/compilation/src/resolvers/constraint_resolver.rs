@@ -1,6 +1,7 @@
 //TODO: Schema validation
 //TODO: Condition validation
 //TODO: Proper directive validation
+mod opt_context;
 use chrn_utils::{
     err_codes::ErrorCode,
     id_types::{ExprId, ImplId, InternedIdUTF8, SymbolId, TypeId, id_tags::TaggedId},
@@ -28,7 +29,10 @@ use crate::{
         OptionAssignmentRootTag, StructTag, TypeDefTag, VarTag,
     },
     lookup::schema_lookup::{self, SchemaResult},
-    resolvers::{resolver_env::ResolverEnv, resolver_state::CompilerStage},
+    resolvers::{
+        constraint_resolver::opt_context::OptionContext, resolver_env::ResolverEnv,
+        resolver_state::CompilerStage,
+    },
     script_compiler::ScriptCompiler,
     semantic::{
         compilation_unit::CompilationUnit,
@@ -238,6 +242,9 @@ impl<'a> ConstraintResolver<'a> {
             return;
         };
 
+        //FIXME: This was artisinally crafted slop to get an idea of how to do this at first. Will
+        // be handled closer to directive arg layouts
+
         //NOTE: Doesn't seem like multi-type assignment has any action needed here.
         // `TypeResolver` already guarantees it's a built-in type, since it's compiler-generated
         // there are no impossible paths for `change` assignments.
@@ -251,19 +258,38 @@ impl<'a> ConstraintResolver<'a> {
                 debug_assert_eq!(
                     cfg_root.stmts.len(),
                     0,
-                    "No compiler generated or user instantiated stmts are expected for `override`"
+                    "No compiler generated or user instantiated stmts should be given to `override`"
                 );
             }
             ConfigRootKind::Complex => {
-                // Should probably store it in the kind itself, or at least `Option<Kind>`
-                let linked_type_id = self
+                let mut initial_linked_type_id = self
                     .compiler
                     .get_type_id_from_sym_id(linked_sym_id)
                     .expect("Should have been processed by type resolver");
+                let initial_linked_ty = &self.compiler.types[initial_linked_type_id].ty;
+
                 let cfg_root_ty_span = self
                     .compiler
-                    .get_span_from_type_id(linked_type_id)
+                    .get_span_from_type_id(initial_linked_type_id)
                     .expect("Should be user defined");
+
+                // If this isn't done it will for a var defined type "len: unsized" in error
+                // messages say `is type len` when the type is actually `unsized`"
+                //
+                // These variables are marked as "initial" and "usable" because var-defined
+                // types must extract their inner `TypeDef.type_id` if present. No var-defined
+                // type means initial stays the same.
+                // The collected `usable_linked_type_id` may or may not be used.
+                let (ty_name_id_opt, usable_linked_type_id) =
+                    if let Type::TypeDef(typedef) = &initial_linked_ty {
+                        let name_id = self.compiler.get_name_id_from_type_id(typedef.type_id);
+                        (name_id, typedef.type_id)
+                    } else {
+                        let name_id = self
+                            .compiler
+                            .get_name_id_from_type_id(initial_linked_type_id);
+                        (name_id, initial_linked_type_id)
+                    };
                 // We may need an invalid and valid marker for cached checks regarding if it was a type id
                 // or not.
                 // let cfg_sym = &self.compiler.symbols[linked_sym_id];
@@ -278,26 +304,31 @@ impl<'a> ConstraintResolver<'a> {
                     let opt_root = self.compiler.get_opt_assignment_root(
                         opt_root_id.into_tagged::<OptionAssignmentRootTag>(),
                     );
+
+                    // Our schema is technically right right?
                     let schema = schema_lookup::get_schema_from_type_id(
                         &self.compiler.types,
-                        linked_type_id,
+                        initial_linked_type_id,
                     )
                     .expect("`TypeResolver` should only give linked sym ids to valid configs");
+                    // dbg!(schema);
+                    // panic!();
 
                     let sp_opt_name_id =
                         SpannedContainer::new(opt_root.name_id, opt_root.name_span);
-                    let boundaries = Type::boundaries(self.compiler, linked_type_id);
-                    let ty_name_id = self.compiler.get_name_id_from_type_id(linked_type_id);
+                    let boundaries_opt = Type::boundaries(self.compiler, initial_linked_type_id);
+                    //TEST: Would be generall "needs_inner_type_name" if ever beyond typedef
 
-                    if let Err(preset_err) = self.check_opt(
-                        schema,
-                        ty_name_id,
+                    let opt_ctx = OptionContext::new(
+                        ty_name_id_opt,
                         cfg_root_ty_span,
-                        boundaries,
-                        &sp_opt_name_id,
-                        opt_root.array_expr_id,
-                        env,
-                    ) {
+                        boundaries_opt,
+                        sp_opt_name_id,
+                    );
+
+                    if let Err(preset_err) =
+                        self.check_opt(schema, opt_ctx, opt_root.array_expr_id, env)
+                    {
                         // Maybe return ONE more present? Just 2? A small slice?
                         // A SLICE?
                         // Yeah sure
@@ -322,7 +353,7 @@ impl<'a> ConstraintResolver<'a> {
 
                     match &cfg_memb.meta {
                         ConfigMemberMetadataKind::Complex(meta) => {
-                            let boundaries =
+                            let boundaries_opt =
                                 MemberSymbolKind::boundaries(self.compiler, meta.linked_memb_id);
 
                             //TODO: Given the scope type, should react differently to depths of members.
@@ -345,16 +376,17 @@ impl<'a> ConstraintResolver<'a> {
                                     .map(|id| self.compiler.get_name_id_from_type_id(id))
                                     .flatten();
 
-                                if let Err(preset_err) = self.check_opt(
-                                    schema,
+                                //FIXME: Handle typedef span too
+                                let opt_ctx = OptionContext::new(
                                     member_ty_name_id_opt,
                                     // WARN: Is this the right span?
                                     cfg_memb.common.name_span,
-                                    boundaries,
-                                    &sp_opt_name_id,
-                                    opt_memb.array_expr_id,
-                                    env,
-                                ) {
+                                    boundaries_opt,
+                                    sp_opt_name_id,
+                                );
+                                if let Err(preset_err) =
+                                    self.check_opt(schema, opt_ctx, opt_memb.array_expr_id, env)
+                                {
                                     // Maybe return ONE more present? Just 2? A small slice?
                                     // No
                                     // Slice as in [Option<PresetErr>;2]
@@ -369,20 +401,6 @@ impl<'a> ConstraintResolver<'a> {
                                     );
                                 };
                             }
-
-                            // AAAAAAAAAAAAAHHHHHHHHHHHHHHHHHH
-                            // Woah (em-dash) Relax
-                            //
-                            // Recursively resolves inner members
-                            // self.resolve_cfg_member(cfg_memb_id, env);
-
-                            // for thing in cfg_member.cfg_members.iter().cloned() {
-                            //     let mem = self.compiler.get_cfg_member(thing);
-                            //     dbg!(self.interner.extract_utf8_str(mem.name_id));
-                            //     dbg!(mem);
-                            //     dbg!(thing);
-                            //     todo!("Ok");
-                            // }
                         }
                         // `MultiAssignType` requires no handling here which is `override`'s only
                         // current job
@@ -405,15 +423,14 @@ impl<'a> ConstraintResolver<'a> {
         // We need the config details associated with the given option, but in pieces.
         &self,
         schema: &ConfigSchema,
-        cfg_ty_name_id: Option<InternedIdUTF8>,
-        cfg_name_span: SourceSpan,
+        opt_ctx: OptionContext,
         // Is option since if the root option is typedef, it has user boundaries to account for. If
         // the root option is a struct, there are none.
-        user_boundaries_opt: Option<TypeBoundaryFlags>,
-        sp_opt_name_id: &SpannedContainer<InternedIdUTF8>,
         array_expr_id: ExprId,
         env: &ResolverEnv,
     ) -> Result<(), PresetErr> {
+        //TODO: Help us
+        //
         // Beep
         let array_expr = &self.compiler.exprs[array_expr_id];
         let val_info_id = array_expr.val_info_id;
@@ -436,14 +453,14 @@ impl<'a> ConstraintResolver<'a> {
         // 4. unwrap()
         match schema_lookup::validate_opt(
             schema,
-            user_boundaries_opt,
-            sp_opt_name_id.inner,
+            opt_ctx.user_boundaries_opt,
+            opt_ctx.sp_opt_name_id.inner,
             vals,
             &self.compiler.vals,
         ) {
             SchemaResult::Valid => Ok(()),
             res => {
-                let opt_name = self.interner.extract_utf8_str(sp_opt_name_id.inner);
+                let opt_name = self.interner.extract_utf8_str(opt_ctx.sp_opt_name_id.inner);
                 let src_diag = match res {
                     SchemaResult::BoundaryMismatch {
                         err_idx,
@@ -471,7 +488,7 @@ impl<'a> ConstraintResolver<'a> {
                             format!("Does not satisfy `{required_boundaries}`").into(),
                         )
                         .add_annotation(
-                            sp_opt_name_id.span,
+                            opt_ctx.sp_opt_name_id.span,
                             AnnotationKind::Secondary,
                             "Required by this option".to_string().into(),
                         )
@@ -499,7 +516,7 @@ impl<'a> ConstraintResolver<'a> {
                             format!("Does not satisfy `{required_boundaries}`").into(),
                         )
                         .add_annotation(
-                            sp_opt_name_id.span,
+                            opt_ctx.sp_opt_name_id.span,
                             AnnotationKind::Secondary,
                             "Required by this option".to_string().into(),
                         )
@@ -542,10 +559,12 @@ impl<'a> ConstraintResolver<'a> {
                             next_ann_msg.into(),
                         );
 
-                        if let Some(ty_name_id) = cfg_ty_name_id {
+                        //FIXME: Typedefs report "Is type {variable_name}" instead of it's actual
+                        //type since configs are usually from struct/enum
+                        if let Some(ty_name_id) = opt_ctx.cfg_ty_name_id {
                             let ty_name = self.interner.extract_utf8_str(ty_name_id);
                             builder = builder.add_annotation(
-                                cfg_name_span,
+                                opt_ctx.cfg_name_span,
                                 AnnotationKind::Secondary,
                                 format!("Is type `{ty_name}`").into(),
                             )
@@ -553,7 +572,7 @@ impl<'a> ConstraintResolver<'a> {
                         builder
                     }
                     SchemaResult::CannotSupportBoundaries => {
-                        let opt_name = self.interner.extract_utf8_str(sp_opt_name_id.inner);
+                        let opt_name = self.interner.extract_utf8_str(opt_ctx.sp_opt_name_id.inner);
                         let core_msg = format!(
                             "Option `{opt_name}` requires that the config it is attached to has boundaries"
                         );
@@ -567,12 +586,12 @@ impl<'a> ConstraintResolver<'a> {
                             env.region.src_id,
                         )
                         .add_annotation(
-                            cfg_name_span,
+                            opt_ctx.cfg_name_span,
                             AnnotationKind::Primary,
                             "Has no type so cannot hold boundaries".to_string().into(),
                         )
                         .add_annotation(
-                            sp_opt_name_id.span,
+                            opt_ctx.sp_opt_name_id.span,
                             AnnotationKind::Secondary,
                             "Required by this option".to_string().into(),
                         )
@@ -583,7 +602,7 @@ impl<'a> ConstraintResolver<'a> {
                         // )
                     }
                     SchemaResult::UnknownOptionName => {
-                        let opt_name = self.interner.extract_utf8_str(sp_opt_name_id.inner);
+                        let opt_name = self.interner.extract_utf8_str(opt_ctx.sp_opt_name_id.inner);
                         let core_msg = format!(
                             "Option `{opt_name}` does not exist for schema `{}`",
                             schema.kind
@@ -594,9 +613,9 @@ impl<'a> ConstraintResolver<'a> {
                             core_msg,
                             env.region.src_id,
                         )
-                        .add_annotation(sp_opt_name_id.span, AnnotationKind::Primary, None)
+                        .add_annotation(opt_ctx.sp_opt_name_id.span, AnnotationKind::Primary, None)
                         .add_annotation(
-                            cfg_name_span,
+                            opt_ctx.cfg_name_span,
                             AnnotationKind::Secondary,
                             format!("Uses schema `{}`", schema.kind).into(),
                         )
@@ -1705,7 +1724,6 @@ impl<'a> ConstraintResolver<'a> {
                         spans: vec![spanned_directive.span, active_span],
                     }));
                 }
-                panic!("Hi");
 
                 Ok(())
             }

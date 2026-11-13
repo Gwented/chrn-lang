@@ -63,12 +63,15 @@ pub fn get_schema_from_type_id(
 ) -> Option<&'static ConfigSchema> {
     let checked = walk_type_id_deferred!(&types, type_id);
     match &types[checked.inner].ty {
+        //TEST:
         Type::Struct(_) => config_schemas::get_cfg_schema(ConfigSchemaKind::Struct).into(),
         Type::Enum(_) => config_schemas::get_cfg_schema(ConfigSchemaKind::Enum).into(),
+        // WARN: Not sure about this but tyepdefs are internally literally fields, but that depends
+        // on if the inner of the typedef is actually a field. Um. Seems fine for now.
+        Type::TypeDef(_) => config_schemas::get_cfg_schema(ConfigSchemaKind::Member).into(),
         Type::Alias(_)
         | Type::Boundaries(_)
         | Type::BuiltinTypeInfo(_)
-        | Type::TypeDef(_)
         | Type::Func(_)
         | Type::Unknown => None,
         Type::Deferred(_) => unreachable!(),
@@ -132,6 +135,8 @@ pub fn validate_opt(
                         match (current_boundaries_opt, user_boundaries_opt) {
                             (Some(current), Some(user)) => {
                                 if !current.overlaps(user) {
+                                    // dbg!(current.overlaps(user), current, user);
+                                    // panic!();
                                     return SchemaResult::SameTypeAsUserMismatch {
                                         err_idx: i,
                                         err_boundaries_opt: current_boundaries_opt,

@@ -1,27 +1,46 @@
 /* *///import virtual "../chrn_core/chrn_tests/other.chrn"
 import "../chrn_core/chrn_tests/chrn.chrn"
 
-let e#_ = 4
+#max_numeric_bits(256)
+// Add this?
+// let e#$ = 4
 var->
     // Emit help
     // expo x: char
     // Emit help
     // x: char;
-    // fix me
-    // Color namespaces the same as modules???????????? questino mark
-    // y: core::funcs::IsEmpty;
     // Maybe just call these "VarDefined"?
-    x: core::types::Integer
     // Maybe internally static access accepts up to `types` since nothing exists past the last `::`?
     // x: CHERNGENTS::CHERNGENTS::core::types::
+    x: nil [StartsW(2, 3)] #warn
+// Do we need unions? Or at least, can we? Rust enums ARE tagged unions, but coupling those maybe wont
+// make sense? Maybe instead of allowing enums to give themselves types, if we are to translate union
+// to crust it-
 
 nest->
-export struct A {}
+// Since only the root structure and it's field/variant identifiers can be altered, concept seems
+// fine. SEemms.
+struct A { b: B, c: C }
+struct B {}
+struct C {}
+
+struct nil {}
 
 complex->
 
 for A {
-    
+    // Send help for "["2", "4"]"
+    // cases = "2", "4"
+    b {
+        // Should probably not always error here, only error if the empty array is having usage attempted
+        // idents = []
+        idents = ["Hi", "Mmndj"]
+        override JAVA=>types {
+            change i32 = java::int
+        }
+    }
+    c {
+    }
 }
 
 // Seems ok
